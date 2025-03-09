@@ -1,0 +1,2 @@
+# CR2 Creative Pro - Tkinter Version Requirements
+# No external dependencies beyond Python's standard library 

@@ -4,12 +4,25 @@
 import os
 import platform
 import datetime
-import tkinter as tk
-from tkinter import ttk, messagebox, BOTH, X, LEFT, RIGHT
-from tkinter.constants import *
 import re
+import sys
+import json
+import time
+import threading
+import shutil
 
-from app.ui.color_scheme import colors
+# Detect which UI framework is being used
+if 'PyQt5' in sys.modules:
+    from PyQt5.QtWidgets import QMessageBox
+    from app.ui.color_scheme_pyqt import colors
+    UI_FRAMEWORK = 'pyqt'
+else:
+    import tkinter as tk
+    from tkinter import ttk, messagebox, BOTH, X, LEFT, RIGHT
+    from tkinter.constants import *
+    from app.ui.color_scheme import colors
+    UI_FRAMEWORK = 'tkinter'
+
 from app.utils.utils import (
     open_folder, open_in_explorer, parse_project_names, 
     save_recent_projects, load_recent_projects,
@@ -20,7 +33,14 @@ from app.utils.utils import (
 def create_project(app):
     """Create a new project from the current settings"""
     # Validate project name
-    if not app.project_name.get().strip():
+    if UI_FRAMEWORK == 'pyqt':
+        # PyQt implementation
+        project_name_val = app.project_name_input.text().strip() if hasattr(app, 'project_name_input') else ""
+    else:
+        # Tkinter implementation
+        project_name_val = app.project_name.get().strip() if hasattr(app, 'project_name') else ""
+    
+    if not project_name_val:
         app.show_status_message("Please enter a project name", message_type="error")
         return
     
@@ -44,33 +64,77 @@ def create_project(app):
             app.show_status_message("Please select an output location", message_type="error")
             return
     
-    project_name = app.project_name.get().strip()
-    structure_name = app.structure_var.get()
+    # Ensure the output directory is saved in the config
+    if hasattr(app, 'config'):
+        app.config["last_output_dir"] = output_dir
+        if hasattr(app, 'save_config'):
+            app.save_config()
+        elif 'save_config' in globals():
+            save_config(app.config)
+    
+    # Get project name
+    project_name = project_name_val
+    
+    # Get structure name
+    if UI_FRAMEWORK == 'pyqt':
+        structure_name = app.structure_combo.currentText() if hasattr(app, 'structure_combo') else "Default"
+    else:
+        structure_name = app.structure_var.get() if hasattr(app, 'structure_var') else "Default"
+    
     if structure_name == "Default":
         structure_name = None
     
-    # Build project
-    success, result = app.project_builder.create_project(
+    # Add to recent templates if successful
+    add_to_recent_templates(app, app.template_file_path)
+    
+    # Create the project
+    result, project_path = app.project_builder.create_project(
         project_name=project_name,
         output_dir=output_dir,
         template_file=app.template_file_path,
-        project_type="Standard",
-        structure_name=structure_name
+        project_type="Standard", 
+        structure_name=structure_name,
+        create_backup=True
     )
     
-    # Handle result
-    if success:
-        # Set success message with green styling in the status bar
-        app.show_status_message(f"Project '{project_name}' created at {result}", message_type="success")
+    if result:
+        # Success message
+        success_message = f"Project '{project_name}' created successfully at\n{output_dir}"
         
-        # Add project to recent projects
-        add_to_recent_projects(app, project_name, result)
+        if UI_FRAMEWORK == 'pyqt':
+            # PyQt implementation
+            QMessageBox.information(app, "Success", success_message)
+        else:
+            # Tkinter implementation
+            messagebox.showinfo("Success", success_message)
         
-        # Add template to recent templates if one was used but preserve order
-        if app.template_file_path:
-            add_to_recent_templates(app, app.template_file_path, preserve_order=True)
+        # Add to recent projects
+        add_to_recent_projects(app, project_name, project_path)
+        
+        # Update recent projects menu
+        app.update_recent_menu()
+        
+        # Reset or clear project name for next project
+        if UI_FRAMEWORK == 'pyqt':
+            if hasattr(app, 'project_name_input'):
+                app.project_name_input.clear()
+        else:
+            if hasattr(app, 'project_name'):
+                app.project_name.set("")
+        
+        # Show path in status bar
+        app.show_status_message(f"Project created at: {project_path}")
     else:
-        app.show_status_message(result, message_type="error")
+        error_message = f"Failed to create project '{project_name}': {project_path}"
+        
+        if UI_FRAMEWORK == 'pyqt':
+            # PyQt implementation
+            QMessageBox.critical(app, "Error", error_message)
+        else:
+            # Tkinter implementation
+            messagebox.showerror("Error", error_message)
+        
+        app.show_status_message(f"Error creating project: {project_path}", message_type="error")
 
 
 def handle_batch_create(app, project_names_text):
@@ -108,8 +172,15 @@ def handle_batch_create(app, project_names_text):
         app.show_status_message("No valid project names found", message_type="error")
         return
     
-    # Get the structure template
-    structure_name = app.structure_var.get()
+    # Get the structure template - handle PyQt vs Tkinter differently
+    structure_name = None
+    if hasattr(app, 'structure_combo'):
+        # PyQt implementation
+        structure_name = app.structure_combo.currentText()
+    elif hasattr(app, 'structure_var'):
+        # Tkinter implementation
+        structure_name = app.structure_var.get()
+        
     if structure_name == "Default":
         structure_name = None
     
@@ -147,6 +218,10 @@ def batch_creation_complete(app, results):
         app.show_status_message(f"{successes} projects created successfully", message_type="success")
     else:
         app.show_status_message(f"{successes} projects created, {failures} failed", message_type="warning")
+    
+    # Store the results for the main thread to handle later
+    if hasattr(app, 'batch_results'):
+        app.batch_results = results
 
 
 def add_to_recent_projects(app, project_name, project_path, max_recent=10):

@@ -32,6 +32,7 @@ DEFAULT_TEMPLATE_CATEGORIES = [
 # Project types
 PROJECT_TYPE_TO_STRUCTURE = {
     "Standard": "Basic",
+    "standard": "Basic",
     "Web": "Web Project",
     "Python": "Python App",
     "Node.js": "Node.js",

@@ -1,10 +1,23 @@
 #!/usr/bin/env python3
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
-import tkinter as tk
-from tkinter import ttk, BOTH, X, LEFT, RIGHT
-from app.ui.color_scheme import colors
-from app.ui.ui_components import SearchBox, TemplateCard
+import sys
+
+# Detect which UI framework is being used
+if 'PyQt5' in sys.modules:
+    # PyQt imports
+    from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout
+    from app.ui.color_scheme_pyqt import colors
+    from app.ui.ui_components_pyqt import SearchBox
+    from app.templates.template_card_pyqt import TemplateCard
+    UI_FRAMEWORK = 'pyqt'
+else:
+    # Tkinter imports
+    import tkinter as tk
+    from tkinter import ttk, BOTH, X, LEFT, RIGHT
+    from app.ui.color_scheme import colors
+    from app.ui.ui_components import SearchBox, TemplateCard
+    UI_FRAMEWORK = 'tkinter'
 
 def integrate_enhanced_templates(app):
     """

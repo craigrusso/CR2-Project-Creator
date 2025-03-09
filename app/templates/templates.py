@@ -4,14 +4,29 @@
 import os
 import platform
 import subprocess
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, simpledialog, StringVar, DISABLED, NORMAL
-from tkinter.constants import *
+import sys
+
+# Detect which UI framework is being used
+if 'PyQt5' in sys.modules:
+    from PyQt5.QtWidgets import QFileDialog, QMessageBox, QInputDialog
+    from app.ui.color_scheme_pyqt import colors
+    UI_FRAMEWORK = 'pyqt'
+else:
+    import tkinter as tk
+    from tkinter import ttk, filedialog, messagebox, simpledialog, StringVar, DISABLED, NORMAL
+    from tkinter.constants import *
+    from app.ui.color_scheme import colors
+    UI_FRAMEWORK = 'tkinter'
+
 import json
 
-from app.ui.color_scheme import colors
 from app.utils.utils import load_config, save_config
-from app.ui.ui_components import TemplateDirectoryEditor, StructureEditor
+
+# Import appropriate UI components based on framework
+if UI_FRAMEWORK == 'pyqt':
+    from app.ui.ui_components_pyqt import TemplateDirectoryEditor, StructureEditor
+else:
+    from app.ui.ui_components import TemplateDirectoryEditor, StructureEditor
 
 
 def populate_template_gallery(app):

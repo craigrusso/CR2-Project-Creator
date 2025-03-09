@@ -1,6 +1,6 @@
 # Project Creator Tool
 
-A tool for creating project structures from templates.
+A tool for creating project structures from templates. Available in both Tkinter and PyQt versions.
 
 ## Features
 
@@ -10,6 +10,16 @@ A tool for creating project structures from templates.
 - Batch creation of multiple projects
 - Recent projects and templates tracking
 - Template categorization and filtering
+- Modern UI with PyQt option (space-efficient dropdown menus)
+- Drag and drop functionality for templates and folders
+- Cross-platform compatibility (Windows, macOS, Linux)
+
+## Recent Updates (March 2025)
+
+- Added batch project creation to PyQt version
+- Converted categories UI from horizontal scrolling to dropdown menu
+- Improved UI space utilization and layout
+- Enhanced thread safety for batch operations
 
 ## Project Structure
 
@@ -19,6 +29,7 @@ The project is organized into the following directories:
   - `core/` - Core application functionality
     - `app.py` - Main application class
     - `app_module.py` - Application module
+    - `app_module_pyqt.py` - PyQt application module
     - `app_config.py` - Configuration settings
     - `app_initialization.py` - Initialization code
     - `project_builder.py` - Project creation logic
@@ -31,6 +42,7 @@ The project is organized into the following directories:
     - `enhanced_template_card.py` - Template card UI component
     - `template_category_manager.py` - Category management
     - `template_gallery_ui.py` - Template gallery UI
+    - `template_gallery_ui_pyqt.py` - PyQt template gallery UI
     - `template_folder_card.py` - Folder card UI component
     - `add_template_canvas.py` - Template canvas
     - `import_template.py` - Template import functionality
@@ -85,7 +97,24 @@ For the enhanced version:
 
 ```
 python enhance_app.py
-``` 
+```
+
+### Switching between Tkinter and PyQt versions
+
+The application offers both Tkinter and PyQt implementations. You can switch between them using the provided script:
+
+```
+python switch_version.py tkinter   # Switch to Tkinter version
+python switch_version.py pyqt      # Switch to PyQt version
+```
+
+Or run without arguments for an interactive menu:
+
+```
+python switch_version.py
+```
+
+This will backup your current main.py file and replace it with the appropriate version.
 
 ## License
 

@@ -5,11 +5,22 @@ import os
 import json
 import datetime
 import shutil
-from tkinter import filedialog, messagebox, simpledialog
+import sys
+
+# Detect which UI framework is being used
+if 'PyQt5' in sys.modules:
+    from PyQt5.QtWidgets import QFileDialog, QMessageBox, QInputDialog
+    from app.ui.ui_components_pyqt import ScrollableFrame
+    from app.templates.template_card_pyqt import TemplateCard
+    UI_FRAMEWORK = 'pyqt'
+else:
+    from tkinter import filedialog, messagebox, simpledialog
+    import tkinter as tk
+    from app.ui.ui_components import ScrollableFrame, TemplateCard
+    UI_FRAMEWORK = 'tkinter'
+
 from app.constants import DEFAULT_STRUCTURES, PROJECT_TYPE_TO_STRUCTURE, DEFAULT_TEMPLATE_CATEGORIES
 from app.utils.utils import load_json_file, save_json_file, get_config_paths
-from app.ui.ui_components import ScrollableFrame, TemplateCard
-import tkinter as tk
 
 class TemplateManager:
     """
@@ -104,7 +115,12 @@ class TemplateManager:
     
     def get_default_structure(self, project_type):
         """Get the default directory structure for a project type"""
-        structure_key = PROJECT_TYPE_TO_STRUCTURE.get(project_type, "standard")
+        structure_key = PROJECT_TYPE_TO_STRUCTURE.get(project_type, "Basic")
+        
+        # If structure_key is not in DEFAULT_STRUCTURES, use "Basic" as fallback
+        if structure_key not in DEFAULT_STRUCTURES:
+            structure_key = "Basic"
+        
         return DEFAULT_STRUCTURES[structure_key]
     
     def get_structure(self, name_or_type):
@@ -142,6 +158,23 @@ class TemplateManager:
     def get_all_templates(self):
         """Get all templates (both file and directory-based)"""
         return self.templates + self.template_directories
+    
+    def get_template_by_name(self, template_name):
+        """Get a template by its name"""
+        if not template_name:
+            return None
+            
+        # Look in file templates
+        for template in self.templates:
+            if template.get('name') == template_name:
+                return template
+                
+        # Look in directory templates
+        for template in self.template_directories:
+            if template.get('name') == template_name:
+                return template
+                
+        return None
     
     def create_template_directory(self, name, category, source_dir, description=""):
         """Create a template directory from a source directory"""
@@ -648,14 +681,14 @@ class TemplateManager:
         """Delete a template"""
         template_to_delete = None
         for template in self.templates:
-            if template["name"] == template_name:
+            if template.get("name", "") == template_name:
                 template_to_delete = template
                 break
         
         if not template_to_delete:
             # Check if it's a directory template
             for template in self.template_directories:
-                if template["name"] == template_name:
+                if template.get("name", "") == template_name:
                     return self.delete_template_directory(template)
             return False
         
@@ -903,14 +936,14 @@ class TemplateManager:
         # Find the template to verify it exists
         template = None
         for t in self.templates:
-            if t["name"] == template_name:
+            if t.get("name", "") == template_name:
                 template = t
                 break
                 
         # Also check directory templates
         if not template:
             for t in self.template_directories:
-                if t["name"] == template_name:
+                if t.get("name", "") == template_name:
                     template = t
                     break
         
@@ -944,22 +977,35 @@ class TemplateManager:
         # Get template names in the folder
         template_names = self.folders[folder_name]
         
-        # Find the actual template objects
+        # Get template objects
         templates = []
         for name in template_names:
-            # Check regular templates
             for template in self.templates:
-                if template["name"] == name:
+                if template.get("name", "") == name:
                     templates.append(template)
                     break
                     
             # Also check directory templates
             for template in self.template_directories:
-                if template["name"] == name:
+                if template.get("name", "") == name:
                     templates.append(template)
                     break
         
         return templates
+    
+    def get_templates_in_folder(self, folder_name):
+        """Get templates in a specific folder (or root if None)"""
+        if folder_name is None:
+            # Return templates not in any folder
+            all_template_names = []
+            for folder, names in self.folders.items():
+                all_template_names.extend(names)
+                
+            # Filter templates not in any folder
+            return [t for t in self.templates if t.get("name", "") not in all_template_names]
+        else:
+            # Return templates in the specified folder
+            return self.get_folder_templates(folder_name)
     
     def update_ui_folder_dropdown(self, app):
         """Update the folder dropdown in the UI to match current folders"""
