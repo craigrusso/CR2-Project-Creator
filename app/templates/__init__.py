@@ -4,7 +4,7 @@
 Template management modules
 """
 
-# Import key template modules
+# Import key template modules - PyQt version
 from app.templates.template_manager import TemplateManager
 from app.templates.templates import (
     populate_template_gallery,
@@ -18,4 +18,4 @@ from app.templates.templates import (
 # Migration helper for upgrade path
 from app.templates.template_manager_migration import TemplateManagerMigration
 from app.templates.template_category_manager import TemplateCategoryManager
-from app.templates.template_folder_card import TemplateFolderCard
+from app.templates.template_card_pyqt import TemplateCard

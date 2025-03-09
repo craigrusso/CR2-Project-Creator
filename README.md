@@ -1,6 +1,6 @@
 # Project Creator Tool
 
-A tool for creating project structures from templates. Available in both Tkinter and PyQt versions.
+A modern project creation tool built with PyQt5 for creating project structures from templates.
 
 ## Features
 
@@ -99,22 +99,13 @@ For the enhanced version:
 python enhance_app.py
 ```
 
-### Switching between Tkinter and PyQt versions
+### PyQt Implementation
 
-The application offers both Tkinter and PyQt implementations. You can switch between them using the provided script:
+This application is built using PyQt5, which provides a modern, cross-platform user interface with advanced features:
 
-```
-python switch_version.py tkinter   # Switch to Tkinter version
-python switch_version.py pyqt      # Switch to PyQt version
-```
-
-Or run without arguments for an interactive menu:
-
-```
-python switch_version.py
-```
-
-This will backup your current main.py file and replace it with the appropriate version.
+1. **Modern Look and Feel**: PyQt offers a more polished and professional appearance.
+2. **Cross-Platform Consistency**: The application looks and behaves consistently across Windows, macOS, and Linux.
+3. **Advanced Widgets**: PyQt provides a rich set of widgets and controls for a better user experience.
 
 ## License
 

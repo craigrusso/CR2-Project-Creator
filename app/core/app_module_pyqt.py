@@ -6,7 +6,8 @@ import platform
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                            QLabel, QPushButton, QComboBox, QLineEdit, 
                            QFileDialog, QMessageBox, QAction, QMenu, 
-                           QStatusBar, QFrame, QSplitter, QScrollArea, QSizePolicy)
+                           QStatusBar, QFrame, QSplitter, QScrollArea, QSizePolicy,
+                           QApplication)
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize
 from PyQt5.QtGui import QIcon, QFont
 
@@ -56,9 +57,9 @@ class ProjectCreatorApp(QMainWindow):
         # Set window properties
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
         
-        # Match the tkinter window size
-        self.setMinimumSize(900, 780)
-        self.setGeometry(300, 100, 1080, 800)  # Initial size that fits all elements comfortably
+        # Set window size and position
+        self.resize(1200, 800)
+        self.center_window()
         
         # Set up app icon
         self.set_app_icon()
@@ -238,6 +239,13 @@ class ProjectCreatorApp(QMainWindow):
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
             
+    def center_window(self):
+        """Center the window on the screen"""
+        qr = self.frameGeometry()
+        cp = QApplication.desktop().availableGeometry().center()
+        qr.moveCenter(cp)
+        self.move(qr.topLeft())
+    
     def create_menu(self):
         """Create application menus"""
         menubar = self.menuBar()

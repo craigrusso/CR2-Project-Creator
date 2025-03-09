@@ -11,17 +11,10 @@ import time
 import threading
 import shutil
 
-# Detect which UI framework is being used
-if 'PyQt5' in sys.modules:
-    from PyQt5.QtWidgets import QMessageBox
-    from app.ui.color_scheme_pyqt import colors
-    UI_FRAMEWORK = 'pyqt'
-else:
-    import tkinter as tk
-    from tkinter import ttk, messagebox, BOTH, X, LEFT, RIGHT
-    from tkinter.constants import *
-    from app.ui.color_scheme import colors
-    UI_FRAMEWORK = 'tkinter'
+# Using PyQt for the UI framework
+from PyQt5.QtWidgets import QMessageBox
+from app.ui.color_scheme_pyqt import colors
+UI_FRAMEWORK = 'pyqt'
 
 from app.utils.utils import (
     open_folder, open_in_explorer, parse_project_names, 
@@ -33,12 +26,7 @@ from app.utils.utils import (
 def create_project(app):
     """Create a new project from the current settings"""
     # Validate project name
-    if UI_FRAMEWORK == 'pyqt':
-        # PyQt implementation
-        project_name_val = app.project_name_input.text().strip() if hasattr(app, 'project_name_input') else ""
-    else:
-        # Tkinter implementation
-        project_name_val = app.project_name.get().strip() if hasattr(app, 'project_name') else ""
+    project_name_val = app.project_name_input.text().strip() if hasattr(app, 'project_name_input') else ""
     
     if not project_name_val:
         app.show_status_message("Please enter a project name", message_type="error")
@@ -98,15 +86,9 @@ def create_project(app):
     )
     
     if result:
-        # Success message
+        # Show success message
         success_message = f"Project '{project_name}' created successfully at\n{output_dir}"
-        
-        if UI_FRAMEWORK == 'pyqt':
-            # PyQt implementation
-            QMessageBox.information(app, "Success", success_message)
-        else:
-            # Tkinter implementation
-            messagebox.showinfo("Success", success_message)
+        QMessageBox.information(app, "Success", success_message)
         
         # Add to recent projects
         add_to_recent_projects(app, project_name, project_path)
@@ -115,33 +97,25 @@ def create_project(app):
         app.update_recent_menu()
         
         # Reset or clear project name for next project
-        if UI_FRAMEWORK == 'pyqt':
-            if hasattr(app, 'project_name_input'):
-                app.project_name_input.clear()
-        else:
-            if hasattr(app, 'project_name'):
-                app.project_name.set("")
+        if hasattr(app, 'project_name_input'):
+            app.project_name_input.clear()
         
         # Show path in status bar
         app.show_status_message(f"Project created at: {project_path}")
     else:
         error_message = f"Failed to create project '{project_name}': {project_path}"
-        
-        if UI_FRAMEWORK == 'pyqt':
-            # PyQt implementation
-            QMessageBox.critical(app, "Error", error_message)
-        else:
-            # Tkinter implementation
-            messagebox.showerror("Error", error_message)
-        
+        QMessageBox.critical(app, "Error", error_message)
         app.show_status_message(f"Error creating project: {project_path}", message_type="error")
 
 
 def handle_batch_create(app, project_names_text):
-    """Process batch creation of projects"""
+    """Handle batch project creation"""
+    # Get project names from text
+    project_names = parse_project_names(project_names_text)
+    
     # Validate inputs
-    if not project_names_text.strip():
-        app.show_status_message("Please enter at least one project name", message_type="error")
+    if not project_names:
+        app.show_status_message("No valid project names found", message_type="error")
         return
     
     # Validate that a template file is selected
@@ -164,23 +138,8 @@ def handle_batch_create(app, project_names_text):
             app.show_status_message("Please select an output location", message_type="error")
             return
     
-    # Split project names by newline, comma, or semicolon
-    project_names = re.split(r'[\n,;]+', project_names_text)
-    project_names = [name.strip() for name in project_names if name.strip()]
-    
-    if not project_names:
-        app.show_status_message("No valid project names found", message_type="error")
-        return
-    
-    # Get the structure template - handle PyQt vs Tkinter differently
-    structure_name = None
-    if hasattr(app, 'structure_combo'):
-        # PyQt implementation
-        structure_name = app.structure_combo.currentText()
-    elif hasattr(app, 'structure_var'):
-        # Tkinter implementation
-        structure_name = app.structure_var.get()
-        
+    # Get the structure template
+    structure_name = get_structure_template(app)
     if structure_name == "Default":
         structure_name = None
     
@@ -199,7 +158,10 @@ def handle_batch_create(app, project_names_text):
 
 
 def batch_creation_complete(app, results):
-    """Handle the completion of batch project creation"""
+    """Handle batch creation completion"""
+    # Store results for display
+    app.batch_results = results
+    
     # Count successes and failures
     successes = sum(1 for _, success, _ in results if success)
     failures = len(results) - successes
@@ -218,14 +180,13 @@ def batch_creation_complete(app, results):
         app.show_status_message(f"{successes} projects created successfully", message_type="success")
     else:
         app.show_status_message(f"{successes} projects created, {failures} failed", message_type="warning")
-    
-    # Store the results for the main thread to handle later
-    if hasattr(app, 'batch_results'):
-        app.batch_results = results
 
 
 def add_to_recent_projects(app, project_name, project_path, max_recent=10):
     """Add a project to the recent projects list"""
+    # Load recent projects
+    recent_projects = load_recent_projects()
+    
     # Create new project entry
     project = {
         'name': project_name,
@@ -478,3 +439,10 @@ def update_card_highlighting(card, template_path):
         # Reset remove button if it exists
         if hasattr(card, 'remove_btn'):
             card.remove_btn.configure(bg=colors["bg"], fg="white")
+
+
+def get_structure_template(app):
+    """Get the selected structure template"""
+    # Get the structure template
+    structure_name = app.structure_combo.currentText() if hasattr(app, 'structure_combo') else "Default"
+    return structure_name

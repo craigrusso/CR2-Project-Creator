@@ -7,17 +7,11 @@ import datetime
 import shutil
 import sys
 
-# Detect which UI framework is being used
-if 'PyQt5' in sys.modules:
-    from PyQt5.QtWidgets import QFileDialog, QMessageBox, QInputDialog
-    from app.ui.ui_components_pyqt import ScrollableFrame
-    from app.templates.template_card_pyqt import TemplateCard
-    UI_FRAMEWORK = 'pyqt'
-else:
-    from tkinter import filedialog, messagebox, simpledialog
-    import tkinter as tk
-    from app.ui.ui_components import ScrollableFrame, TemplateCard
-    UI_FRAMEWORK = 'tkinter'
+# Using PyQt for the UI framework
+from PyQt5.QtWidgets import QFileDialog, QMessageBox, QInputDialog
+from app.ui.ui_components_pyqt import ScrollableFrame
+from app.templates.template_card_pyqt import TemplateCard
+UI_FRAMEWORK = 'pyqt'
 
 from app.constants import DEFAULT_STRUCTURES, PROJECT_TYPE_TO_STRUCTURE, DEFAULT_TEMPLATE_CATEGORIES
 from app.utils.utils import load_json_file, save_json_file, get_config_paths
@@ -280,65 +274,61 @@ class TemplateManager:
     def create_template_card(self, parent, template, select_callback=None, **kwargs):
         """Create a card for a template"""
         # Create frame with rounded corners
-        card = tk.Frame(parent, bg=colors["card_bg"], bd=0, **kwargs)
+        card = QFrame(parent, bg=colors["card_bg"], bd=0, **kwargs)
         card.template = template
         
         # Configure rounded corners using border styling
-        card.configure(
-            highlightbackground=colors["card_bg"],  # Match background in default state
-            highlightthickness=1,
-            highlightcolor=colors["card_bg"]  # Match background in default state
-        )
+        card.setStyleSheet(f"background-color: {colors['card_bg']}; border: 1px solid {colors['card_bg']};")
         
         # Make entire card clickable
         if select_callback:
-            card.bind("<Button-1>", lambda e: select_callback(template))
+            card.mousePressEvent = lambda e: select_callback(template)
             
             # Add hover effects
-            card.bind("<Enter>", lambda e, c=card: self._on_card_hover_enter(c))
-            card.bind("<Leave>", lambda e, c=card: self._on_card_hover_leave(c))
+            card.enterEvent = lambda e: self._on_card_hover_enter(card)
+            card.leaveEvent = lambda e: self._on_card_hover_leave(card)
         
         # Icon - use emoji for simplicity
         icon = template.get("icon", "📂")
-        card.icon_label = tk.Label(card, text=icon, font=("Segoe UI", 24),
+        icon_label = QLabel(card, text=icon, font=("Segoe UI", 24),
                                bg=colors["card_bg"], fg=colors["text"])
-        card.icon_label.pack(side=tk.LEFT, padx=10, pady=10)
+        icon_label.pack(side=Qt.LeftToRight, padx=10, pady=10)
         
         # Make icon clickable too
         if select_callback:
-            card.icon_label.bind("<Button-1>", lambda e: select_callback(template))
-            card.icon_label.bind("<Enter>", lambda e, c=card: self._on_card_hover_enter(c))
-            card.icon_label.bind("<Leave>", lambda e, c=card: self._on_card_hover_leave(c))
+            icon_label.mousePressEvent = lambda e: select_callback(template)
+            icon_label.enterEvent = lambda e: self._on_card_hover_enter(card)
+            icon_label.leaveEvent = lambda e: self._on_card_hover_leave(card)
         
         # Info section
-        card.info_frame = tk.Frame(card, bg=colors["card_bg"])
-        card.info_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=10)
+        info_frame = QFrame(card, bg=colors["card_bg"])
+        info_frame.pack(side=Qt.LeftToRight, fill=Qt.Expanding, expand=True, pady=10)
         
         # Name
-        card.name_label = tk.Label(card.info_frame, text=template.get("name", "Unnamed Template"), 
+        name_label = QLabel(info_frame, text=template.get("name", "Unnamed Template"), 
                                font=("Segoe UI", 11, "bold"),
                                bg=colors["card_bg"], fg=colors["text"], anchor="w")
-        card.name_label.pack(fill=tk.X)
+        name_label.pack(fill=Qt.Expanding)
         
         # Category
-        card.category_label = tk.Label(card.info_frame, text=template.get("category", "Custom"), 
+        category_label = QLabel(info_frame, text=template.get("category", "Custom"), 
                                    font=("Segoe UI", 9),
                                    bg=colors["card_bg"], fg=colors["secondary_text"], anchor="w")
-        card.category_label.pack(fill=tk.X)
+        category_label.pack(fill=Qt.Expanding)
         
         # Description
-        card.desc_label = tk.Label(card.info_frame, text=template.get("description", ""), 
+        desc_label = QLabel(info_frame, text=template.get("description", ""), 
                                font=("Segoe UI", 9),
                                bg=colors["card_bg"], fg=colors["text"], 
-                               anchor="w", justify=tk.LEFT, wraplength=350)
-        card.desc_label.pack(fill=tk.X)
+                               anchor="w", justify=Qt.Left, wrapLength=350)
+        desc_label.pack(fill=Qt.Expanding)
         
         # Make all labels clickable
         if select_callback:
-            for label in [card.name_label, card.category_label, card.desc_label]:
-                label.bind("<Button-1>", lambda e: select_callback(template))
-                label.bind("<Enter>", lambda e, c=card: self._on_card_hover_enter(c))
-                label.bind("<Leave>", lambda e, c=card: self._on_card_hover_leave(c))
+            for label in [name_label, category_label, desc_label]:
+                label.mousePressEvent = lambda e: select_callback(template)
+                label.enterEvent = lambda e: self._on_card_hover_enter(card)
+                label.leaveEvent = lambda e: self._on_card_hover_leave(card)
         
         return card
         
@@ -352,16 +342,18 @@ class TemplateManager:
         hover_bg = "#303030"  # Slightly lighter than card_bg
         
         # Update the card and all its children - border should match background (no blue outline)
-        card.configure(bg=hover_bg, highlightbackground=hover_bg)
-        card.icon_label.configure(bg=hover_bg)
-        card.info_frame.configure(bg=hover_bg)
+        card.setStyleSheet(f"background-color: {hover_bg}; border: 1px solid {hover_bg};")
+        icon_label = card.findChild(QLabel, "icon_label")
+        icon_label.setStyleSheet(f"background-color: {hover_bg};")
+        info_frame = card.findChild(QFrame, "info_frame")
+        info_frame.setStyleSheet(f"background-color: {hover_bg};")
         
         # Update all info frame widgets
-        for widget in card.info_frame.winfo_children():
-            widget.configure(bg=hover_bg)
+        for widget in info_frame.findChildren(QLabel):
+            widget.setStyleSheet(f"background-color: {hover_bg};")
         
         # Set cursor
-        card.configure(cursor="hand2")
+        card.setCursor(Qt.PointingHandCursor)
     
     def _on_card_hover_leave(self, card):
         """Handle hover leave for template card"""
@@ -370,21 +362,22 @@ class TemplateManager:
             return
             
         # Reset to card background
-        card.configure(
-            bg=colors["card_bg"], 
-            highlightbackground=colors["card_bg"],  # Match background in default state
-            highlightthickness=1
-        )
-        card.icon_label.configure(bg=colors["card_bg"])
-        card.info_frame.configure(bg=colors["card_bg"])
+        card.setStyleSheet(f"background-color: {colors['card_bg']}; border: 1px solid {colors['card_bg']};")
+        icon_label = card.findChild(QLabel, "icon_label")
+        icon_label.setStyleSheet(f"background-color: {colors['card_bg']};")
+        info_frame = card.findChild(QFrame, "info_frame")
+        info_frame.setStyleSheet(f"background-color: {colors['card_bg']};")
         
         # Reset all info frame widgets with appropriate colors
-        card.name_label.configure(bg=colors["card_bg"], fg=colors["text"])
-        card.category_label.configure(bg=colors["card_bg"], fg=colors["secondary_text"])
-        card.desc_label.configure(bg=colors["card_bg"], fg=colors["text"])
+        name_label = info_frame.findChild(QLabel, "name_label")
+        name_label.setStyleSheet(f"background-color: {colors['card_bg']}; color: {colors['text']};")
+        category_label = info_frame.findChild(QLabel, "category_label")
+        category_label.setStyleSheet(f"background-color: {colors['card_bg']}; color: {colors['secondary_text']};")
+        desc_label = info_frame.findChild(QLabel, "desc_label")
+        desc_label.setStyleSheet(f"background-color: {colors['card_bg']}; color: {colors['text']};")
         
         # Reset cursor
-        card.configure(cursor="")
+        card.setCursor(Qt.ArrowCursor)
     
     def delete_custom_structure(self, name):
         """Delete a custom folder structure"""
@@ -442,54 +435,57 @@ class TemplateManager:
     
     def save_template_ui(self, app):
         """Show UI for saving a template"""
-        from tkinter import Toplevel, Frame, Label, Entry, Button, OptionMenu, StringVar
+        from PyQt5.QtWidgets import QDialog, QFrame, QLabel, QLineEdit, QPushButton, QOptionMenu, QStringVar
         
         if not app.template_file_path:
-            messagebox.showerror("Error", "Please select a template file first")
+            QMessageBox.warning(app, "Warning", "Please select a template file first")
             return
             
-        if not app.project_name.get().strip():
-            messagebox.showerror("Error", "Please enter a project name to use as template name")
+        if not app.project_name.text().strip():
+            QMessageBox.warning(app, "Warning", "Please enter a project name to use as template name")
             return
         
         # Create dialog
-        dialog = Toplevel(app.root)
-        dialog.title("Save as Template")
-        dialog.geometry("400x300")
-        dialog.transient(app.root)
-        dialog.grab_set()
+        dialog = QDialog(app)
+        dialog.setWindowTitle("Save as Template")
+        dialog.setGeometry(400, 300, 400, 300)
+        dialog.setModal(True)
+        dialog.exec_()
         
-        frame = Frame(dialog, padx=20, pady=20)
-        frame.pack(fill="both", expand=True)
+        frame = QFrame(dialog, padx=20, pady=20)
+        frame.pack(fill=Qt.Expanding, expand=True)
         
         # Template name
-        Label(frame, text="Template Name:", anchor="w").pack(fill="x", pady=(0, 5))
+        name_label = QLabel(frame, text="Template Name:", alignment=Qt.AlignLeft)
+        name_label.pack(fill=Qt.Expanding, pady=(0, 5))
         
-        name_var = StringVar(value=app.project_name.get().strip())
-        name_entry = Entry(frame, textvariable=name_var)
-        name_entry.pack(fill="x", pady=(0, 15))
+        name_var = QStringVar(value=app.project_name.text().strip())
+        name_entry = QLineEdit(frame, textvariable=name_var)
+        name_entry.pack(fill=Qt.Expanding, pady=(0, 15))
         
         # Category
-        Label(frame, text="Template Category:", anchor="w").pack(fill="x", pady=(0, 5))
+        category_label = QLabel(frame, text="Template Category:", alignment=Qt.AlignLeft)
+        category_label.pack(fill=Qt.Expanding, pady=(0, 5))
         
         categories = self.get_categories()
         if not categories:
             categories = ["Video Editing", "Motion Graphics", "Design", "Audio", "Custom"]
             
-        category_var = StringVar(value="Standard")
-        category_menu = OptionMenu(frame, category_var, *categories)
-        category_menu.pack(fill="x", pady=(0, 15))
+        category_var = QStringVar(value="Standard")
+        category_menu = QOptionMenu(frame, category_var, *categories)
+        category_menu.pack(fill=Qt.Expanding, pady=(0, 15))
         
         # Description
-        Label(frame, text="Description (optional):", anchor="w").pack(fill="x", pady=(0, 5))
+        desc_label = QLabel(frame, text="Description (optional):", alignment=Qt.AlignLeft)
+        desc_label.pack(fill=Qt.Expanding, pady=(0, 5))
         
-        desc_var = StringVar()
-        desc_entry = Entry(frame, textvariable=desc_var)
-        desc_entry.pack(fill="x", pady=(0, 20))
+        desc_var = QStringVar()
+        desc_entry = QLineEdit(frame, textvariable=desc_var)
+        desc_entry.pack(fill=Qt.Expanding, pady=(0, 20))
         
         # Buttons
-        button_frame = Frame(frame)
-        button_frame.pack(fill="x")
+        button_frame = QFrame(frame)
+        button_frame.pack(fill=Qt.Expanding)
         
         def save_template():
             name = name_var.get().strip()
@@ -497,7 +493,7 @@ class TemplateManager:
             description = desc_var.get().strip()
             
             if not name:
-                messagebox.showerror("Error", "Template name is required")
+                QMessageBox.warning(app, "Warning", "Template name is required")
                 return
                 
             # Save template
@@ -510,36 +506,33 @@ class TemplateManager:
             )
             
             if success:
-                messagebox.showinfo("Success", f"Template '{name}' saved successfully")
-                dialog.destroy()
+                QMessageBox.information(app, "Success", f"Template '{name}' saved successfully")
+                dialog.accept()
                 
                 # Refresh template gallery
                 from app.templates.templates import populate_template_gallery
                 populate_template_gallery(app)
             else:
-                messagebox.showerror("Error", f"Failed to save template '{name}'")
+                QMessageBox.warning(app, "Warning", f"Failed to save template '{name}'")
         
-        Button(button_frame, text="Cancel", command=dialog.destroy).pack(side="left")
-        Button(button_frame, text="Save", command=save_template).pack(side="right")
+        cancel_button = QPushButton(button_frame, text="Cancel", clicked=dialog.reject)
+        cancel_button.pack(side=Qt.Left, padx=(0, 5))
+        save_button = QPushButton(button_frame, text="Save", clicked=save_template)
+        save_button.pack(side=Qt.Right)
         
         # Set focus to name entry
-        name_entry.focus_set()
+        name_entry.setFocus()
     
     def import_template_ui(self, app):
         """Show UI for importing a template"""
-        from tkinter import filedialog, simpledialog, messagebox
+        from PyQt5.QtWidgets import QFileDialog, QMessageBox, QInputDialog
         
         # Open file dialog
-        file_path = filedialog.askopenfilename(
-            title="Select Template File",
-            filetypes=[
-                ("Project Files", "*.prproj;*.aep;*.aepx;*.psd;*.ai"),
-                ("Adobe Premiere", "*.prproj"),
-                ("After Effects", "*.aep;*.aepx"),
-                ("Photoshop", "*.psd"),
-                ("Illustrator", "*.ai"),
-                ("All Files", "*.*")
-            ]
+        file_path, _ = QFileDialog.getOpenFileName(
+            app,
+            "Select Template File",
+            "",
+            "Project Files (*.prproj;*.aep;*.aepx;*.psd;*.ai);;Adobe Premiere (*.prproj);;After Effects (*.aep;*.aepx);;Photoshop (*.psd);;Illustrator (*.ai);;All Files (*.*)"
         )
         
         if not file_path:
@@ -550,9 +543,7 @@ class TemplateManager:
         name, _ = os.path.splitext(filename)
         
         # Show dialog to confirm name and category
-        template_name = simpledialog.askstring("Import Template", 
-                                             "Template name:", 
-                                             initialvalue=name)
+        template_name = QInputDialog.getText(app, "Import Template", "Template name:", text=name)
         
         if not template_name:
             return
@@ -561,100 +552,99 @@ class TemplateManager:
         success = self.import_template_file(file_path, template_name)
         
         if success:
-            messagebox.showinfo("Success", f"Template '{template_name}' imported successfully")
+            QMessageBox.information(app, "Success", f"Template '{template_name}' imported successfully")
             
             # Refresh template gallery
             from app.templates.templates import populate_template_gallery
             populate_template_gallery(app)
         else:
-            messagebox.showerror("Error", f"Failed to import template '{template_name}'")
+            QMessageBox.warning(app, "Warning", f"Failed to import template '{template_name}'")
     
     def manage_templates_ui(self, app):
         """Show UI for managing templates"""
-        from tkinter import Toplevel, Frame, Label, Listbox, Button, Scrollbar, END
+        from PyQt5.QtWidgets import QDialog, QFrame, QLabel, QListWidget, QPushButton, QScrollBar, QListWidgetItem
         
         # Create dialog
-        dialog = Toplevel(app.root)
-        dialog.title("Manage Templates")
-        dialog.geometry("500x400")
-        dialog.transient(app.root)
-        dialog.grab_set()
+        dialog = QDialog(app)
+        dialog.setWindowTitle("Manage Templates")
+        dialog.setGeometry(500, 400, 500, 400)
+        dialog.setModal(True)
+        dialog.exec_()
         
-        frame = Frame(dialog, padx=20, pady=20)
-        frame.pack(fill="both", expand=True)
+        frame = QFrame(dialog, padx=20, pady=20)
+        frame.pack(fill=Qt.Expanding, expand=True)
         
-        Label(frame, text="Templates", font=("Segoe UI", 14, "bold")).pack(anchor="w", pady=(0, 15))
+        Label(frame, text="Templates", font=("Segoe UI", 14, "bold")).pack(anchor=Qt.AlignLeft, pady=(0, 15))
         
         # List with scrollbar
-        list_frame = Frame(frame)
-        list_frame.pack(fill="both", expand=True, pady=(0, 15))
+        list_frame = QFrame(frame)
+        list_frame.pack(fill=Qt.Expanding, expand=True, pady=(0, 15))
         
-        scrollbar = Scrollbar(list_frame)
-        scrollbar.pack(side="right", fill="y")
+        scrollbar = QScrollBar(list_frame)
+        scrollbar.setOrientation(Qt.Vertical)
+        scrollbar.pack(side=Qt.Right, fill=Qt.Expanding)
         
-        template_listbox = Listbox(list_frame, yscrollcommand=scrollbar.set, font=("Segoe UI", 10))
-        template_listbox.pack(side="left", fill="both", expand=True)
-        scrollbar.config(command=template_listbox.yview)
-        
-        # Populate list
-        templates = self.templates
-        for template in templates:
-            template_listbox.insert(END, f"{template['name']} ({template['category']})")
+        template_listbox = QListWidget(list_frame)
+        template_listbox.setViewMode(QListWidget.IconMode)
+        template_listbox.setIconSize(QSize(64, 64))
+        template_listbox.setResizeMode(QListWidget.Adjust)
+        template_listbox.setGridSize(QSize(128, 128))
+        template_listbox.itemClicked.connect(lambda: delete_template())
+        template_listbox.itemDoubleClicked.connect(lambda: rename_template())
+        template_listbox.addItems([f"{template['name']} ({template['category']})" for template in self.templates])
+        template_listbox.addItems([f"{template['name']} ({template['category']})" for template in self.template_directories])
         
         # Button frame
-        button_frame = Frame(frame)
-        button_frame.pack(fill="x")
+        button_frame = QFrame(frame)
+        button_frame.pack(fill=Qt.Expanding)
         
         def delete_template():
-            selected = template_listbox.curselection()
+            selected = template_listbox.selectedIndexes()
             if not selected:
-                messagebox.showerror("Error", "Please select a template to delete")
+                QMessageBox.warning(app, "Warning", "Please select a template to delete")
                 return
                 
-            index = selected[0]
-            if index < 0 or index >= len(templates):
+            index = selected[0].row()
+            if index < 0 or index >= len(self.templates) + len(self.template_directories):
                 return
                 
-            template = templates[index]
+            template = self.templates[index] if index < len(self.templates) else self.template_directories[index - len(self.templates)]
             template_name = template["name"]
             
             # Confirm deletion
-            confirm = messagebox.askyesno("Confirm Deletion", 
-                                        f"Are you sure you want to delete the template '{template_name}'?")
-            if not confirm:
+            confirm = QMessageBox.question(app, "Confirm Deletion", 
+                                        f"Are you sure you want to delete the template '{template_name}'?", QMessageBox.Yes | QMessageBox.No)
+            if confirm == QMessageBox.No:
                 return
                 
             # Delete the template
             success = self.delete_template(template_name)
             
             if success:
-                messagebox.showinfo("Success", f"Template '{template_name}' deleted successfully")
-                template_listbox.delete(index)
+                QMessageBox.information(app, "Success", f"Template '{template_name}' deleted successfully")
+                template_listbox.takeItem(index)
                 
                 # Refresh template gallery
                 from app.templates.templates import populate_template_gallery
                 populate_template_gallery(app)
             else:
-                messagebox.showerror("Error", f"Failed to delete template '{template_name}'")
+                QMessageBox.warning(app, "Warning", f"Failed to delete template '{template_name}'")
         
         def rename_template():
-            selected = template_listbox.curselection()
+            selected = template_listbox.selectedIndexes()
             if not selected:
-                messagebox.showerror("Error", "Please select a template to rename")
+                QMessageBox.warning(app, "Warning", "Please select a template to rename")
                 return
                 
-            index = selected[0]
-            if index < 0 or index >= len(templates):
+            index = selected[0].row()
+            if index < 0 or index >= len(self.templates) + len(self.template_directories):
                 return
                 
-            template = templates[index]
+            template = self.templates[index] if index < len(self.templates) else self.template_directories[index - len(self.templates)]
             old_name = template["name"]
             
             # Get new name
-            from tkinter import simpledialog
-            new_name = simpledialog.askstring("Rename Template", 
-                                           "Enter new name:", 
-                                           initialvalue=old_name)
+            new_name = QInputDialog.getText(app, "Rename Template", "Enter new name:", text=old_name)
             
             if not new_name or new_name == old_name:
                 return
@@ -663,19 +653,19 @@ class TemplateManager:
             success = self.rename_template(old_name, new_name)
             
             if success:
-                messagebox.showinfo("Success", f"Template renamed to '{new_name}'")
-                template_listbox.delete(index)
-                template_listbox.insert(index, f"{new_name} ({template['category']})")
+                QMessageBox.information(app, "Success", f"Template renamed to '{new_name}'")
+                template_listbox.takeItem(index)
+                template_listbox.insertItem(index, QListWidgetItem(f"{new_name} ({template['category']})"))
                 
                 # Refresh template gallery
                 from app.templates.templates import populate_template_gallery
                 populate_template_gallery(app)
             else:
-                messagebox.showerror("Error", f"Failed to rename template")
+                QMessageBox.warning(app, "Warning", f"Failed to rename template")
         
-        Button(button_frame, text="Delete", command=delete_template).pack(side="left", padx=(0, 5))
-        Button(button_frame, text="Rename", command=rename_template).pack(side="left", padx=(0, 5))
-        Button(button_frame, text="Close", command=dialog.destroy).pack(side="right")
+        Button(button_frame, text="Delete", clicked=delete_template).pack(side=Qt.Left, padx=(0, 5))
+        Button(button_frame, text="Rename", clicked=rename_template).pack(side=Qt.Left, padx=(0, 5))
+        Button(button_frame, text="Close", clicked=dialog.accept).pack(side=Qt.Right)
     
     def delete_template(self, template_name):
         """Delete a template"""
@@ -1017,28 +1007,27 @@ class TemplateManager:
             folders = ["All"] + list(self.folders.keys())
             
             # Get the current selection
-            current_folder = app.folder_var.get()
+            current_folder = app.folder_var.currentText()
             
             # Update the dropdown menu
-            menu = app.folder_var["menu"]
-            menu.delete(0, "end")
+            menu = app.folder_var.model()
+            menu.clear()
             
             # Add 'All' option
-            menu.add_command(label="All", 
-                       command=lambda v="All": (app.folder_var.set(v), app.filter_templates()))
+            menu.addItem("All", "All")
             
             # Add each folder - use a function to create a proper closure to avoid lambda capture issues
             def create_command(folder_name):
-                return lambda: (app.folder_var.set(folder_name), app.filter_templates())
+                return lambda: (app.folder_var.setCurrentText(folder_name), app.filter_templates())
                 
             # Add each folder with proper command
             for folder in folders:
                 if folder != "All":
-                    menu.add_command(label=folder, command=create_command(folder))
+                    menu.addItem(folder, folder)
             
             # If the previously selected folder is no longer available, default to "All"
             if current_folder not in folders:
-                app.folder_var.set("All")
+                app.folder_var.setCurrentText("All")
                 
             return True
         except Exception as e:

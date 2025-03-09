@@ -9,15 +9,10 @@ import datetime
 import subprocess
 import sys
 
-# Detect which UI framework is being used
-if 'PyQt5' in sys.modules:
-    from PyQt5.QtWidgets import QMessageBox
-    from app.ui.color_scheme_pyqt import colors
-    UI_FRAMEWORK = 'pyqt'
-else:
-    from tkinter import messagebox
-    from app.ui.color_scheme import colors
-    UI_FRAMEWORK = 'tkinter'
+# Using PyQt for the UI framework
+from PyQt5.QtWidgets import QMessageBox
+from app.ui.color_scheme_pyqt import colors
+UI_FRAMEWORK = 'pyqt'
 
 from app.constants import RECENT_PROJECTS_MAX
 

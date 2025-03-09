@@ -5,8 +5,8 @@ import os
 import platform
 import json
 
-# Import colors from our centralized color scheme
-from app.ui.color_scheme import colors, APP_COLORS
+# Import colors from our centralized color scheme - PyQt version
+from app.ui.color_scheme_pyqt import colors, APP_COLORS
 from app.constants import APP_NAME, APP_VERSION, RECENT_PROJECTS_MAX, RECENT_TEMPLATES_MAX, DEFAULT_STRUCTURES, PROJECT_TYPE_TO_STRUCTURE, DEFAULT_TEMPLATE_CATEGORIES
 
 # App constants

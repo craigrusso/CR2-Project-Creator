@@ -7,117 +7,65 @@ import datetime
 import shutil
 import sys
 
-# Detect which UI framework is being used
-if 'PyQt5' in sys.modules:
-    from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar, QPushButton
-    from PyQt5.QtCore import Qt, QTimer
-    UI_FRAMEWORK = 'pyqt'
+# Using PyQt for the UI framework
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar, QPushButton
+from PyQt5.QtCore import Qt, QTimer
+UI_FRAMEWORK = 'pyqt'
+
+# Define PyQt version of progress window
+class BatchProgressWindowPyQt(QDialog):
+    """PyQt version of the batch progress window"""
     
-    # Define PyQt version of progress window here to avoid NameError
-    class BatchProgressWindowPyQt(QDialog):
-        """PyQt version of the batch progress window"""
+    def __init__(self, total_projects):
+        super().__init__()
+        self.total_projects = total_projects
+        self.results = None
         
-        def __init__(self, total_projects):
-            super().__init__()
-            self.total_projects = total_projects
-            self.results = None
-            
-            # Set window properties
-            self.setWindowTitle("Creating Projects")
-            self.setFixedSize(400, 150)
-            self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
-            
-            # Layout
-            layout = QVBoxLayout(self)
-            layout.setContentsMargins(20, 20, 20, 20)
-            
-            # Status label
-            self.status_label = QLabel("Preparing...")
-            layout.addWidget(self.status_label)
-            
-            # Progress bar
-            self.progress_bar = QProgressBar()
-            self.progress_bar.setMinimum(0)
-            self.progress_bar.setMaximum(total_projects)
-            self.progress_bar.setValue(0)
-            layout.addWidget(self.progress_bar)
-            
-            # Spacer
-            layout.addSpacing(10)
-            
-            # Cancel button (disabled for now since we don't have cancellation logic)
-            self.cancel_button = QPushButton("Cancel")
-            self.cancel_button.setEnabled(False)
-            layout.addWidget(self.cancel_button, alignment=Qt.AlignRight)
+        # Set window properties
+        self.setWindowTitle("Creating Projects")
+        self.setFixedSize(400, 150)
+        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         
-        def update_status(self, text):
-            """Update the status text"""
-            self.status_label.setText(text)
+        # Layout
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
         
-        def update_progress(self, current):
-            """Update the progress bar"""
-            self.progress_bar.setValue(current)
+        # Status label
+        self.status_label = QLabel("Preparing...")
+        layout.addWidget(self.status_label)
         
-        def set_results(self, results):
-            """Store the results for potential display"""
-            self.results = results
-            # Change status to complete
-            self.status_label.setText(f"Completed: {len(results)} projects processed")
-            self.progress_bar.setValue(self.total_projects)
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(total_projects)
+        self.progress_bar.setValue(0)
+        layout.addWidget(self.progress_bar)
+        
+        # Spacer
+        layout.addSpacing(10)
+        
+        # Cancel button (disabled for now since we don't have cancellation logic)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setEnabled(False)
+        layout.addWidget(self.cancel_button, alignment=Qt.AlignRight)
     
-    # Set the BatchProgressWindow class to use PyQt version
-    BatchProgressWindow = BatchProgressWindowPyQt
+    def update_status(self, text):
+        """Update the status text"""
+        self.status_label.setText(text)
     
-else:
-    from tkinter import Toplevel, Label, Frame, messagebox, ttk
-    UI_FRAMEWORK = 'tkinter'
+    def update_progress(self, current):
+        """Update the progress bar"""
+        self.progress_bar.setValue(current)
     
-    # Define Tkinter version of progress window
-    class BatchProgressWindow(Toplevel):
-        """Tkinter version of the batch progress window"""
-        
-        def __init__(self, total_projects):
-            super().__init__()
-            self.title("Creating Projects")
-            self.geometry("400x150")
-            self.resizable(False, False)
-            self.protocol("WM_DELETE_WINDOW", lambda: None)  # Prevent closing
-            
-            # Create a frame for the content
-            main_frame = Frame(self, padx=20, pady=20)
-            main_frame.pack(fill="both", expand=True)
-            
-            # Status label
-            self.status_var = Label(main_frame, text="Preparing...")
-            self.status_var.pack(anchor="w", pady=(0, 10))
-            
-            # Progress bar
-            self.progress = ttk.Progressbar(main_frame, orient="horizontal", length=360, mode="determinate")
-            self.progress["maximum"] = total_projects
-            self.progress["value"] = 0
-            self.progress.pack(fill="x", pady=(0, 10))
-            
-            # Cancel button (disabled for now)
-            self.cancel_btn = ttk.Button(main_frame, text="Cancel", state="disabled")
-            self.cancel_btn.pack(side="right")
-            
-            # Center the window
-            self.update_idletasks()
-            width = self.winfo_width()
-            height = self.winfo_height()
-            x = (self.winfo_screenwidth() // 2) - (width // 2)
-            y = (self.winfo_screenheight() // 2) - (height // 2)
-            self.geometry(f"+{x}+{y}")
-        
-        def update_status(self, text):
-            """Update the status text"""
-            self.status_var.config(text=text)
-            self.update_idletasks()
-        
-        def update_progress(self, current):
-            """Update the progress bar"""
-            self.progress["value"] = current
-            self.update_idletasks()
+    def set_results(self, results):
+        """Store the results for potential display"""
+        self.results = results
+        # Change status to complete
+        self.status_label.setText(f"Completed: {len(results)} projects processed")
+        self.progress_bar.setValue(self.total_projects)
+
+# Set the BatchProgressWindow class to use PyQt version
+BatchProgressWindow = BatchProgressWindowPyQt
 
 from app.utils.utils import add_to_recent_projects, create_readme_file
 

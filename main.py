@@ -10,7 +10,7 @@ from app.core.app_config import APP_NAME, APP_VERSION, setup_dpi_awareness
 from app.ui.app_theme_pyqt import apply_dark_theme_to_template_section
 from app.templates.template_manager_migration import TemplateManagerMigration
 
-# Version identifier - set to 'tkinter' for the Tkinter version, 'pyqt' for the PyQt version
+# This is the PyQt version of the application
 UI_FRAMEWORK = 'pyqt'
 
 def main():
