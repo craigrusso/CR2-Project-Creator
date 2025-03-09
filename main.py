@@ -6,6 +6,7 @@ import tkinter as tk
 from app.core.app_module import ProjectCreatorApp
 from app.core.app_config import APP_NAME, APP_VERSION, setup_dpi_awareness
 from app.ui.app_theme import apply_dark_theme_to_template_section
+from app.templates.template_manager_migration import TemplateManagerMigration
 
 def main():
     """Main entry point for the CR2 Creative Pro application"""
@@ -30,6 +31,10 @@ def main():
     
     # Create and start application
     app = ProjectCreatorApp(root)
+    
+    # If we're upgrading from an older version with dual template management systems,
+    # apply the migration to ensure all data is properly transferred
+    TemplateManagerMigration.apply_migration(app)
     
     # Apply dark theme to template section
     root.after(100, lambda: apply_dark_theme_to_template_section(app))

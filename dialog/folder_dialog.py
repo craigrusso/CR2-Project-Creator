@@ -25,10 +25,23 @@ def create_new_folder(app):
         return
     
     # Add the new folder
-    app.template_manager.add_folder(folder_name)
+    success = app.template_manager.create_folder(folder_name)
     
-    # Refresh UI components that display folders
-    app.refresh_folders()
+    if success:
+        # Update the UI
+        app.template_manager.update_ui_folder_dropdown(app)
+        
+        # Refresh the enhanced gallery if it exists
+        try:
+            from app.templates.template_gallery_ui import populate_enhanced_gallery
+            populate_enhanced_gallery(app)
+        except Exception as e:
+            print(f"Error refreshing enhanced gallery: {e}")
+    
+        # Show success message
+        app.status_var.set(f"Created folder: {folder_name}")
+    else:
+        messagebox.showerror("Error", f"Failed to create folder '{folder_name}'")
     
     return folder_name
 
@@ -52,21 +65,36 @@ def add_folder_from_dialog(app, dialog, listbox):
         return
     
     # Add the new folder
-    app.template_manager.add_folder(folder_name)
+    success = app.template_manager.create_folder(folder_name)
     
-    # Refresh the folder list
-    folders = app.template_manager.get_folders()
-    listbox.delete(0, tk.END)
-    for folder in folders:
-        listbox.insert(tk.END, folder)
-    
-    # Select the new folder
-    try:
-        index = folders.index(folder_name)
-        listbox.selection_set(index)
-        listbox.see(index)
-    except ValueError:
-        pass
+    if success:
+        # Refresh the folder list
+        folders = app.template_manager.get_folders()
+        listbox.delete(0, tk.END)
+        for folder in folders:
+            listbox.insert(tk.END, folder)
+        
+        # Select the new folder
+        try:
+            index = folders.index(folder_name)
+            listbox.selection_set(index)
+            listbox.see(index)
+        except ValueError:
+            pass
+        
+        # Update the UI
+        app.template_manager.update_ui_folder_dropdown(app)
+        
+        # Refresh the enhanced gallery if it exists
+        try:
+            from app.templates.template_gallery_ui import populate_enhanced_gallery
+            populate_enhanced_gallery(app)
+        except Exception as e:
+            print(f"Error refreshing enhanced gallery: {e}")
+    else:
+        messagebox.showerror("Error", f"Failed to create folder '{folder_name}'")
+                
+    return folder_name
 
 def rename_selected_folder(app, dialog, listbox):
     """Rename a selected folder"""
@@ -108,24 +136,37 @@ def rename_selected_folder(app, dialog, listbox):
                 # Save the template
                 app.template_manager.save_template_to_disk(template)
         
-        # Update folder cache
-        app.template_manager.rename_folder(selected_folder, new_folder_name)
+        # Rename the folder
+        success = app.template_manager.rename_folder(selected_folder, new_folder_name)
         
-        # Refresh the folder list
-        folders = app.template_manager.get_folders()
-        listbox.delete(0, tk.END)
-        for folder in folders:
-            listbox.insert(tk.END, folder)
-        
-        # Select the renamed folder
-        try:
-            index = folders.index(new_folder_name)
-            listbox.selection_set(index)
-            listbox.see(index)
-        except ValueError:
-            pass
-        
-        messagebox.showinfo("Success", f"Folder renamed to '{new_folder_name}'")
+        if success:
+            # Refresh the folder list
+            folders = app.template_manager.get_folders()
+            listbox.delete(0, tk.END)
+            for folder in folders:
+                listbox.insert(tk.END, folder)
+            
+            # Select the renamed folder
+            try:
+                index = folders.index(new_folder_name)
+                listbox.selection_set(index)
+                listbox.see(index)
+            except ValueError:
+                pass
+                
+            # Update the UI
+            app.template_manager.update_ui_folder_dropdown(app)
+            
+            # Refresh the enhanced gallery if it exists
+            try:
+                from app.templates.template_gallery_ui import populate_enhanced_gallery
+                populate_enhanced_gallery(app)
+            except Exception as e:
+                print(f"Error refreshing enhanced gallery: {e}")
+            
+            messagebox.showinfo("Success", f"Folder renamed to '{new_folder_name}'")
+        else:
+            messagebox.showerror("Error", f"Failed to rename folder")
         
     except Exception as e:
         messagebox.showerror("Error", f"Failed to rename folder: {str(e)}")
@@ -141,15 +182,16 @@ def delete_selected_folder(app, dialog, listbox):
     selected_index = selection[0]
     selected_folder = listbox.get(selected_index)
     
-    # Confirm deletion
-    confirm = messagebox.askyesno(
-        "Confirm Deletion", 
-        f"Are you sure you want to delete the folder '{selected_folder}'?\n\n"
-        "This will remove it from all templates that use it.",
-        parent=dialog
-    )
+    # Check if this is a default folder that cannot be deleted
+    if selected_folder in ["Recent", "Favorites"]:
+        messagebox.showerror("Error", f"'{selected_folder}' is a default folder and cannot be deleted")
+        return
     
-    if not confirm:
+    # Confirm deletion
+    message = f"Are you sure you want to delete the folder '{selected_folder}'?\n\n"
+    message += "This will remove it from all templates that use it."
+    
+    if not messagebox.askyesno("Confirm Deletion", message, parent=dialog):
         return  # User canceled
     
     # Delete the folder
@@ -163,16 +205,29 @@ def delete_selected_folder(app, dialog, listbox):
                 # Save the template
                 app.template_manager.save_template_to_disk(template)
         
-        # Update folder cache
-        app.template_manager.remove_folder(selected_folder)
+        # Delete the folder
+        success = app.template_manager.delete_folder(selected_folder)
         
-        # Refresh the folder list
-        folders = app.template_manager.get_folders()
-        listbox.delete(0, tk.END)
-        for folder in folders:
-            listbox.insert(tk.END, folder)
-        
-        messagebox.showinfo("Success", f"Folder '{selected_folder}' deleted")
+        if success:
+            # Refresh the folder list
+            folders = app.template_manager.get_folders()
+            listbox.delete(0, tk.END)
+            for folder in folders:
+                listbox.insert(tk.END, folder)
+            
+            # Update the UI
+            app.template_manager.update_ui_folder_dropdown(app)
+            
+            # Refresh the enhanced gallery if it exists
+            try:
+                from app.templates.template_gallery_ui import populate_enhanced_gallery
+                populate_enhanced_gallery(app)
+            except Exception as e:
+                print(f"Error refreshing enhanced gallery: {e}")
+            
+            messagebox.showinfo("Success", f"Folder '{selected_folder}' deleted")
+        else:
+            messagebox.showerror("Error", f"Failed to delete folder")
         
     except Exception as e:
         messagebox.showerror("Error", f"Failed to delete folder: {str(e)}") 

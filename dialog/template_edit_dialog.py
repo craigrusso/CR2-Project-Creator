@@ -5,6 +5,7 @@ import os
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, StringVar, BooleanVar
 from tkinter.constants import *
+from app.templates.templates import edit_template_structure
 
 def edit_template_dialog(app, template):
     """Show dialog for editing a template"""
@@ -96,6 +97,16 @@ def edit_template_dialog(app, template):
         
         checkbox = ttk.Checkbutton(canvas_frame, text=folder, variable=var)
         checkbox.pack(anchor="w")
+    
+    # Template Structure section
+    structure_frame = tk.Frame(main_frame)
+    structure_frame.pack(fill=X, pady=(0, 15))
+    
+    tk.Label(structure_frame, text="Template Structure:").pack(anchor="w")
+    
+    structure_btn = ttk.Button(structure_frame, text="Edit Template Structure",
+                           command=lambda: edit_template_structure(app, template))
+    structure_btn.pack(anchor="w", pady=(5, 0))
     
     # Bottom buttons
     button_frame = tk.Frame(main_frame)

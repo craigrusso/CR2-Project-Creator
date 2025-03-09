@@ -21,6 +21,10 @@ class TemplateManager:
         self.templates = []
         self.template_directories = []
         
+        # Add folder management
+        self.folders = {}
+        self.current_folder = None
+        
         # Create required directories if they don't exist
         self._ensure_directories_exist()
         
@@ -28,6 +32,7 @@ class TemplateManager:
         self.load_templates()
         self.load_custom_structures()
         self.load_template_directories()
+        self.load_folders()
     
     def _ensure_directories_exist(self):
         """Ensure all required directories exist"""
@@ -247,9 +252,9 @@ class TemplateManager:
         
         # Configure rounded corners using border styling
         card.configure(
-            highlightbackground=colors["card_bg"],
+            highlightbackground=colors["card_bg"],  # Match background in default state
             highlightthickness=1,
-            highlightcolor=colors["card_bg"]
+            highlightcolor=colors["card_bg"]  # Match background in default state
         )
         
         # Make entire card clickable
@@ -313,7 +318,7 @@ class TemplateManager:
         # Light grey hover effect
         hover_bg = "#303030"  # Slightly lighter than card_bg
         
-        # Update the card and all its children
+        # Update the card and all its children - border should match background (no blue outline)
         card.configure(bg=hover_bg, highlightbackground=hover_bg)
         card.icon_label.configure(bg=hover_bg)
         card.info_frame.configure(bg=hover_bg)
@@ -324,7 +329,7 @@ class TemplateManager:
         
         # Set cursor
         card.configure(cursor="hand2")
-        
+    
     def _on_card_hover_leave(self, card):
         """Handle hover leave for template card"""
         # Skip if card is highlighted
@@ -332,7 +337,11 @@ class TemplateManager:
             return
             
         # Reset to card background
-        card.configure(bg=colors["card_bg"], highlightbackground=colors["card_bg"])
+        card.configure(
+            bg=colors["card_bg"], 
+            highlightbackground=colors["card_bg"],  # Match background in default state
+            highlightthickness=1
+        )
         card.icon_label.configure(bg=colors["card_bg"])
         card.info_frame.configure(bg=colors["card_bg"])
         
@@ -644,6 +653,10 @@ class TemplateManager:
                 break
         
         if not template_to_delete:
+            # Check if it's a directory template
+            for template in self.template_directories:
+                if template["name"] == template_name:
+                    return self.delete_template_directory(template)
             return False
         
         # Create a clean filename
@@ -656,6 +669,32 @@ class TemplateManager:
             return True
         except Exception as e:
             print(f"Error deleting template {template_name}: {e}")
+            return False
+    
+    def delete_template_directory(self, template):
+        """Delete a directory-based template"""
+        if not template or template.get('type') != 'directory':
+            return False
+            
+        template_path = template.get('path')
+        if not template_path or not os.path.isdir(template_path):
+            return False
+            
+        template_name = template.get('name')
+        
+        try:
+            # Delete the template directory
+            shutil.rmtree(template_path)
+            
+            # Remove from in-memory list
+            self.template_directories.remove(template)
+            
+            # Reload template directories to refresh the list
+            self.load_template_directories()
+            
+            return True
+        except Exception as e:
+            print(f"Error deleting template directory {template_name}: {e}")
             return False
     
     def import_template_file(self, file_path, name=None, category=None):
@@ -776,3 +815,186 @@ class TemplateManager:
                 return False
         
         return False
+    
+    # ====== FOLDER MANAGEMENT METHODS ======
+    
+    def load_folders(self):
+        """Load template folders from configuration"""
+        # Path to folders configuration file
+        folders_path = os.path.join(self.paths["templates_dir"], "folders.json")
+        
+        # Load folders if file exists
+        if os.path.exists(folders_path):
+            try:
+                with open(folders_path, 'r') as f:
+                    self.folders = json.load(f)
+            except Exception as e:
+                print(f"Error loading folders: {e}")
+                self.folders = {}
+        else:
+            # Create default folders configuration
+            self.folders = {
+                "Recent": [],
+                "Favorites": []
+            }
+            self.save_folders()
+    
+    def save_folders(self):
+        """Save folder configuration"""
+        folders_path = os.path.join(self.paths["templates_dir"], "folders.json")
+        
+        try:
+            with open(folders_path, 'w') as f:
+                json.dump(self.folders, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"Error saving folders: {e}")
+            return False
+    
+    def get_folders(self):
+        """Get list of all folders"""
+        return list(self.folders.keys())
+        
+    def create_folder(self, folder_name):
+        """Create a new template folder"""
+        if not folder_name or folder_name in self.folders:
+            return False
+        
+        self.folders[folder_name] = []
+        return self.save_folders()
+    
+    # Alias for backwards compatibility
+    add_folder = create_folder
+    
+    def rename_folder(self, old_name, new_name):
+        """Rename a template folder"""
+        if old_name not in self.folders or new_name in self.folders:
+            return False
+        
+        # Get templates in the folder
+        templates = self.folders[old_name]
+        
+        # Create new folder with same templates
+        self.folders[new_name] = templates
+        
+        # Delete old folder
+        del self.folders[old_name]
+        
+        return self.save_folders()
+    
+    def delete_folder(self, folder_name):
+        """Delete a template folder"""
+        if folder_name not in self.folders:
+            return False
+        
+        # Remove folder (templates will still exist, just not in a folder)
+        del self.folders[folder_name]
+        
+        return self.save_folders()
+    
+    # Alias for backwards compatibility
+    remove_folder = delete_folder
+    
+    def add_to_folder(self, folder_name, template_name):
+        """Add a template to a folder"""
+        if folder_name not in self.folders:
+            return False
+        
+        # Find the template to verify it exists
+        template = None
+        for t in self.templates:
+            if t["name"] == template_name:
+                template = t
+                break
+                
+        # Also check directory templates
+        if not template:
+            for t in self.template_directories:
+                if t["name"] == template_name:
+                    template = t
+                    break
+        
+        if not template:
+            return False
+        
+        # Add to folder if not already there
+        if template_name not in self.folders[folder_name]:
+            self.folders[folder_name].append(template_name)
+            return self.save_folders()
+        
+        return True
+    
+    def remove_from_folder(self, folder_name, template_name):
+        """Remove a template from a folder"""
+        if folder_name not in self.folders:
+            return False
+        
+        # Remove from folder if present
+        if template_name in self.folders[folder_name]:
+            self.folders[folder_name].remove(template_name)
+            return self.save_folders()
+        
+        return True
+    
+    def get_folder_templates(self, folder_name):
+        """Get templates in a folder"""
+        if folder_name not in self.folders:
+            return []
+        
+        # Get template names in the folder
+        template_names = self.folders[folder_name]
+        
+        # Find the actual template objects
+        templates = []
+        for name in template_names:
+            # Check regular templates
+            for template in self.templates:
+                if template["name"] == name:
+                    templates.append(template)
+                    break
+                    
+            # Also check directory templates
+            for template in self.template_directories:
+                if template["name"] == name:
+                    templates.append(template)
+                    break
+        
+        return templates
+    
+    def update_ui_folder_dropdown(self, app):
+        """Update the folder dropdown in the UI to match current folders"""
+        if not hasattr(app, 'folder_var'):
+            return False
+            
+        try:
+            # Get current folders
+            folders = ["All"] + list(self.folders.keys())
+            
+            # Get the current selection
+            current_folder = app.folder_var.get()
+            
+            # Update the dropdown menu
+            menu = app.folder_var["menu"]
+            menu.delete(0, "end")
+            
+            # Add 'All' option
+            menu.add_command(label="All", 
+                       command=lambda v="All": (app.folder_var.set(v), app.filter_templates()))
+            
+            # Add each folder - use a function to create a proper closure to avoid lambda capture issues
+            def create_command(folder_name):
+                return lambda: (app.folder_var.set(folder_name), app.filter_templates())
+                
+            # Add each folder with proper command
+            for folder in folders:
+                if folder != "All":
+                    menu.add_command(label=folder, command=create_command(folder))
+            
+            # If the previously selected folder is no longer available, default to "All"
+            if current_folder not in folders:
+                app.folder_var.set("All")
+                
+            return True
+        except Exception as e:
+            print(f"Error updating folder dropdown: {e}")
+            return False

@@ -4,133 +4,71 @@
 import tkinter as tk
 from tkinter import ttk, BOTH, X, LEFT, RIGHT
 from app.ui.color_scheme import colors
+from app.ui.ui_components import SearchBox, TemplateCard
 
 def integrate_enhanced_templates(app):
     """
-    Main function to integrate enhanced template management functionality
-    into the existing application.
+    Integrate enhanced template system.
+    
+    This function is kept for backward compatibility but now uses the
+    unified template management system.
     """
-    # Import the enhanced template components
-    from app.templates.enhanced_template_card import TemplateCardEnhanced
-    from app.templates.template_folder_card import TemplateFolderCard
-    from app.templates.add_template_canvas import AddTemplateCanvas
-    from app.templates.enhanced_template_manager import TemplateManagerEnhanced
-    from app.templates.template_category_manager import TemplateCategoryManager
-    from app.templates.template_gallery_ui import create_template_gallery_enhanced, populate_enhanced_gallery
-    
-    # Clean up any existing filter or gallery elements from the old implementation
-    if hasattr(app, 'filter_frame'):
-        try:
-            for widget in app.filter_frame.winfo_children():
-                widget.destroy()
-            app.filter_frame.destroy()
-        except:
-            pass  # Ignore errors if widgets are already destroyed
-    
-    # Clean up any old control frames
-    if hasattr(app, 'bottom_controls_frame'):
-        try:
-            app.bottom_controls_frame.destroy()
-        except:
-            pass
-    
-    if hasattr(app, 'top_controls_frame'):
-        try:
-            app.top_controls_frame.destroy()
-        except:
-            pass
-        
-    # Initialize enhanced template manager components
-    app.template_manager_enhanced = TemplateManagerEnhanced(app.template_manager)
-    app.category_manager = TemplateCategoryManager(app.template_manager)
-    
     # Replace the original filter_templates function
     original_filter_templates = app.filter_templates
     
     def enhanced_filter_templates(*args):
-        """Enhanced version of filter_templates that uses our new components"""
-        from app.templates.template_gallery_ui import filter_templates_enhanced, populate_enhanced_gallery
+        """Enhanced filter function that handles folder filtering"""
+        # Call the original filter function for project types, etc.
+        original_filter_templates(*args)
         
-        # Get filtered templates
-        filter_templates_enhanced(app)
-        
-        # Populate gallery with filtered templates
-        populate_enhanced_gallery(app)
-        
-        # Update status
-        search_term = app.search_box.get() if hasattr(app, 'search_box') else ""
-        category = app.category_var.get() if hasattr(app, 'category_var') else "All"
+        # Apply folder filter if selected
         folder = app.folder_var.get() if hasattr(app, 'folder_var') else "All"
-        
-        status = f"Filtering templates: "
-        if search_term:
-            status += f"Search='{search_term}' "
-        if category != "All":
-            status += f"Category='{category}' "
-        if folder != "All":
-            status += f"Folder='{folder}' "
-        
-        if status == "Filtering templates: ":
-            status = "Ready"
-        
-        if hasattr(app, 'status_var'):
-            app.status_var.set(status)
+        if folder != "All" and folder in app.template_manager.folders:
+            # Handle folder filtering
+            from app.templates.template_gallery_ui import populate_enhanced_gallery
+            populate_enhanced_gallery(app)
     
-    # Replace the filter_templates function
+    # Replace the filter function
     app.filter_templates = enhanced_filter_templates
     
-    # Create enhanced template gallery (will replace existing one)
-    create_template_gallery_enhanced(app)
+    # Load the enhanced template gallery UI
+    from app.templates.template_gallery_ui import create_template_gallery_enhanced
+    app.root.after(100, lambda: create_template_gallery_enhanced(app))
     
-    # Schedule a gallery refresh after a short delay to ensure proper rendering
-    app.root.after(100, lambda: populate_enhanced_gallery(app))
-    app.root.after(500, lambda: populate_enhanced_gallery(app))  # Second refresh as backup
+    # Return the enhanced filter function
+    return enhanced_filter_templates
 
 
 def patch_app_ui_run_import_dialog():
     """
-    Patch the run_import_dialog function in app_ui.py to refresh the enhanced gallery
-    after importing a template.
+    Patch the app_ui.py run_import_dialog function to refresh enhanced gallery
     """
-    # Import original run_import_dialog
-    from app.ui.app_ui import run_import_dialog as original_run_import_dialog
-    
     def patched_run_import_dialog(app):
-        """Patched version that refreshes the enhanced gallery"""
-        # Call original function
+        """Patched version of run_import_dialog that updates the enhanced gallery"""
+        from app.ui.app_ui import run_import_dialog as original_run_import_dialog
+        
+        # Call the original function
         result = original_run_import_dialog(app)
         
-        # Refresh enhanced gallery if template was imported successfully
-        if result and hasattr(app, 'template_manager_enhanced'):
+        # If a template was imported, refresh the enhanced gallery
+        if result:
+            # If template was imported successfully, refresh the enhanced gallery
             from app.templates.template_gallery_ui import populate_enhanced_gallery
             populate_enhanced_gallery(app)
         
         return result
-    
-    # Replace the original function in the module
-    import app.ui.app_ui as app_ui
-    app_ui.run_import_dialog = patched_run_import_dialog
     
     return patched_run_import_dialog
 
 
 def modify_templates_py():
     """
-    Patch the functions in templates.py to use enhanced template management
+    Modify the templates.py module to use enhanced templates
     """
-    from app.templates.templates import populate_template_gallery as original_populate_template_gallery
-    
     def patched_populate_template_gallery(app):
-        """Patched version that uses enhanced gallery"""
-        if hasattr(app, 'template_manager_enhanced'):
-            from app.templates.template_gallery_ui import populate_enhanced_gallery
-            populate_enhanced_gallery(app)
-        else:
-            original_populate_template_gallery(app)
-    
-    # Replace the original function in the module
-    import app.templates.templates as templates
-    templates.populate_template_gallery = patched_populate_template_gallery
+        """Patched version that uses enhanced template gallery"""
+        from app.templates.template_gallery_ui import populate_enhanced_gallery
+        return populate_enhanced_gallery(app)
     
     return patched_populate_template_gallery
 
@@ -146,26 +84,29 @@ def patch_select_template_function():
         # Call original function
         original_select_template(app, template)
         
-        # If we have enhanced templates, update "Recent" folder
-        if hasattr(app, 'template_manager_enhanced') and template:
-            template_name = template.get("name", "")
-            if template_name:
-                # Add to Recent folder if not already there
-                if "Recent" in app.template_manager_enhanced.folders:
-                    recent_folder = app.template_manager_enhanced.folders["Recent"]
-                    
-                    # Remove if already in the list (to move it to the top)
-                    if template_name in recent_folder:
-                        recent_folder.remove(template_name)
-                    
-                    # Add to the top of the list
-                    recent_folder.insert(0, template_name)
-                    
-                    # Limit to 10 recent templates
-                    app.template_manager_enhanced.folders["Recent"] = recent_folder[:10]
-                    
-                    # Save changes
-                    app.template_manager_enhanced.save_folders()
+        # Update "Recent" folder if template is valid
+        if hasattr(app, 'template_manager') and template:
+            try:
+                template_name = template.get("name", "")
+                if template_name:
+                    # Add to "Recent" folder if it exists
+                    if "Recent" in app.template_manager.folders:
+                        recent_folder = app.template_manager.folders["Recent"]
+                        
+                        # First remove template if it's already in the list
+                        if template_name in recent_folder:
+                            recent_folder.remove(template_name)
+                        
+                        # Add to the front of the list
+                        recent_folder.insert(0, template_name)
+                        
+                        # Keep only the most recent N templates
+                        app.template_manager.folders["Recent"] = recent_folder[:10]
+                        
+                        # Save updated folders
+                        app.template_manager.save_folders()
+            except Exception as e:
+                print(f"Error adding template to recent: {e}")
     
     # Replace the original function in the module
     import app.templates.templates as templates
@@ -176,38 +117,29 @@ def patch_select_template_function():
 
 def extend_create_ui():
     """
-    Function to extend the create_ui function in app_ui.py to integrate
-    enhanced template management at the end of UI creation
+    Extend the create_ui function to add enhanced template gallery
     """
     def create_ui_extension(app):
-        """This will be called at the end of create_ui"""
-        # Apply all the patches
-        patch_app_ui_run_import_dialog()
-        modify_templates_py()
-        patch_select_template_function()
-        
-        # Integrate enhanced templates
-        integrate_enhanced_templates(app)
+        """Function to extend the UI with enhanced template features"""
+        # Load enhanced template gallery
+        from app.templates.template_gallery_ui import create_template_gallery_enhanced
+        create_template_gallery_enhanced(app)
     
     return create_ui_extension
 
 
 def patch_app_file():
     """
-    Create a modified version of app_ui.py that includes the enhanced template management
+    Patch the app.py file to use enhanced templates
     """
-    # Get the original create_ui function
-    from app.ui.app_ui import create_ui as original_create_ui
-    
     def enhanced_create_ui(app):
-        """Enhanced version of create_ui that adds template management"""
-        # Call the original function
+        """Enhanced version of create_ui that uses template gallery"""
+        # Load original UI
+        from app.ui.app_ui import create_ui as original_create_ui
         original_create_ui(app)
         
-        # Add our enhancements
-        create_ui_extension = extend_create_ui()
-        create_ui_extension(app)
+        # Add enhanced template gallery
+        from app.templates.template_gallery_ui import create_template_gallery_enhanced
+        create_template_gallery_enhanced(app)
     
-    # We would typically replace the function in the module here
-    # But for now, we'll just return the enhanced function
     return enhanced_create_ui

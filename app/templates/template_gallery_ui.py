@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
+import os
 import tkinter as tk
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox, StringVar, BooleanVar, DISABLED, NORMAL, END
 from tkinter.constants import *
-
-# Import from our centralized color scheme instead of app_config
 from app.ui.color_scheme import colors, CARD_NORMAL, CARD_HOVER, CARD_SELECTED
-from app.ui.ui_components import ToolTip, ScrollableFrame, SearchBox, CardFrame
-from app.templates.enhanced_template_card import TemplateCardEnhanced
+from app.ui.ui_components import ScrollableFrame, TemplateCard, ToolTip, SearchBox, CardFrame
 from app.templates.template_folder_card import TemplateFolderCard
 from app.templates.add_template_canvas import AddTemplateCanvas
-from app.templates.enhanced_template_manager import TemplateManagerEnhanced
 from app.templates.template_category_manager import TemplateCategoryManager
 from dialog.template_dialogs import edit_template_dialog, manage_templates_dialog, create_new_category, create_new_folder
 from app.ui.app_ui import run_import_dialog
@@ -107,11 +104,6 @@ def create_template_gallery_enhanced(app):
     """
     Create an enhanced template gallery with folder support and better organization
     """
-    # Create template manager wrapper if needed
-    if not hasattr(app, 'template_manager_enhanced'):
-        app.template_manager_enhanced = TemplateManagerEnhanced(app.template_manager)
-        app.category_manager = TemplateCategoryManager(app.template_manager)
-    
     # Find the parent frame (template gallery container)
     parent_frame = None
     
@@ -255,7 +247,7 @@ def create_template_gallery_enhanced(app):
     folder_label.pack(side=LEFT)
     
     app.folder_var = tk.StringVar(value="All")
-    folders = ["All"] + list(app.template_manager_enhanced.folders.keys())
+    folders = ["All"] + list(app.template_manager.folders.keys())
     
     folder_menu = ttk.OptionMenu(folder_frame, app.folder_var, "All", *folders, 
                                command=lambda x: app.filter_templates())
@@ -310,13 +302,16 @@ def populate_enhanced_gallery(app):
             # Force UI update
             app.root.update_idletasks()
             return
+            
+        # Store created cards to apply highlighting later
+        created_cards = []
         
         # Define dark text for better contrast on blue
         dark_text = "#FFFFFF"  # White text for better visibility on blue
         
         # If folder is selected, show folder contents
         folder = app.folder_var.get() if hasattr(app, 'folder_var') else "All"
-        if folder != "All" and folder in app.template_manager_enhanced.folders:
+        if folder != "All" and folder in app.template_manager.folders:
             # Show folder header with back button
             folder_header = tk.Frame(app.template_list_frame.scrollable_frame, bg=colors["card_bg"])
             folder_header.pack(fill=X, pady=(0, 10))
@@ -330,7 +325,7 @@ def populate_enhanced_gallery(app):
             folder_title.pack(side=LEFT, padx=10)
             
             # Show only templates in this folder
-            templates = app.template_manager_enhanced.get_folder_templates(folder)
+            templates = app.template_manager.get_folder_templates(folder)
         
         # Create template cards
         for template in templates:
@@ -343,6 +338,9 @@ def populate_enhanced_gallery(app):
             
             # Force fixed height for consistency
             card.config(height=80)
+            
+            # Add to created cards list for later highlighting
+            created_cards.append(card)
             
             # Explicitly add hover effects to the card and all its children
             if not hasattr(card, '_on_hover_enter') or not hasattr(card, '_on_hover_leave'):
@@ -357,29 +355,47 @@ def populate_enhanced_gallery(app):
                     # Use hover bg that matches left side structure template
                     hover_bg = "#303030"  # Match hover effect from app_ui.py
                     
-                    # Update card and all its components
-                    card.configure(bg=hover_bg, highlightbackground=hover_bg)
-                    
-                    # Update icon label if it exists
-                    if hasattr(card, 'icon_label'):
-                        card.icon_label.configure(bg=hover_bg)
-                    
-                    # Update info frame and all its children
-                    if hasattr(card, 'info_frame'):
-                        card.info_frame.configure(bg=hover_bg)
-                        for widget in card.info_frame.winfo_children():
-                            widget.configure(bg=hover_bg)
-                    
-                    # Update action frame if it exists
-                    if hasattr(card, 'action_frame'):
-                        card.action_frame.configure(bg=hover_bg)
+                    # If card has the update_highlight method, use it
+                    if hasattr(card, 'update_highlight'):
+                        card.update_highlight(hover_bg)
+                    else:
+                        # Legacy fallback for older card types
+                        # Update card and all its components - border should match background (no blue outline)
+                        card.configure(
+                            bg=hover_bg, 
+                            highlightbackground=hover_bg  # Match border to hover background (no visible border)
+                        )
                         
-                        # Update canvas buttons if they exist
-                        for child in card.action_frame.winfo_children():
-                            if hasattr(child, 'update_background'):
-                                child.update_background(hover_bg)
-                            else:
-                                child.configure(bg=hover_bg)
+                        # Update icon label if it exists
+                        if hasattr(card, 'icon_label'):
+                            card.icon_label.configure(bg=hover_bg)
+                        
+                        # Update info frame and all its children
+                        if hasattr(card, 'info_frame'):
+                            card.info_frame.configure(bg=hover_bg)
+                            for widget in card.info_frame.winfo_children():
+                                widget.configure(bg=hover_bg)
+                        
+                        # Update buttons_frame and buttons if they exist
+                        if hasattr(card, 'buttons_frame'):
+                            card.buttons_frame.configure(bg=hover_bg)
+                            
+                        if hasattr(card, 'edit_btn'):
+                            card.edit_btn.configure(bg=hover_bg, fg="white")
+                            
+                        if hasattr(card, 'delete_btn'):
+                            card.delete_btn.configure(bg=hover_bg, fg="white")
+                        
+                        # Update action frame if it exists
+                        if hasattr(card, 'action_frame'):
+                            card.action_frame.configure(bg=hover_bg)
+                            
+                            # Update canvas buttons if they exist
+                            for child in card.action_frame.winfo_children():
+                                if hasattr(child, 'update_background'):
+                                    child.update_background(hover_bg)
+                                else:
+                                    child.configure(bg=hover_bg)
                     
                     # Set cursor
                     card.configure(cursor="hand2")
@@ -394,35 +410,54 @@ def populate_enhanced_gallery(app):
                     # Reset to regular background using colors that match left side
                     bg = colors["bg"]  # Match structure template bg color
                     
-                    # Update card and all its components
-                    card.configure(bg=bg, highlightbackground=bg)
-                    
-                    # Update icon label if it exists
-                    if hasattr(card, 'icon_label'):
-                        card.icon_label.configure(bg=bg, fg=colors["text"])
-                    
-                    # Update info frame and all its children
-                    if hasattr(card, 'info_frame'):
-                        card.info_frame.configure(bg=bg)
+                    # If card has the update_highlight method, use it
+                    if hasattr(card, 'update_highlight'):
+                        card.update_highlight(bg)
+                    else:
+                        # Legacy fallback for older card types
+                        # Update card and all its components - border should match background
+                        card.configure(
+                            bg=bg, 
+                            highlightbackground=bg,  # Match background in default state
+                            highlightthickness=1
+                        )
                         
-                        # Reset all child widgets with appropriate colors
-                        if hasattr(card, 'name_label'):
-                            card.name_label.configure(bg=bg, fg=colors["text"])
-                        if hasattr(card, 'category_label'):
-                            card.category_label.configure(bg=bg, fg=colors["secondary_text"])
-                        if hasattr(card, 'desc_label'):
-                            card.desc_label.configure(bg=bg, fg=colors["text"])
-                    
-                    # Update action frame if it exists
-                    if hasattr(card, 'action_frame'):
-                        card.action_frame.configure(bg=bg)
+                        # Update icon label if it exists
+                        if hasattr(card, 'icon_label'):
+                            card.icon_label.configure(bg=bg, fg=colors["text"])
                         
-                        # Reset canvas buttons if they exist
-                        for child in card.action_frame.winfo_children():
-                            if hasattr(child, 'update_background'):
-                                child.update_background(bg)
-                            else:
-                                child.configure(bg=bg)
+                        # Update info frame and all its children
+                        if hasattr(card, 'info_frame'):
+                            card.info_frame.configure(bg=bg)
+                            
+                            # Reset all child widgets with appropriate colors
+                            if hasattr(card, 'name_label'):
+                                card.name_label.configure(bg=bg, fg=colors["text"])
+                            if hasattr(card, 'category_label'):
+                                card.category_label.configure(bg=bg, fg=colors["secondary_text"])
+                            if hasattr(card, 'desc_label'):
+                                card.desc_label.configure(bg=bg, fg=colors["text"])
+                        
+                        # Update buttons_frame and buttons if they exist
+                        if hasattr(card, 'buttons_frame'):
+                            card.buttons_frame.configure(bg=bg)
+                            
+                        if hasattr(card, 'edit_btn'):
+                            card.edit_btn.configure(bg=bg, fg="white")
+                            
+                        if hasattr(card, 'delete_btn'):
+                            card.delete_btn.configure(bg=bg, fg="white")
+                        
+                        # Update action frame if it exists
+                        if hasattr(card, 'action_frame'):
+                            card.action_frame.configure(bg=bg)
+                            
+                            # Reset canvas buttons if they exist
+                            for child in card.action_frame.winfo_children():
+                                if hasattr(child, 'update_background'):
+                                    child.update_background(colors["bg"])
+                                else:
+                                    child.configure(bg=colors["bg"])
                     
                     # Reset cursor
                     card.configure(cursor="")
@@ -464,9 +499,9 @@ def populate_enhanced_gallery(app):
                 
                 # Apply highlight colors matching the left side structure template
                 # These values match the highlight_current_structure function in structures.py
-                highlight_bg = "#2C4F76"  # Darker blue fill
-                highlight_border = "#4682B4"  # Bright blue outline
-                highlight_text = "white"  # Text color
+                highlight_bg = colors["highlight_bg"]  # Darker blue fill
+                highlight_border = colors["highlight_border"]  # Bright blue outline
+                highlight_text = colors["highlight_text"]  # Text color
                 
                 # Update card with highlight styling
                 card.configure(
@@ -487,6 +522,16 @@ def populate_enhanced_gallery(app):
                     for widget in card.info_frame.winfo_children():
                         widget.configure(bg=highlight_bg, fg=highlight_text)
                 
+                # Update buttons_frame and buttons if they exist
+                if hasattr(card, 'buttons_frame'):
+                    card.buttons_frame.configure(bg=highlight_bg)
+                    
+                if hasattr(card, 'edit_btn'):
+                    card.edit_btn.configure(bg=highlight_bg, fg=highlight_text)
+                    
+                if hasattr(card, 'delete_btn'):
+                    card.delete_btn.configure(bg=highlight_bg, fg=highlight_text)
+                
                 # Update action frame if it exists
                 if hasattr(card, 'action_frame'):
                     card.action_frame.configure(bg=highlight_bg)
@@ -500,17 +545,90 @@ def populate_enhanced_gallery(app):
                 
                 # Force UI update to ensure changes are applied immediately
                 card.update()
-        
+            
         # Update scrollregion to ensure all templates are visible
         app.template_list_frame.update_scrollregion()
         
-        # Force UI update to ensure all template cards are rendered immediately
-        app.root.update_idletasks()
+        # Apply highlighting to selected template if there is one
+        if hasattr(app, 'current_template') and app.current_template:
+            # Get highlight colors that match the left side structure template
+            highlight_bg = colors["highlight_bg"]  # Darker blue fill
+            highlight_border = colors["highlight_border"]  # Bright blue outline
+            highlight_text = colors["highlight_text"]  # Text color
+            
+            # Apply highlighting to the selected template card
+            for card in created_cards:
+                try:
+                    # Check if the card still exists and has the template property
+                    if not hasattr(card, 'template'):
+                        continue
+                        
+                    # Check if this is the card for the selected template
+                    if card.template == app.current_template:
+                        # This is the selected template - highlight it
+                        card.is_highlighted = True
+                        
+                        # Apply highlight styling - wrap in try/except to handle potential widget destruction
+                        try:
+                            card.configure(
+                                bg=highlight_bg, 
+                                highlightbackground=highlight_border, 
+                                highlightthickness=2
+                            )
+                            
+                            # Update the icon label if it exists
+                            if hasattr(card, 'icon_label'):
+                                card.icon_label.configure(bg=highlight_bg, fg=highlight_text)
+                            
+                            # Update the info frame and all its contents
+                            if hasattr(card, 'info_frame'):
+                                card.info_frame.configure(bg=highlight_bg)
+                                
+                                # Apply white text to all children for better contrast
+                                for child in card.info_frame.winfo_children():
+                                    child.configure(bg=highlight_bg, fg=highlight_text)
+                            
+                            # Update buttons_frame and buttons if they exist
+                            if hasattr(card, 'buttons_frame'):
+                                card.buttons_frame.configure(bg=highlight_bg)
+                                
+                            if hasattr(card, 'edit_btn'):
+                                card.edit_btn.configure(bg=highlight_bg, fg=highlight_text)
+                                
+                            if hasattr(card, 'delete_btn'):
+                                card.delete_btn.configure(bg=highlight_bg, fg=highlight_text)
+                            
+                            # Update action frame if it exists
+                            if hasattr(card, 'action_frame'):
+                                card.action_frame.configure(bg=highlight_bg)
+                                
+                                # Update canvas buttons if they exist
+                                for child in card.action_frame.winfo_children():
+                                    if hasattr(child, 'update_background'):
+                                        child.update_background(highlight_bg)
+                                    else:
+                                        child.configure(bg=highlight_bg)
+                            
+                            # Force immediate UI update to ensure changes are visible
+                            card.update()
+                        except tk.TclError:
+                            # Widget was destroyed, just continue
+                            continue
+                            
+                        break
+                except Exception as e:
+                    print(f"Error highlighting template card: {e}")
+                    continue
+        
+        # Force immediate UI update of the entire gallery
+        try:
+            app.template_list_frame.scrollable_frame.update()
+            app.root.update_idletasks()
+        except Exception as e:
+            print(f"Error updating UI: {e}")
             
     except Exception as e:
         print(f"Error populating enhanced gallery: {e}")
-        import traceback
-        traceback.print_exc()
 
 
 def filter_templates_enhanced(app):
@@ -523,7 +641,7 @@ def filter_templates_enhanced(app):
     templates = app.template_manager.templates
     
     # Apply folder filter first
-    if folder != "All" and folder in app.template_manager_enhanced.folders:
+    if folder != "All" and folder in app.template_manager.folders:
         # If we're explicitly showing a folder, we'll handle this in the populate function
         # to properly show the folder header
         pass
@@ -544,7 +662,7 @@ def filter_templates_enhanced(app):
 
 def create_template_card_enhanced(parent, template, app):
     """Create an enhanced template card with delete and edit capabilities"""
-    card = TemplateCardEnhanced(
+    card = TemplateCard(
         parent, 
         template,
         select_callback=lambda t=template: select_template_from_gallery(app, t),
@@ -552,9 +670,9 @@ def create_template_card_enhanced(parent, template, app):
         edit_callback=lambda t=template: edit_template_dialog(app, t)
     )
     
-    # Initial styling to match left side structure template
+    # Initial styling to match left side structure template - border should match background
     card.configure(
-        highlightbackground=colors["bg"],
+        highlightbackground=colors["bg"],  # Match background in default state
         highlightthickness=1
     )
     
@@ -571,9 +689,9 @@ def select_template_from_gallery(app, template):
         app.selected_structure_template = template
     
     # Use highlight colors matching the left side structure template
-    highlight_bg = "#2C4F76"  # Darker blue fill
-    highlight_border = "#4682B4"  # Bright blue outline
-    highlight_text = "white"  # Text color
+    highlight_bg = colors["highlight_bg"]  # Darker blue fill
+    highlight_border = colors["highlight_border"]  # Bright blue outline
+    highlight_text = colors["highlight_text"]  # Text color
     
     # Iterate through all template cards to update highlighting
     if hasattr(app, 'template_list_frame') and app.template_list_frame:
@@ -607,6 +725,16 @@ def select_template_from_gallery(app, template):
                     # Apply white text to all children for better contrast
                     for child in widget.info_frame.winfo_children():
                         child.configure(bg=highlight_bg, fg=highlight_text)
+                
+                # Update buttons_frame and buttons if they exist
+                if hasattr(widget, 'buttons_frame'):
+                    widget.buttons_frame.configure(bg=highlight_bg)
+                    
+                if hasattr(widget, 'edit_btn'):
+                    widget.edit_btn.configure(bg=highlight_bg, fg=highlight_text)
+                    
+                if hasattr(widget, 'delete_btn'):
+                    widget.delete_btn.configure(bg=highlight_bg, fg=highlight_text)
                 
                 # Update action frame if it exists
                 if hasattr(widget, 'action_frame'):
@@ -651,6 +779,16 @@ def select_template_from_gallery(app, template):
                         else:
                             child.configure(bg=colors["bg"])
                 
+                # Reset buttons_frame and buttons if they exist
+                if hasattr(widget, 'buttons_frame'):
+                    widget.buttons_frame.configure(bg=colors["bg"])
+                    
+                if hasattr(widget, 'edit_btn'):
+                    widget.edit_btn.configure(bg=colors["bg"], fg=colors["text"])
+                    
+                if hasattr(widget, 'delete_btn'):
+                    widget.delete_btn.configure(bg=colors["bg"], fg=colors["text"])
+                
                 # Reset action frame if it exists
                 if hasattr(widget, 'action_frame'):
                     widget.action_frame.configure(bg=colors["bg"])
@@ -684,13 +822,13 @@ def delete_template_confirm(app, template):
     success = app.template_manager.delete_template(template_name)
     
     if success:
-        # Also remove from any folders
-        for folder_name in app.template_manager_enhanced.folders:
-            if template_name in app.template_manager_enhanced.folders[folder_name]:
-                app.template_manager_enhanced.folders[folder_name].remove(template_name)
+        # Also remove from any folders if enhanced template manager exists
+        for folder_name in app.template_manager.folders:
+            if template_name in app.template_manager.folders[folder_name]:
+                app.template_manager.folders[folder_name].remove(template_name)
         
         # Save folder changes
-        app.template_manager_enhanced.save_folders()
+        app.template_manager.save_folders()
         
         # Reload template gallery
         populate_enhanced_gallery(app)

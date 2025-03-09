@@ -28,7 +28,8 @@ APP_COLORS = {
     "error": "#E8574C",           # Error (red)
     
     # Selection/highlight colors
-    "highlight_bg": "#4682B4",    # Steel Blue for highlights (selected items)
+    "highlight_border": "#4682B4", # Steel Blue for highlight borders
+    "highlight_bg": "#2C4F76",    # Darker blue for highlight backgrounds
     "highlight_darker": "#36648B", # Darker blue for hover on highlighted items
     "highlight_text": "#FFFFFF",  # White text for highlighted items
     
@@ -37,7 +38,6 @@ APP_COLORS = {
     
     # Border colors
     "border": "#3C3C3C",          # Border for cards and sections
-    "highlight_border": "#4682B4" # Border for highlighted elements
 }
 
 # Function to get a specific color by name
@@ -65,7 +65,7 @@ CARD_HOVER = {
 
 CARD_SELECTED = {
     "bg": APP_COLORS["highlight_bg"],
-    "border": APP_COLORS["highlight_bg"],
+    "border": APP_COLORS["highlight_border"],
     "text": APP_COLORS["highlight_text"],
     "secondary_text": APP_COLORS["highlight_text"]
 } 

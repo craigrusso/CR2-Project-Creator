@@ -15,7 +15,7 @@ from app.templates.templates import (
     rename_current_template,
     rename_template_file
 )
-from app.templates.enhanced_template_manager import TemplateManagerEnhanced
-from app.templates.enhanced_template_card import TemplateCardEnhanced
+# Migration helper for upgrade path
+from app.templates.template_manager_migration import TemplateManagerMigration
 from app.templates.template_category_manager import TemplateCategoryManager
 from app.templates.template_folder_card import TemplateFolderCard

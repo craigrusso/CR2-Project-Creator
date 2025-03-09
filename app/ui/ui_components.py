@@ -214,13 +214,15 @@ class TemplateCard(Frame):
     """
     A card that displays a template with icon, name, category, and description
     """
-    def __init__(self, parent, template, select_callback=None, **kwargs):
+    def __init__(self, parent, template, select_callback=None, edit_callback=None, delete_callback=None, **kwargs):
         super().__init__(parent, bg=colors["bg"], bd=1, relief=RIDGE,
                        padx=10, pady=10, **kwargs)
         
         # Store template data
         self.template = template
         self.select_callback = select_callback
+        self.edit_callback = edit_callback
+        self.delete_callback = delete_callback
         
         # Make entire frame clickable
         if select_callback:
@@ -250,13 +252,13 @@ class TemplateCard(Frame):
         self.name_label.pack(fill=X)
         
         self.category_label = Label(self.info_frame, text=template.get("category", "Custom"), 
-                                  font=("Segoe UI", 9),
-                                  bg=colors["bg"], fg=colors["secondary_text"], anchor="w")
+                                   font=("Segoe UI", 9),
+                                   bg=colors["bg"], fg=colors["secondary_text"], anchor="w")
         self.category_label.pack(fill=X)
         
         self.desc_label = Label(self.info_frame, text=template.get("description", ""), 
-                              font=("Segoe UI", 9),
-                              bg=colors["bg"], fg=colors["text"], anchor="w", justify=LEFT)
+                               font=("Segoe UI", 9),
+                               bg=colors["bg"], fg=colors["text"], anchor="w", justify=LEFT)
         self.desc_label.pack(fill=X)
         
         # Make all labels clickable
@@ -264,9 +266,64 @@ class TemplateCard(Frame):
             for label in [self.name_label, self.category_label, self.desc_label]:
                 label.bind("<Button-1>", lambda e, t=template: select_callback(t))
                 label.bind("<Enter>", lambda e, lbl=label: (lbl.configure(cursor="hand2"), 
-                                                         self.configure(cursor="hand2")))
+                                                          self.configure(cursor="hand2")))
                 label.bind("<Leave>", lambda e, lbl=label: (lbl.configure(cursor=""), 
-                                                         self.configure(cursor="")))
+                                                          self.configure(cursor="")))
+        
+        # Add icons for edit and delete if callbacks provided
+        if edit_callback or delete_callback:
+            # Create a buttons frame that will be side by side (horizontal)
+            buttons_frame = Frame(self, bg=colors["bg"])
+            buttons_frame.pack(side=RIGHT, padx=(10, 0))
+            
+            if edit_callback:
+                # Edit button with pencil icon - using slightly larger size
+                self.edit_btn = Label(buttons_frame, text="✎", font=("Segoe UI", 12),
+                                   bg=colors["bg"], fg="white", bd=0, padx=2)
+                self.edit_btn.pack(side=LEFT, padx=(0, 10))  # Increased spacing between icons
+                
+                # Make edit button clickable with hand cursor
+                self.edit_btn.bind("<Button-1>", lambda e: edit_callback(template))
+                self.edit_btn.bind("<Enter>", lambda e: self.edit_btn.configure(cursor="hand2"))
+                self.edit_btn.bind("<Leave>", lambda e: self.edit_btn.configure(cursor=""))
+            
+            if delete_callback:
+                # Delete button with X icon - using slightly larger size
+                self.delete_btn = Label(buttons_frame, text="×", font=("Segoe UI", 14),
+                                     bg=colors["bg"], fg="white", bd=0, padx=2)
+                self.delete_btn.pack(side=LEFT)
+                
+                # Make delete button clickable with hand cursor
+                self.delete_btn.bind("<Button-1>", lambda e: delete_callback(template))
+                self.delete_btn.bind("<Enter>", lambda e: self.delete_btn.configure(cursor="hand2"))
+                self.delete_btn.bind("<Leave>", lambda e: self.delete_btn.configure(cursor=""))
+            
+            # Store buttons_frame reference so we can update it in the highlight method
+            self.buttons_frame = buttons_frame
+        
+        # Add a method to update the background color of all elements when highlighted
+        def update_highlight(bg_color):
+            self.configure(bg=bg_color)
+            self.icon_label.configure(bg=bg_color)
+            self.info_frame.configure(bg=bg_color)
+            self.name_label.configure(bg=bg_color)
+            self.category_label.configure(bg=bg_color)
+            self.desc_label.configure(bg=bg_color)
+            
+            # Always use white text for the icons regardless of state for better visibility
+            icon_color = "white"
+                
+            # Update button frame and buttons with the proper background and white text
+            if hasattr(self, 'buttons_frame'):
+                self.buttons_frame.configure(bg=bg_color)
+                
+            # Update button colors with consistent background and white text color
+            if hasattr(self, 'edit_btn'):
+                self.edit_btn.configure(bg=bg_color, fg=icon_color)
+            if hasattr(self, 'delete_btn'):
+                self.delete_btn.configure(bg=bg_color, fg=icon_color)
+        
+        self.update_highlight = update_highlight
     
     def update_template(self, template):
         """Update the template data displayed in the card"""
@@ -299,15 +356,15 @@ class TemplateFileCard(Frame):
         # Create card frame with rounded corners
         padding = 2  # Space around the frame
         
-        # Create the inner card frame with border styling
+        # Create the inner card frame with border styling - use appropriate colors from the scheme
         self.card_frame = Frame(self, bg=colors["card_bg"], bd=1)
         self.card_frame.pack(fill=BOTH, expand=True, padx=padding, pady=padding)
         
-        # Configure rounded corners using border styling
+        # Configure rounded corners using border styling - Use same color as background for default state
         self.card_frame.configure(
-            highlightbackground=colors["card_bg"], 
+            highlightbackground=colors["card_bg"],  # Match background color in default state
             highlightthickness=1,
-            highlightcolor=colors["card_bg"]
+            highlightcolor=colors["card_bg"]  # Match background color in default state
         )
         
         # Make entire card clickable
@@ -386,28 +443,31 @@ class TemplateFileCard(Frame):
             self.remove_btn.bind("<Button-1>", lambda e, p=template_path: remove_callback({'path': p, 'name': self.filename}))
             
             # Highlight on hover
-            self.remove_btn.bind("<Enter>", lambda e: self.remove_btn.configure(fg=colors["error"]))
-            self.remove_btn.bind("<Leave>", lambda e: self.remove_btn.configure(fg=colors["text"] if not self.is_highlighted else "white"))
+            self.remove_btn.bind("<Enter>", lambda e: self.remove_btn.configure(fg="white"))
+            self.remove_btn.bind("<Leave>", lambda e: self.remove_btn.configure(fg="white" if not self.is_highlighted else "white"))
     
     def _on_hover_enter(self, event=None):
         """Handle mouse enter for hover effect"""
         if not self.is_highlighted:
             # Light grey hover effect - slightly lighter than card_bg
-            hover_bg = "#303030"  # Slightly lighter than card_bg
+            hover_bg = colors["hover_bg"]  # Use hover background from color scheme
             
-            # Update card and children background
-            self.card_frame.configure(bg=hover_bg, highlightbackground=hover_bg)
+            # Update card and children background - keep border the same as background (no blue outline)
+            self.card_frame.configure(
+                bg=hover_bg, 
+                highlightbackground=hover_bg  # Match border to background (no visible border)
+            )
             self.icon_label.configure(bg=hover_bg)
             self.info_frame.configure(bg=hover_bg)
             
             for widget in self.info_frame.winfo_children():
                 widget.configure(bg=hover_bg)
-            
+                
             if hasattr(self, 'remove_btn_frame'):
                 self.remove_btn_frame.configure(bg=hover_bg)
                 
             if hasattr(self, 'remove_btn'):
-                self.remove_btn.configure(bg=hover_bg)
+                self.remove_btn.configure(bg=hover_bg, fg="white")
         
         # Always change cursor
         self.configure(cursor="hand2")
@@ -416,8 +476,12 @@ class TemplateFileCard(Frame):
     def _on_hover_leave(self, event=None):
         """Handle mouse leave for hover effect"""
         if not self.is_highlighted:
-            # Reset to regular card background
-            self.card_frame.configure(bg=colors["card_bg"], highlightbackground=colors["card_bg"])
+            # Reset to regular card background and match border color to background
+            self.card_frame.configure(
+                bg=colors["card_bg"], 
+                highlightbackground=colors["card_bg"],  # Match background in default state
+                highlightthickness=1
+            )
             self.icon_label.configure(bg=colors["card_bg"])
             self.info_frame.configure(bg=colors["card_bg"])
             
@@ -428,8 +492,8 @@ class TemplateFileCard(Frame):
                 self.remove_btn_frame.configure(bg=colors["card_bg"])
                 
             if hasattr(self, 'remove_btn'):
-                self.remove_btn.configure(bg=colors["card_bg"])
-                
+                self.remove_btn.configure(bg=colors["card_bg"], fg="white")
+        
         # Reset cursor
         self.configure(cursor="")
         self.card_frame.configure(cursor="")
@@ -574,8 +638,8 @@ source/modules"""
         self.editor_frame.pack(fill=BOTH, expand=True, pady=(0, 15))
         
         # Instructions
-        Label(self.editor_frame, text="Enter one folder path per line. Use / for subfolders:", 
-             anchor="w", bg=colors["bg"], fg=colors["text"]).pack(fill=X, pady=(0, 5))
+        Label(self.editor_frame, text="Edit the folder structure below (one folder per line, use / for subfolders):", 
+             anchor="w", font=("Segoe UI", 10, "bold")).pack(fill=X, pady=(0, 5))
         
         # Text editor with scrollbar
         self.editor = Text(self.editor_frame, wrap=NONE, font=("Consolas", 10),
@@ -977,7 +1041,7 @@ source/modules"""
         
         # Instructions
         Label(frame, text="Edit the folder structure below (one folder per line, use / for subfolders):", 
-            anchor="w", font=("Segoe UI", 10, "bold")).pack(fill=X, pady=(0, 5))
+             anchor="w", font=("Segoe UI", 10, "bold")).pack(fill=X, pady=(0, 5))
         
         # Structure editor with scrollbar
         editor_frame = Frame(frame)

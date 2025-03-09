@@ -11,6 +11,7 @@ from dialog.template_edit_dialog import edit_template_dialog
 from dialog.category_dialog import create_new_category
 from dialog.folder_dialog import create_new_folder
 from dialog.template_management_dialog import manage_templates_dialog
+from app.templates.templates import edit_template_structure
 
 # Keeping this file as a facade to maintain backward compatibility
 # All dialog functions are now imported from specific modules
@@ -57,12 +58,55 @@ def edit_template_dialog(app, template):
     # Make dialog resizable but with minimum size to ensure all controls are visible
     dialog.minsize(500, 400)
     
-    # Main frame
-    main_frame = tk.Frame(dialog, padx=20, pady=20)
-    main_frame.pack(fill=BOTH, expand=True)
+    # Use a two-part layout: content area and fixed button area at bottom
+    # Create a canvas with scrollbar for the content
+    canvas_container = tk.Frame(dialog)
+    canvas_container.pack(fill=BOTH, expand=True, padx=10, pady=10)
+    
+    # Add canvas and scrollbar
+    canvas = tk.Canvas(canvas_container, highlightthickness=0)
+    scrollbar = ttk.Scrollbar(canvas_container, orient="vertical", command=canvas.yview)
+    
+    # Configure the canvas
+    canvas.configure(yscrollcommand=scrollbar.set)
+    
+    # Pack the scrollbar and canvas
+    scrollbar.pack(side=RIGHT, fill=Y)
+    canvas.pack(side=LEFT, fill=BOTH, expand=True)
+    
+    # Create a frame inside the canvas for the content
+    content_frame = tk.Frame(canvas, padx=15, pady=15)
+    
+    # Add the content frame to the canvas
+    canvas_window = canvas.create_window((0, 0), window=content_frame, anchor=NW)
+    
+    # Configure canvas to resize with window
+    def on_canvas_configure(event):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+        canvas.itemconfig(canvas_window, width=event.width)
+    
+    # Bind events for scrolling
+    canvas.bind("<Configure>", on_canvas_configure)
+    content_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+    
+    # Add mousewheel scrolling
+    def _on_mousewheel(event):
+        canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+    
+    canvas.bind_all("<MouseWheel>", _on_mousewheel)  # Windows/MacOS
+    canvas.bind_all("<Button-4>", lambda e: canvas.yview_scroll(-1, "units"))  # Linux
+    canvas.bind_all("<Button-5>", lambda e: canvas.yview_scroll(1, "units"))  # Linux
+    
+    # Button frame - fixed at bottom
+    button_frame = tk.Frame(dialog, padx=20, pady=10, bg=colors["bg"])
+    button_frame.pack(fill=X, side=BOTTOM)
+    
+    # Add separator above button frame
+    separator = ttk.Separator(dialog, orient='horizontal')
+    separator.pack(fill=X, side=BOTTOM, before=button_frame)
     
     # Template name
-    name_frame = tk.Frame(main_frame)
+    name_frame = tk.Frame(content_frame)
     name_frame.pack(fill=X, pady=(0, 15))
     
     tk.Label(name_frame, text="Template Name:").pack(side=LEFT)
@@ -72,7 +116,7 @@ def edit_template_dialog(app, template):
     name_entry.pack(side=LEFT, padx=(10, 0), fill=X, expand=True)
     
     # Category
-    category_frame = tk.Frame(main_frame)
+    category_frame = tk.Frame(content_frame)
     category_frame.pack(fill=X, pady=(0, 15))
     
     tk.Label(category_frame, text="Category:").pack(side=LEFT)
@@ -89,7 +133,7 @@ def edit_template_dialog(app, template):
     new_category_btn.pack(side=RIGHT)
     
     # Folders section
-    folders_frame = tk.Frame(main_frame)
+    folders_frame = tk.Frame(content_frame)
     folders_frame.pack(fill=X, pady=(0, 15))
     
     tk.Label(folders_frame, text="Folders:").pack(anchor="w")
@@ -99,15 +143,15 @@ def edit_template_dialog(app, template):
     folders_list_frame.pack(fill=X, pady=(5, 0))
     
     folder_vars = {}
-    for folder_name in app.template_manager_enhanced.folders:
-        var = BooleanVar(value=template_name in app.template_manager_enhanced.folders[folder_name])
+    for folder_name in app.template_manager.folders:
+        var = BooleanVar(value=template_name in app.template_manager.folders[folder_name])
         folder_vars[folder_name] = var
         
         folder_check = ttk.Checkbutton(folders_list_frame, text=folder_name, variable=var)
         folder_check.pack(anchor="w")
     
     # Description
-    desc_frame = tk.Frame(main_frame)
+    desc_frame = tk.Frame(content_frame)
     desc_frame.pack(fill=X, pady=(0, 15))
     
     tk.Label(desc_frame, text="Description:").pack(anchor="w")
@@ -117,7 +161,7 @@ def edit_template_dialog(app, template):
     desc_entry.pack(fill=X, pady=(5, 0))
     
     # Template file path (display only)
-    file_frame = tk.Frame(main_frame)
+    file_frame = tk.Frame(content_frame)
     file_frame.pack(fill=X, pady=(0, 15))
     
     tk.Label(file_frame, text="Template File:").pack(anchor="w")
@@ -141,20 +185,57 @@ def edit_template_dialog(app, template):
                                    command=lambda: change_template_file(dialog, template, file_label))
         change_file_btn.pack(anchor="w", pady=(5, 0))
     
-    # Buttons
-    button_frame = tk.Frame(main_frame)
-    button_frame.pack(fill=X, pady=(15, 0))
+    # Template Structure section
+    structure_frame = tk.Frame(content_frame)
+    structure_frame.pack(fill=X, pady=(0, 15))
     
-    cancel_btn = ttk.Button(button_frame, text="Cancel", command=dialog.destroy)
+    tk.Label(structure_frame, text="Template Structure:").pack(anchor="w")
+    
+    structure_btn = ttk.Button(structure_frame, text="Edit Template Structure",
+                           command=lambda: edit_template_structure(app, template))
+    structure_btn.pack(anchor="w", pady=(5, 0))
+    
+    # Buttons
+    cancel_btn = ttk.Button(button_frame, text="Cancel", 
+                         command=lambda: close_dialog(dialog, canvas))
     cancel_btn.pack(side=RIGHT, padx=(10, 0))
     
     save_btn = ttk.Button(button_frame, text="Save", 
-                        command=lambda: save_template_changes(
+                        command=lambda: save_and_close(
                             app, dialog, template, name_var.get(), category_var.get(), 
-                            desc_var.get(), folder_vars
+                            desc_var.get(), folder_vars, canvas
                         ))
     save_btn.pack(side=RIGHT)
 
+    # Initialize UI
+    dialog.wait_window()
+
+def close_dialog(dialog, canvas):
+    """Close dialog and clean up bindings"""
+    # Unbind mousewheel events
+    canvas.unbind_all("<MouseWheel>")
+    canvas.unbind_all("<Button-4>")
+    canvas.unbind_all("<Button-5>")
+    
+    # Destroy dialog
+    dialog.destroy()
+
+def save_and_close(app, dialog, template, new_name, new_category, 
+                new_description, folder_vars, canvas):
+    """Save changes and close dialog"""
+    # First save changes
+    result = save_template_changes(app, dialog, template, new_name, new_category, 
+                          new_description, folder_vars)
+    
+    # If save was successful, clean up and close
+    if result:
+        # Unbind mousewheel events
+        canvas.unbind_all("<MouseWheel>")
+        canvas.unbind_all("<Button-4>")
+        canvas.unbind_all("<Button-5>")
+        
+        # Close dialog
+        dialog.destroy()
 
 def change_template_file(dialog, template, file_label):
     """Change the file associated with a template"""
@@ -201,14 +282,14 @@ def save_template_changes(app, dialog, template, new_name, new_category,
     # Validate inputs
     if not new_name:
         messagebox.showerror("Error", "Template name cannot be empty")
-        return
+        return False
     
     # Check for name conflicts if name changed
     if new_name != old_name:
         for t in app.template_manager.templates:
             if t != template and t.get("name") == new_name:
                 messagebox.showerror("Error", f"Template '{new_name}' already exists")
-                return
+                return False
     
     # Save changes
     try:
@@ -218,13 +299,13 @@ def save_template_changes(app, dialog, template, new_name, new_category,
             success = app.template_manager.rename_template(old_name, new_name)
             if not success:
                 messagebox.showerror("Error", f"Failed to rename template to '{new_name}'")
-                return
+                return False
             
             # Update folder references
-            for folder_name in app.template_manager_enhanced.folders:
-                if old_name in app.template_manager_enhanced.folders[folder_name]:
-                    app.template_manager_enhanced.folders[folder_name].remove(old_name)
-                    app.template_manager_enhanced.folders[folder_name].append(new_name)
+            for folder_name in app.template_manager.folders:
+                if old_name in app.template_manager.folders[folder_name]:
+                    app.template_manager.folders[folder_name].remove(old_name)
+                    app.template_manager.folders[folder_name].append(new_name)
         
         # Update template properties
         template["name"] = new_name
@@ -242,31 +323,32 @@ def save_template_changes(app, dialog, template, new_name, new_category,
         # Update folder assignments
         for folder_name, var in folder_vars.items():
             # Check if folder assignment changed
-            is_in_folder = new_name in app.template_manager_enhanced.folders[folder_name]
+            is_in_folder = new_name in app.template_manager.folders[folder_name]
             should_be_in_folder = var.get()
             
             if is_in_folder and not should_be_in_folder:
                 # Remove from folder
-                app.template_manager_enhanced.folders[folder_name].remove(new_name)
+                app.template_manager.folders[folder_name].remove(new_name)
             elif not is_in_folder and should_be_in_folder:
                 # Add to folder
-                app.template_manager_enhanced.folders[folder_name].append(new_name)
+                app.template_manager.folders[folder_name].append(new_name)
         
         # Save folder changes
-        app.template_manager_enhanced.save_folders()
+        app.template_manager.save_folders()
         
         # Update UI
         from app.templates.template_gallery_ui import populate_enhanced_gallery
         populate_enhanced_gallery(app)
         
-        # Close dialog
-        dialog.destroy()
-        
         # Update status
         app.status_var.set(f"Template '{new_name}' updated")
         
+        # Return success
+        return True
+        
     except Exception as e:
         messagebox.showerror("Error", f"Failed to save template changes: {str(e)}")
+        return False
 
 
 def create_new_category(app, category_var=None):
@@ -316,28 +398,23 @@ def create_new_folder(app):
         messagebox.showerror("Error", "Folder name cannot be empty")
         return
     
-    if new_folder in app.template_manager_enhanced.folders:
+    if new_folder in app.template_manager.folders:
         messagebox.showerror("Error", f"Folder '{new_folder}' already exists")
         return
     
     # Create the folder
-    success = app.template_manager_enhanced.create_folder(new_folder)
+    success = app.template_manager.create_folder(new_folder)
     
     if success:
-        # Update folder dropdown
-        try:
-            folders = ["All"] + list(app.template_manager_enhanced.folders.keys())
-            menu = app.folder_var["menu"]
-            menu.delete(0, "end")
-            
-            for folder in folders:
-                menu.add_command(label=folder, 
-                            command=lambda v=folder: (app.folder_var.set(v), app.filter_templates()))
-            
-            # Show success message
-            app.status_var.set(f"Created folder: {new_folder}")
-        except Exception as e:
-            print(f"Error updating folder menu: {e}")
+        # Update folder dropdown using the central method
+        app.template_manager.update_ui_folder_dropdown(app)
+        
+        # Show success message
+        app.status_var.set(f"Created folder: {new_folder}")
+        
+        # Refreshes the enhanced gallery
+        from app.templates.template_gallery_ui import populate_enhanced_gallery
+        populate_enhanced_gallery(app)
     else:
         messagebox.showerror("Error", f"Failed to create folder '{new_folder}'")
 
@@ -438,8 +515,8 @@ def manage_templates_dialog(app):
     folders_scrollbar.config(command=folders_listbox.yview)
     
     # Populate folders list
-    for folder_name in app.template_manager_enhanced.folders:
-        count = len(app.template_manager_enhanced.folders[folder_name])
+    for folder_name in app.template_manager.folders:
+        count = len(app.template_manager.folders[folder_name])
         folders_listbox.insert(END, f"{folder_name} ({count} templates)")
     
     # Folder action buttons
@@ -579,35 +656,22 @@ def add_folder_from_dialog(app, dialog, listbox):
         messagebox.showerror("Error", "Folder name cannot be empty")
         return
     
-    if new_folder in app.template_manager_enhanced.folders:
+    if new_folder in app.template_manager.folders:
         messagebox.showerror("Error", f"Folder '{new_folder}' already exists")
         return
     
     # Create the folder
-    success = app.template_manager_enhanced.create_folder(new_folder)
+    success = app.template_manager.create_folder(new_folder)
     
     if success:
         # Add to listbox
         listbox.insert(END, f"{new_folder} (0 templates)")
         
-        # Update folder dropdown in main UI
-        try:
-            folders = ["All"] + list(app.template_manager_enhanced.folders.keys())
-            menu = app.folder_var["menu"]
-            menu.delete(0, "end")
-            
-            menu.add_command(label="All", 
-                        command=lambda v="All": (app.folder_var.set(v), app.filter_templates()))
-            
-            for folder in folders:
-                if folder != "All":
-                    menu.add_command(label=folder, 
-                                command=lambda v=folder: (app.folder_var.set(v), app.filter_templates()))
-            
-            # Show success message
-            app.status_var.set(f"Created folder: {new_folder}")
-        except Exception as e:
-            print(f"Error updating folder menu: {e}")
+        # Update folder dropdown using the central method
+        app.template_manager.update_ui_folder_dropdown(app)
+        
+        # Show success message
+        app.status_var.set(f"Created folder: {new_folder}")
     else:
         messagebox.showerror("Error", f"Failed to create folder '{new_folder}'")
 
@@ -620,15 +684,17 @@ def rename_selected_folder(app, dialog, listbox):
         return
     
     index = selected[0]
-    folder_text = listbox.get(index)
-    folder_name = folder_text.split(" (")[0]
+    item_text = listbox.get(index)
     
-    # Get new name
+    # Extract folder name from list item text
+    folder_name = item_text.split(" (")[0]
+    
+    # Ask for new name
     new_name = simpledialog.askstring("Rename Folder", 
-                                    "Enter new folder name:", 
+                                    f"Enter new name for folder '{folder_name}':", 
                                     initialvalue=folder_name)
     
-    if not new_name or new_name == folder_name:
+    if not new_name:
         return
     
     # Validate new name
@@ -636,42 +702,24 @@ def rename_selected_folder(app, dialog, listbox):
         messagebox.showerror("Error", "Folder name cannot be empty")
         return
     
-    if new_name in app.template_manager_enhanced.folders:
+    if new_name in app.template_manager.folders:
         messagebox.showerror("Error", f"Folder '{new_name}' already exists")
         return
     
     # Rename the folder
-    success = app.template_manager_enhanced.rename_folder(folder_name, new_name)
+    success = app.template_manager.rename_folder(folder_name, new_name)
     
     if success:
-        # Update listbox
-        count = len(app.template_manager_enhanced.folders[new_name])
+        # Update the listbox
+        count = len(app.template_manager.folders[new_name])
         listbox.delete(index)
         listbox.insert(index, f"{new_name} ({count} templates)")
         
-        # Update folder dropdown in main UI
-        try:
-            folders = ["All"] + list(app.template_manager_enhanced.folders.keys())
-            menu = app.folder_var["menu"]
-            menu.delete(0, "end")
-            
-            menu.add_command(label="All", 
-                        command=lambda v="All": (app.folder_var.set(v), app.filter_templates()))
-            
-            for folder in folders:
-                if folder != "All":
-                    menu.add_command(label=folder, 
-                                command=lambda v=folder: (app.folder_var.set(v), app.filter_templates()))
-            
-            # Update current folder selection if needed
-            if app.folder_var.get() == folder_name:
-                app.folder_var.set(new_name)
-                app.filter_templates()
-            
-            # Show success message
-            app.status_var.set(f"Renamed folder: {folder_name} → {new_name}")
-        except Exception as e:
-            print(f"Error updating folder menu: {e}")
+        # Update folder dropdown using the central method
+        app.template_manager.update_ui_folder_dropdown(app)
+        
+        # Show success message
+        app.status_var.set(f"Renamed folder: {folder_name} → {new_name}")
     else:
         messagebox.showerror("Error", f"Failed to rename folder '{folder_name}'")
 
@@ -684,53 +732,40 @@ def delete_selected_folder(app, dialog, listbox):
         return
     
     index = selected[0]
-    folder_text = listbox.get(index)
-    folder_name = folder_text.split(" (")[0]
+    item_text = listbox.get(index)
+    
+    # Extract folder name from list item text
+    folder_name = item_text.split(" (")[0]
+    
+    # Check if this is a default folder that cannot be deleted
+    if folder_name in ["Recent", "Favorites"]:
+        messagebox.showerror("Error", f"'{folder_name}' is a default folder and cannot be deleted")
+        return
+    
+    # Count templates in folder
+    count = len(app.template_manager.folders[folder_name])
     
     # Confirm deletion
-    count = len(app.template_manager_enhanced.folders[folder_name])
+    message = f"Are you sure you want to delete the folder '{folder_name}'?"
     if count > 0:
-        confirm = messagebox.askyesno("Confirm Deletion", 
-                                    f"Folder '{folder_name}' contains {count} templates. " +
-                                    f"Are you sure you want to delete it?\n\n" +
-                                    f"Note: The templates themselves will not be deleted.")
-    else:
-        confirm = messagebox.askyesno("Confirm Deletion", 
-                                    f"Are you sure you want to delete folder '{folder_name}'?")
+        message += f"\n\nThis folder contains {count} templates. " + \
+                 "The templates will not be deleted, but they will be removed from this folder."
     
-    if not confirm:
+    if not messagebox.askyesno("Confirm Deletion", message):
         return
     
     # Delete the folder
-    success = app.template_manager_enhanced.delete_folder(folder_name)
+    success = app.template_manager.delete_folder(folder_name)
     
     if success:
         # Remove from listbox
         listbox.delete(index)
         
-        # Update folder dropdown in main UI
-        try:
-            folders = ["All"] + list(app.template_manager_enhanced.folders.keys())
-            menu = app.folder_var["menu"]
-            menu.delete(0, "end")
-            
-            menu.add_command(label="All", 
-                        command=lambda v="All": (app.folder_var.set(v), app.filter_templates()))
-            
-            for folder in folders:
-                if folder != "All":
-                    menu.add_command(label=folder, 
-                                command=lambda v=folder: (app.folder_var.set(v), app.filter_templates()))
-            
-            # Reset current folder selection if needed
-            if app.folder_var.get() == folder_name:
-                app.folder_var.set("All")
-                app.filter_templates()
-            
-            # Show success message
-            app.status_var.set(f"Deleted folder: {folder_name}")
-        except Exception as e:
-            print(f"Error updating folder menu: {e}")
+        # Update folder dropdown using the central method
+        app.template_manager.update_ui_folder_dropdown(app)
+        
+        # Show success message
+        app.status_var.set(f"Deleted folder: {folder_name}")
     else:
         messagebox.showerror("Error", f"Failed to delete folder '{folder_name}'")
 

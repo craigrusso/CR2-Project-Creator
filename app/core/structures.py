@@ -287,14 +287,15 @@ def highlight_current_structure(app):
         # Set flag to prevent hover effects from overriding highlight
         app.structure_is_highlighted = True
         
-        # Use dark grey instead of blue highlight
-        highlight_bg = "#282828"      # Dark grey background
-        highlight_text = colors["text"]  # Regular text color
+        # Use the same highlight colors as the right side cards
+        highlight_bg = colors["highlight_bg"]
+        highlight_border = colors["highlight_border"]
+        highlight_text = colors["highlight_text"]
         
         # Apply highlight to the structure frame
         app.structure_template_frame.configure(
             bg=highlight_bg,
-            highlightbackground=highlight_bg,
+            highlightbackground=highlight_border,
             highlightthickness=2
         )
         

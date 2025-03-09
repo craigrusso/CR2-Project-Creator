@@ -402,4 +402,4 @@ def update_card_highlighting(card, template_path):
                 
         # Reset remove button if it exists
         if hasattr(card, 'remove_btn'):
-            card.remove_btn.configure(bg=colors["bg"], fg=colors["text"])
+            card.remove_btn.configure(bg=colors["bg"], fg="white")

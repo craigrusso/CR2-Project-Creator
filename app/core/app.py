@@ -339,9 +339,9 @@ class ProjectCreatorApp:
             template_path = template_path.get("path", "")
         
         # Define highlight colors for better visual effect
-        highlight_border = "#4682B4"  # Bright blue outline
-        highlight_bg = "#2C4F76"      # Darker blue fill to simulate transparency
-        highlight_text = "white"
+        highlight_border = colors["highlight_border"]  # Bright blue outline
+        highlight_bg = colors["highlight_bg"]      # Darker blue fill
+        highlight_text = colors["highlight_text"]  # White text
         
         # Highlight the selected card
         for cards in [self.template_cards, self.recent_template_cards]:
@@ -370,7 +370,7 @@ class ProjectCreatorApp:
                         card.remove_btn_frame.configure(bg=highlight_bg)
                         
                     if hasattr(card, 'remove_btn'):
-                        card.remove_btn.configure(bg=highlight_bg, fg=highlight_text)
+                        card.remove_btn.configure(bg=highlight_bg, fg="white")
                     
                     break
     
@@ -382,7 +382,7 @@ class ProjectCreatorApp:
         # Mark card as not highlighted
         card.is_highlighted = False
         
-        # Reset card frame styling
+        # Reset card frame styling - border should match background
         card.card_frame.configure(
             bg=colors["card_bg"],
             highlightbackground=colors["card_bg"],
@@ -402,7 +402,7 @@ class ProjectCreatorApp:
             card.remove_btn_frame.configure(bg=colors["card_bg"])
             
         if hasattr(card, 'remove_btn'):
-            card.remove_btn.configure(bg=colors["card_bg"], fg=colors["text"])
+            card.remove_btn.configure(bg=colors["card_bg"], fg="white")
     
     def trigger_template_updated(self):
         """Called when templates have been updated"""

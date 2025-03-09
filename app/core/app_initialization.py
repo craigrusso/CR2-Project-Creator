@@ -10,6 +10,7 @@ from app.core.app_config import setup_dpi_awareness
 from app.ui.color_scheme import colors
 from app.utils.utils import load_config, save_config, load_recent_projects, load_recent_templates
 from app.templates.template_manager import TemplateManager
+from app.templates.template_manager_migration import TemplateManagerMigration
 from app.core.project_builder import ProjectBuilder
 from app.ui.app_theme import configure_styles, apply_theme_to_widgets
 
@@ -24,6 +25,14 @@ def initialize_app(app):
     # Set up managers
     app.template_manager = TemplateManager()
     app.project_builder = ProjectBuilder(app.template_manager)
+    
+    # Temporarily set up the template_manager_enhanced to point directly to template_manager
+    # This ensures backward compatibility during the transition
+    app.template_manager_enhanced = app.template_manager
+    
+    # Initialize category manager for template categories
+    from app.templates.template_category_manager import TemplateCategoryManager
+    app.category_manager = TemplateCategoryManager(app.template_manager)
     
     # Initialize application state
     app.selected_template_file = None
@@ -141,40 +150,14 @@ def _load_saved_selections(app):
                 app.config["structure_template"] = "Default"
                 save_config(app.config)
             
-            # Highlight the current structure in the dropdown
-            from app.core.structures import highlight_current_structure
-            # Set structure variable
+            # Set structure variable directly without delayed highlighting
             app.structure_var.set(template_name)
-            app.root.after(500, lambda: highlight_current_structure(app))
             
-            # We'll refresh the template gallery to show highlighting, but ensure we don't cause recursion
-            # by directly updating the UI elements instead of triggering a full refresh
-            def update_template_gallery_highlighting():
-                # Check if the UI elements exist
-                if hasattr(app, 'template_list_frame') and hasattr(app.template_list_frame, 'scrollable_frame'):
-                    # Define colors
-                    blue_highlight = "#4682B4"  # Steel Blue
-                    dark_text = "#FFFFFF"  # White text for better visibility on blue
-                    
-                    # Look for the template card matching our selected template
-                    for card in app.template_list_frame.scrollable_frame.winfo_children():
-                        if hasattr(card, 'template') and card.template.get("name") == template_name:
-                            # Apply blue highlight to the entire card and all its parts
-                            card.configure(bg=blue_highlight)
-                            if hasattr(card, 'info_frame'):
-                                card.info_frame.configure(bg=blue_highlight)
-                            
-                            # Also highlight the icon
-                            if hasattr(card, 'icon_label'):
-                                card.icon_label.configure(bg=blue_highlight, fg=dark_text)
-                            
-                            # Also highlight info frame contents with dark text for contrast
-                            if hasattr(card, 'info_frame'):
-                                for widget in card.info_frame.winfo_children():
-                                    widget.configure(bg=blue_highlight, fg=dark_text)
-                            break
+            # Apply immediate structure highlighting if needed, no delay
+            from app.core.structures import highlight_current_structure
+            highlight_current_structure(app)
             
-            app.root.after(700, update_template_gallery_highlighting)
+            # We won't use delayed highlighting anymore, as it causes color flashing
     except Exception as e:
         print(f"Error loading saved selections: {e}")
 

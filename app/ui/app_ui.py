@@ -349,27 +349,27 @@ def create_ui(app):
     app.update_recent_templates_gallery()
     
     # Structure Template selection
-    structure_template_container = tk.Frame(settings_content, bg="#282828")
+    structure_template_container = tk.Frame(settings_content, bg=colors["bg"])
     structure_template_container.pack(fill=X, pady=(0, 15))
     
     structure_template_label = tk.Label(structure_template_container, text="Structure Template", font=("Segoe UI", 10, "bold"),
-                                       bg="#282828", fg=colors["text"])
+                                       bg=colors["bg"], fg=colors["text"])
     structure_template_label.pack(anchor=W, pady=(0, 5))
     
     structure_template_desc = tk.Label(structure_template_container,
                                      text="Select a structure template to organize your project folders",
-                                     font=("Segoe UI", 9), bg="#282828", fg=colors["secondary_text"], wraplength=450)
+                                     font=("Segoe UI", 9), bg=colors["bg"], fg=colors["secondary_text"], wraplength=450)
     structure_template_desc.pack(anchor=W, pady=(0, 5))
     
     # Container for structure template frame (used for border styling)
-    app.structure_container_frame = tk.Frame(structure_template_container, bg="#282828", bd=0)
+    app.structure_container_frame = tk.Frame(structure_template_container, bg=colors["bg"], bd=0)
     app.structure_container_frame.pack(fill=X, padx=0, pady=5)
     
     # Create the structure frame with border styling
     app.structure_template_frame = tk.Frame(
         app.structure_container_frame, 
-        bg="#282828", 
-        highlightbackground="#282828",
+        bg=colors["bg"], 
+        highlightbackground=colors["bg"],
         highlightthickness=1,
         bd=0,
         height=50
@@ -377,7 +377,7 @@ def create_ui(app):
     app.structure_template_frame.pack(fill=X, padx=2, pady=2)
     
     # Create a dedicated frame for structure buttons - pack this FIRST
-    structure_buttons_frame = tk.Frame(app.structure_template_frame, bg="#282828")
+    structure_buttons_frame = tk.Frame(app.structure_template_frame, bg=colors["bg"])
     structure_buttons_frame.pack(side=RIGHT, fill=Y)
     
     # Switch back to ttk.Button but use a specific style to match Browse button
@@ -401,23 +401,23 @@ def create_ui(app):
     # Fixed width label with ellipsis for long text - pack this AFTER buttons to ensure buttons get space first
     app.structure_template_info = tk.Label(app.structure_template_frame, text="No structure template selected", 
                                          font=("Segoe UI", 9), width=30,  # Reduced width to give more space to buttons
-                                         bg="#282828", fg=colors["secondary_text"], 
+                                         bg=colors["bg"], fg=colors["secondary_text"], 
                                          anchor="w", pady=5, padx=12)
     app.structure_template_info.pack(side=LEFT, fill=X, expand=True)
     
     # Update hover effects for the frame and text only
     def on_structure_hover_enter(event):
         if not hasattr(app, 'structure_is_highlighted') or not app.structure_is_highlighted:
-            hover_bg = "#303030"  # Slightly lighter than card_bg
+            hover_bg = colors["hover_bg"]  # Use the hover bg from the color scheme
             app.structure_template_frame.configure(bg=hover_bg, highlightbackground=hover_bg)
             app.structure_template_info.configure(bg=hover_bg)
             structure_buttons_frame.configure(bg=hover_bg)
     
     def on_structure_hover_leave(event):
         if not hasattr(app, 'structure_is_highlighted') or not app.structure_is_highlighted:
-            app.structure_template_frame.configure(bg="#282828", highlightbackground="#282828")
-            app.structure_template_info.configure(bg="#282828")
-            structure_buttons_frame.configure(bg="#282828")
+            app.structure_template_frame.configure(bg=colors["bg"], highlightbackground=colors["bg"])
+            app.structure_template_info.configure(bg=colors["bg"])
+            structure_buttons_frame.configure(bg=colors["bg"])
     
     # Add hover bindings to structure elements
     for widget in [app.structure_template_frame, app.structure_template_info, structure_buttons_frame]:
@@ -445,44 +445,42 @@ def create_ui(app):
     select_output_btn.pack(side=RIGHT)
     
     # Move the folder structure functionality directly into the template section
-    structure_section = tk.Frame(structure_template_container, bg="#282828")
+    structure_section = tk.Frame(structure_template_container, bg=colors["bg"])
     structure_section.pack(fill=X, pady=(10, 0))
     
     structure_label = tk.Label(structure_section, text="Folder Structure Management", 
-                             font=("Segoe UI", 10, "bold"), bg="#282828", fg=colors["text"])
+                             font=("Segoe UI", 10, "bold"), bg=colors["bg"], fg=colors["text"])
     structure_label.pack(anchor=W, pady=(0, 5))
     
     # Create a description for the folder structure
     structure_desc = tk.Label(structure_section, 
                            text="Define the folders that will be created when using this template", 
-                           font=("Segoe UI", 9), bg="#282828", fg=colors["secondary_text"])
+                           font=("Segoe UI", 9), bg=colors["bg"], fg=colors["secondary_text"])
     structure_desc.pack(anchor=W, pady=(0, 10))
     
     # Structure buttons
-    structure_btn_frame = tk.Frame(structure_section, bg="#282828")
+    structure_btn_frame = tk.Frame(structure_section, bg=colors["bg"])
     structure_btn_frame.pack(fill=X)
     
     create_structure_btn = ttk.Button(structure_btn_frame, text="Create Custom Structure", 
                                    command=lambda: create_custom_structure(app))
     create_structure_btn.pack(side=LEFT, padx=(0, 5))
     
-    edit_structure_btn = ttk.Button(structure_btn_frame, text="Edit Template Structure", 
-                                 command=lambda: edit_template_structure(app))
-    edit_structure_btn.pack(side=LEFT, padx=(0, 5))
+    # Edit Template Structure button removed - moved to template editor dialog
     
     # Add a button to manage all structures
     manage_structures_btn = ttk.Button(structure_btn_frame, text="Manage All Structures", 
                                    command=lambda: manage_structures(app))
-    manage_structures_btn.pack(side=LEFT, padx=(5, 0))
+    manage_structures_btn.pack(side=LEFT, padx=(0, 5))
     
     # Add a visual hint that this is connected to the template
     structure_hint = tk.Label(structure_section, 
                            text="The structure is associated with the selected template", 
-                           font=("Segoe UI", 9, "italic"), bg="#282828", fg="#999999")
+                           font=("Segoe UI", 9, "italic"), bg=colors["bg"], fg="#999999")
     structure_hint.pack(fill=X, pady=(5, 0))
     
     # Structure dropdown (keep this from advanced section)
-    structure_dropdown_frame = tk.Frame(structure_section, bg="#282828")
+    structure_dropdown_frame = tk.Frame(structure_section, bg=colors["bg"])
     structure_dropdown_frame.pack(fill=X, pady=(10, 0))
     
     # Populate structure dropdown
@@ -490,7 +488,7 @@ def create_ui(app):
     update_structure_dropdown(app)
     
     dropdown_label = tk.Label(structure_dropdown_frame, text="Selected Structure:", 
-                           font=("Segoe UI", 9), bg="#282828", fg=colors["secondary_text"])
+                           font=("Segoe UI", 9), bg=colors["bg"], fg=colors["secondary_text"])
     dropdown_label.pack(side=LEFT, padx=(0, 5))
     
     app.structure_dropdown = ttk.OptionMenu(structure_dropdown_frame, app.structure_var, "Default",

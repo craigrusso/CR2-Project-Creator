@@ -129,6 +129,11 @@ def populate_template_gallery(app):
                     
                 # Force UI update
                 card.update()
+
+            if hasattr(card, 'edit_btn'):
+                card.edit_btn.configure(bg=colors["card_bg"], fg="white")
+            if hasattr(card, 'delete_btn'):
+                card.delete_btn.configure(bg=colors["card_bg"], fg="white")
     except Exception as e:
         print(f"Error populating template gallery: {e}")
 
@@ -229,9 +234,9 @@ def highlight_selected_template_in_gallery(app, selected_template):
         return
         
     # Define highlight colors
-    highlight_border = "#4682B4"
-    highlight_bg = "#2C4F76"
-    highlight_text = "white"
+    highlight_border = colors["highlight_border"]
+    highlight_bg = colors["highlight_bg"]
+    highlight_text = colors["highlight_text"]
     
     # Reset all cards first
     for card in app.template_list_frame.scrollable_frame.winfo_children():
@@ -241,7 +246,11 @@ def highlight_selected_template_in_gallery(app, selected_template):
                 card.is_highlighted = False
                 
             # Reset styling to default
-            card.configure(bg=colors["card_bg"], highlightbackground=colors["card_bg"], highlightthickness=1)
+            card.configure(
+                bg=colors["card_bg"], 
+                highlightbackground=colors["card_bg"],  # Match background in default state
+                highlightthickness=1
+            )
             card.info_frame.configure(bg=colors["card_bg"])
             
             # Reset icon
@@ -529,7 +538,12 @@ def clear_template_file(app):
 def reset_card_highlighting(card):
     """Helper function to reset card highlighting"""
     try:
-        card.configure(bg=colors["bg"])
+        card.configure(
+            bg=colors["bg"],
+            highlightbackground=colors["bg"],  # Match background in default state
+            highlightthickness=1
+        )
+        
         if hasattr(card, 'icon_label'):
             card.icon_label.configure(bg=colors["bg"], fg=colors["text"])
         if hasattr(card, 'info_frame'):
@@ -632,8 +646,11 @@ def _on_card_hover_enter(card):
     # Light grey hover effect
     hover_bg = "#303030"  # Slightly lighter than card_bg
     
-    # Update the card and all its children
-    card.configure(bg=hover_bg, highlightbackground=hover_bg)
+    # Update the card and all its children - border should match background (no blue outline)
+    card.configure(
+        bg=hover_bg, 
+        highlightbackground=hover_bg  # Match border to background (no visible border)
+    )
     
     if hasattr(card, 'icon_label'):
         card.icon_label.configure(bg=hover_bg)
@@ -656,7 +673,11 @@ def _on_card_hover_leave(card):
         return
         
     # Reset to card background
-    card.configure(bg=colors["card_bg"], highlightbackground=colors["card_bg"])
+    card.configure(
+        bg=colors["card_bg"], 
+        highlightbackground=colors["card_bg"],  # Match background in default state
+        highlightthickness=1
+    )
     
     if hasattr(card, 'icon_label'):
         card.icon_label.configure(bg=colors["card_bg"], fg=colors["text"])
