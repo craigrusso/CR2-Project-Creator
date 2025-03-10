@@ -6,6 +6,7 @@ import threading
 import datetime
 import shutil
 import sys
+import json
 
 # Using PyQt for the UI framework
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar, QPushButton
@@ -98,6 +99,34 @@ class ProjectBuilder:
             # Create base directory
             os.makedirs(project_path)
             
+            # If template_file is a template name, look it up
+            template_obj = None
+            if template_file and not os.path.exists(template_file):
+                # It might be a template name, try to find it
+                template_obj = self.template_manager.get_template_by_name(template_file)
+                if template_obj:
+                    if template_obj.get('type') == 'directory':
+                        template_file = template_obj.get('path')
+                    else:
+                        template_file = template_obj.get('file', '')
+            
+            # Check if we need to get structure name from the template
+            if template_obj and not structure_name:
+                # Check if template has a structure_name
+                if 'structure_name' in template_obj:
+                    structure_name = template_obj.get('structure_name')
+                # For directory templates, check the template.json file
+                elif template_obj.get('type') == 'directory' and os.path.exists(template_file):
+                    template_json_path = os.path.join(template_file, "template.json")
+                    if os.path.exists(template_json_path):
+                        try:
+                            with open(template_json_path, 'r') as f:
+                                template_info = json.load(f)
+                                if 'structure_name' in template_info:
+                                    structure_name = template_info['structure_name']
+                        except Exception as e:
+                            print(f"Error reading template.json: {e}")
+            
             # Create folder structure based on template or type
             if structure_name and structure_name in self.template_manager.custom_structures:
                 # Use custom structure
@@ -127,11 +156,41 @@ class ProjectBuilder:
             return False, error_msg
     
     def _create_folder_structure(self, project_path, directories):
-        """Create folder structure with improved handling of nested directories"""
-        for directory in directories:
-            # Support for nested directories using forward slashes
-            dir_path = os.path.join(project_path, directory.replace('/', os.sep))
-            os.makedirs(dir_path, exist_ok=True)
+        """Create folder structure with improved handling of nested directories and files"""
+        if isinstance(directories, list):
+            for item in directories:
+                if isinstance(item, dict):
+                    # Handle nested dictionary
+                    for folder_name, sub_items in item.items():
+                        # Create the parent folder
+                        folder_path = os.path.join(project_path, folder_name)
+                        os.makedirs(folder_path, exist_ok=True)
+                        
+                        # Process subfolders recursively
+                        self._create_folder_structure(folder_path, sub_items)
+                else:
+                    # Handle string items (files or simple folders)
+                    name = item
+                    is_folder = name.endswith('/')
+                    
+                    if is_folder:
+                        # It's a folder (ending with slash)
+                        name = name[:-1]  # Remove the trailing slash
+                        folder_path = os.path.join(project_path, name)
+                        os.makedirs(folder_path, exist_ok=True)
+                    else:
+                        # It's a file, create placeholder or empty file
+                        if '/' in name:
+                            # Handle file in subfolder
+                            file_dir, filename = os.path.split(name)
+                            file_dir_path = os.path.join(project_path, file_dir)
+                            os.makedirs(file_dir_path, exist_ok=True)
+                            file_path = os.path.join(file_dir_path, filename)
+                        else:
+                            file_path = os.path.join(project_path, name)
+                        
+                        # Create an empty file
+                        open(file_path, 'a').close()
     
     def _process_template(self, template_file, project_path, project_name, project_type):
         """Process template files with improved handling for different template types"""
@@ -144,11 +203,21 @@ class ProjectBuilder:
     def _copy_template_directory(self, template_dir, project_path, project_name):
         """Copy a directory template, renaming files that match specific patterns"""
         for root, dirs, files in os.walk(template_dir):
+            # Skip template.json file
+            if "template.json" in files:
+                files.remove("template.json")
+                
             # Get relative path from template dir
             rel_path = os.path.relpath(root, template_dir)
             if rel_path == '.':  # Root directory
                 target_dir = project_path
             else:
+                # Replace PROJECT_NAME in directory names if needed
+                rel_path_parts = []
+                for part in rel_path.split(os.sep):
+                    part = part.replace("{{PROJECT_NAME}}", project_name)
+                    rel_path_parts.append(part)
+                rel_path = os.path.join(*rel_path_parts)
                 target_dir = os.path.join(project_path, rel_path)
             
             # Create target directory
@@ -159,7 +228,7 @@ class ProjectBuilder:
                 source_file = os.path.join(root, file)
                 
                 # Handle file renaming if needed
-                target_file_name = file.replace('{{PROJECT_NAME}}', project_name)
+                target_file_name = file.replace("{{PROJECT_NAME}}", project_name)
                 target_file = os.path.join(target_dir, target_file_name)
                 
                 # Copy the file
@@ -177,21 +246,36 @@ class ProjectBuilder:
         return ext in text_extensions
     
     def _replace_template_placeholders(self, file_path, project_name):
-        """Replace placeholders in text files"""
+        """Replace placeholder content in a file with project-specific values"""
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
             
-            # Replace placeholders
-            content = content.replace('{{PROJECT_NAME}}', project_name)
-            content = content.replace('{{DATE}}', datetime.datetime.now().strftime('%Y-%m-%d'))
-            content = content.replace('{{YEAR}}', datetime.datetime.now().strftime('%Y'))
+            # Create a dict of replacements
+            current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+            current_year = datetime.datetime.now().strftime("%Y")
+            
+            replacements = {
+                "{{PROJECT_NAME}}": project_name,
+                "{{PROJECT NAME}}": project_name,
+                "{{PROJECTNAME}}": project_name,
+                "{{project_name}}": project_name.lower(),
+                "{{DATE}}": current_date,
+                "{{YEAR}}": current_year
+            }
+            
+            # Apply all replacements
+            for placeholder, value in replacements.items():
+                content = content.replace(placeholder, value)
             
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(content)
-        except (UnicodeDecodeError, IOError):
-            # Not a text file or can't read it - just skip placeholder replacement
+                
+        except UnicodeDecodeError:
+            # Not a text file or uses a different encoding
             pass
+        except Exception as e:
+            print(f"Error replacing placeholders in {file_path}: {e}")
     
     def _copy_template_file(self, template_file, project_path, project_name, project_type):
         """Copy the template file to the appropriate location in the project"""

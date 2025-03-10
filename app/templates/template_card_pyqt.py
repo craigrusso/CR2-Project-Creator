@@ -122,6 +122,8 @@ class TemplateCard(QFrame):
         if (event.pos() - self.drag_start_position).manhattanLength() < 10:
             return
         
+        print(f"[DEBUG] TemplateCard: Starting drag for template '{self.template.get('name', '')}'")
+        
         # Create a drag object
         drag = QDrag(self)
         
@@ -129,12 +131,18 @@ class TemplateCard(QFrame):
         mime_data = QMimeData()
         
         # Add the template name as text for simple drag/drop operations
-        mime_data.setText(self.template.get('name', ''))
+        template_name = self.template.get('name', '')
+        mime_data.setText(template_name)
+        print(f"[DEBUG] TemplateCard: Added template name '{template_name}' as text to mime data")
         
         # Also add the complete template as JSON data for more advanced operations
-        import json
-        template_json = json.dumps(self.template).encode()
-        mime_data.setData("application/json", QByteArray(template_json))
+        try:
+            import json
+            template_json = json.dumps(self.template).encode()
+            mime_data.setData("application/json", QByteArray(template_json))
+            print(f"[DEBUG] TemplateCard: Added template as JSON to mime data")
+        except Exception as e:
+            print(f"[DEBUG] TemplateCard: Error adding JSON data: {e}")
         
         # Set the mime data on the drag object
         drag.setMimeData(mime_data)
@@ -145,7 +153,9 @@ class TemplateCard(QFrame):
         drag.setHotSpot(event.pos())
         
         # Execute the drag operation
-        drag.exec_(Qt.CopyAction)
+        print(f"[DEBUG] TemplateCard: Executing drag operation")
+        result = drag.exec_(Qt.CopyAction)
+        print(f"[DEBUG] TemplateCard: Drag operation completed with result: {result}")
         
         # Reset drag start position
         self.drag_start_position = None

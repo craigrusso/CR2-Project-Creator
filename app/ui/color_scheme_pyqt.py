@@ -37,11 +37,14 @@ APP_COLORS = {
     "highlight_text": "#FFFFFF",  # White text for highlighted items
     
     # Hover effect colors
-    "hover_bg": "#303030",        # Light grey hover effect for cards
-    "hover_bg_transparent": "#30303033",  # Transparent hover background (33=20% opacity)
+    "hover_bg": "#454545",        # Much darker grey hover effect for better visibility
+    "hover_bg_transparent": "#45454533",  # Transparent hover background (33=20% opacity)
     
     # Border colors
     "border": "#3C3C3C",          # Border for cards and sections
+    
+    # File browser colors
+    "folder_icon": "#E8BA36",     # Golden yellow for folder icons
 }
 
 # Function to get a specific color by name
