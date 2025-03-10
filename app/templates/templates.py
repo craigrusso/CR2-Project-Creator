@@ -5,15 +5,17 @@ import os
 import platform
 import subprocess
 import sys
+import shutil
+import json
+import datetime
+import time
+import random
+import string
 
 # Using PyQt for the UI framework
 from PyQt5.QtWidgets import QFileDialog, QMessageBox, QInputDialog
 from app.ui.color_scheme_pyqt import colors
 UI_FRAMEWORK = 'pyqt'
-
-import json
-
-from app.utils.utils import load_config, save_config
 
 # Import PyQt UI components
 from app.ui.ui_components_pyqt import TemplateDirectoryEditor, StructureEditor
@@ -703,37 +705,25 @@ def _on_card_hover_leave(card):
 
 
 def edit_directory_template(app, template):
-    """
-    Open the template directory editor for editing a directory-based template
-    
-    Args:
-        app: The application instance
-        template: The template object to edit
-    """
-    # Check if this is a directory template
-    if not template or template.get('type') != 'directory':
-        messagebox.showerror("Error", "This is not a directory template")
+    """Edit a directory-based template"""
+    if not template or not template.get('path') or not os.path.isdir(template.get('path')):
+        app.show_status_message("Template directory not found.", message_type="error")
         return
-    
-    # Get the template path
+        
     template_path = template.get('path')
-    if not template_path or not os.path.isdir(template_path):
-        messagebox.showerror("Error", "Template directory not found")
-        return
     
-    # Create the editor
+    # Open the template directory editor
     editor = TemplateDirectoryEditor(
-        app.root, 
+        app,
         template_path=template_path,
-        save_callback=lambda: refresh_after_edit(app, template)
+        save_callback=lambda path: _on_directory_template_save(app, template, path),
+        app=app  # Pass the app parameter for accessing template manager
     )
-    
-    # Wait for editor to close
-    app.root.wait_window(editor)
+    editor.exec_()
 
 
-def refresh_after_edit(app, template):
-    """Refresh UI after editing a template"""
+def _on_directory_template_save(app, template, path):
+    """Handle saving changes to a directory-based template"""
     # Refresh the template in the gallery
     populate_template_gallery(app)
     
@@ -896,66 +886,101 @@ def edit_template_structure(app, template=None):
                 # If the template type doesn't have a defined structure, use Basic
                 structure = app.template_manager.get_default_structure('Standard')
         
-        # Open structure editor
-        editor = StructureEditor(app.root, 
+        # Show an info message about the relationship between templates and structures
+        if not structure_exists:
+            QMessageBox.information(
+                app, 
+                "Template Structure", 
+                f"Creating a new folder structure for template '{template_name}'.\n\n"
+                f"Each template can have its own folder structure that will be created when using this template.\n\n"
+                f"You can use predefined structures or create a custom one for this template."
+            )
+        
+        editor = StructureEditor(app, 
                               structure=structure, 
                               title=f"Edit Structure for '{template_name}'",
                               app=app,
                               save_callback=lambda name, s: _save_template_structure(app, template_structure_name, name, s, template))
         
         # Set the structure name (prefilled with template name)
-        editor.name_var.set(template_structure_name)
+        editor.name_input.setText(template_structure_name)
         
         # If the structure already exists, don't allow changing the name
         if structure_exists:
-            editor.name_entry.config(state="disabled")
+            editor.name_input.setReadOnly(True)
         
-        app.root.wait_window(editor)
+        # Show the editor
+        editor.exec_()
 
 
 def _save_template_structure(app, old_name, new_name, structure, template):
-    """Save a structure associated with a template"""
-    from app.core.structures import update_structure_dropdown
+    """Save a template's folder structure"""
+    # Debug
+    print(f"DEBUG: Template edited: {template.get('name', 'Unknown')}")
+    
+    # Update the template with the structure info
+    if "structure" not in template or not template["structure"]:
+        print("DEBUG: Template has no existing structure data")
+        template["structure"] = structure
+        template["structure_name"] = new_name
+        print(f"DEBUG: Creating new structure file: {new_name}")
+    else:
+        print("DEBUG: Template has structure data")
+        
+    # If the structure name changed, update the reference
+    if old_name != new_name:
+        print(f"DEBUG: Updating structure name from {old_name} to {new_name}")
+        # Delete the old structure file if it exists and differs from the new name
+        old_structure = app.template_manager.get_structure(old_name)
+        if old_structure:
+            # Rename the structure
+            success = app.template_manager.rename_custom_structure(old_name, new_name)
+            if success:
+                print(f"DEBUG: Renamed structure from {old_name} to {new_name}")
+            else:
+                print(f"DEBUG: Failed to rename structure from {old_name} to {new_name}")
+                
+    # Update the template's structure reference regardless
+    template["structure_name"] = new_name
+    print(f"DEBUG: Saving structure as {new_name}")
     
     # Save the structure
-    success = app.template_manager.save_custom_structure(new_name, structure)
+    app.template_manager.save_custom_structure(new_name, structure)
     
-    if success:
-        # Associate the structure with the template
-        template_info_path = ""
+    # Update the template
+    app.template_manager.update_template(template)
+    
+    # Refresh the template gallery to show updated structure info
+    populate_template_gallery(app)
+    
+    # Show success message
+    app.show_status_message(f"Structure for template '{template.get('name', 'Unknown')}' updated.", message_type="success")
+    
+    # Also update the structure dropdown in the main UI if it exists
+    if hasattr(app, 'update_structure_dropdown'):
+        app.update_structure_dropdown()
         
-        if template.get('type') == 'directory':
-            # For directory templates, save in the template.json within the directory
-            template_dir = template.get('path', '')
-            if template_dir and os.path.isdir(template_dir):
-                template_info_path = os.path.join(template_dir, "template.json")
-        else:
-            # For file templates, update our in-memory template
-            template['structure_name'] = new_name
-        
-        # If we have a template.json, update it
-        if template_info_path and os.path.exists(template_info_path):
-            try:
-                with open(template_info_path, 'r') as f:
-                    template_info = json.load(f)
-                
-                template_info['structure_name'] = new_name
-                
-                with open(template_info_path, 'w') as f:
-                    json.dump(template_info, f, indent=2)
-            except Exception as e:
-                print(f"Error updating template info: {e}")
-        
-        # Update UI
-        messagebox.showinfo("Success", f"Structure saved and associated with template '{template.get('name', '')}'")
-        
-        # Update the structures dropdown
-        update_structure_dropdown(app)
-        
-        # Set the structure as selected
-        app.structure_var.set(new_name)
-    else:
-        messagebox.showerror("Error", f"Failed to save structure")
+    # Show visual indicator that the template has a custom structure
+    _highlight_template_with_custom_structure(app, template)
+
+
+def _highlight_template_with_custom_structure(app, template):
+    """Add a visual indicator to templates with custom structures"""
+    if hasattr(app, 'template_cards'):
+        for card in app.template_cards:
+            if card.template and card.template.get('id') == template.get('id'):
+                # Add a visual indicator that this template has a custom structure
+                if hasattr(card, 'structure_indicator'):
+                    # Update existing indicator
+                    card.structure_indicator.setVisible(True)
+                else:
+                    # Create a new indicator
+                    card.structure_indicator = QLabel(card)
+                    card.structure_indicator.setText("📂")  # Folder emoji
+                    card.structure_indicator.setToolTip("This template has a custom folder structure")
+                    card.structure_indicator.setStyleSheet("background-color: rgba(0,0,0,0); color: #4CAF50; font-size: 16px; font-weight: bold;")
+                    card.structure_indicator.setGeometry(card.width() - 30, 10, 20, 20)
+                    card.structure_indicator.show()
 
 
 def apply_structure_to_template(app, template=None):

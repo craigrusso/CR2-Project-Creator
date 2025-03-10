@@ -395,37 +395,54 @@ def show_edit_template(parent, template, callback=None):
     
     # Function to convert tree to structure format
     def get_structure_from_tree():
+        """Get structure from the tree widget"""
         # Find the structure tree in the second tab
         structure_tab = tabs.widget(1)
         structure_tree = structure_tab.findChild(QTreeWidget)
-        root_item = structure_tree.topLevelItem(0)
         
-        result = []
+        structure = []
         
         def traverse(item, parent_path=""):
-            items = []
+            """Traverse the tree recursively and preserve the full hierarchy"""
+            result = []
+            
+            # Process all children
             for i in range(item.childCount()):
                 child = item.child(i)
                 child_name = child.text(0)
-                has_children = child.childCount() > 0
                 
-                if has_children:
-                    # Directory with children
-                    sub_items = traverse(child, os.path.join(parent_path, child_name))
-                    items.append({child_name: sub_items})
-                else:
-                    # Is it a folder or file? Check the icon
-                    icon = child.icon(0)
-                    if icon.isNull() or child.icon(0).cacheKey() == QApplication.style().standardIcon(QStyle.SP_DirIcon).cacheKey():
-                        # It's a folder (empty)
-                        items.append(f"{child_name}/")
+                # Skip empty items
+                if not child_name.strip():
+                    continue
+                
+                # Check if it's a directory by looking at its icon
+                is_directory = child.icon(0).cacheKey() == QApplication.style().standardIcon(QStyle.SP_DirIcon).cacheKey()
+                
+                if is_directory:
+                    # It's a directory
+                    if child.childCount() > 0:
+                        # Directory with children
+                        children = traverse(child, os.path.join(parent_path, child_name))
+                        if children:  # Only include if it has valid children
+                            result.append({child_name: children})
+                        else:
+                            # Empty directory
+                            result.append(f"{child_name}/")
                     else:
-                        # It's a file
-                        items.append(child_name)
+                        # Empty directory
+                        result.append(f"{child_name}/")
+                else:
+                    # It's a file
+                    result.append(child_name)
             
-            return items
+            return result
         
-        return traverse(root_item)
+        # Start traversal with the root item
+        root_item = structure_tree.invisibleRootItem().child(0)  # "Project Root"
+        structure = traverse(root_item)
+        
+        print(f"DEBUG: Generated structure from tree: {json.dumps(structure, indent=2)}")
+        return structure
     
     def on_save():
         # Find the basic info inputs in the first tab
@@ -454,6 +471,7 @@ def show_edit_template(parent, template, callback=None):
         # Save the structure
         if hasattr(parent, 'template_manager'):
             print(f"DEBUG: Saving structure '{structure_name}' with {len(structure)} items")
+            # Save the full structure, preserving the hierarchy
             parent.template_manager.save_custom_structure(structure_name, structure)
         
         dialog.accept()
@@ -548,14 +566,17 @@ def create_structure_tab(tabs, template, parent):
             if event.mimeData().hasUrls():
                 print("DEBUG: Drop event with URLs detected")
                 # Get drop position
+                drop_pos = self.dropIndicatorPosition()
                 drop_item = self.itemAt(event.pos())
+                
+                # If not dropping on an item, use the root item
                 if not drop_item:
                     drop_item = self.invisibleRootItem().child(0)  # root item
-                    print("DEBUG: Drop location is root item")
-                else:
-                    print(f"DEBUG: Drop location is {drop_item.text(0)}")
-                    
+                
+                print(f"DEBUG: Drop event - item: {drop_item.text(0)}")
+                
                 # Process the dropped URLs
+                added_items = []
                 for url in event.mimeData().urls():
                     file_path = url.toLocalFile()
                     print(f"DEBUG: Processing dropped path: {file_path}")
@@ -567,42 +588,65 @@ def create_structure_tab(tabs, template, parent):
                         
                     if os.path.isdir(file_path):
                         print(f"DEBUG: It's a directory: {file_path}")
-                        # For macOS, handle folder paths more carefully
-                        dir_name = os.path.basename(os.path.normpath(file_path))
-                        print(f"DEBUG: Directory name extracted: {dir_name}")
-                        
-                        # Skip hidden Mac folders
-                        if dir_name.startswith('.'):
-                            print(f"DEBUG: Skipping hidden Mac directory: {dir_name}")
-                            continue
-                            
-                        # Create folder item directly
-                        folder_item = QTreeWidgetItem(drop_item)
-                        folder_item.setText(0, dir_name)
-                        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-                        folder_item.setExpanded(True)
-                        
-                        # Recursively process subdirectories
-                        try:
-                            for item in sorted(os.listdir(file_path)):
-                                # Skip hidden Mac files
-                                if item.startswith('.'):
-                                    continue
-                                    
-                                item_full_path = os.path.join(file_path, item)
-                                if os.path.isdir(item_full_path):
-                                    process_dropped_directory(item_full_path, folder_item)
-                                else:
-                                    add_file_to_tree(item_full_path, folder_item)
-                        except Exception as e:
-                            print(f"DEBUG: Error processing directory contents: {e}")
+                        # Process the directory, including subdirectories
+                        dir_item = process_dropped_directory(file_path, drop_item)
+                        if dir_item:
+                            added_items.append(dir_item)
                     else:
                         print(f"DEBUG: It's a file: {file_path}")
-                        add_file_to_tree(file_path, drop_item)
+                        # Add the file to the tree
+                        file_item = process_dropped_file(file_path, drop_item)
+                        if file_item:
+                            added_items.append(file_item)
                 
-                print("DEBUG: Drop event processing completed")
+                # After processing, expand all items for better visibility
+                self.expandAll()
+                
+                # Auto-save if possible
+                try:
+                    # Get structure name from the name input
+                    structure_name = name_input.text().strip()
+                    
+                    if structure_name and added_items and hasattr(parent, 'template_manager'):
+                        print(f"DEBUG: Auto-saving {len(added_items)} dropped items for structure '{structure_name}'")
+                        # Save structure from tree
+                        structure = []
+                        
+                        def get_structure_from_item(item):
+                            result = []
+                            for i in range(item.childCount()):
+                                child = item.child(i)
+                                child_name = child.text(0)
+                                child_type = "Directory" if child.icon(0).cacheKey() == QApplication.style().standardIcon(QStyle.SP_DirIcon).cacheKey() else "File"
+                                
+                                if child_type == "Directory":
+                                    if child.childCount() > 0:
+                                        # Directory with children
+                                        children = get_structure_from_item(child)
+                                        if children:  # Only add if it has valid children
+                                            result.append({child_name: children})
+                                        else:
+                                            # Empty directory
+                                            result.append(f"{child_name}/")
+                                    else:
+                                        # Empty directory
+                                        result.append(f"{child_name}/")
+                                else:
+                                    # File
+                                    result.append(child_name)
+                            return result
+                        
+                        # Get structure from tree
+                        structure = get_structure_from_item(drop_item)
+                        
+                        # Save the structure
+                        parent.template_manager.save_custom_structure(structure_name, structure)
+                except Exception as e:
+                    print(f"DEBUG: Error auto-saving structure after drop: {e}")
+                    
                 event.acceptProposedAction()
             else:
+                # For internal drag and drop operations
                 super().dropEvent(event)
     
     # Create tree with drop support
@@ -664,31 +708,37 @@ def create_structure_tab(tabs, template, parent):
     
     # Populate structure tree recursively
     def add_structure_items(parent_item, items, path=""):
-        if isinstance(items, list):
-            for item in items:
-                if isinstance(item, dict):
-                    # Handle nested dictionary
-                    for folder_name, sub_items in item.items():
-                        folder_item = QTreeWidgetItem(parent_item)
-                        folder_item.setText(0, folder_name)
-                        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-                        new_path = os.path.join(path, folder_name)
-                        add_structure_items(folder_item, sub_items, new_path)
+        print(f"DEBUG: Adding structure items: {json.dumps(items, indent=2)}")
+        for item in items:
+            if isinstance(item, dict):
+                # It's a directory with children
+                for dir_name, children in item.items():
+                    dir_item = QTreeWidgetItem(parent_item)
+                    dir_item.setText(0, dir_name)
+                    # Always use folder icon
+                    dir_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+                    # Process children
+                    add_structure_items(dir_item, children, os.path.join(path, dir_name))
+                    # Expand the directory
+                    dir_item.setExpanded(True)
+            elif isinstance(item, list):
+                # It's a complex structure
+                add_structure_items(parent_item, item, path)
+            elif isinstance(item, str):
+                if item.endswith('/'):
+                    # It's a directory with no children
+                    dir_name = item[:-1]  # Remove trailing slash
+                    dir_item = QTreeWidgetItem(parent_item)
+                    dir_item.setText(0, dir_name)
+                    # Always use folder icon
+                    dir_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+                    # Expand the directory
+                    dir_item.setExpanded(True)
                 else:
-                    # Handle string items
-                    name = item
-                    is_folder = name.endswith('/')
-                    if is_folder:
-                        name = name[:-1]  # Remove trailing slash
-                    
-                    item_widget = QTreeWidgetItem(parent_item)
-                    item_widget.setText(0, name)
-                    if is_folder:
-                        # Create empty folder
-                        item_widget.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-                    else:
-                        # Create file
-                        item_widget.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+                    # It's a file
+                    file_item = QTreeWidgetItem(parent_item)
+                    file_item.setText(0, item)
+                    file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
     
     # Add the structure items
     add_structure_items(root_item, structure_items)
@@ -710,14 +760,25 @@ def create_structure_tab(tabs, template, parent):
     
     # Add folder action
     def add_folder():
-        folder_name, ok = QInputDialog.getText(dialog, "Add Folder", "Folder Name:")
+        """Add a new folder to the structure"""
+        # Get selected item - if none, use root
+        selected = structure_tree.selectedItems()
+        if selected:
+            parent_item = selected[0]
+        else:
+            parent_item = root_item
+        
+        # Prompt for folder name
+        folder_name, ok = QInputDialog.getText(structure_tab, "Add Folder", "Folder name:")
         if ok and folder_name:
-            selected_items = structure_tree.selectedItems()
-            parent_item = selected_items[0] if selected_items else root_item
             folder_item = QTreeWidgetItem(parent_item)
             folder_item.setText(0, folder_name)
+            # Always use folder icon
             folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-            parent_item.setExpanded(True)
+            folder_item.setExpanded(True)
+            
+            # Select the new folder
+            structure_tree.setCurrentItem(folder_item)
     
     # Add file action
     def add_file():
@@ -1184,6 +1245,8 @@ def show_structure_editor(parent, structure_type=None, callback=None):
     tree.setDragEnabled(True)
     tree.setDragDropMode(QTreeWidget.DragDrop)
     tree.setAcceptDrops(True)
+    tree.setDragDropMode(QTreeWidget.DragDrop)
+    tree.setAcceptDrops(True)
     tree.viewport().setAcceptDrops(True)
     tree.setDropIndicatorShown(True)
     
@@ -1206,13 +1269,18 @@ def show_structure_editor(parent, structure_type=None, callback=None):
             
     def custom_dropEvent(event):
         if event.mimeData().hasUrls():
-            print("DEBUG: Drop event with URLs detected")
             # Get drop position
+            drop_pos = tree.dropIndicatorPosition()
             drop_item = tree.itemAt(event.pos())
+            
+            # If not dropping on an item, use the root item
             if not drop_item:
                 drop_item = root_item
-                
+            
+            print(f"DEBUG: Drop event - item: {drop_item.text(0)}")
+            
             # Process the dropped URLs
+            added_items = []
             for url in event.mimeData().urls():
                 file_path = url.toLocalFile()
                 print(f"DEBUG: Processing dropped path: {file_path}")
@@ -1224,43 +1292,76 @@ def show_structure_editor(parent, structure_type=None, callback=None):
                     
                 if os.path.isdir(file_path):
                     print(f"DEBUG: It's a directory: {file_path}")
-                    # For macOS, handle folder paths more carefully
-                    dir_name = os.path.basename(os.path.normpath(file_path))
-                    print(f"DEBUG: Directory name extracted: {dir_name}")
-                    
-                    # Skip hidden Mac folders
-                    if dir_name.startswith('.'):
-                        print(f"DEBUG: Skipping hidden Mac directory: {dir_name}")
-                        continue
-                        
-                    # Create folder item directly
-                    folder_item = QTreeWidgetItem(drop_item)
-                    folder_item.setText(0, dir_name)
-                    folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-                    folder_item.setExpanded(True)
-                    
-                    # Recursively process subdirectories
-                    try:
-                        for item in sorted(os.listdir(file_path)):
-                            # Skip hidden Mac files
-                            if item.startswith('.'):
-                                continue
-                                
-                            item_full_path = os.path.join(file_path, item)
-                            if os.path.isdir(item_full_path):
-                                process_dropped_directory(item_full_path, folder_item)
-                            else:
-                                add_file_to_tree(item_full_path, folder_item)
-                    except Exception as e:
-                        print(f"DEBUG: Error processing directory contents: {e}")
+                    # Process the directory, including subdirectories
+                    dir_item = process_dropped_directory(file_path, drop_item)
+                    if dir_item:
+                        added_items.append(dir_item)
                 else:
                     print(f"DEBUG: It's a file: {file_path}")
-                    add_file_to_tree(file_path, drop_item)
+                    # Add the file to the tree
+                    file_item = process_dropped_file(file_path, drop_item)
+                    if file_item:
+                        added_items.append(file_item)
             
-            print("DEBUG: Drop event processing completed")
+            # After processing, expand all items for better visibility
+            tree.expandAll()
+            
+            # Auto-save if possible - save the entire tree structure
+            try:
+                structure_name = name_input.text().strip()
+                if structure_name and hasattr(parent, 'template_manager'):
+                    print(f"DEBUG: Auto-saving tree structure for '{structure_name}'")
+                    
+                    # Get structure from the full tree
+                    def get_structure_from_tree(item=None):
+                        if item is None:
+                            item = root_item
+                            
+                        result = []
+                        for i in range(item.childCount()):
+                            child = item.child(i)
+                            child_name = child.text(0)
+                            
+                            # Skip empty names
+                            if not child_name.strip():
+                                continue
+                                
+                            # Check if it's a directory by icon
+                            is_dir = child.icon(0).cacheKey() == QApplication.style().standardIcon(QStyle.SP_DirIcon).cacheKey()
+                            
+                            if is_dir:
+                                if child.childCount() > 0:
+                                    # Directory with children
+                                    children = get_structure_from_tree(child)
+                                    if children:  # Only add if it has valid children
+                                        result.append({child_name: children})
+                                    else:
+                                        # Empty directory
+                                        result.append(f"{child_name}/")
+                                else:
+                                    # Empty directory
+                                    result.append(f"{child_name}/")
+                            else:
+                                # File
+                                result.append(child_name)
+                                
+                        return result
+                    
+                    # Get structure from entire tree
+                    structure = get_structure_from_tree()
+                    print(f"DEBUG: Generated structure: {json.dumps(structure, indent=2)}")
+                    
+                    # Save the structure
+                    parent.template_manager.save_custom_structure(structure_name, structure)
+            except Exception as e:
+                print(f"DEBUG: Error auto-saving structure after drop: {e}")
+                import traceback
+                traceback.print_exc()
+                
             event.acceptProposedAction()
         else:
-            super().dropEvent(event)
+            # For internal drag and drop operations
+            original_dropEvent(event)
     
     # Replace the event handlers
     tree.dragEnterEvent = custom_dragEnterEvent
@@ -1279,27 +1380,42 @@ def show_structure_editor(parent, structure_type=None, callback=None):
     root_item.setExpanded(True)
     tree.addTopLevelItem(root_item)
     
-    # Helper function to add items recursively
-    def add_items(parent_item, items):
+    # Populate structure tree recursively
+    def add_structure_items(parent_item, items, path=""):
+        print(f"DEBUG: Adding structure items: {json.dumps(items, indent=2)}")
         for item in items:
             if isinstance(item, dict):
                 # It's a directory with children
                 for dir_name, children in item.items():
-                    dir_item = QTreeWidgetItem(parent_item, [dir_name, "Directory"])
-                    add_items(dir_item, children)
+                    dir_item = QTreeWidgetItem(parent_item)
+                    dir_item.setText(0, dir_name)
+                    # Always use folder icon
+                    dir_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+                    # Process children
+                    add_structure_items(dir_item, children, os.path.join(path, dir_name))
+                    # Expand the directory
+                    dir_item.setExpanded(True)
             elif isinstance(item, list):
-                # It's a list of items
-                add_items(parent_item, item)
-            else:
-                # It's a file or simple directory
+                # It's a complex structure
+                add_structure_items(parent_item, item, path)
+            elif isinstance(item, str):
                 if item.endswith('/'):
-                    name = item.rstrip('/')
-                    child_item = QTreeWidgetItem(parent_item, [name, "Directory"])
+                    # It's a directory with no children
+                    dir_name = item[:-1]  # Remove trailing slash
+                    dir_item = QTreeWidgetItem(parent_item)
+                    dir_item.setText(0, dir_name)
+                    # Always use folder icon
+                    dir_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+                    # Expand the directory
+                    dir_item.setExpanded(True)
                 else:
-                    child_item = QTreeWidgetItem(parent_item, [item, "File"])
+                    # It's a file
+                    file_item = QTreeWidgetItem(parent_item)
+                    file_item.setText(0, item)
+                    file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
     
-    # Add structure items
-    add_items(root_item, structure_items)
+    # Add the structure items
+    add_structure_items(root_item, structure_items)
     
     layout.addWidget(tree)
     
@@ -1319,17 +1435,24 @@ def show_structure_editor(parent, structure_type=None, callback=None):
     
     # Add directory function
     def add_directory():
-        name, ok = QInputDialog.getText(dialog, "Add Directory", "Directory name:")
-        if ok and name:
-            selected = tree.selectedItems()
-            parent_item = selected[0] if selected else root_item
+        """Add a new directory to the structure"""
+        selected = tree.selectedItems()
+        if selected:
+            parent_item = selected[0]
+        else:
+            parent_item = root_item
+        
+        # Prompt for directory name
+        dir_name, ok = QInputDialog.getText(dialog, "Add Directory", "Directory name:")
+        if ok and dir_name:
+            dir_item = QTreeWidgetItem(parent_item)
+            dir_item.setText(0, dir_name)
+            # Always use directory icon
+            dir_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
             
-            if parent_item.text(1) != "Directory":
-                QMessageBox.warning(dialog, "Error", "Can only add directories to directories")
-                return
-                
-            new_item = QTreeWidgetItem(parent_item, [name, "Directory"])
-            parent_item.setExpanded(True)
+            # Select the new directory
+            tree.setCurrentItem(dir_item)
+            tree.expandItem(parent_item)
     
     # Add file function
     def add_file():
@@ -1470,65 +1593,13 @@ def process_dropped_file(file_path, parent_item):
     # Get the filename
     file_name = os.path.basename(file_path)
     
-    # Skip hidden files on Mac
+    # Skip hidden files
     if file_name.startswith('.'):
+        print(f"DEBUG: Skipping hidden file: {file_name}")
         return None
-        
-    # Create a file item
-    file_item = QTreeWidgetItem(parent_item, [file_name, "File"])
-    file_item.setData(0, Qt.UserRole, file_path)  # Store the original path
     
-    # Auto-expand the parent
-    parent_item.setExpanded(True)
+    print(f"DEBUG: Adding file: {file_name}")
     
-    return file_item
-
-# Function to add a dropped directory recursively
-def process_dropped_directory(dir_path, parent_item):
-    """Process a directory dropped onto the tree"""
-    # Create a folder item for this directory
-    dir_name = os.path.basename(os.path.normpath(dir_path))
-    
-    # Skip .DS_Store and other hidden Mac files
-    if dir_name.startswith('.'):
-        print(f"DEBUG: Skipping hidden Mac directory in recursive function: {dir_name}")
-        return None
-            
-    # Add the directory to the tree
-    folder_item = QTreeWidgetItem(parent_item)
-    folder_item.setText(0, dir_name)
-    folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-    folder_item.setExpanded(True)
-    
-    # Add all subdirectories and files
-    try:
-        for item in sorted(os.listdir(dir_path)):
-            # Skip hidden files on Mac
-            if item.startswith('.'):
-                continue
-                
-            item_path = os.path.join(dir_path, item)
-            if os.path.isdir(item_path):
-                # Recursively add subdirectory
-                process_dropped_directory(item_path, folder_item)
-            else:
-                # Add file
-                add_file_to_tree(item_path, folder_item)
-    except Exception as e:
-        print(f"DEBUG: Error processing directory contents in recursive function: {e}")
-            
-    return folder_item
-
-# Function to add a file to the tree
-def add_file_to_tree(file_path, parent_item):
-    """Add a file to the tree"""
-    file_name = os.path.basename(file_path)
-    
-    # Skip hidden files on Mac
-    if file_name.startswith('.'):
-        print(f"DEBUG: Skipping hidden Mac file in recursive function: {file_name}")
-        return None
-            
     # Create a file item
     file_item = QTreeWidgetItem(parent_item)
     file_item.setText(0, file_name)
@@ -1538,4 +1609,352 @@ def add_file_to_tree(file_path, parent_item):
     # Auto-expand the parent
     parent_item.setExpanded(True)
     
-    return file_item 
+    return file_item
+
+# Function to add a dropped directory recursively
+def process_dropped_directory(dir_path, parent_item):
+    """Process a directory dropped onto the tree, including its subdirectories"""
+    # Get the base directory name
+    dir_name = os.path.basename(os.path.normpath(dir_path))
+    
+    # Skip hidden directories
+    if dir_name.startswith('.'):
+        print(f"DEBUG: Skipping hidden directory: {dir_name}")
+        return
+    
+    print(f"DEBUG: Adding directory: {dir_name}")
+    
+    # Create a tree item for this directory
+    dir_item = QTreeWidgetItem(parent_item)
+    dir_item.setText(0, dir_name)
+    
+    # ALWAYS use folder icon - this is critical
+    dir_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+    
+    # Process subdirectories and files
+    try:
+        # Get all items in directory, sorted alphabetically
+        items = sorted(os.listdir(dir_path))
+        
+        # Process each item
+        for item in items:
+            # Skip hidden files and directories
+            if item.startswith('.'):
+                continue
+                
+            item_path = os.path.join(dir_path, item)
+            
+            if os.path.isdir(item_path):
+                # Recursively process subdirectory
+                process_dropped_directory(item_path, dir_item)
+            else:
+                # Add file to tree
+                add_file_to_tree(item_path, dir_item)
+        
+        # Always expand the directory for better visibility
+        dir_item.setExpanded(True)
+    except PermissionError:
+        # Handle permission errors silently
+        pass
+    except Exception as e:
+        print(f"Error processing directory {dir_path}: {e}")
+        
+    return dir_item
+
+# Function to add a file to the tree
+def add_file_to_tree(file_path, parent_item):
+    """Add a file to the tree view"""
+    # Get the filename
+    file_name = os.path.basename(file_path)
+    
+    # Skip hidden files
+    if file_name.startswith('.'):
+        print(f"DEBUG: Skipping hidden file: {file_name}")
+        return None
+    
+    print(f"DEBUG: Adding file: {file_name}")
+    
+    # Create item for this file
+    file_item = QTreeWidgetItem(parent_item)
+    file_item.setText(0, file_name)
+    
+    # Use appropriate file icon
+    file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+    
+    # Auto-expand the parent
+    parent_item.setExpanded(True)
+    
+    return file_item
+
+def show_manage_structures_dialog(parent, callback=None):
+    """Show a dialog to manage custom project structures"""
+    # Create the dialog
+    dialog = QDialog(parent)
+    dialog.setWindowTitle("Manage Project Structures")
+    dialog.resize(600, 400)
+    
+    # Main layout
+    layout = QVBoxLayout(dialog)
+    layout.setContentsMargins(15, 15, 15, 15)
+    layout.setSpacing(10)
+    
+    # Header
+    header_label = QLabel("Manage Custom Project Structures")
+    header_label.setStyleSheet(f"color: {colors['text']}; font-size: 16px; font-weight: bold;")
+    layout.addWidget(header_label)
+    
+    # Description
+    desc_label = QLabel("Create, edit, and delete custom project structures.")
+    desc_label.setStyleSheet(f"color: {colors['secondary_text']}; font-size: 12px;")
+    layout.addWidget(desc_label)
+    
+    # Structure list
+    list_label = QLabel("Available Structures:")
+    list_label.setStyleSheet(f"color: {colors['text']}; font-size: 14px; font-weight: bold; margin-top: 10px;")
+    layout.addWidget(list_label)
+    
+    # Get available structures
+    from app.core.structure_manager import StructureManager
+    structure_manager = StructureManager()
+    structures = structure_manager.get_all_structures()
+    
+    # Create list widget for structures
+    structure_list = QListWidget()
+    structure_list.setStyleSheet(f"""
+        QListWidget {{
+            background-color: {colors['card_bg']};
+            color: {colors['text']};
+            border: 1px solid {colors['border']};
+            padding: 5px;
+        }}
+        QListWidget::item {{
+            padding: 8px;
+        }}
+        QListWidget::item:selected {{
+            background-color: {colors['hover_bg']};
+        }}
+    """)
+    
+    # Populate the list
+    for structure in structures:
+        structure_list.addItem(structure['name'])
+    
+    layout.addWidget(structure_list)
+    
+    # Buttons layout
+    button_layout = QHBoxLayout()
+    button_layout.setSpacing(10)
+    
+    # Add button
+    add_btn = QPushButton("New Structure")
+    add_btn.setStyleSheet(BUTTON_STYLE)
+    add_btn.clicked.connect(lambda: create_structure(parent, structure_manager, structure_list, dialog, callback))
+    button_layout.addWidget(add_btn)
+    
+    # Edit button
+    edit_btn = QPushButton("Edit")
+    edit_btn.setStyleSheet(BUTTON_STYLE)
+    edit_btn.clicked.connect(lambda: edit_structure(parent, structure_manager, structure_list, dialog, callback))
+    button_layout.addWidget(edit_btn)
+    
+    # Delete button
+    delete_btn = QPushButton("Delete")
+    delete_btn.setStyleSheet(BUTTON_STYLE)
+    delete_btn.clicked.connect(lambda: delete_structure(parent, structure_manager, structure_list, dialog, callback))
+    button_layout.addWidget(delete_btn)
+    
+    # Import button
+    import_btn = QPushButton("Import")
+    import_btn.setStyleSheet(BUTTON_STYLE)
+    import_btn.clicked.connect(lambda: import_structure(parent, structure_manager, structure_list, dialog, callback))
+    button_layout.addWidget(import_btn)
+    
+    # Export button
+    export_btn = QPushButton("Export")
+    export_btn.setStyleSheet(BUTTON_STYLE)
+    export_btn.clicked.connect(lambda: export_structure(parent, structure_manager, structure_list, dialog))
+    button_layout.addWidget(export_btn)
+    
+    # Add button layout to main layout
+    layout.addLayout(button_layout)
+    
+    # Close button at the bottom
+    close_btn = QPushButton("Close")
+    close_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
+    close_btn.clicked.connect(dialog.accept)
+    layout.addWidget(close_btn)
+    
+    # Show the dialog
+    dialog.exec_()
+
+def create_structure(parent, structure_manager, structure_list, dialog, callback=None):
+    """Create a new structure using the structure editor"""
+    from app.dialogs.dialog_windows_pyqt import show_structure_editor
+    
+    def on_structure_created():
+        # Refresh the list
+        structure_list.clear()
+        structures = structure_manager.get_all_structures()
+        for structure in structures:
+            structure_list.addItem(structure['name'])
+        
+        # Call the callback if provided
+        if callback:
+            callback()
+    
+    # Show the structure editor dialog
+    show_structure_editor(parent, None, on_structure_created)
+
+def edit_structure(parent, structure_manager, structure_list, dialog, callback=None):
+    """Edit the selected structure"""
+    selected_items = structure_list.selectedItems()
+    if not selected_items:
+        QMessageBox.warning(dialog, "No Selection", "Please select a structure to edit.")
+        return
+    
+    structure_name = selected_items[0].text()
+    structure = structure_manager.get_structure_by_name(structure_name)
+    
+    if not structure:
+        QMessageBox.warning(dialog, "Error", f"Structure '{structure_name}' not found.")
+        return
+    
+    def on_structure_edited():
+        # Refresh the list
+        structure_list.clear()
+        structures = structure_manager.get_all_structures()
+        for structure in structures:
+            structure_list.addItem(structure['name'])
+        
+        # Call the callback if provided
+        if callback:
+            callback()
+    
+    # Show the structure editor dialog with the selected structure
+    from app.dialogs.dialog_windows_pyqt import show_structure_editor
+    show_structure_editor(parent, structure, on_structure_edited)
+
+def delete_structure(parent, structure_manager, structure_list, dialog, callback=None):
+    """Delete the selected structure"""
+    selected_items = structure_list.selectedItems()
+    if not selected_items:
+        QMessageBox.warning(dialog, "No Selection", "Please select a structure to delete.")
+        return
+    
+    structure_name = selected_items[0].text()
+    
+    # Confirm deletion
+    confirm = QMessageBox.question(
+        dialog,
+        "Confirm Delete",
+        f"Are you sure you want to delete the structure '{structure_name}'?",
+        QMessageBox.Yes | QMessageBox.No
+    )
+    
+    if confirm == QMessageBox.Yes:
+        # Delete the structure
+        success = structure_manager.delete_structure(structure_name)
+        
+        if success:
+            # Refresh the list
+            structure_list.clear()
+            structures = structure_manager.get_all_structures()
+            for structure in structures:
+                structure_list.addItem(structure['name'])
+            
+            # Call the callback if provided
+            if callback:
+                callback()
+        else:
+            QMessageBox.warning(dialog, "Error", f"Failed to delete structure '{structure_name}'.")
+
+def import_structure(parent, structure_manager, structure_list, dialog, callback=None):
+    """Import a structure from a JSON file"""
+    file_path, _ = QFileDialog.getOpenFileName(
+        dialog,
+        "Import Structure",
+        "",
+        "JSON Files (*.json);;All Files (*)"
+    )
+    
+    if not file_path:
+        return
+    
+    try:
+        with open(file_path, 'r') as f:
+            structure = json.load(f)
+        
+        # Validate the structure
+        if not isinstance(structure, dict) or 'name' not in structure or 'items' not in structure:
+            QMessageBox.warning(dialog, "Invalid Structure", "The selected file does not contain a valid structure.")
+            return
+        
+        # Check if a structure with this name already exists
+        existing = structure_manager.get_structure_by_name(structure['name'])
+        if existing:
+            # Ask for a new name
+            new_name, ok = QInputDialog.getText(
+                dialog,
+                "Structure Already Exists",
+                f"A structure named '{structure['name']}' already exists. Please enter a new name:",
+                QLineEdit.Normal,
+                structure['name'] + " (Imported)"
+            )
+            
+            if not ok or not new_name.strip():
+                return
+            
+            structure['name'] = new_name.strip()
+        
+        # Add the structure
+        success = structure_manager.add_structure(structure)
+        
+        if success:
+            # Refresh the list
+            structure_list.clear()
+            structures = structure_manager.get_all_structures()
+            for structure in structures:
+                structure_list.addItem(structure['name'])
+            
+            # Call the callback if provided
+            if callback:
+                callback()
+                
+            QMessageBox.information(dialog, "Import Successful", f"Structure '{structure['name']}' imported successfully.")
+        else:
+            QMessageBox.warning(dialog, "Import Failed", f"Failed to import structure '{structure['name']}'.")
+    except Exception as e:
+        QMessageBox.warning(dialog, "Import Error", f"Error importing structure: {str(e)}")
+
+def export_structure(parent, structure_manager, structure_list, dialog):
+    """Export a structure to a JSON file"""
+    selected_items = structure_list.selectedItems()
+    if not selected_items:
+        QMessageBox.warning(dialog, "No Selection", "Please select a structure to export.")
+        return
+    
+    structure_name = selected_items[0].text()
+    structure = structure_manager.get_structure_by_name(structure_name)
+    
+    if not structure:
+        QMessageBox.warning(dialog, "Error", f"Structure '{structure_name}' not found.")
+        return
+    
+    # Ask for file location
+    file_path, _ = QFileDialog.getSaveFileName(
+        dialog,
+        "Export Structure",
+        f"{structure_name}.json",
+        "JSON Files (*.json);;All Files (*)"
+    )
+    
+    if not file_path:
+        return
+    
+    try:
+        with open(file_path, 'w') as f:
+            json.dump(structure, f, indent=4)
+        
+        QMessageBox.information(dialog, "Export Successful", f"Structure '{structure_name}' exported successfully.")
+    except Exception as e:
+        QMessageBox.warning(dialog, "Export Error", f"Error exporting structure: {str(e)}") 

@@ -4,8 +4,8 @@
 import os
 import platform
 from PyQt5.QtWidgets import (QFrame, QVBoxLayout, QHBoxLayout, QLabel, 
-                           QPushButton, QMenu)
-from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QMimeData, QByteArray
+                           QPushButton, QMenu, QWidget)
+from PyQt5.QtCore import Qt, pyqtSignal, QPoint, QMimeData, QByteArray, QEvent
 from PyQt5.QtGui import QCursor, QFont, QDrag, QPixmap
 
 from app.ui.color_scheme_pyqt import colors
@@ -31,84 +31,100 @@ def get_system_font():
 SYSTEM_FONT = get_system_font()
 
 class TemplateCard(QFrame):
-    """Template card widget for displaying a template in the gallery"""
+    """Template card widget for displaying a file template in the gallery"""
     
-    clicked = pyqtSignal(object)
+    clicked = pyqtSignal(dict)
+    context_menu_requested = pyqtSignal(QPoint, dict)
+    hover_enter = pyqtSignal(object)
+    hover_leave = pyqtSignal(object)
     
     def __init__(self, parent=None, template=None, app=None):
         super().__init__(parent)
+        
         self.template = template
         self.app = app
-        self.selected = False
+        self.highlighted = False
         self.hover = False
-        self.drag_start_position = None  # Initialize drag start position
         
-        # Configure frame appearance
-        self.setFrameShape(QFrame.StyledPanel)
-        self.setFrameShadow(QFrame.Raised)
-        self.setLineWidth(1)
-        self.setCursor(Qt.PointingHandCursor)
+        # Apply styles
+        self.setObjectName("templateCard")
+        self.setMinimumSize(180, 180)
+        self.setMaximumSize(220, 220)
+        self.setCursor(QCursor(Qt.PointingHandCursor))
         
-        # Style settings
-        self.setStyleSheet(f"""
-            QFrame {{
-                background-color: {CARD_NORMAL};
-                border: 1px solid {colors["border"]};
-                border-radius: 5px;
-                padding: 10px;
-            }}
-        """)
-        
-        # Layout
-        self.layout = QHBoxLayout(self)
+        # Card layout
+        self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(10, 10, 10, 10)
-        self.layout.setSpacing(10)
+        self.layout.setSpacing(5)
         
-        # Icon label - use emoji for simplicity
-        icon = template.get("icon", "📄")
-        self.icon_label = QLabel(icon)
-        self.icon_label.setFont(QFont(SYSTEM_FONT, 24))
-        self.icon_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
-        self.layout.addWidget(self.icon_label)
+        # Template icon
+        self.icon_wrapper = QWidget()
+        self.icon_layout = QVBoxLayout(self.icon_wrapper)
+        self.icon_layout.setContentsMargins(0, 0, 0, 0)
+        self.icon_layout.setAlignment(Qt.AlignCenter)
         
-        # Info section
-        self.info_layout = QVBoxLayout()
-        self.info_layout.setSpacing(3)
-        self.layout.addLayout(self.info_layout, 1)  # Stretch
+        self.icon = QLabel()
+        self.icon.setAlignment(Qt.AlignCenter)
+        self.icon.setMinimumSize(80, 80)
+        self.icon.setMaximumSize(100, 100)
+        self.set_icon()
+        self.icon_layout.addWidget(self.icon)
         
         # Template name
-        self.name_label = QLabel(template.get("name", "Unnamed Template"))
-        self.name_label.setFont(QFont(SYSTEM_FONT, 11, QFont.Bold))
-        self.name_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
-        self.info_layout.addWidget(self.name_label)
+        self.name_label = QLabel(template.get('name', 'Unnamed Template') if template else 'Unnamed Template')
+        self.name_label.setAlignment(Qt.AlignCenter)
+        self.name_label.setWordWrap(True)
+        self.name_label.setStyleSheet("font-weight: bold; font-size: 14px;")
         
-        # Category
-        self.category_label = QLabel(template.get("category", "Custom"))
-        self.category_label.setFont(QFont(SYSTEM_FONT, 9))
-        self.category_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
-        self.info_layout.addWidget(self.category_label)
+        # Template description (truncated)
+        description = template.get('description', '') if template else ''
+        if len(description) > 60:
+            description = description[:60] + "..."
+        self.desc_label = QLabel(description)
+        self.desc_label.setAlignment(Qt.AlignCenter)
+        self.desc_label.setWordWrap(True)
+        self.desc_label.setStyleSheet("color: #999; font-size: 12px;")
         
-        # Description
-        description = template.get("description", "")
-        if description:
-            self.desc_label = QLabel(description)
-            self.desc_label.setFont(QFont(SYSTEM_FONT, 9))
-            self.desc_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
-            self.desc_label.setWordWrap(True)
-            self.info_layout.addWidget(self.desc_label)
+        # Structure indicator
+        self.structure_indicator = QLabel(self)
+        self.structure_indicator.setText("📂")  # Folder emoji 
+        self.structure_indicator.setToolTip("This template has a custom folder structure")
+        self.structure_indicator.setStyleSheet("background-color: rgba(0,0,0,0); color: #4CAF50; font-size: 16px; font-weight: bold;")
+        self.structure_indicator.setGeometry(self.width() - 30, 10, 20, 20)
         
-        # Connect events
+        # Check if the template has a structure
+        if template and template.get('structure_name'):
+            self.structure_indicator.setVisible(True)
+        else:
+            self.structure_indicator.setVisible(False)
+        
+        # Add to layout
+        self.layout.addWidget(self.icon_wrapper)
+        self.layout.addWidget(self.name_label)
+        self.layout.addWidget(self.desc_label)
+        
+        # Set up event filter for hover detection
+        self.installEventFilter(self)
+        
+        # Connect mouse events
+        self.drag_start_position = None  # Initialize drag start position
+        
+        # Override mouse events
         self.mousePressEvent = self._on_mouse_press
         self.mouseMoveEvent = self._on_mouse_move
         self.enterEvent = self._on_hover_enter
         self.leaveEvent = self._on_hover_leave
         self.contextMenuEvent = self._on_context_menu
     
+    def set_icon(self):
+        """Set the icon for the template card"""
+        icon = self.template.get("icon", "📄")
+        self.icon.setPixmap(QPixmap(icon))
+        self.icon.setStyleSheet(f"color: {colors['text']}; background: transparent;")
+    
     def _on_mouse_press(self, event):
         """Handle mouse press event"""
         if event.button() == Qt.LeftButton:
-            # Store drag start position
-            self.drag_start_position = event.pos()
             # Emit clicked signal
             self.clicked.emit(self.template)
     
@@ -162,7 +178,7 @@ class TemplateCard(QFrame):
     
     def _on_hover_enter(self, event):
         """Handle hover enter event"""
-        if not self.selected:
+        if not self.highlighted:
             self.hover = True
             self.setStyleSheet(f"""
                 QFrame {{
@@ -175,7 +191,7 @@ class TemplateCard(QFrame):
     
     def _on_hover_leave(self, event):
         """Handle hover leave event"""
-        if not self.selected:
+        if not self.highlighted:
             self.hover = False
             self.setStyleSheet(f"""
                 QFrame {{
@@ -189,12 +205,108 @@ class TemplateCard(QFrame):
     def _on_context_menu(self, event):
         """Handle context menu event"""
         if self.app:
-            # TODO: Implement context menu
-            pass
+            # Create a context menu
+            menu = QMenu(self)
+            
+            # Actions
+            edit_action = menu.addAction("Edit Template")
+            structure_action = menu.addAction("Edit Structure")
+            preview_action = menu.addAction("Preview Structure")
+            duplicate_action = menu.addAction("Duplicate Template")
+            delete_action = menu.addAction("Delete Template")
+            
+            # Execute the menu
+            action = menu.exec_(self.mapToGlobal(event.pos()))
+            
+            # Handle selected action
+            if action == edit_action:
+                # Edit template
+                from app.templates.templates import edit_directory_template
+                edit_directory_template(self.app, self.template)
+            elif action == structure_action:
+                # Edit structure
+                from app.templates.templates import edit_template_structure
+                edit_template_structure(self.app, self.template)
+            elif action == preview_action:
+                # Preview structure
+                from app.templates.templates import apply_structure_to_template
+                apply_structure_to_template(self.app, self.template)
+            elif action == duplicate_action:
+                # Duplicate template
+                # Implement duplicating templates
+                if self.app and hasattr(self.app, 'template_manager'):
+                    try:
+                        # Get new name for the duplicated template
+                        original_name = self.template.get('name', '')
+                        new_name = f"{original_name} (Copy)"
+                        
+                        # Make sure the new name is unique
+                        i = 1
+                        while self.app.template_manager.get_template_by_name(new_name):
+                            new_name = f"{original_name} (Copy {i})"
+                            i += 1
+                        
+                        # Create duplicate with new name
+                        duplicate = self.template.copy()
+                        duplicate['name'] = new_name
+                        
+                        # Add the duplicate to the template manager
+                        success = self.app.template_manager.add_template(duplicate)
+                        
+                        if success:
+                            if hasattr(self.app, 'show_status_message'):
+                                self.app.show_status_message(f"Duplicated template '{original_name}' as '{new_name}'", "info")
+                            
+                            # Refresh the gallery to show the new template
+                            if hasattr(self.app, 'template_gallery') and hasattr(self.app.template_gallery, 'populate_gallery'):
+                                self.app.template_gallery.populate_gallery(force_refresh=True)
+                        else:
+                            from PyQt5.QtWidgets import QMessageBox
+                            QMessageBox.warning(self, "Error", f"Failed to duplicate template '{original_name}'.")
+                    except Exception as e:
+                        print(f"Error duplicating template: {e}")
+                        from PyQt5.QtWidgets import QMessageBox
+                        QMessageBox.warning(self, "Error", f"Failed to duplicate template: {e}")
+            elif action == delete_action:
+                # Delete template
+                # Implement deleting templates
+                if self.app and hasattr(self.app, 'template_manager'):
+                    try:
+                        template_name = self.template.get('name', '')
+                        
+                        # Confirm deletion
+                        from PyQt5.QtWidgets import QMessageBox
+                        confirm = QMessageBox.question(
+                            self,
+                            "Confirm Delete",
+                            f"Are you sure you want to delete template '{template_name}'?",
+                            QMessageBox.Yes | QMessageBox.No
+                        )
+                        
+                        if confirm == QMessageBox.Yes:
+                            # Delete the template
+                            success = self.app.template_manager.delete_template(template_name)
+                            
+                            if success:
+                                if hasattr(self.app, 'show_status_message'):
+                                    self.app.show_status_message(f"Deleted template '{template_name}'", "info")
+                                
+                                # Refresh the gallery to reflect the deletion
+                                if hasattr(self.app, 'template_gallery') and hasattr(self.app.template_gallery, 'populate_gallery'):
+                                    self.app.template_gallery.populate_gallery(force_refresh=True)
+                            else:
+                                QMessageBox.warning(self, "Error", f"Failed to delete template '{template_name}'.")
+                    except Exception as e:
+                        print(f"Error deleting template: {e}")
+                        from PyQt5.QtWidgets import QMessageBox
+                        QMessageBox.warning(self, "Error", f"Failed to delete template: {e}")
+            
+            # Emit context menu signal with position and template
+            self.context_menu_requested.emit(self.mapToGlobal(event.pos()), self.template)
     
     def set_highlighted(self, highlighted):
         """Set highlighted state"""
-        self.selected = highlighted
+        self.highlighted = highlighted
         self._update_styling()
 
     def set_selected(self, selected):
@@ -203,7 +315,7 @@ class TemplateCard(QFrame):
     
     def _update_styling(self):
         """Update styling based on selected and hover state"""
-        if self.selected:
+        if self.highlighted:
             self.setStyleSheet(f"""
                 QFrame {{
                     background-color: {CARD_SELECTED};
@@ -212,11 +324,9 @@ class TemplateCard(QFrame):
                     padding: 10px;
                 }}
             """)
-            self.icon_label.setStyleSheet(f"color: white; background: transparent;")
+            self.icon.setStyleSheet(f"color: white; background: transparent;")
             self.name_label.setStyleSheet(f"color: white; background: transparent;")
-            self.category_label.setStyleSheet(f"color: white; background: transparent;")
-            if hasattr(self, 'desc_label'):
-                self.desc_label.setStyleSheet(f"color: white; background: transparent;")
+            self.desc_label.setStyleSheet(f"color: white; background: transparent;")
         elif self.hover:
             self.setStyleSheet(f"""
                 QFrame {{
@@ -226,11 +336,9 @@ class TemplateCard(QFrame):
                     padding: 10px;
                 }}
             """)
-            self.icon_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
+            self.icon.setStyleSheet(f"color: {colors['text']}; background: transparent;")
             self.name_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
-            self.category_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
-            if hasattr(self, 'desc_label'):
-                self.desc_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
+            self.desc_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
         else:
             self.setStyleSheet(f"""
                 QFrame {{
@@ -240,8 +348,27 @@ class TemplateCard(QFrame):
                     padding: 10px;
                 }}
             """)
-            self.icon_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
+            self.icon.setStyleSheet(f"color: {colors['text']}; background: transparent;")
             self.name_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
-            self.category_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
-            if hasattr(self, 'desc_label'):
-                self.desc_label.setStyleSheet(f"color: {colors['text']}; background: transparent;") 
+            self.desc_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
+
+    def eventFilter(self, obj, event):
+        """Event filter for hover detection"""
+        if obj == self:
+            if event.type() == QEvent.Enter:
+                self._on_hover_enter(event)
+                return True
+            elif event.type() == QEvent.Leave:
+                self._on_hover_leave(event)
+                return True
+            elif event.type() == QEvent.MouseButtonPress:
+                if event.button() == Qt.LeftButton:
+                    # Store position for potential drag start
+                    self.drag_start_position = event.pos()
+                    # Also handle the click
+                    self._on_mouse_press(event)
+                    return True
+            elif event.type() == QEvent.ContextMenu:
+                self._on_context_menu(event)
+                return True
+        return super().eventFilter(obj, event) 

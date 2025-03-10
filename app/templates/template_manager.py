@@ -100,8 +100,32 @@ class TemplateManager:
                 try:
                     with open(os.path.join(structures_dir, file), 'r') as f:
                         structure = json.load(f)
+                        # Ensure structure has a name
                         name = structure.get("name", os.path.splitext(file)[0])
+                        
+                        # Fix for older structure formats
+                        if "directories" not in structure and isinstance(structure, dict) and len(structure) > 0:
+                            # If it's an old format, convert it
+                            print(f"DEBUG: Converting old structure format for {name}")
+                            if "created" in structure:
+                                # It's already a structure object, just missing directories
+                                structure["directories"] = structure.get("structure", [])
+                            else:
+                                # It's just a raw structure
+                                structure = {
+                                    "name": name,
+                                    "directories": structure.get("structure", []),
+                                    "created": datetime.datetime.now().isoformat()
+                                }
+                        
+                        # Add to dictionary with both space and underscore versions for compatibility
                         self.custom_structures[name] = structure
+                        # Also add underscore version for lookups
+                        underscore_name = name.replace(" ", "_")
+                        if underscore_name != name:
+                            self.custom_structures[underscore_name] = structure
+                        
+                        print(f"DEBUG: Loaded structure: {name}")
                 except Exception as e:
                     print(f"Error loading structure {file}: {e}")
         except Exception as e:
@@ -121,10 +145,15 @@ class TemplateManager:
         """Get the folder structure for a template."""
         print(f"DEBUG: get_structure called with structure_name='{structure_name}'")
         
-        # Check if it's a built-in structure
-        if structure_name.lower() in DEFAULT_STRUCTURES:
-            print(f"DEBUG: Found built-in structure: {structure_name}")
-            return DEFAULT_STRUCTURES[structure_name.lower()]
+        if not structure_name:
+            print("DEBUG: No structure name provided")
+            return {}  # Return empty dict instead of empty list
+        
+        # Check if it's a built-in structure (case insensitive)
+        for key in DEFAULT_STRUCTURES:
+            if structure_name.lower() == key.lower():
+                print(f"DEBUG: Found built-in structure: {key}")
+                return DEFAULT_STRUCTURES[key]
         
         # Try with and without the Template_ prefix, and with spaces replaced by underscores
         structure_names_to_try = [structure_name]
@@ -147,20 +176,66 @@ class TemplateManager:
         
         print(f"DEBUG: Trying structure names: {structure_names_to_try}")
         
-        # Check custom structures for all variations
+        # Helper to safely extract a truncated representation
+        def safe_truncate(obj, max_items=5):
+            if isinstance(obj, list):
+                if len(obj) <= max_items:
+                    return obj
+                return obj[:max_items]
+            return obj
+        
+        # First check in-memory custom structures
         for name_to_try in structure_names_to_try:
-            custom_structure_path = os.path.join(self.paths["custom_structures_dir"], f"{name_to_try}.json")
-            if os.path.exists(custom_structure_path):
+            if name_to_try in self.custom_structures:
+                structure = self.custom_structures[name_to_try]
+                print(f"DEBUG: Found in-memory custom structure: {name_to_try}")
+                
+                # Return the directories part of the structure
+                if "directories" in structure:
+                    dirs = structure["directories"]
+                    print(f"DEBUG: Structure from in-memory: {json.dumps(safe_truncate(dirs), indent=2)} (truncated)")
+                    return dirs
+                # For backwards compatibility
+                elif "structure" in structure:
+                    struct = structure["structure"]
+                    print(f"DEBUG: Structure (legacy) from in-memory: {json.dumps(safe_truncate(struct), indent=2)} (truncated)")
+                    return struct
+                else:
+                    # If it's just a plain structure object
+                    print(f"DEBUG: Using structure object directly")
+                    return structure
+        
+        # If not found in memory, try to load from file
+        for name_to_try in structure_names_to_try:
+            # Replace spaces with underscores in filename
+            filename = name_to_try.replace(" ", "_").replace("/", "-").replace("\\", "-")
+            file_path = os.path.join(self.paths["custom_structures_dir"], f"{filename}.json")
+            
+            if os.path.exists(file_path):
                 try:
-                    with open(custom_structure_path, 'r') as f:
+                    with open(file_path, 'r') as f:
                         structure = json.load(f)
-                        print(f"DEBUG: Found custom structure: {name_to_try}")
+                    
+                    # Add to in-memory cache
+                    self.custom_structures[name_to_try] = structure
+                    
+                    # Return the directories part of the structure
+                    if "directories" in structure:
+                        print(f"DEBUG: Structure from file: {json.dumps(safe_truncate(structure['directories']), indent=2)} (truncated)")
+                        return structure["directories"]
+                    # For backwards compatibility
+                    elif "structure" in structure:
+                        print(f"DEBUG: Structure (legacy) from file: {json.dumps(safe_truncate(structure['structure']), indent=2)} (truncated)")
+                        return structure["structure"]
+                    else:
+                        # If it's just a plain structure object
+                        print(f"DEBUG: Using structure object from file directly")
                         return structure
                 except Exception as e:
-                    print(f"Error loading structure {name_to_try}: {e}")
+                    print(f"DEBUG: Error loading structure from file {file_path}: {e}")
         
         print(f"DEBUG: Structure not found: {structure_name}")
-        return []
+        return {}  # Return empty dict instead of empty list
     
     def get_categories(self):
         """Get a list of all template categories"""
@@ -258,14 +333,31 @@ class TemplateManager:
     
     def save_custom_structure(self, name, directories):
         """Save a custom folder structure"""
-        if not name or not directories:
+        if not name:
+            print("DEBUG: No structure name provided")
             return False
+            
+        if not directories:
+            print("DEBUG: No directories provided")
+            directories = {}  # Use empty dict instead of empty list
         
+        # Debug the incoming structure
+        try:
+            struct_json = json.dumps(directories, indent=2)
+            print(f"DEBUG: save_custom_structure called with structure: {struct_json}")
+        except Exception as e:
+            print(f"DEBUG: Error serializing structure: {e}")
+            print(f"DEBUG: Structure type: {type(directories)}")
+        
+        # Create a proper structure object that preserves hierarchy
         structure = {
             "name": name,
             "directories": directories,
             "created": datetime.datetime.now().isoformat()
         }
+        
+        # Update in-memory cache
+        self.custom_structures[name] = structure
         
         # Create a clean filename - always replace spaces with underscores
         filename = name.replace(" ", "_").replace("/", "-").replace("\\", "-")
@@ -273,12 +365,28 @@ class TemplateManager:
         
         print(f"DEBUG: Saving structure '{name}' to file '{file_path}'")
         
-        success = save_json_file(file_path, structure)
-        if success:
-            # Update in-memory cache
-            self.custom_structures[name] = structure
+        # Use a summary for debugging
+        try:
+            if isinstance(directories, dict):
+                top_level_keys = list(directories.keys())
+                if top_level_keys:
+                    print(f"DEBUG: Structure top level folders: {top_level_keys}")
+            elif isinstance(directories, list):
+                if directories:
+                    print(f"DEBUG: Structure items (list): {directories[:5]} {'...' if len(directories) > 5 else ''}")
+        except Exception as e:
+            print(f"DEBUG: Error creating structure summary: {e}")
         
-        return success
+        # Save the structure to file
+        try:
+            with open(file_path, 'w') as f:
+                json.dump(structure, f, indent=2)
+            
+            print(f"DEBUG: Successfully saved structure to {file_path}")
+            return True
+        except Exception as e:
+            print(f"DEBUG: Error saving structure to {file_path}: {e}")
+            return False
     
     def filter_templates(self, search_term=None, category=None):
         """Filter templates based on search term and category"""
@@ -1285,4 +1393,57 @@ class TemplateManager:
         # Save with the right naming convention
         structure_name = f"Template_{template_name}"
         print(f"DEBUG: Saving structure for template '{template_name}' as '{structure_name}'")
-        return self.save_custom_structure(structure_name, structure)
+        
+        # Create a consistent filename (always with underscores)
+        filename = structure_name.replace(" ", "_").replace("/", "-").replace("\\", "-")
+        file_path = os.path.join(self.paths["custom_structures_dir"], f"{filename}.json")
+        
+        structure_obj = {
+            "name": structure_name,
+            "directories": structure,
+            "created": datetime.datetime.now().isoformat()
+        }
+        
+        # Directly write to file to ensure proper saving
+        try:
+            with open(file_path, 'w') as f:
+                json.dump(structure_obj, f, indent=2)
+            
+            # Update in-memory cache
+            self.custom_structures[structure_name] = structure_obj
+            
+            print(f"DEBUG: Successfully saved structure to {file_path}")
+            return True
+        except Exception as e:
+            print(f"ERROR: Failed to save structure: {e}")
+            return False
+    
+    def _debug_print_structure(self, structure, max_depth=3, current_depth=0):
+        """Helper method to print structure for debugging"""
+        if current_depth > max_depth:
+            return "... (truncated)"
+            
+        if isinstance(structure, list):
+            if len(structure) == 0:
+                return "[]"
+            result = "[\n"
+            for item in structure[:5]:  # Limit to first 5 items
+                result += "  " * (current_depth + 1)
+                result += self._debug_print_structure(item, max_depth, current_depth + 1) + ",\n"
+            if len(structure) > 5:
+                result += "  " * (current_depth + 1) + "... (more items)\n"
+            result += "  " * current_depth + "]"
+            return result
+        elif isinstance(structure, dict):
+            if len(structure) == 0:
+                return "{}"
+            result = "{\n"
+            for key, value in list(structure.items())[:5]:  # Limit to first 5 items
+                result += "  " * (current_depth + 1)
+                result += f"{key}: {self._debug_print_structure(value, max_depth, current_depth + 1)},\n"
+            if len(structure) > 5:
+                result += "  " * (current_depth + 1) + "... (more items)\n"
+            result += "  " * current_depth + "}"
+            return result
+        else:
+            return str(structure)
