@@ -20,7 +20,17 @@ from app.ui.ui_components_pyqt import TemplateDirectoryEditor, StructureEditor
 
 
 def populate_template_gallery(app):
-    """Populate the template gallery with available templates"""
+    """
+    Legacy function to populate the template gallery with available templates.
+    Now delegates to the refactored gallery implementation.
+    """
+    # Check if we have the new gallery implementation
+    if hasattr(app, 'template_gallery'):
+        # Use the new implementation
+        app.template_gallery.populate_gallery(force_refresh=True)
+        return
+        
+    # Legacy implementation for backward compatibility
     try:
         # Clear existing templates
         if hasattr(app, 'template_list_frame') and hasattr(app.template_list_frame, 'scrollable_frame'):
@@ -141,6 +151,8 @@ def populate_template_gallery(app):
                 card.delete_btn.configure(bg=colors["card_bg"], fg="white")
     except Exception as e:
         print(f"Error populating template gallery: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def filter_templates(app, *args):
@@ -158,7 +170,18 @@ def filter_templates(app, *args):
 
 
 def select_template_from_gallery(app, template):
-    """Handle selection of a template from the gallery"""
+    """
+    Legacy function to handle selection of a template from the gallery.
+    Now delegates to the refactored gallery implementation.
+    """
+    # Check if we have the new gallery implementation
+    if hasattr(app, 'template_gallery'):
+        # Import the refactored function
+        from app.templates.refactored_template_gallery import select_template_from_gallery as new_select_template
+        # Use the new implementation
+        return new_select_template(app, template)
+        
+    # Legacy implementation for backward compatibility
     try:
         # Set current template
         app.current_template = template
@@ -231,6 +254,8 @@ def select_template_from_gallery(app, template):
         highlight_selected_template_in_gallery(app, template)
     except Exception as e:
         print(f"Error selecting template from gallery: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def highlight_selected_template_in_gallery(app, selected_template):

@@ -21,7 +21,7 @@ from app.dialogs.dialog_windows_pyqt import (preview_structure, show_batch_creat
                                 show_tutorial, show_preferences, show_structure_editor)
 from app.templates.templates import (get_template_file, clear_template_file, clear_structure_template,
                        rename_current_template, rename_template_file)
-from app.templates.template_gallery_ui_pyqt import create_template_gallery, select_template_from_gallery
+from app.templates.refactored_template_gallery import create_template_gallery, select_template_from_gallery
 from app.ui.app_theme_pyqt import apply_dark_theme_to_template_gallery
 from app.core.structures_pyqt import (create_custom_structure, edit_structure, update_structure_dropdown,
                      manage_structures, _update_structure_combo, _preview_structure, _edit_structure)

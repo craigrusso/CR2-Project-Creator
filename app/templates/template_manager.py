@@ -3,18 +3,22 @@
 
 import os
 import json
-import datetime
-import shutil
+import platform
 import sys
+import shutil
+import datetime
+import subprocess
+import time
+
+from app.utils.utils import load_json_file, save_json_file, get_config_paths
+from app.templates.components import TemplateCard
+from app.templates.refactored_template_gallery import create_template_gallery
 
 # Using PyQt for the UI framework
 from PyQt5.QtWidgets import QFileDialog, QMessageBox, QInputDialog
 from app.ui.ui_components_pyqt import ScrollableFrame
-from app.templates.template_card_pyqt import TemplateCard
-UI_FRAMEWORK = 'pyqt'
 
 from app.constants import DEFAULT_STRUCTURES, PROJECT_TYPE_TO_STRUCTURE, DEFAULT_TEMPLATE_CATEGORIES
-from app.utils.utils import load_json_file, save_json_file, get_config_paths
 
 class TemplateManager:
     """
@@ -545,11 +549,10 @@ class TemplateManager:
             
             if success:
                 QMessageBox.information(app, "Success", f"Template '{name}' saved successfully")
-                dialog.accept()
                 
-                # Refresh template gallery
-                from app.templates.templates import populate_template_gallery
-                populate_template_gallery(app)
+                # Update the gallery
+                if hasattr(app, 'template_gallery'):
+                    app.template_gallery.populate_gallery(force_refresh=True)
             else:
                 QMessageBox.warning(app, "Warning", f"Failed to save template '{name}'")
         
@@ -592,9 +595,9 @@ class TemplateManager:
         if success:
             QMessageBox.information(app, "Success", f"Template '{template_name}' imported successfully")
             
-            # Refresh template gallery
-            from app.templates.templates import populate_template_gallery
-            populate_template_gallery(app)
+            # Update the gallery
+            if hasattr(app, 'template_gallery'):
+                app.template_gallery.populate_gallery(force_refresh=True)
         else:
             QMessageBox.warning(app, "Warning", f"Failed to import template '{template_name}'")
     
@@ -662,9 +665,9 @@ class TemplateManager:
                 QMessageBox.information(app, "Success", f"Template '{template_name}' deleted successfully")
                 template_listbox.takeItem(index)
                 
-                # Refresh template gallery
-                from app.templates.templates import populate_template_gallery
-                populate_template_gallery(app)
+                # Update the gallery
+                if hasattr(app, 'template_gallery'):
+                    app.template_gallery.populate_gallery(force_refresh=True)
             else:
                 QMessageBox.warning(app, "Warning", f"Failed to delete template '{template_name}'")
         
@@ -695,15 +698,19 @@ class TemplateManager:
                 template_listbox.takeItem(index)
                 template_listbox.insertItem(index, QListWidgetItem(f"{new_name} ({template['category']})"))
                 
-                # Refresh template gallery
-                from app.templates.templates import populate_template_gallery
-                populate_template_gallery(app)
+                # Update the gallery
+                if hasattr(app, 'template_gallery'):
+                    app.template_gallery.populate_gallery(force_refresh=True)
             else:
                 QMessageBox.warning(app, "Warning", f"Failed to rename template")
         
         Button(button_frame, text="Delete", clicked=delete_template).pack(side=Qt.Left, padx=(0, 5))
         Button(button_frame, text="Rename", clicked=rename_template).pack(side=Qt.Left, padx=(0, 5))
         Button(button_frame, text="Close", clicked=dialog.accept).pack(side=Qt.Right)
+        
+        # Update the gallery
+        if hasattr(app, 'template_gallery'):
+            app.template_gallery.populate_gallery(force_refresh=True)
     
     def delete_template(self, template_name):
         """Delete a template by name"""

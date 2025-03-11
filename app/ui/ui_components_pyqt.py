@@ -147,7 +147,19 @@ class SearchBox(QWidget):
         # Search input
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("Enter search terms...")
-        self.search_input.setStyleSheet(LINEEDIT_STYLE)
+        # Updated style to remove borders for a cleaner look
+        self.search_input.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: none;
+                padding: 5px;
+                border-radius: 4px;
+            }}
+            QLineEdit:focus {{
+                background-color: {colors['hover_bg']};
+            }}
+        """)
         self.layout.addWidget(self.search_input)
         
         # Connect callback
