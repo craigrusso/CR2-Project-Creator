@@ -3,7 +3,7 @@
 
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
                            QFrame, QScrollArea, QGridLayout, QComboBox, QButtonGroup, 
-                           QToolButton, QSlider, QSizePolicy)
+                           QToolButton, QSlider, QSizePolicy, QSplitter)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
@@ -181,17 +181,7 @@ class GalleryUISetup:
         gallery.add_button.clicked.connect(gallery._on_add_template)
         gallery.button_layout.addWidget(gallery.add_button)
         
-        gallery.edit_button = QPushButton("Edit")
-        gallery.edit_button.setStyleSheet(BUTTON_STYLE)
-        gallery.edit_button.clicked.connect(gallery._on_edit_template)
-        gallery.edit_button.setEnabled(False)
-        gallery.button_layout.addWidget(gallery.edit_button)
-        
-        gallery.delete_button = QPushButton("Delete")
-        gallery.delete_button.setStyleSheet(BUTTON_STYLE)
-        gallery.delete_button.clicked.connect(gallery._on_delete_template)
-        gallery.delete_button.setEnabled(False)
-        gallery.button_layout.addWidget(gallery.delete_button)
+        # Remove edit and delete buttons - they're now available in the context menu
         
         gallery.manage_button = QPushButton("Manage All")
         gallery.manage_button.setStyleSheet(BUTTON_STYLE)
@@ -204,6 +194,9 @@ class GalleryUISetup:
     @staticmethod
     def setup_gallery_containers(gallery):
         """Set up the gallery containers for folders and templates"""
+        # Add QSplitter import
+        from PyQt5.QtWidgets import QSplitter
+        
         # Template gallery - use a main vertical layout
         gallery.gallery_scroll = QScrollArea()
         gallery.gallery_scroll.setWidgetResizable(True)
@@ -226,11 +219,35 @@ class GalleryUISetup:
         from .gallery_folders import GalleryFoldersSetup
         from .gallery_templates import GalleryTemplatesSetup
         
+        # Create a splitter widget
+        gallery.content_splitter = QSplitter(Qt.Vertical)  # Vertical splitter for top/bottom sections
+        gallery.content_splitter.setChildrenCollapsible(False)  # Don't allow sections to be collapsed
+        gallery.content_splitter.setHandleWidth(5)  # Slightly wider handle for easier grabbing
+        gallery.content_splitter.setStyleSheet("""
+            QSplitter::handle {
+                background-color: #555555;
+                border: 1px solid #666666;
+            }
+            QSplitter::handle:hover {
+                background-color: #777777;
+            }
+        """)
+        
         # Set up folders section
         GalleryFoldersSetup.setup_folders_section(gallery)
         
         # Set up templates section
         GalleryTemplatesSetup.setup_templates_section(gallery)
+        
+        # Add sections to the splitter
+        gallery.content_splitter.addWidget(gallery.folders_section)
+        gallery.content_splitter.addWidget(gallery.templates_section)
+        
+        # Set the initial sizes (40% folders, 60% templates)
+        gallery.content_splitter.setSizes([400, 600])  # Use actual pixel values, not percentages
+        
+        # Add the splitter to the main layout
+        gallery.main_layout.addWidget(gallery.content_splitter)
         
         # Add the gallery widget to the scroll area
         gallery.gallery_scroll.setWidget(gallery.gallery_widget)

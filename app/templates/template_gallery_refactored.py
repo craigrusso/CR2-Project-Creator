@@ -169,18 +169,30 @@ class TemplateGallery(QWidget):
     def clear_gallery(self):
         """Clear the gallery view"""
         # Clear templates section
-        if hasattr(self, 'templates_grid') and self.templates_grid:
-            while self.templates_grid.count():
-                item = self.templates_grid.takeAt(0)
-                if item.widget():
-                    item.widget().deleteLater()
+        if hasattr(self, 'templates_grid'):
+            try:
+                # Check if the grid is valid (not deleted) by calling count()
+                count = self.templates_grid.count()
+                for i in range(count-1, -1, -1):  # Loop backwards to avoid index issues
+                    item = self.templates_grid.takeAt(i)
+                    if item and item.widget():
+                        item.widget().deleteLater()
+            except (RuntimeError, AttributeError):
+                # Handle case where grid has been deleted
+                pass
         
-        # Clear folders section
-        if hasattr(self, 'folders_grid') and self.folders_grid:
-            while self.folders_grid.count():
-                item = self.folders_grid.takeAt(0)
-                if item.widget():
-                    item.widget().deleteLater()
+        # Clear folders section - be more careful checking for valid grid
+        if hasattr(self, 'folders_grid'):
+            try:
+                # Check if the grid is valid (not deleted) by calling count()
+                count = self.folders_grid.count()
+                for i in range(count-1, -1, -1):  # Loop backwards to avoid index issues
+                    item = self.folders_grid.takeAt(i)
+                    if item and item.widget():
+                        item.widget().deleteLater()
+            except (RuntimeError, AttributeError):
+                # Handle case where grid has been deleted
+                pass
         
         # Reset arrays
         self.folder_cards = []
@@ -208,11 +220,11 @@ class TemplateGallery(QWidget):
     def _on_add_template(self):
         GalleryEvents.on_add_template(self)
     
-    def _on_edit_template(self):
-        GalleryEvents.on_edit_template(self)
+    def _on_edit_template(self, template_name=None):
+        GalleryEvents.on_edit_template(self, template_name)
     
-    def _on_delete_template(self):
-        GalleryEvents.on_delete_template(self)
+    def _on_delete_template(self, template_name=None):
+        GalleryEvents.on_delete_template(self, template_name)
     
     def _on_manage_templates(self):
         GalleryEvents.on_manage_templates(self)
@@ -286,10 +298,7 @@ class TemplateGallery(QWidget):
     
     def _update_button_state(self):
         """Update the state of action buttons based on selection"""
-        # Template buttons
-        has_template_selected = self.selected_template is not None
-        self.edit_button.setEnabled(has_template_selected)
-        self.delete_button.setEnabled(has_template_selected)
+        # Template buttons - edit and delete buttons removed, now using context menu
         
         # Folder buttons
         has_folder_selected = self.selected_folder is not None
@@ -314,8 +323,26 @@ class TemplateGallery(QWidget):
         """Update layout after resize"""
         # Recalculate card sizes after resize
         self._update_card_sizes()
+        
+        # Recalculate number of columns based on container width
+        self._update_grid_columns()
+    
+    def _update_grid_columns(self):
+        """Update the number of columns in the grid layouts based on container width"""
+        # Only repopulate if we have the necessary attributes and a template manager
+        if hasattr(self, 'app') and hasattr(self.app, 'template_manager'):
+            # Re-populate folders with new column count
+            if self.folders_section.isVisible():
+                # Re-populate the gallery to adjust column count
+                self.populate_gallery(force_refresh=True)
     
     def keyPressEvent(self, event):
         """Handle keyboard shortcuts"""
         GalleryEvents.key_press_event(self, event)
-        super().keyPressEvent(event) 
+        super().keyPressEvent(event)
+        
+    def resizeEvent(self, event):
+        """Handle window resize events"""
+        # Start/restart the resize timer to avoid excessive updates
+        self.resize_timer.start()
+        super().resizeEvent(event) 

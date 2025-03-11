@@ -21,7 +21,7 @@ class GalleryFoldersSetup:
         gallery.folders_section = QWidget()
         gallery.folders_section.setStyleSheet("background: transparent;")
         gallery.folders_section_layout = QVBoxLayout(gallery.folders_section)
-        gallery.folders_section_layout.setContentsMargins(15, 0, 15, 15)
+        gallery.folders_section_layout.setContentsMargins(10, 0, 10, 10)  # Reduced from 15,0,15,15
         
         # Folders header with view controls
         gallery.folders_header = QWidget()
@@ -56,22 +56,23 @@ class GalleryFoldersSetup:
         gallery.folders_scroll.setFrameShape(QFrame.NoFrame)
         gallery.folders_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         gallery.folders_scroll.setStyleSheet("background: transparent; border: none;")
+        # Ensure scroll area fills available space
+        gallery.folders_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
         # Container for folder cards
         gallery.folders_container = QWidget()
         gallery.folders_container.setStyleSheet("background: transparent;")
+        gallery.folders_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)  # Match templates container policy
         
         # Create a grid layout for folders
         gallery.folders_grid = QGridLayout(gallery.folders_container)
         gallery.folders_grid.setContentsMargins(0, 0, 0, 0)
         gallery.folders_grid.setSpacing(10)  # Space between cards
+        gallery.folders_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)  # Align to top-left like templates
         
         # Set the container as the scroll area widget
         gallery.folders_scroll.setWidget(gallery.folders_container)
         gallery.folders_section_layout.addWidget(gallery.folders_scroll)
-        
-        # Add to main layout
-        gallery.main_layout.addWidget(gallery.folders_section)
 
     @staticmethod
     def setup_folder_view_controls(gallery):
@@ -96,11 +97,11 @@ class GalleryFoldersSetup:
         
         # Size slider
         gallery.folder_size_slider = QSlider(Qt.Horizontal)
-        gallery.folder_size_slider.setRange(50, 150)  # 50% to 150% scaling
+        gallery.folder_size_slider.setRange(50, 300)  # 50% to 300% scaling (was 150%)
         gallery.folder_size_slider.setValue(gallery.icon_scale)  # Use current scale value
         gallery.folder_size_slider.setFixedWidth(100)
         gallery.folder_size_slider.setTickPosition(QSlider.TicksBelow)
-        gallery.folder_size_slider.setTickInterval(25)
+        gallery.folder_size_slider.setTickInterval(50)  # Increased tick interval for wider range
         gallery.folder_size_slider.valueChanged.connect(gallery._on_icon_scale_changed)
         gallery.folder_size_slider.setStyleSheet("""
             QSlider::groove:horizontal {
@@ -246,7 +247,18 @@ class GalleryFoldersSetup:
         # Grid layout parameters
         col = 0
         row = 0
-        max_cols = 4  # Default number of columns
+        
+        # Calculate max columns based on container width
+        container_width = gallery.folders_container.width()
+        folder_width = 130  # Folder card width + spacing
+        min_cols = 2  # Minimum number of columns
+        
+        # Default to 4 columns if container width is not yet available
+        if container_width <= 0:
+            max_cols = 4
+        else:
+            calculated_cols = max(min_cols, container_width // folder_width)
+            max_cols = min(8, calculated_cols)  # Increased max columns to 8 (was 6)
         
         for folder in folders:
             folder_card = TemplateFolderCard(gallery, folder_name=folder, app=gallery.app)
@@ -333,21 +345,10 @@ class GalleryFoldersSetup:
     @staticmethod
     def update_folder_card_sizes(gallery, scale_percent):
         """Update the sizes of folder cards based on the scale percentage"""
-        # Base size for cards (unscaled)
-        base_width = 150
-        base_height = 120
-        
-        # Calculate new size based on scale
-        scaled_width = int(base_width * scale_percent / 100)
-        scaled_height = int(base_height * scale_percent / 100)
-        
-        # Apply to all folder cards if in grid mode
-        if gallery.folder_view_mode == "grid":
-            for card in gallery.folder_cards:
-                if hasattr(card, 'setFixedSize'):
-                    # Only resize cards, not list items
-                    card.setFixedSize(scaled_width, scaled_height)
-                    
-                    # Update internal card components if needed
-                    if hasattr(card, '_update_layout_for_size'):
-                        card._update_layout_for_size(scaled_width, scaled_height) 
+        # Apply to all folder cards
+        for card in gallery.folder_cards:
+            # Only resize the icon, not the entire card
+            if hasattr(card, 'resize_icon'):
+                card.resize_icon(scale_percent)
+                
+        # We don't need to re-layout the grid since we're not changing card sizes anymore 

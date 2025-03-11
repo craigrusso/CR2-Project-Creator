@@ -1,6 +1,6 @@
 # template_card.py
 
-from PyQt5.QtWidgets import QFrame, QLabel, QVBoxLayout, QHBoxLayout, QWidget
+from PyQt5.QtWidgets import QFrame, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QMenu, QAction
 from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QMimeData
 from PyQt5.QtGui import QPixmap, QFont, QDrag
 import os
@@ -26,6 +26,8 @@ class TemplateCard(QFrame):
     clicked = pyqtSignal(str)
     doubleClicked = pyqtSignal(str)
     dragStarted = pyqtSignal(str)
+    editRequested = pyqtSignal(str)  # New signal for edit action
+    deleteRequested = pyqtSignal(str)  # New signal for delete action
 
     def __init__(self, parent=None, template=None, app=None):
         super().__init__(parent)
@@ -149,13 +151,65 @@ class TemplateCard(QFrame):
             }}
         """)
 
+    def keyPressEvent(self, event):
+        """Handle key press events for template operations"""
+        # Handle both Delete and Backspace (for Mac) for template deletion when selected
+        if (event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace) and self.selected:
+            self.deleteRequested.emit(self.template_name())
+        super().keyPressEvent(event)
+    
+    def contextMenuEvent(self, event):
+        """Show context menu on right click"""
+        # Check if we have a valid app reference first
+        if not hasattr(self, 'app') or not self.app:
+            return
+            
+        # Create context menu with styled appearance
+        context_menu = QMenu(self)
+        context_menu.setStyleSheet("""
+            QMenu {
+                background-color: #252526;
+                color: #CCCCCC;
+                border: 1px solid #3C3C3C;
+                padding: 5px;
+            }
+            QMenu::item {
+                padding: 5px 20px 5px 20px;
+                border-radius: 2px;
+            }
+            QMenu::item:selected {
+                background-color: #2C4F76;
+                color: #FFFFFF;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #3C3C3C;
+                margin: 5px 0px 5px 0px;
+            }
+        """)
+        
+        # Add edit action
+        edit_action = QAction("Edit", self)
+        edit_action.triggered.connect(lambda: self.editRequested.emit(self.template_name()))
+        context_menu.addAction(edit_action)
+        
+        # Add delete action
+        delete_action = QAction("Delete", self)
+        delete_action.triggered.connect(lambda: self.deleteRequested.emit(self.template_name()))
+        context_menu.addAction(delete_action)
+        
+        # Show the menu
+        context_menu.exec_(event.globalPos())
+
 class TemplateListItem(QFrame):
     """Template list item widget for displaying a template in list view"""
     
     clicked = pyqtSignal(object)
     doubleClicked = pyqtSignal(object)
     dragStarted = pyqtSignal(str)
-    
+    editRequested = pyqtSignal(str)  # New signal for edit action
+    deleteRequested = pyqtSignal(str)  # New signal for delete action
+
     def __init__(self, parent=None, template=None, app=None):
         super().__init__(parent)
         self.template = template or {}  # Use empty dict if template is None
@@ -305,3 +359,53 @@ class TemplateListItem(QFrame):
             self.name_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
             self.category_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
             self.icon_label.setStyleSheet("background: transparent;")
+
+    def keyPressEvent(self, event):
+        """Handle key press events for template operations"""
+        # Handle both Delete and Backspace (for Mac) for template deletion when selected
+        if (event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace) and self.selected:
+            self.deleteRequested.emit(self.template_name())
+        super().keyPressEvent(event)
+    
+    def contextMenuEvent(self, event):
+        """Show context menu on right click"""
+        # Check if we have a valid app reference first
+        if not hasattr(self, 'app') or not self.app:
+            return
+            
+        # Create context menu with styled appearance
+        context_menu = QMenu(self)
+        context_menu.setStyleSheet("""
+            QMenu {
+                background-color: #252526;
+                color: #CCCCCC;
+                border: 1px solid #3C3C3C;
+                padding: 5px;
+            }
+            QMenu::item {
+                padding: 5px 20px 5px 20px;
+                border-radius: 2px;
+            }
+            QMenu::item:selected {
+                background-color: #2C4F76;
+                color: #FFFFFF;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #3C3C3C;
+                margin: 5px 0px 5px 0px;
+            }
+        """)
+        
+        # Add edit action
+        edit_action = QAction("Edit", self)
+        edit_action.triggered.connect(lambda: self.editRequested.emit(self.template_name()))
+        context_menu.addAction(edit_action)
+        
+        # Add delete action
+        delete_action = QAction("Delete", self)
+        delete_action.triggered.connect(lambda: self.deleteRequested.emit(self.template_name()))
+        context_menu.addAction(delete_action)
+        
+        # Show the menu
+        context_menu.exec_(event.globalPos())

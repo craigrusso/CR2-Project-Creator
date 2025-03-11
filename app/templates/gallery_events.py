@@ -30,9 +30,7 @@ class GalleryEvents:
         gallery.selected_template = template
         gallery.selected_folder = None  # Reset folder selection
         
-        # Update button states
-        gallery.edit_button.setEnabled(True)
-        gallery.delete_button.setEnabled(True)
+        # Update button states (removed edit and delete buttons)
         gallery.delete_folder_button.setEnabled(False)
         
         # Update card styling
@@ -56,9 +54,7 @@ class GalleryEvents:
         gallery.selected_folder = folder_name
         gallery.selected_template = None  # Reset template selection
         
-        # Update button states
-        gallery.edit_button.setEnabled(False)
-        gallery.delete_button.setEnabled(False)
+        # Update button states (removed edit and delete buttons)
         gallery.delete_folder_button.setEnabled(True)
         
         # Update card styling for folders
@@ -116,19 +112,52 @@ class GalleryEvents:
             gallery.populate_gallery()
     
     @staticmethod
-    def on_edit_template(gallery):
-        """Handle edit template button click"""
+    def on_edit_template(gallery, template_name=None):
+        """Handle edit template action (from button or context menu)"""
+        # Get the template name - either directly passed or from the selected template
+        if template_name is None and gallery.selected_template:
+            if isinstance(gallery.selected_template, dict):
+                template_name = gallery.selected_template.get('name')
+            else:
+                template_name = gallery.selected_template
+                
+        # If we have a template name, select it first to make sure it's the current selection
+        if template_name and hasattr(gallery.app, 'template_manager') and hasattr(gallery.app.template_manager, 'get_template_by_name'):
+            template = gallery.app.template_manager.get_template_by_name(template_name)
+            if template:
+                gallery._on_template_select(template)
+        
+        # Now proceed with editing the selected template
         if gallery.selected_template and hasattr(gallery.app, 'template_manager') and hasattr(gallery.app.template_manager, 'edit_template'):
             gallery.app.template_manager.edit_template(gallery.selected_template)
             gallery.populate_gallery()
     
     @staticmethod
-    def on_delete_template(gallery):
-        """Handle delete template button click"""
-        if gallery.selected_template and hasattr(gallery.app, 'template_manager') and hasattr(gallery.app.template_manager, 'delete_template'):
-            gallery.app.template_manager.delete_template(gallery.selected_template)
-            gallery.selected_template = None
-            gallery.populate_gallery()
+    def on_delete_template(gallery, template_name=None):
+        """Handle delete template action (from button, context menu, or keyboard)"""
+        # Get the template name - either directly passed or from the selected template
+        if template_name is None and gallery.selected_template:
+            if isinstance(gallery.selected_template, dict):
+                template_name = gallery.selected_template.get('name')
+            else:
+                template_name = gallery.selected_template
+        
+        # Check if we have a valid template name and template manager
+        if template_name and hasattr(gallery.app, 'template_manager') and hasattr(gallery.app.template_manager, 'delete_template'):
+            # Confirm deletion with dialog
+            confirm = QMessageBox.question(
+                gallery,
+                "Confirm Delete",
+                f"Are you sure you want to delete template '{template_name}'?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if confirm == QMessageBox.Yes:
+                # Delete the template
+                gallery.app.template_manager.delete_template(template_name)
+                gallery.selected_template = None
+                gallery.populate_gallery()
     
     @staticmethod
     def on_manage_templates(gallery):
@@ -193,28 +222,54 @@ class GalleryEvents:
     @staticmethod
     def key_press_event(gallery, event):
         """Handle keyboard shortcuts"""
-        # Handle delete or backspace key when a folder is selected
-        if gallery.selected_folder and (event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace):
-            # Don't allow deleting default folders
-            if gallery.selected_folder in ["General", "Development", "Business"]:
-                QMessageBox.warning(gallery, "Error", f"'{gallery.selected_folder}' is a default folder and cannot be deleted.")
-                return
+        # Delete key handling
+        if event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
+            # Handle folder deletion
+            if gallery.selected_folder:
+                # Don't allow deleting default folders
+                if gallery.selected_folder in ["General", "Development", "Business"]:
+                    QMessageBox.warning(gallery, "Error", f"'{gallery.selected_folder}' is a default folder and cannot be deleted.")
+                    return
+                    
+                # Show confirmation dialog
+                confirm = QMessageBox.question(
+                    gallery,
+                    "Confirm Delete",
+                    f"Are you sure you want to delete folder '{gallery.selected_folder}'?\n"
+                    "Templates in this folder will remain available but will be moved to the root.",
+                    QMessageBox.Yes | QMessageBox.No
+                )
                 
-            # Show confirmation dialog
-            confirm = QMessageBox.question(
-                gallery,
-                "Confirm Delete",
-                f"Are you sure you want to delete folder '{gallery.selected_folder}'?\n"
-                "Templates in this folder will remain available but will be moved to the root.",
-                QMessageBox.Yes | QMessageBox.No
-            )
+                if confirm == QMessageBox.Yes:
+                    # Delete folder
+                    if hasattr(gallery.app, 'template_manager') and hasattr(gallery.app.template_manager, 'delete_folder'):
+                        gallery.app.template_manager.delete_folder(gallery.selected_folder)
+                        gallery.selected_folder = None
+                        gallery.populate_gallery(force_refresh=True)
             
-            if confirm == QMessageBox.Yes:
-                # Delete folder
-                if hasattr(gallery.app, 'template_manager') and hasattr(gallery.app.template_manager, 'delete_folder'):
-                    gallery.app.template_manager.delete_folder(gallery.selected_folder)
-                    gallery.selected_folder = None
-                    gallery.populate_gallery(force_refresh=True)
+            # Handle template deletion
+            elif gallery.selected_template:
+                template_name = None
+                if isinstance(gallery.selected_template, dict):
+                    template_name = gallery.selected_template.get('name')
+                else:
+                    template_name = gallery.selected_template
+                    
+                if template_name:
+                    # Show confirmation dialog
+                    confirm = QMessageBox.question(
+                        gallery,
+                        "Confirm Delete",
+                        f"Are you sure you want to delete template '{template_name}'?",
+                        QMessageBox.Yes | QMessageBox.No
+                    )
+                    
+                    if confirm == QMessageBox.Yes:
+                        # Delete template
+                        if hasattr(gallery.app, 'template_manager') and hasattr(gallery.app.template_manager, 'delete_template'):
+                            gallery.app.template_manager.delete_template(template_name)
+                            gallery.selected_template = None
+                            gallery.populate_gallery()
         else:
             # Call the parent's keyPressEvent
             pass  # This will be handled in the refactored main class 

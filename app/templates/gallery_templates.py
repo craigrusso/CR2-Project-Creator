@@ -58,9 +58,6 @@ class GalleryTemplatesSetup:
         
         gallery.templates_scroll.setWidget(gallery.templates_container)
         gallery.templates_section_layout.addWidget(gallery.templates_scroll)
-        
-        # Add templates section to main layout
-        gallery.main_layout.addWidget(gallery.templates_section)
     
     @staticmethod
     def setup_templates_header(gallery):
@@ -198,20 +195,39 @@ class GalleryTemplatesSetup:
         # Grid layout parameters
         col = 0
         row = 0
-        max_cols = 4  # Default number of columns
+        
+        # Calculate max columns based on container width
+        container_width = gallery.templates_container.width()
+        template_width = 150  # Template card width + spacing
+        min_cols = 2  # Minimum number of columns
+        
+        # Default to 4 columns if container width is not yet available
+        if container_width <= 0:
+            max_cols = 4
+        else:
+            calculated_cols = max(min_cols, container_width // template_width)
+            max_cols = min(8, calculated_cols)  # Limit max columns to 8
         
         for name, data in templates_to_show.items():
-            template_card = TemplateCard(gallery, template=data, app=gallery.app)
-            
             # Make sure we're passing the template data dictionary, not just the name
             if isinstance(data, dict):
                 template_data = data
             else:
                 # If data is not a dictionary, create one with the name
-                template_data = {"name": name}
+                template_data = {"name": name, "category": "Custom", "description": ""}
                 
+            template_card = TemplateCard(gallery, template=template_data, app=gallery.app)
+            
             # Connect the click handler with the template data
             template_card.clicked.connect(lambda checked=False, t=template_data: gallery._on_template_select(t))
+            
+            # Connect context menu actions
+            template_card.editRequested.connect(lambda t_name: 
+                gallery._on_edit_template(t_name) if hasattr(gallery, 'app') 
+                and hasattr(gallery.app, 'template_manager') else None)
+            template_card.deleteRequested.connect(lambda t_name: 
+                gallery._on_delete_template(t_name) if hasattr(gallery, 'app') 
+                and hasattr(gallery.app, 'template_manager') else None)
             
             gallery.templates_grid.addWidget(template_card, row, col)
             gallery.template_cards.append(template_card)
@@ -226,41 +242,70 @@ class GalleryTemplatesSetup:
         """Populate templates in list view"""
         gallery.template_cards = []
         
-        # List layout - one column
-        row = 0
+        # First, clear any existing widgets from the grid
+        if hasattr(gallery, 'templates_grid'):
+            try:
+                # Remove all items from grid
+                while gallery.templates_grid.count():
+                    item = gallery.templates_grid.takeAt(0)
+                    if item and item.widget():
+                        item.widget().deleteLater()
+            except Exception as e:
+                print(f"Error clearing grid: {e}")
         
-        # Sort templates alphabetically for consistent ordering
+        # Sort templates for consistent display
         sorted_templates = []
         for name, data in templates_to_show.items():
             sorted_templates.append((name, data))
         sorted_templates.sort(key=lambda x: x[0].lower())  # Sort by name case-insensitive
         
-        # Create list items with alternating colors
+        # Add each template to the grid in list mode (single column)
+        row = 0
         for i, (name, data) in enumerate(sorted_templates):
-            template_item = TemplateListItem(gallery, template=data, app=gallery.app)
-            
             # Make sure we're passing the template data dictionary, not just the name
             if isinstance(data, dict):
                 template_data = data
             else:
                 # If data is not a dictionary, create one with the name
-                template_data = {"name": name}
-                
+                template_data = {"name": name, "category": "Custom", "description": ""}
+            
+            # Create a list item (horizontal layout template item)
+            template_item = TemplateListItem(gallery.templates_container, template=template_data, app=gallery.app)
+            
             # Set alternating row color property
             template_item.setProperty("row_type", "odd" if i % 2 else "even")
             
-            # Force style update
+            # Force style update to apply the alternate row colors
             template_item.style().unpolish(template_item)
             template_item.style().polish(template_item)
-            template_item._update_styling()
-                
-            # Connect the click handler with the template data
+            
+            # Update styling if the item has a method for it
+            if hasattr(template_item, '_update_styling'):
+                template_item._update_styling()
+            
+            # Connect click handlers
             template_item.clicked.connect(lambda checked=False, t=template_data: gallery._on_template_select(t))
             
-            gallery.templates_grid.addWidget(template_item, row, 0)
-            gallery.template_cards.append(template_item)
-            row += 1
+            # Connect double-click handler
+            if hasattr(gallery, '_on_template_double_click'):
+                template_item.doubleClicked.connect(lambda checked=False, t=template_data: gallery._on_template_double_click(t))
             
+            # Connect context menu actions
+            template_item.editRequested.connect(lambda t_name: 
+                gallery._on_edit_template(t_name) if hasattr(gallery, 'app') 
+                and hasattr(gallery.app, 'template_manager') else None)
+            template_item.deleteRequested.connect(lambda t_name: 
+                gallery._on_delete_template(t_name) if hasattr(gallery, 'app') 
+                and hasattr(gallery.app, 'template_manager') else None)
+            
+            # Add to grid layout as a single column
+            try:
+                gallery.templates_grid.addWidget(template_item, row, 0)
+                gallery.template_cards.append(template_item)
+                row += 1
+            except Exception as e:
+                print(f"Error adding template to grid: {e}")
+    
     @staticmethod
     def set_template_view_mode(gallery, mode):
         """Set the template view mode"""
@@ -271,11 +316,11 @@ class GalleryTemplatesSetup:
         gallery.template_grid_view_btn.setChecked(mode == "grid")
         gallery.template_list_view_btn.setChecked(mode == "list")
         
-        # Only repopulate if the mode actually changed and we have a populated gallery
-        if old_mode != mode and hasattr(gallery, 'templates_grid'):
+        # Only repopulate if the mode actually changed
+        if old_mode != mode:
             # Update the gallery
             gallery.populate_gallery()
-            
+        
     @staticmethod
     def get_templates_in_folder(gallery, folder_name):
         """Get templates in a specific folder"""

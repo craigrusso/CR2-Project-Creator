@@ -6,6 +6,13 @@ Template management modules
 
 # Import key template modules - PyQt version
 from app.templates.template_manager import TemplateManager
+# Import the operations modules for direct access if needed
+from app.templates.template_manager_core import TemplateManagerCore
+from app.templates.template_operations import TemplateOperations
+from app.templates.structure_operations import StructureOperations
+from app.templates.folder_operations import FolderOperations
+from app.templates.ui_operations import UIOperations
+
 from app.templates.templates import (
     # Legacy functions - some still used
     populate_template_gallery,  # Redirects to refactored gallery

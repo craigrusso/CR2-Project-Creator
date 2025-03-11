@@ -103,14 +103,23 @@ class TemplateFolderCard(QFrame):
 
     def resize_icon(self, scale_percent):
         """Resize just the icon based on scale percentage"""
-        base_size = 64  # Base icon size at 100%
-        new_size = int(base_size * scale_percent / 100)
+        # Base icon size at 100%
+        base_size = 64
         
-        # Update icon size and font size
+        # Get available space in the card (accounting for minimal margins all around)
+        available_height = self.height() - 5  # Reserve only 5px for title and margins
+        available_width = self.width() - 5  # Reserve only 5px for horizontal margins
+        max_icon_size = min(available_height, available_width)  # Use the smaller dimension
+        
+        # Calculate new size based on scale percentage, but cap it to available space
+        new_size = min(int(base_size * scale_percent / 100), max_icon_size)
+        
+        # Update icon size
         self.icon_label.setFixedSize(new_size, new_size)
         
-        # Also adjust font size
-        font_size = int(40 * scale_percent / 100)
+        # Adjust font size based on the actual icon size
+        font_scale = new_size / base_size
+        font_size = int(40 * font_scale)
         font_size = max(18, min(font_size, 60))  # Keep font size between 18 and 60
         self.icon_label.setFont(QFont(SYSTEM_FONT, font_size))
 
