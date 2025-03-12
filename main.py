@@ -4,7 +4,7 @@
 import platform
 import sys
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QCoreApplication
 from app.core.app_module_pyqt import ProjectCreatorApp
 from app.core.app_config import APP_NAME, APP_VERSION, setup_dpi_awareness
 from app.ui.app_theme_pyqt import apply_dark_theme_to_template_section
@@ -17,6 +17,12 @@ def main():
     """Main entry point for the CR2 Creative Pro application"""
     # Setup DPI awareness for Windows
     setup_dpi_awareness()
+    
+    # For macOS, set the application name before creating QApplication
+    # This affects what appears in the menu bar
+    QCoreApplication.setApplicationName(APP_NAME)
+    QCoreApplication.setOrganizationName("CR2 Creative")
+    QCoreApplication.setOrganizationDomain("cr2creative.com")
     
     # Set app ID for Windows taskbar
     if platform.system() == "Windows":
@@ -33,11 +39,17 @@ def main():
     
     # Initialize the PyQt application
     app = QApplication(sys.argv)
-    app.setApplicationName(f"{APP_NAME}")
+    app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
+    
+    # On macOS, ensure native menu bar is used
+    if platform.system() == "Darwin":  # macOS
+        app.setAttribute(Qt.AA_DontUseNativeMenuBar, False)
     
     # Create and show the main window
     main_window = ProjectCreatorApp()
+    # Store the instance for future reference
+    ProjectCreatorApp._instance = main_window
     main_window.show()
     
     # Apply template migration if needed

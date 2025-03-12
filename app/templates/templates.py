@@ -921,21 +921,33 @@ def edit_template_structure(app, template=None):
                 # If the template type doesn't have a defined structure, use Basic
                 structure = app.template_manager.get_default_structure('Standard')
         
-        # Open structure editor
-        editor = StructureEditor(app.root, 
-                              structure=structure, 
-                              title=f"Edit Structure for '{template_name}'",
-                              app=app,
-                              save_callback=lambda name, s: _save_template_structure(app, template_structure_name, name, s, template))
+        # Open enhanced structure editor instead of the basic one
+        from app.dialogs.dialog_windows_pyqt import show_enhanced_structure_editor
+        from app.ui.structure_editor_enhanced import EnhancedStructureEditor
         
-        # Set the structure name (prefilled with template name)
-        editor.name_var.set(template_structure_name)
+        # Create a custom save callback that uses the template structure name convention
+        def template_save_callback(name, structure):
+            _save_template_structure(app, template_structure_name, name, structure, template)
+            return True
         
-        # If the structure already exists, don't allow changing the name
+        # Create the enhanced editor
+        editor = EnhancedStructureEditor(
+            app.root,
+            structure_name=template_structure_name,
+            structure=structure,
+            save_callback=template_save_callback
+        )
+        
+        # Set the window title
+        editor.setWindowTitle(f"Edit Structure for '{template_name}'")
+        
+        # If the structure already exists, lock the name field
         if structure_exists:
-            editor.name_entry.config(state="disabled")
+            editor.name_input.setText(template_structure_name)
+            editor.name_input.setReadOnly(True)
         
-        app.root.wait_window(editor)
+        # Show the dialog
+        editor.exec_()
 
 
 def _save_template_structure(app, old_name, new_name, structure, template):

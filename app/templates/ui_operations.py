@@ -2,15 +2,16 @@
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
 import os
-from PyQt5.QtWidgets import QFileDialog, QMessageBox, QInputDialog
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QFileDialog, QMessageBox, QInputDialog, QFrame, QLabel, QVBoxLayout
+from PyQt5.QtCore import Qt, QByteArray
+from PyQt5.QtGui import QPixmap, QPainter
 
 # Import QtWidgets conditionally - for compatibility with different PyQt versions
 try:
-    from PyQt5.QtWidgets import QFrame, QLabel, QLineEdit, QPushButton
+    from PyQt5.QtWidgets import QLineEdit, QPushButton
 except ImportError:
     # Fallback for older PyQt versions
-    from PyQt5.QtGui import QFrame, QLabel, QLineEdit, QPushButton
+    from PyQt5.QtGui import QLineEdit, QPushButton
 
 from app.ui.ui_components_pyqt import ScrollableFrame
 from app.templates.components import TemplateCard
@@ -30,6 +31,37 @@ class UIOperations:
     """
     UI-related operations for template management
     """
+    
+    def create_new_template(self, parent):
+        """Create a new empty template via UI action"""
+        try:
+            # Import here to avoid circular imports
+            from app.dialogs.dialog_windows_pyqt import show_edit_template
+            
+            # Create a new template with default values
+            new_template = {
+                "name": "New Template",
+                "category": "Custom",
+                "description": "A new custom template",
+                "type": "Standard",
+                "structure_type": "Standard",
+                "icon": "📂",
+                "created": ""
+            }
+            
+            # Show the edit template dialog with a callback to update the template
+            show_edit_template(parent, new_template, lambda t: self.update_template(t))
+            
+            # Trigger template update to refresh UI
+            if hasattr(parent, 'template_updated') and parent.template_updated is not None:
+                parent.template_updated.emit()
+                
+            return True
+        except Exception as e:
+            print(f"Error creating new template: {e}")
+            if parent:
+                QMessageBox.warning(parent, "Error", f"Failed to create template: {str(e)}")
+            return False
     
     def add_template(self):
         """Show dialog to add a new template"""
@@ -94,17 +126,76 @@ class UIOperations:
             card.enterEvent = lambda e: self._on_card_hover_enter(card)
             card.leaveEvent = lambda e: self._on_card_hover_leave(card)
         
-        # Icon - use emoji for simplicity
-        icon = template.get("icon", "📂")
-        icon_label = QLabel(card, text=icon, font=("Segoe UI", 24),
-                               bg=colors["card_bg"], fg=colors["text"])
-        icon_label.pack(side=Qt.LeftToRight, padx=10, pady=10)
+        # Icon - use SVG icon if available, fallback to emoji
+        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
+                               "assets", "icons", "template_structure_icon.svg")
         
-        # Make icon clickable too
-        if select_callback:
-            icon_label.mousePressEvent = lambda e: select_callback(template)
-            icon_label.enterEvent = lambda e: self._on_card_hover_enter(card)
-            icon_label.leaveEvent = lambda e: self._on_card_hover_leave(card)
+        if os.path.exists(icon_path):
+            try:
+                from PyQt5.QtSvg import QSvgRenderer
+                
+                # Create a renderer for the SVG
+                with open(icon_path, 'r') as f:
+                    svg_content = f.read()
+                
+                renderer = QSvgRenderer(QByteArray(svg_content.encode()))
+                if renderer.isValid():
+                    # Create a pixmap to render to
+                    pixmap = QPixmap(40, 40)
+                    pixmap.fill(Qt.transparent)  # Make the background transparent
+                    
+                    # Paint the SVG on the pixmap
+                    painter = QPainter(pixmap)
+                    renderer.render(painter)
+                    painter.end()
+                    
+                    icon_label = QLabel(card)
+                    icon_label.setPixmap(pixmap)
+                    icon_label.setStyleSheet(f"background: {colors['card_bg']}")
+                    icon_label.pack(side=Qt.LeftToRight, padx=10, pady=10)
+                    
+                    # Make icon clickable too
+                    if select_callback:
+                        icon_label.mousePressEvent = lambda e: select_callback(template)
+                        icon_label.enterEvent = lambda e: self._on_card_hover_enter(card)
+                        icon_label.leaveEvent = lambda e: self._on_card_hover_leave(card)
+                else:
+                    # Fallback to emoji if renderer is not valid
+                    icon = template.get("icon", "📂")
+                    icon_label = QLabel(card, text=icon, font=("Segoe UI", 24),
+                                   bg=colors["card_bg"], fg=colors["text"])
+                    icon_label.pack(side=Qt.LeftToRight, padx=10, pady=10)
+                    
+                    # Make icon clickable too
+                    if select_callback:
+                        icon_label.mousePressEvent = lambda e: select_callback(template)
+                        icon_label.enterEvent = lambda e: self._on_card_hover_enter(card)
+                        icon_label.leaveEvent = lambda e: self._on_card_hover_leave(card)
+            except Exception as e:
+                print(f"ERROR: Failed to load SVG icon: {e}")
+                # Fallback to emoji if SVG loading fails
+                icon = template.get("icon", "📂")
+                icon_label = QLabel(card, text=icon, font=("Segoe UI", 24),
+                               bg=colors["card_bg"], fg=colors["text"])
+                icon_label.pack(side=Qt.LeftToRight, padx=10, pady=10)
+                
+                # Make icon clickable too
+                if select_callback:
+                    icon_label.mousePressEvent = lambda e: select_callback(template)
+                    icon_label.enterEvent = lambda e: self._on_card_hover_enter(card)
+                    icon_label.leaveEvent = lambda e: self._on_card_hover_leave(card)
+        else:
+            # Fallback to emoji if file doesn't exist
+            icon = template.get("icon", "📂")
+            icon_label = QLabel(card, text=icon, font=("Segoe UI", 24),
+                               bg=colors["card_bg"], fg=colors["text"])
+            icon_label.pack(side=Qt.LeftToRight, padx=10, pady=10)
+            
+            # Make icon clickable too
+            if select_callback:
+                icon_label.mousePressEvent = lambda e: select_callback(template)
+                icon_label.enterEvent = lambda e: self._on_card_hover_enter(card)
+                icon_label.leaveEvent = lambda e: self._on_card_hover_leave(card)
         
         # Info section
         info_frame = QFrame(card, bg=colors["card_bg"])
@@ -221,96 +312,137 @@ class UIOperations:
     
     def save_template_ui(self, app):
         """Show UI for saving a template"""
-        from PyQt5.QtWidgets import QDialog, QFrame, QLabel, QLineEdit, QPushButton, QOptionMenu, QStringVar
+        from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+                                    QLineEdit, QPushButton, QComboBox, QMessageBox)
+        from PyQt5.QtCore import Qt
         
-        if not app.template_file_path:
-            QMessageBox.warning(app, "Warning", "Please select a template file first")
-            return
-            
-        if not app.project_name.text().strip():
-            QMessageBox.warning(app, "Warning", "Please enter a project name to use as template name")
-            return
+        # Check if we should prompt for a template file
+        template_file_path = getattr(app, 'template_file_path', None)
+        if not template_file_path:
+            # Allow creating a blank template without a template file
+            if not hasattr(app, 'project_name') or not app.project_name.text().strip():
+                # We need a project name at minimum
+                QMessageBox.information(app, "Template Information", 
+                                    "You are creating a blank template. You can add content to it later.")
         
         # Create dialog
         dialog = QDialog(app)
-        dialog.setWindowTitle("Save as Template")
-        dialog.setGeometry(400, 300, 400, 300)
-        dialog.setModal(True)
-        dialog.exec_()
+        dialog.setWindowTitle("Save Template")
+        dialog.resize(400, 300)
         
-        frame = QFrame(dialog, padx=20, pady=20)
-        frame.pack(fill=Qt.Expanding, expand=True)
+        # Main layout
+        main_layout = QVBoxLayout(dialog)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(10)
         
         # Template name
-        name_label = QLabel(frame, text="Template Name:", alignment=Qt.AlignLeft)
-        name_label.pack(fill=Qt.Expanding, pady=(0, 5))
+        name_label = QLabel("Template Name:")
+        main_layout.addWidget(name_label)
         
-        name_var = QStringVar(value=app.project_name.text().strip())
-        name_entry = QLineEdit(frame, textvariable=name_var)
-        name_entry.pack(fill=Qt.Expanding, pady=(0, 15))
+        name_field = QLineEdit()
+        if hasattr(app, 'project_name'):
+            name_field.setText(app.project_name.text().strip())
+        main_layout.addWidget(name_field)
+        
+        # Add some spacing
+        spacer = QLabel("")
+        spacer.setFixedHeight(10)
+        main_layout.addWidget(spacer)
         
         # Category
-        category_label = QLabel(frame, text="Template Category:", alignment=Qt.AlignLeft)
-        category_label.pack(fill=Qt.Expanding, pady=(0, 5))
+        category_label = QLabel("Category:")
+        main_layout.addWidget(category_label)
         
-        categories = self.get_categories()
-        if not categories:
-            categories = ["Video Editing", "Motion Graphics", "Design", "Audio", "Custom"]
-            
-        category_var = QStringVar(value="Standard")
-        category_menu = QOptionMenu(frame, category_var, *categories)
-        category_menu.pack(fill=Qt.Expanding, pady=(0, 15))
+        # Get available categories or use defaults
+        categories = self.get_categories() if hasattr(self, 'get_categories') else ["Video Editing", "Motion Graphics", "Design", "Audio", "Custom"]
+        
+        category_combo = QComboBox()
+        category_combo.addItems(categories)
+        category_combo.setCurrentText("Custom")  # Default to Custom
+        main_layout.addWidget(category_combo)
+        
+        # Add some spacing
+        spacer2 = QLabel("")
+        spacer2.setFixedHeight(10)
+        main_layout.addWidget(spacer2)
         
         # Description
-        desc_label = QLabel(frame, text="Description (optional):", alignment=Qt.AlignLeft)
-        desc_label.pack(fill=Qt.Expanding, pady=(0, 5))
+        desc_label = QLabel("Description (optional):")
+        main_layout.addWidget(desc_label)
         
-        desc_var = QStringVar()
-        desc_entry = QLineEdit(frame, textvariable=desc_var)
-        desc_entry.pack(fill=Qt.Expanding, pady=(0, 20))
+        desc_field = QLineEdit()
+        desc_field.setText("")
+        main_layout.addWidget(desc_field)
         
-        # Buttons
-        button_frame = QFrame(frame)
-        button_frame.pack(fill=Qt.Expanding)
+        # Add some spacing
+        spacer3 = QLabel("")
+        spacer3.setFixedHeight(20)
+        main_layout.addWidget(spacer3)
+        
+        # Buttons layout
+        buttons_layout = QHBoxLayout()
+        
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(dialog.reject)
+        
+        save_button = QPushButton("Save")
+        save_button.setDefault(True)
+        buttons_layout.addWidget(cancel_button)
+        buttons_layout.addWidget(save_button)
+        
+        main_layout.addLayout(buttons_layout)
         
         def save_template():
-            name = name_var.get().strip()
-            category = category_var.get()
-            description = desc_var.get().strip()
+            name = name_field.text().strip()
+            category = category_combo.currentText()
+            description = desc_field.text().strip()
             
             if not name:
-                QMessageBox.warning(app, "Warning", "Template name is required")
+                QMessageBox.warning(dialog, "Error", "Please enter a template name")
                 return
-                
-            # Save template
-            success = self.save_template(
-                name, 
-                category, 
-                app.template_file_path,
-                "Standard",
-                description
-            )
+            
+            # Get the structure type from the app
+            structure_type = app.structure_combo.currentText() if hasattr(app, 'structure_combo') else "Standard"
+            
+            # Get template file path if available
+            file_path = getattr(app, 'template_file_path', "")
+            
+            # Save to the template manager
+            success = False
+            try:
+                from app.templates.template_operations import TemplateOperations
+                success = TemplateOperations.save_template(self, name, category, file_path, structure_type, description)
+            except Exception as e:
+                QMessageBox.warning(dialog, "Error", f"Failed to save template: {str(e)}")
+                return
             
             if success:
-                QMessageBox.information(app, "Success", f"Template '{name}' saved successfully")
+                # Add to recent templates
+                try:
+                    from app.core.project_operations import add_to_recent_templates
+                    add_to_recent_templates(app, name)
+                except Exception as e:
+                    print(f"Warning: Could not add to recent templates: {e}")
                 
-                # Update the gallery
-                if hasattr(app, 'template_gallery'):
-                    app.template_gallery.populate_gallery(force_refresh=True)
+                # Show success message
+                QMessageBox.information(dialog, "Success", f"Template '{name}' saved successfully")
+                
+                # Close the dialog
+                dialog.accept()
             else:
-                QMessageBox.warning(app, "Warning", f"Failed to save template '{name}'")
+                QMessageBox.warning(dialog, "Error", "Failed to save template")
         
-        cancel_button = QPushButton(button_frame, text="Cancel", clicked=dialog.reject)
-        cancel_button.pack(side=Qt.Left, padx=(0, 5))
-        save_button = QPushButton(button_frame, text="Save", clicked=save_template)
-        save_button.pack(side=Qt.Right)
+        save_button.clicked.connect(save_template)
         
-        # Set focus to name entry
-        name_entry.setFocus()
+        # Set focus to name field
+        name_field.setFocus()
+        
+        # Execute the dialog
+        dialog.exec_()
     
     def import_template_ui(self, app):
         """Show UI for importing a template"""
-        from PyQt5.QtWidgets import QFileDialog, QMessageBox, QInputDialog
+        from PyQt5.QtWidgets import QFileDialog, QMessageBox, QInputDialog, QDialog, QVBoxLayout, QLabel, QLineEdit, QComboBox, QPushButton, QHBoxLayout
         
         # Open file dialog
         file_path, _ = QFileDialog.getOpenFileName(
@@ -327,127 +459,243 @@ class UIOperations:
         filename = os.path.basename(file_path)
         name, _ = os.path.splitext(filename)
         
-        # Show dialog to confirm name and category
-        template_name = QInputDialog.getText(app, "Import Template", "Template name:", text=name)
+        # Create dialog for template details
+        dialog = QDialog(app)
+        dialog.setWindowTitle("Import Template")
+        dialog.resize(400, 300)
         
-        if not template_name:
-            return
-            
-        # Import the template
-        success = self.import_template_file(file_path, template_name)
+        # Main layout
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
         
-        if success:
-            QMessageBox.information(app, "Success", f"Template '{template_name}' imported successfully")
+        # Template name
+        layout.addWidget(QLabel("Template Name:"))
+        name_field = QLineEdit(name)
+        layout.addWidget(name_field)
+        
+        # Template category
+        layout.addWidget(QLabel("Category:"))
+        categories = self.get_categories() if hasattr(self, 'get_categories') else ["Video Editing", "Motion Graphics", "Design", "Audio", "Custom"]
+        category_combo = QComboBox()
+        category_combo.addItems(categories)
+        category_combo.setCurrentText("Custom")  # Default to Custom
+        layout.addWidget(category_combo)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(dialog.reject)
+        
+        import_btn = QPushButton("Import")
+        import_btn.setDefault(True)
+        
+        button_layout.addWidget(cancel_btn)
+        button_layout.addWidget(import_btn)
+        layout.addLayout(button_layout)
+        
+        def on_import():
+            template_name = name_field.text().strip()
+            category = category_combo.currentText()
             
-            # Update the gallery
-            if hasattr(app, 'template_gallery'):
-                app.template_gallery.populate_gallery(force_refresh=True)
-        else:
-            QMessageBox.warning(app, "Warning", f"Failed to import template '{template_name}'")
+            if not template_name:
+                QMessageBox.warning(dialog, "Error", "Please enter a template name")
+                return
+            
+            # Import the template
+            success = self.import_template_file(file_path, template_name, category)
+            
+            if success:
+                QMessageBox.information(dialog, "Success", f"Template '{template_name}' imported successfully")
+                dialog.accept()
+                
+                # Update the gallery if it exists
+                if hasattr(app, 'template_gallery') and app.template_gallery:
+                    try:
+                        app.template_gallery.populate_gallery(force_refresh=True)
+                    except Exception as e:
+                        print(f"Error updating gallery: {e}")
+            else:
+                QMessageBox.warning(dialog, "Error", f"Failed to import template '{template_name}'")
+        
+        import_btn.clicked.connect(on_import)
+        
+        # Focus the name field
+        name_field.setFocus()
+        
+        # Execute the dialog
+        if dialog.exec_() == QDialog.Accepted:
+            # If dialog accepted, trigger updates
+            if hasattr(app, 'template_updated') and app.template_updated is not None:
+                app.template_updated.emit()
     
     def manage_templates_ui(self, app):
         """Show UI for managing templates"""
-        from PyQt5.QtWidgets import QDialog, QFrame, QLabel, QListWidget, QPushButton, QScrollBar, QListWidgetItem
+        from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+                                   QPushButton, QListWidget, QFrame,
+                                   QSizePolicy, QMessageBox, QInputDialog)
+        from PyQt5.QtCore import Qt, QSize
+        from PyQt5.QtGui import QFont
         
         # Create dialog
         dialog = QDialog(app)
         dialog.setWindowTitle("Manage Templates")
-        dialog.setGeometry(500, 400, 500, 400)
-        dialog.setModal(True)
-        dialog.exec_()
+        dialog.resize(600, 500)
         
-        frame = QFrame(dialog, padx=20, pady=20)
-        frame.pack(fill=Qt.Expanding, expand=True)
+        # Main layout
+        main_layout = QVBoxLayout(dialog)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(10)
         
-        Label(frame, text="Templates", font=("Segoe UI", 14, "bold")).pack(anchor=Qt.AlignLeft, pady=(0, 15))
+        # Create header
+        header_label = QLabel("Templates")
+        header_font = QFont()
+        header_font.setPointSize(14)
+        header_font.setBold(True)
+        header_label.setFont(header_font)
+        main_layout.addWidget(header_label)
         
-        # List with scrollbar
-        list_frame = QFrame(frame)
-        list_frame.pack(fill=Qt.Expanding, expand=True, pady=(0, 15))
+        # Create template list
+        template_list = QListWidget()
+        template_list.setViewMode(QListWidget.IconMode)
+        template_list.setIconSize(QSize(64, 64))
+        template_list.setResizeMode(QListWidget.Adjust)
+        template_list.setGridSize(QSize(128, 128))
+        template_list.setMinimumHeight(300)
+        main_layout.addWidget(template_list)
         
-        scrollbar = QScrollBar(list_frame)
-        scrollbar.setOrientation(Qt.Vertical)
-        scrollbar.pack(side=Qt.Right, fill=Qt.Expanding)
+        # Populate list - use the templates and template_directories attributes
+        all_templates = []
+        if hasattr(self, 'templates'):
+            all_templates.extend(self.templates)
+        if hasattr(self, 'template_directories'):
+            all_templates.extend(self.template_directories)
         
-        template_listbox = QListWidget(list_frame)
-        template_listbox.setViewMode(QListWidget.IconMode)
-        template_listbox.setIconSize(QSize(64, 64))
-        template_listbox.setResizeMode(QListWidget.Adjust)
-        template_listbox.setGridSize(QSize(128, 128))
-        template_listbox.itemClicked.connect(lambda: delete_template())
-        template_listbox.itemDoubleClicked.connect(lambda: rename_template())
-        template_listbox.addItems([f"{template['name']} ({template['category']})" for template in self.templates])
-        template_listbox.addItems([f"{template['name']} ({template['category']})" for template in self.template_directories])
+        for template in all_templates:
+            name = template.get('name', 'Unknown')
+            category = template.get('category', 'Custom')
+            template_list.addItem(f"{name} ({category})")
         
-        # Button frame
-        button_frame = QFrame(frame)
-        button_frame.pack(fill=Qt.Expanding)
+        # Button layout
+        button_layout = QHBoxLayout()
+        
+        # Delete button
+        delete_btn = QPushButton("Delete")
         
         def delete_template():
-            selected = template_listbox.selectedIndexes()
-            if not selected:
-                QMessageBox.warning(app, "Warning", "Please select a template to delete")
+            selected_items = template_list.selectedItems()
+            if not selected_items:
+                QMessageBox.warning(dialog, "Warning", "Please select a template to delete")
                 return
                 
-            index = selected[0].row()
-            if index < 0 or index >= len(self.templates) + len(self.template_directories):
-                return
-                
-            template = self.templates[index] if index < len(self.templates) else self.template_directories[index - len(self.templates)]
-            template_name = template["name"]
+            selected_item = selected_items[0]
+            template_name = selected_item.text().split(" (")[0]
             
-            # Confirm deletion
-            confirm = QMessageBox.question(app, "Confirm Deletion", 
-                                        f"Are you sure you want to delete the template '{template_name}'?", QMessageBox.Yes | QMessageBox.No)
-            if confirm == QMessageBox.No:
-                return
-                
-            # Delete the template
-            success = self.delete_template(template_name)
+            confirm = QMessageBox.question(
+                dialog,
+                "Confirm Delete",
+                f"Are you sure you want to delete template '{template_name}'?",
+                QMessageBox.Yes | QMessageBox.No
+            )
             
-            if success:
-                QMessageBox.information(app, "Success", f"Template '{template_name}' deleted successfully")
-                template_listbox.takeItem(index)
-                
-                # Update the gallery
-                if hasattr(app, 'template_gallery'):
-                    app.template_gallery.populate_gallery(force_refresh=True)
-            else:
-                QMessageBox.warning(app, "Warning", f"Failed to delete template '{template_name}'")
+            if confirm == QMessageBox.Yes:
+                success = self.delete_template(template_name)
+                if success:
+                    # Remove from list
+                    row = template_list.row(selected_item)
+                    template_list.takeItem(row)
+                    QMessageBox.information(dialog, "Success", f"Template '{template_name}' deleted")
+                else:
+                    QMessageBox.warning(dialog, "Error", f"Failed to delete template '{template_name}'")
+        
+        delete_btn.clicked.connect(delete_template)
+        button_layout.addWidget(delete_btn)
+        
+        # Rename button
+        rename_btn = QPushButton("Rename")
         
         def rename_template():
-            selected = template_listbox.selectedIndexes()
-            if not selected:
-                QMessageBox.warning(app, "Warning", "Please select a template to rename")
+            selected_items = template_list.selectedItems()
+            if not selected_items:
+                QMessageBox.warning(dialog, "Warning", "Please select a template to rename")
                 return
                 
-            index = selected[0].row()
-            if index < 0 or index >= len(self.templates) + len(self.template_directories):
-                return
-                
-            template = self.templates[index] if index < len(self.templates) else self.template_directories[index - len(self.templates)]
-            old_name = template["name"]
+            selected_item = selected_items[0]
+            template_name = selected_item.text().split(" (")[0]
             
-            # Get new name
-            new_name = QInputDialog.getText(app, "Rename Template", "Enter new name:", text=old_name)
+            new_name, ok = QInputDialog.getText(
+                dialog,
+                "Rename Template",
+                "New name:",
+                text=template_name
+            )
             
-            if not new_name or new_name == old_name:
-                return
-                
-            # Rename the template
-            success = self.rename_template(old_name, new_name)
-            
-            if success:
-                QMessageBox.information(app, "Success", f"Template renamed to '{new_name}'")
-                template_listbox.takeItem(index)
-                template_listbox.insertItem(index, QListWidgetItem(f"{new_name} ({template['category']})"))
-                
-                # Update the gallery
-                if hasattr(app, 'template_gallery'):
-                    app.template_gallery.populate_gallery(force_refresh=True)
-            else:
-                QMessageBox.warning(app, "Warning", f"Failed to rename template")
+            if ok and new_name:
+                success = self.rename_template(template_name, new_name)
+                if success:
+                    # Update list
+                    category = selected_item.text().split(" (")[1].rstrip(")")
+                    selected_item.setText(f"{new_name} ({category})")
+                    QMessageBox.information(dialog, "Success", f"Template renamed to '{new_name}'")
+                else:
+                    QMessageBox.warning(dialog, "Error", f"Failed to rename template")
         
-        Button(button_frame, text="Delete", clicked=delete_template).pack(side=Qt.Left, padx=(0, 5))
-        Button(button_frame, text="Rename", clicked=rename_template).pack(side=Qt.Left, padx=(0, 5))
-        Button(button_frame, text="Close", clicked=dialog.accept).pack(side=Qt.Right) 
+        rename_btn.clicked.connect(rename_template)
+        button_layout.addWidget(rename_btn)
+        
+        # Close button
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        button_layout.addWidget(close_btn)
+        
+        main_layout.addLayout(button_layout)
+        
+        # Execute dialog
+        dialog.exec_()
+    
+    def save_template(self, template):
+        """Save a template object from the UI"""
+        if not template or not isinstance(template, dict):
+            print("Invalid template object")
+            return False
+            
+        try:
+            name = template.get("name", "")
+            category = template.get("category", "Custom")
+            file_path = template.get("file", "")
+            structure_type = template.get("structure_type", "Standard")
+            description = template.get("description", "")
+            
+            # Call the base class save_template method from TemplateOperations
+            from app.templates.template_operations import TemplateOperations
+            result = TemplateOperations.save_template(self, name, category, file_path, structure_type, description)
+            
+            # Add to recent templates if successful
+            if result and hasattr(self, 'add_to_recent_templates'):
+                self.add_to_recent_templates(name)
+                
+            return result
+        except Exception as e:
+            print(f"Error saving template: {e}")
+            return False
+    
+    def manage_templates(self, parent=None):
+        """Show dialog to manage all templates, folders, and structures"""
+        try:
+            # Import here to avoid circular imports
+            from app.dialogs.dialog_windows_pyqt import show_manage_templates
+            from PyQt5.QtWidgets import QApplication
+            
+            # Parent must be a QWidget, not TemplateManager
+            # If no proper parent provided, use the active window or None
+            if parent is None or not hasattr(parent, 'isWidgetType') or not parent.isWidgetType():
+                parent = QApplication.activeWindow()
+                
+            # Show the manage templates dialog - pass template manager as second parameter
+            show_manage_templates(parent, self, None)
+            return True
+        except Exception as e:
+            print(f"Error showing manage templates dialog: {e}")
+            import traceback
+            traceback.print_exc()
+            return False 

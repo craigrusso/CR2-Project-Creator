@@ -32,9 +32,35 @@ def create_project(app):
         app.show_status_message("Please enter a project name", message_type="error")
         return
     
-    # Validate that a template file is selected
-    if not hasattr(app, 'template_file_path') or not app.template_file_path:
-        app.show_status_message("Please select a template file", message_type="error")
+    # Check for selected template - try multiple locations
+    selected_template = None
+    
+    # Method 1: Check app.selected_template
+    if hasattr(app, 'selected_template') and app.selected_template:
+        selected_template = app.selected_template
+        print(f"Using template from app.selected_template: {selected_template}")
+    
+    # Method 2: Check gallery's selected template
+    if not selected_template and hasattr(app, 'template_gallery'):
+        if hasattr(app.template_gallery, 'get_selected_template'):
+            selected_template = app.template_gallery.get_selected_template()
+            if selected_template:
+                print(f"Using template from gallery: {selected_template}")
+    
+    # Method 3: Check template_file_path as fallback
+    if not selected_template and hasattr(app, 'template_file_path') and app.template_file_path:
+        template_path = app.template_file_path
+        print(f"Using template from template_file_path: {template_path}")
+        
+        # Create a simple template object
+        selected_template = {
+            'name': os.path.basename(template_path),
+            'path': template_path,
+            'type': 'file' if os.path.isfile(template_path) else 'directory'
+        }
+    
+    if not selected_template:
+        app.show_status_message("Please select a template from the gallery", message_type="error")
         return
     
     # Get output directory
@@ -69,17 +95,29 @@ def create_project(app):
     else:
         structure_name = app.structure_var.get() if hasattr(app, 'structure_var') else "Default"
     
+    # If the selected template has a structure_name, use that instead
+    if isinstance(selected_template, dict) and 'structure_name' in selected_template:
+        structure_name = selected_template['structure_name']
+        print(f"Using template's structure_name: {structure_name}")
+    
     if structure_name == "Default":
         structure_name = None
     
+    # Use the selected template
+    template_path = selected_template.get('path') if isinstance(selected_template, dict) and 'path' in selected_template else None
+    
+    # For compatibility, set template_file_path to the selected template's path
+    app.template_file_path = template_path
+    
     # Add to recent templates if successful
-    add_to_recent_templates(app, app.template_file_path)
+    if template_path:
+        add_to_recent_templates(app, template_path)
     
     # Create the project
     result, project_path = app.project_builder.create_project(
         project_name=project_name,
         output_dir=output_dir,
-        template_file=app.template_file_path,
+        template_file=template_path,
         project_type="Standard", 
         structure_name=structure_name,
         create_backup=True
@@ -118,46 +156,114 @@ def handle_batch_create(app, project_names_text):
         app.show_status_message("No valid project names found", message_type="error")
         return
     
-    # Validate that a template file is selected
-    if not hasattr(app, 'template_file_path') or not app.template_file_path:
-        app.show_status_message("Please select a template file", message_type="error")
+    # Debug existing application state
+    print("====== BATCH CREATE DEBUG INFO ======")
+    print(f"Project names: {project_names}")
+    print(f"Has app.template_file_path: {hasattr(app, 'template_file_path')}")
+    if hasattr(app, 'template_file_path'):
+        print(f"  Value: {app.template_file_path}")
+    
+    print(f"Has app.selected_template: {hasattr(app, 'selected_template')}")
+    if hasattr(app, 'selected_template'):
+        print(f"  Value: {app.selected_template}")
+        if isinstance(app.selected_template, dict) and 'name' in app.selected_template:
+            print(f"  Template name: {app.selected_template['name']}")
+    
+    print(f"Has template_gallery: {hasattr(app, 'template_gallery')}")
+    if hasattr(app, 'template_gallery') and hasattr(app.template_gallery, 'get_selected_template'):
+        try:
+            gallery_template = app.template_gallery.get_selected_template()
+            print(f"  Gallery selected template: {gallery_template}")
+        except Exception as e:
+            print(f"  Error getting gallery template: {e}")
+    print("======================================")
+    
+    # Get template - check multiple locations
+    template_file = None
+    selected_template = None
+    structure_name = None
+    
+    # Method 1: Check if there's a selected template from gallery or app object first
+    if hasattr(app, 'selected_template') and app.selected_template:
+        selected_template = app.selected_template
+        print(f"Using template from app.selected_template: {selected_template}")
+        
+        # If the selected template has a structure_name, use that
+        if isinstance(selected_template, dict) and 'structure_name' in selected_template:
+            structure_name = selected_template['structure_name']
+            print(f"Using structure_name from selected template: {structure_name}")
+        
+        # If the selected template has a path property, use that
+        if isinstance(selected_template, dict) and 'path' in selected_template and selected_template['path']:
+            template_file = selected_template['path']
+            print(f"Using path from selected template: {template_file}")
+        else:
+            # Otherwise, we'll use the structure_name for template creation
+            print(f"Using gallery template without file path: {selected_template.get('name', 'Unknown') if isinstance(selected_template, dict) else selected_template}")
+            # Set a dummy template path to pass validation
+            template_file = "gallery_template"
+    
+    # Method 2: Check if there's a direct template file path as fallback
+    elif hasattr(app, 'template_file_path') and app.template_file_path:
+        template_file = app.template_file_path
+        print(f"Using template file path: {template_file}")
+    
+    # Method 3: Check if there's a template gallery with a selected template
+    elif hasattr(app, 'template_gallery') and hasattr(app.template_gallery, 'get_selected_template'):
+        try:
+            selected_template = app.template_gallery.get_selected_template()
+            if selected_template:
+                app.selected_template = selected_template  # Make sure it's set on app too
+                print(f"Retrieved template from gallery: {selected_template}")
+                
+                # If the selected template has a structure_name, use that
+                if isinstance(selected_template, dict) and 'structure_name' in selected_template:
+                    structure_name = selected_template['structure_name']
+                    print(f"Using structure_name from retrieved template: {structure_name}")
+                
+                # Set a dummy template path to pass validation
+                template_file = "gallery_template"
+        except Exception as e:
+            print(f"Error getting selected template from gallery: {e}")
+    
+    # Validate that we have some form of template
+    if not template_file and not selected_template:
+        app.show_status_message("Please select a template", message_type="error")
         return
     
-    # Get output directory
-    output_dir = app.get_current_output_dir() if hasattr(app, 'get_current_output_dir') else app.root_path
+    # Get structure name if not set from selected template
+    if not structure_name and hasattr(app, 'structure_var'):
+        structure_name = app.structure_var.get()
+        if structure_name == "Default":
+            structure_name = None
     
-    # If no output directory is set, prompt the user to select one
+    # Get the output directory
+    output_dir = app.get_current_output_dir()
     if not output_dir:
-        app.show_status_message("Please select an output location", message_type="warning")
-        
-        # Prompt user to select a location
-        output_dir = app.get_output_dir()
-        
-        # If user still hasn't selected a location, abort
-        if not output_dir:
-            app.show_status_message("Please select an output location", message_type="error")
-            return
+        app.show_status_message("Please select an output directory", message_type="error")
+        return
     
-    # Get the structure template
-    structure_name = get_structure_template(app)
-    if structure_name == "Default":
-        structure_name = None
+    # Prepare project builder
+    project_builder = app.project_builder
+    project_type = app.project_type_var.get() if hasattr(app, 'project_type_var') else "Standard"
     
-    # Start batch creation in background - send all projects to be processed
+    # Starting batch creation
+    print(f"Starting batch creation. Template: {template_file}, Structure: {structure_name}, Output: {output_dir}")
+    app.show_status_message(f"Creating {len(project_names)} projects in {output_dir}...", message_type="info")
+    
+    # Start batch creation in background
     app.project_builder.batch_create_projects(
         project_names=project_names,
         output_dir=output_dir,
-        template_file=app.template_file_path,
-        project_type="Standard",
+        template_file=template_file,
+        project_type=project_type,
         structure_name=structure_name,
         create_backup=True,
-        callback=lambda results: batch_creation_complete(app, results)
+        callback=lambda results: batch_creation_complete(app, results, selected_template)
     )
-    
-    return True
 
 
-def batch_creation_complete(app, results):
+def batch_creation_complete(app, results, selected_template=None):
     """Handle batch creation completion"""
     # Store results for display
     app.batch_results = results
@@ -174,6 +280,9 @@ def batch_creation_complete(app, results):
     # Add template to recent templates if one was used but preserve order
     if app.template_file_path:
         add_to_recent_templates(app, app.template_file_path, preserve_order=True)
+    elif selected_template:
+        # Also add the selected gallery template if there's no file path
+        add_to_recent_templates(app, selected_template, preserve_order=True)
     
     # Set appropriate message based on results
     if failures == 0:

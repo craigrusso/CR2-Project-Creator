@@ -19,7 +19,7 @@ from app.templates.template_manager import TemplateManager
 from app.core.project_builder import ProjectBuilder
 from app.dialogs.dialog_windows_pyqt import (preview_structure, show_batch_create, show_about, 
                                 show_tutorial, show_preferences, show_structure_editor)
-from app.templates.templates import (get_template_file, clear_template_file, clear_structure_template,
+from app.templates.template_utils import (get_template_file, clear_template_file, clear_structure_template,
                        rename_current_template, rename_template_file)
 from app.templates.refactored_template_gallery import create_template_gallery, select_template_from_gallery
 from app.ui.app_theme_pyqt import apply_dark_theme_to_template_gallery
@@ -33,12 +33,26 @@ from app.core.project_operations import (create_project, handle_batch_create,
 from app.utils.utils import (load_recent_projects, save_recent_projects, 
                  open_folder, create_sample_templates, load_recent_templates,
                  save_recent_templates)
+from app.templates.template_gallery_ui_pyqt import create_template_gallery
+from app.dialogs.template_creation_form import show_template_creation_form
 
 class ProjectCreatorApp(QMainWindow):
     """Main application class for CR2 Creative Pro using PyQt"""
     
     # Signal for template updates
     template_updated = pyqtSignal()
+    
+    # Class variable to hold the instance
+    _instance = None
+    
+    @classmethod
+    def get_instance(cls):
+        """Get the singleton instance of the app"""
+        # Return existing instance or create a new one if needed
+        if cls._instance is None:
+            print("Creating new ProjectCreatorApp instance")
+            cls._instance = cls()
+        return cls._instance
     
     def __init__(self):
         """Initialize the application"""
@@ -150,19 +164,6 @@ class ProjectCreatorApp(QMainWindow):
         self.output_dir_layout.addWidget(self.output_dir_btn)
         self.left_layout.addLayout(self.output_dir_layout)
         
-        # Template file selection
-        self.template_file_layout = QHBoxLayout()
-        self.template_file_label = QLabel("Template File:")
-        self.template_file_input = QLineEdit()
-        self.template_file_input.setPlaceholderText("Select template file...")
-        self.template_file_input.setReadOnly(True)
-        self.template_file_btn = QPushButton("Browse...")
-        self.template_file_btn.clicked.connect(self._select_template_file)
-        self.template_file_layout.addWidget(self.template_file_label)
-        self.template_file_layout.addWidget(self.template_file_input)
-        self.template_file_layout.addWidget(self.template_file_btn)
-        self.left_layout.addLayout(self.template_file_layout)
-        
         # Structure selection
         self.structure_layout = QHBoxLayout()
         self.structure_label = QLabel("Folder Structure:")
@@ -247,26 +248,23 @@ class ProjectCreatorApp(QMainWindow):
         self.move(qr.topLeft())
     
     def create_menu(self):
-        """Create application menus"""
+        """Create application menus that are OS-aware (macOS vs Windows)"""
         menubar = self.menuBar()
         
         # File menu
         file_menu = menubar.addMenu("File")
         
-        # Save template action
-        save_template_action = QAction("Save Template...", self)
-        save_template_action.triggered.connect(lambda: self.template_manager.save_template_ui(self))
-        file_menu.addAction(save_template_action)
+        # New Template action (new)
+        new_template_action = QAction("New Template...", self)
+        new_template_action.triggered.connect(self._create_template)
+        file_menu.addAction(new_template_action)
+        
+        file_menu.addSeparator()
         
         # Import template action
         import_template_action = QAction("Import Template...", self)
         import_template_action.triggered.connect(lambda: self.template_manager.import_template_ui(self))
         file_menu.addAction(import_template_action)
-        
-        # Manage templates action
-        manage_templates_action = QAction("Manage Templates...", self)
-        manage_templates_action.triggered.connect(lambda: self.template_manager.manage_templates_ui(self))
-        file_menu.addAction(manage_templates_action)
         
         file_menu.addSeparator()
         
@@ -292,18 +290,28 @@ class ProjectCreatorApp(QMainWindow):
         clear_recent_templates_action.triggered.connect(lambda: clear_recent_templates(self))
         file_menu.addAction(clear_recent_templates_action)
         
-        file_menu.addSeparator()
-        
-        # Exit action
-        exit_action = QAction("Exit", self)
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
+        # Don't show Exit on macOS as it's handled by the system
+        if platform.system() != "Darwin":  # Not macOS
+            file_menu.addSeparator()
+            
+            # Exit action
+            exit_action = QAction("Exit", self)
+            exit_action.triggered.connect(self.close)
+            file_menu.addAction(exit_action)
         
         # Edit menu
         edit_menu = menubar.addMenu("Edit")
         
-        # Preferences action
-        preferences_action = QAction("Preferences...", self)
+        # Preferences action - use standard macOS naming convention on Mac
+        if platform.system() == "Darwin":  # macOS
+            preferences_action = QAction("Preferences...", self)
+            # Set shortcut for macOS (Command+,)
+            preferences_action.setShortcut("Ctrl+,")
+        else:
+            preferences_action = QAction("Settings...", self)
+            # Set shortcut for Windows/Linux
+            preferences_action.setShortcut("Ctrl+P") 
+            
         preferences_action.triggered.connect(lambda: show_preferences(self))
         edit_menu.addAction(preferences_action)
         
@@ -346,8 +354,11 @@ class ProjectCreatorApp(QMainWindow):
         tutorial_action.triggered.connect(lambda: show_tutorial(self))
         help_menu.addAction(tutorial_action)
         
-        # About action
-        about_action = QAction("About", self)
+        # About action - should be in app menu on macOS, but we'll add it here for completeness
+        if platform.system() != "Darwin":  # Not macOS
+            about_action = QAction("About", self)
+        else:
+            about_action = QAction("About CR2 Creative Pro", self)
         about_action.triggered.connect(lambda: show_about(self))
         help_menu.addAction(about_action)
         
@@ -518,17 +529,8 @@ class ProjectCreatorApp(QMainWindow):
             self.structure_combo.addItem(name)
     
     def _select_template_file(self):
-        """Open file dialog to select a template file"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select Template File",
-            "",
-            "All Files (*);;Project Files (*.prproj *.aep *.aepx *.psd *.ai)"
-        )
-        
-        if file_path:
-            self.template_file_input.setText(file_path)
-            self.template_file_path = file_path
+        """This method is no longer needed as templates contain their files"""
+        pass  # Keeping the method as a stub for compatibility
     
     def _edit_structure(self):
         """Open structure editor dialog"""
@@ -567,4 +569,21 @@ class ProjectCreatorApp(QMainWindow):
             from app.dialogs.dialog_windows_pyqt import show_batch_results
             results = self.batch_results
             self.batch_results = None  # Clear results to avoid showing them again
-            show_batch_results(self, results) 
+            show_batch_results(self, results)
+    
+    def _create_template(self):
+        """Open dialog to create a new template"""
+        # Use our enhanced template creation form
+        show_template_creation_form(self)
+        self._refresh_ui()
+
+    def _refresh_ui(self):
+        """Refresh the UI after creating a new template"""
+        # Update UI elements that depend on template data
+        pass
+        
+        # Update recent templates gallery
+        self.update_recent_templates_gallery()
+        
+        # Show status message
+        self.show_status_message("Template created successfully!", "success", 5000) 

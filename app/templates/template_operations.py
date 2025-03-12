@@ -30,10 +30,16 @@ class TemplateOperations:
         from app.constants import DEFAULT_STRUCTURES
         print(f"DEBUG: get_structure called with structure_name='{structure_name}'")
         
+        if not structure_name:
+            print("DEBUG: No structure name provided, returning empty structure")
+            return []
+        
         # Check if it's a built-in structure
-        if structure_name.lower() in DEFAULT_STRUCTURES:
-            print(f"DEBUG: Found built-in structure: {structure_name}")
-            return DEFAULT_STRUCTURES[structure_name.lower()]
+        structure_name_lower = structure_name.lower()
+        for default_name in DEFAULT_STRUCTURES.keys():
+            if structure_name_lower == default_name.lower():
+                print(f"DEBUG: Found built-in structure: {default_name}")
+                return DEFAULT_STRUCTURES[default_name]
         
         # Try with and without the Template_ prefix, and with spaces replaced by underscores
         structure_names_to_try = [structure_name]
@@ -58,13 +64,25 @@ class TemplateOperations:
         
         # Check custom structures for all variations
         for name_to_try in structure_names_to_try:
+            # Check in self.custom_structures first (in-memory cache)
+            if name_to_try in self.custom_structures:
+                print(f"DEBUG: Found custom structure in memory: {name_to_try}")
+                # Return the 'directories' field if it exists, otherwise the whole structure
+                if 'directories' in self.custom_structures[name_to_try]:
+                    return self.custom_structures[name_to_try]['directories']
+                return self.custom_structures[name_to_try]
+            
+            # Check on disk
             custom_structure_path = os.path.join(self.paths["custom_structures_dir"], f"{name_to_try}.json")
             if os.path.exists(custom_structure_path):
                 try:
                     with open(custom_structure_path, 'r') as f:
-                        structure = json.load(f)
-                        print(f"DEBUG: Found custom structure: {name_to_try}")
-                        return structure
+                        structure_data = json.load(f)
+                        print(f"DEBUG: Found custom structure on disk: {name_to_try}")
+                        # Return the 'directories' field if it exists, otherwise the whole structure
+                        if 'directories' in structure_data:
+                            return structure_data['directories']
+                        return structure_data
                 except Exception as e:
                     print(f"Error loading structure {name_to_try}: {e}")
         
@@ -146,7 +164,9 @@ class TemplateOperations:
     
     def save_template(self, name, category, file_path, structure_type, description=None):
         """Save a template"""
-        if not name or not category:
+        # Prevent empty, "Unnamed", or "Unnamed Template" templates from being created
+        if not name or not category or name.strip() == "" or name.strip() == "Unnamed" or name.strip() == "Unnamed Template":
+            print(f"Rejecting invalid template name: '{name}'")
             return False
         
         # Create template info
@@ -215,13 +235,55 @@ class TemplateOperations:
     def delete_template(self, template_name):
         """Delete a template by name"""
         if not template_name:
+            print(f"[DEBUG] Template: Cannot delete empty template name")
             return False
         
-        # Find the template
+        # Special handling for "Unnamed" templates that may be stuck in the system
+        if template_name == "Unnamed" or template_name == "Unnamed Template":
+            print(f"[DEBUG] Template: Removing unnamed template: {template_name}")
+            # Force removal from in-memory list without trying to delete files
+            self.templates = [t for t in self.templates if t.get('name') != template_name]
+            
+            # Remove from any folders
+            for folder_name in self.folders:
+                if template_name in self.folders[folder_name]:
+                    self.folders[folder_name].remove(template_name)
+            
+            # Save updated folders
+            self.save_folders()
+            return True
+        
+        # Find the template - need to handle both the original name and potentially renamed versions (Template-#)
         template = self.get_template_by_name(template_name)
+        
+        # If template not found with the exact name, check if it's a renamed version (Template-#)
+        if not template and template_name.startswith("Template-"):
+            print(f"[DEBUG] Template: Looking for original template for renamed version: {template_name}")
+            # Try to find the actual template in memory
+            for t in self.templates:
+                if t.get('name') == template_name or t.get('display_name') == template_name:
+                    template = t
+                    break
+                
+            # Also check directory templates
+            if not template:
+                for t in self.template_directories:
+                    if t.get('name') == template_name or t.get('display_name') == template_name:
+                        template = t
+                        break
+            
+            if template:
+                print(f"[DEBUG] Template: Found original template: {template.get('name')} for renamed version: {template_name}")
+            else:
+                print(f"[DEBUG] Template: Original template not found for renamed version: {template_name}")
+        
         if not template:
-            print(f"Template not found: {template_name}")
+            print(f"[DEBUG] Template: Template not found for deletion: {template_name}")
             return False
+        
+        # Store the real template name for later use
+        real_template_name = template.get('name', template_name)
+        print(f"[DEBUG] Template: Deleting template: {real_template_name} (requested as: {template_name})")
         
         try:
             # Handle different template types
@@ -229,45 +291,62 @@ class TemplateOperations:
                 # For directory templates, delete the directory
                 template_dir = template.get('path', '')
                 if os.path.exists(template_dir) and os.path.isdir(template_dir):
+                    print(f"[DEBUG] Template: Deleting directory: {template_dir}")
                     shutil.rmtree(template_dir)
                     
                 # Remove from in-memory list
-                self.template_directories = [t for t in self.template_directories if t.get('name') != template_name]
+                self.template_directories = [t for t in self.template_directories if t.get('name') != real_template_name]
             else:
                 # For file templates, delete the JSON file
-                template_filename = template_name.replace(" ", "_").replace("/", "-").replace("\\", "-")
+                template_filename = real_template_name.replace(" ", "_").replace("/", "-").replace("\\", "-")
                 template_path = os.path.join(self.paths["templates_dir"], f"{template_filename}.json")
                 
                 if os.path.exists(template_path):
+                    print(f"[DEBUG] Template: Deleting file: {template_path}")
                     os.remove(template_path)
                     
                 # Remove from in-memory list
-                self.templates = [t for t in self.templates if t.get('name') != template_name]
+                self.templates = [t for t in self.templates if t.get('name') != real_template_name]
             
             # Also delete the associated structure file if it exists
-            structure_name = f"Template_{template_name}"
+            structure_name = f"Template_{real_template_name}"
             structure_filename = structure_name.replace(" ", "_").replace("/", "-").replace("\\", "-")
             structure_path = os.path.join(self.paths["custom_structures_dir"], f"{structure_filename}.json")
             
             if os.path.exists(structure_path):
-                print(f"DEBUG: Deleting associated structure file: {structure_path}")
+                print(f"[DEBUG] Template: Deleting associated structure file: {structure_path}")
                 os.remove(structure_path)
                 
                 # Remove from in-memory cache if present
                 if structure_name in self.custom_structures:
                     del self.custom_structures[structure_name]
             
-            # Remove from any folders
+            # Remove from any folders - handle both original name and requested name
+            names_to_remove = {real_template_name, template_name}
             for folder_name in self.folders:
-                if template_name in self.folders[folder_name]:
-                    self.folders[folder_name].remove(template_name)
-                    
+                for name in names_to_remove:
+                    if name in self.folders[folder_name]:
+                        print(f"[DEBUG] Template: Removing '{name}' from folder '{folder_name}'")
+                        self.folders[folder_name].remove(name)
+                
+                # Also check for any Template-# versions that might be duplicates
+                template_prefix_items = [t for t in self.folders[folder_name] if t.startswith("Template-")]
+                for prefix_item in template_prefix_items:
+                    # Check if this is a renamed version of our template
+                    prefix_template = self.get_template_by_name(prefix_item)
+                    if prefix_template and prefix_template.get('name') == real_template_name:
+                        print(f"[DEBUG] Template: Removing renamed version '{prefix_item}' from folder '{folder_name}'")
+                        self.folders[folder_name].remove(prefix_item)
+            
             # Save updated folders
+            print(f"[DEBUG] Template: Saving folders after template deletion")
             self.save_folders()
             
             return True
         except Exception as e:
-            print(f"Error deleting template {template_name}: {e}")
+            print(f"[DEBUG] Template: Error deleting template {template_name}: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def delete_template_directory(self, template):

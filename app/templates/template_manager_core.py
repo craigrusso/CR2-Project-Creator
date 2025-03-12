@@ -8,6 +8,10 @@ import shutil
 
 from app.utils.utils import load_json_file, save_json_file, get_config_paths
 from app.constants import DEFAULT_STRUCTURES, PROJECT_TYPE_TO_STRUCTURE, DEFAULT_TEMPLATE_CATEGORIES
+from app.templates.folder_operations import FolderOperations
+from app.templates.structure_operations import StructureOperations
+from app.templates.template_operations import TemplateOperations
+from app.templates.project_type_manager import ProjectTypeManager
 
 class TemplateManagerCore:
     """
@@ -31,6 +35,12 @@ class TemplateManagerCore:
         self.load_custom_structures()
         self.load_template_directories()
         self.load_folders()
+        
+        # Clean up any problematic templates
+        self.cleanup_templates()
+        
+        # Initialize additional managers
+        self.init_managers()
     
     def _ensure_directories_exist(self):
         """Ensure all required directories exist"""
@@ -49,7 +59,12 @@ class TemplateManagerCore:
                 try:
                     with open(os.path.join(self.paths["templates_dir"], file), 'r') as f:
                         template = json.load(f)
-                        self.templates.append(template)
+                        # Filter out templates with invalid names
+                        name = template.get('name', '')
+                        if name and name != "Unnamed" and name != "Unnamed Template":
+                            self.templates.append(template)
+                        else:
+                            print(f"Skipping template with invalid name: {file}")
                 except Exception as e:
                     print(f"Error loading template {file}: {e}")
         except Exception as e:
@@ -133,28 +148,16 @@ class TemplateManagerCore:
             print(f"Error saving folders: {e}")
             return False
     
+    def init_managers(self):
+        """Initialize additional managers"""
+        # Creating separate modules for each concern
+        self.category_manager = None  # For backward compatibility, may be removed later
+        self.project_type_manager = ProjectTypeManager(self)
+    
     def get_categories(self):
-        """Get a list of all template categories"""
-        # Get categories from existing templates
-        categories = set()
-        
-        # Add from file templates
-        for template in self.templates:
-            category = template.get("category")
-            if category:
-                categories.add(category)
-        
-        # Add from directory templates
-        for template in self.template_directories:
-            category = template.get("category")
-            if category:
-                categories.add(category)
-        
-        # Add default categories
-        for category in DEFAULT_TEMPLATE_CATEGORIES:
-            categories.add(category)
-        
-        return sorted(list(categories))
+        """Get a list of all template categories (project types)"""
+        # Delegate to project_type_manager for better organization
+        return self.project_type_manager.get_all_project_types()
         
     def get_all_templates(self):
         """Get all templates (both file and directory-based)"""
@@ -176,3 +179,19 @@ class TemplateManagerCore:
                 return template
                 
         return None 
+    
+    def cleanup_templates(self):
+        """Clean up any problematic templates with invalid names"""
+        # Remove any templates with empty or "Unnamed" names from in-memory list
+        self.templates = [t for t in self.templates if 
+                          t.get('name') and 
+                          t.get('name') != "Unnamed" and 
+                          t.get('name') != "Unnamed Template"]
+        
+        # Remove references to "Unnamed" templates from folders
+        for folder_name in self.folders:
+            self.folders[folder_name] = [t for t in self.folders[folder_name] 
+                                        if t != "Unnamed" and t != "Unnamed Template"]
+        
+        # Save updated folders
+        self.save_folders() 

@@ -54,80 +54,90 @@ DEFAULT_TEMPLATE_CATEGORIES = ["Video Editing", "Motion Graphics", "Design", "Au
 # Default project structure templates
 DEFAULT_STRUCTURES = {
     "standard": [
-        "01_PREMIER_PROJECT",
-        "01_PREMIER_PROJECT/01_FOOTAGE",
-        "02_AE_PROJECTS",
-        "03_AE_RENDERS",
-        "04_DELIVERY",
-        "05_MUSIC",
-        "06_AAFs",
-        "07_VOs",
-        "08_AUDITION_FILES",
-        "08_AUDITION_FILES/01_AUDITION_SESSIONS",
-        "08_AUDITION_FILES/02_AUDITION_FILES",
-        "08_AUDITION_FILES/03_MIX_PRINTS"
+        {"01_PREMIER_PROJECT": [
+            {"01_FOOTAGE": []}
+        ]},
+        {"02_AE_PROJECTS": []},
+        {"03_AE_RENDERS": []},
+        {"04_DELIVERY": []},
+        {"05_MUSIC": []},
+        {"06_AAFs": []},
+        {"07_VOs": []},
+        {"08_AUDITION_FILES": [
+            {"01_AUDITION_SESSIONS": []},
+            {"02_AUDITION_FILES": []},
+            {"03_MIX_PRINTS": []}
+        ]}
     ],
     "video": [
-        "01_PREMIER_PROJECT",
-        "01_PREMIER_PROJECT/01_RAW_FOOTAGE",
-        "01_PREMIER_PROJECT/02_SORTED_FOOTAGE",
-        "01_PREMIER_PROJECT/03_GRAPHICS",
-        "02_AE_PROJECTS",
-        "03_AE_RENDERS",
-        "04_DELIVERY",
-        "04_DELIVERY/01_DRAFTS",
-        "04_DELIVERY/02_FINALS",
-        "05_MUSIC",
-        "06_SFX",
-        "07_VOs",
-        "08_AUDITION_FILES",
-        "08_AUDITION_FILES/01_AUDITION_SESSIONS",
-        "08_AUDITION_FILES/02_AUDITION_FILES",
-        "08_AUDITION_FILES/03_MIX_PRINTS",
-        "09_DOCUMENTS",
-        "10_BACKUPS"
+        {"01_PREMIER_PROJECT": [
+            {"01_RAW_FOOTAGE": []},
+            {"02_SORTED_FOOTAGE": []},
+            {"03_GRAPHICS": []}
+        ]},
+        {"02_AE_PROJECTS": []},
+        {"03_AE_RENDERS": []},
+        {"04_DELIVERY": [
+            {"01_DRAFTS": []},
+            {"02_FINALS": []}
+        ]},
+        {"05_MUSIC": []},
+        {"06_SFX": []},
+        {"07_VOs": []},
+        {"08_AUDITION_FILES": [
+            {"01_AUDITION_SESSIONS": []},
+            {"02_AUDITION_FILES": []},
+            {"03_MIX_PRINTS": []}
+        ]},
+        {"09_DOCUMENTS": []},
+        {"10_BACKUPS": []}
     ],
     "motion": [
-        "01_AE_PROJECTS",
-        "02_C4D_PROJECTS",
-        "03_RENDERS",
-        "03_RENDERS/01_PREVIEWS",
-        "03_RENDERS/02_FINALS",
-        "04_ASSETS",
-        "04_ASSETS/01_IMAGES",
-        "04_ASSETS/02_VIDEOS",
-        "04_ASSETS/03_AUDIO",
-        "04_ASSETS/04_3D_MODELS",
-        "05_REFERENCE",
-        "06_DELIVERY",
-        "07_BACKUPS"
+        {"01_AE_PROJECTS": []},
+        {"02_C4D_PROJECTS": []},
+        {"03_RENDERS": [
+            {"01_PREVIEWS": []},
+            {"02_FINALS": []}
+        ]},
+        {"04_ASSETS": [
+            {"01_IMAGES": []},
+            {"02_VIDEOS": []},
+            {"03_AUDIO": []},
+            {"04_3D_MODELS": []}
+        ]},
+        {"05_REFERENCE": []},
+        {"06_DELIVERY": []},
+        {"07_BACKUPS": []}
     ],
     "design": [
-        "01_PHOTOSHOP_PROJECTS",
-        "02_ILLUSTRATOR_PROJECTS",
-        "03_INDESIGN_PROJECTS",
-        "04_ASSETS",
-        "04_ASSETS/01_IMAGES",
-        "04_ASSETS/02_FONTS",
-        "04_ASSETS/03_LOGOS",
-        "05_REFERENCE",
-        "06_EXPORTS",
-        "06_EXPORTS/01_WEB",
-        "06_EXPORTS/02_PRINT",
-        "07_CLIENT_FEEDBACK",
-        "08_FINALS"
+        {"01_PHOTOSHOP_PROJECTS": []},
+        {"02_ILLUSTRATOR_PROJECTS": []},
+        {"03_INDESIGN_PROJECTS": []},
+        {"04_ASSETS": [
+            {"01_IMAGES": []},
+            {"02_FONTS": []},
+            {"03_LOGOS": []}
+        ]},
+        {"05_REFERENCE": []},
+        {"06_EXPORTS": [
+            {"01_WEB": []},
+            {"02_PRINT": []}
+        ]},
+        {"07_CLIENT_FEEDBACK": []},
+        {"08_FINALS": []}
     ],
     "audio": [
-        "01_AUDITION_SESSIONS",
-        "02_RAW_AUDIO",
-        "03_EDITED_AUDIO",
-        "04_MUSIC",
-        "05_SFX",
-        "06_RENDERS",
-        "06_RENDERS/01_DRAFTS",
-        "06_RENDERS/02_FINALS",
-        "07_REFERENCES",
-        "08_DOCUMENTS"
+        {"01_AUDITION_SESSIONS": []},
+        {"02_RAW_AUDIO": []},
+        {"03_EDITED_AUDIO": []},
+        {"04_MUSIC": []},
+        {"05_SFX": []},
+        {"06_RENDERS": [
+            {"01_DRAFTS": []},
+            {"02_FINALS": []}
+        ]},
+        {"07_REFERENCES": []},
+        {"08_DOCUMENTS": []}
     ]
 }
 

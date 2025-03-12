@@ -18,9 +18,29 @@ from app.constants import RECENT_PROJECTS_MAX
 
 def get_config_paths():
     """Get paths for configuration files and directories"""
-    config_dir = os.path.join(os.path.expanduser("~"), ".cr2creator")
+    # Default config directory
+    default_config_dir = os.path.join(os.path.expanduser("~"), ".cr2creator")
     
-    paths = {
+    # Create the default config dir if it doesn't exist
+    if not os.path.exists(default_config_dir):
+        os.makedirs(default_config_dir)
+    
+    # First, check if we have a custom paths.json file
+    paths_file = os.path.join(default_config_dir, "paths.json")
+    custom_paths = {}
+    
+    if os.path.exists(paths_file):
+        try:
+            with open(paths_file, 'r') as f:
+                custom_paths = json.load(f)
+        except Exception as e:
+            print(f"Error loading custom paths: {e}")
+    
+    # Use the config_dir from custom_paths if it exists, otherwise use default
+    config_dir = custom_paths.get("config_dir", default_config_dir)
+    
+    # Define default paths
+    default_paths = {
         "config_dir": config_dir,
         "config_file": os.path.join(config_dir, "config.json"),
         "recent_projects_file": os.path.join(config_dir, "recent_projects.json"),
@@ -30,11 +50,22 @@ def get_config_paths():
         "custom_structures_dir": os.path.join(config_dir, "structures")
     }
     
-    # Create directories if they don't exist
-    for dir_path in [config_dir, paths["templates_dir"], paths["custom_structures_dir"], 
-                    paths["template_directories_dir"]]:
+    # Merge default paths with custom paths, prioritizing custom paths
+    paths = {**default_paths, **custom_paths}
+    
+    # Ensure all directory paths exist
+    for dir_key in ["config_dir", "templates_dir", "custom_structures_dir", "template_directories_dir"]:
+        dir_path = paths[dir_key]
         if not os.path.exists(dir_path):
-            os.makedirs(dir_path)
+            try:
+                os.makedirs(dir_path)
+            except Exception as e:
+                print(f"Error creating directory {dir_path}: {e}")
+                # Fall back to default if custom directory can't be created
+                if dir_key in custom_paths:
+                    paths[dir_key] = default_paths[dir_key]
+                    if not os.path.exists(default_paths[dir_key]):
+                        os.makedirs(default_paths[dir_key])
     
     return paths
 
@@ -201,8 +232,11 @@ def open_in_explorer(path):
         messagebox.showerror("Error", f"Failed to open in explorer: {str(e)}")
         return False
 
-def create_readme_file(project_path, project_name, project_type, directories):
+def create_readme_file(project_path, project_name, project_type, directories=None):
     """Create a README.txt file in the project folder"""
+    if directories is None:
+        directories = []
+        
     readme_path = os.path.join(project_path, "README.txt")
     try:
         with open(readme_path, "w") as f:

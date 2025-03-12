@@ -22,7 +22,7 @@ class GalleryUISetup:
         gallery.layout.setContentsMargins(0, 0, 0, 0)
         gallery.layout.setSpacing(0)  # No space between components
         
-        # Top bar with category filter and search
+        # Top bar with project type filter and search
         GalleryUISetup.setup_top_bar(gallery)
         
         # Action bar with buttons
@@ -39,83 +39,102 @@ class GalleryUISetup:
     
     @staticmethod
     def setup_top_bar(gallery):
-        """Set up the top bar with category filter and search"""
-        # Top bar for search, filter and actions
-        gallery.top_bar = QWidget()
-        gallery.top_bar.setStyleSheet("background: transparent;")
-        gallery.top_bar_layout = QHBoxLayout(gallery.top_bar)
-        gallery.top_bar_layout.setContentsMargins(10, 5, 10, 5)
-        
-        # Category filter with horizontal layout
-        gallery.category_layout = QHBoxLayout()
-        gallery.category_layout.setContentsMargins(0, 0, 0, 0)
-        gallery.category_layout.setSpacing(5)  # Small spacing between label and dropdown
-        
-        # Clean, minimal category label
-        gallery.category_label = QLabel("Category:")
-        gallery.category_label.setStyleSheet("color: #CCCCCC; background: transparent; font-weight: 500;")
-        gallery.category_layout.addWidget(gallery.category_label)
-        
-        # Container for dropdown and arrow
-        gallery.dropdown_container = QWidget()
-        gallery.dropdown_layout = QHBoxLayout(gallery.dropdown_container)
-        gallery.dropdown_layout.setContentsMargins(0, 0, 0, 0)
-        gallery.dropdown_layout.setSpacing(0)
-        
-        # Clean, minimal dropdown with no border
-        gallery.category_combo = QComboBox()
-        gallery.category_combo.setStyleSheet(f"""
-            QComboBox {{
-                background-color: rgba(60, 60, 60, 0.5);
-                color: #FFFFFF;
-                border: none;
-                border-radius: 6px;
-                padding: 5px 10px 5px 10px;
-                min-width: 120px;
-                selection-background-color: {colors['accent']};
-            }}
-            QComboBox:hover {{
-                background-color: rgba(70, 70, 70, 0.7);
-            }}
-            QComboBox::drop-down {{
-                subcontrol-origin: padding;
-                subcontrol-position: center right;
-                width: 20px;
-                border: none;
-                padding-right: 5px;
-            }}
-            QComboBox::down-arrow {{
-                image: none;
-            }}
-            QComboBox QAbstractItemView {{
-                background-color: #333333;
-                color: #FFFFFF;
-                selection-background-color: {colors['accent']};
-                selection-color: {colors['highlight_text']};
-                border: 1px solid #555555;
-                border-radius: 4px;
-            }}
+        """Set up the top bar with search box"""
+        # Create top bar container with layout
+        gallery.top_bar_container = QWidget()
+        gallery.top_bar_container.setObjectName("topBarContainer")
+        gallery.top_bar_container.setStyleSheet("""
+            QWidget#topBarContainer {
+                background-color: #2d2d2d;
+                border-radius: 5px;
+                padding: 5px;
+            }
         """)
-        gallery.category_combo.currentTextChanged.connect(gallery._on_category_select)
-        gallery.dropdown_layout.addWidget(gallery.category_combo)
         
-        # Visible down arrow label
-        gallery.arrow_label = QLabel("▼")
-        gallery.arrow_label.setStyleSheet("color: #CCCCCC; margin-left: -18px; background: transparent;")
-        gallery.dropdown_layout.addWidget(gallery.arrow_label)
+        # Create layout for the top bar container
+        gallery.top_bar_layout = QHBoxLayout(gallery.top_bar_container)
+        gallery.top_bar_layout.setContentsMargins(10, 5, 10, 5)
+        gallery.top_bar_layout.setSpacing(10)
         
-        # Populate initial categories
-        gallery._update_categories()
+        # Create New Structure button
+        gallery.new_structure_button = QPushButton("Create New Structure")
+        gallery.new_structure_button.setStyleSheet(BUTTON_STYLE)
         
-        gallery.category_layout.addWidget(gallery.dropdown_container)
-        gallery.top_bar_layout.addLayout(gallery.category_layout, 1)
+        # Fix the structure editor call by using a callback to the main app
+        from app.dialogs.dialog_windows_pyqt import show_structure_editor
         
-        # Search box
-        gallery.search_box = SearchBox(gallery, "Search templates...")
-        gallery.search_box.textChanged.connect(gallery._on_search)
-        gallery.top_bar_layout.addWidget(gallery.search_box, 2)
+        # Define a safer handler that checks for app availability
+        def show_structure_editor_handler():
+            # Get the parent app if available
+            parent_app = None
+            if hasattr(gallery, 'app') and gallery.app is not None:
+                parent_app = gallery.app
+            elif hasattr(gallery, 'parent') and callable(gallery.parent) and gallery.parent() is not None:
+                parent_app = gallery.parent()
+            
+            if parent_app is not None:
+                # Create a custom implementation of show_enhanced_structure_editor
+                # that handles missing template_manager
+                from app.constants import DEFAULT_STRUCTURES
+                from app.ui.structure_editor_enhanced import EnhancedStructureEditor
+                
+                # Create a modified editor with fallback for template_manager
+                class EnhancedStructureEditorWithFallback(EnhancedStructureEditor):
+                    def __init__(self, parent, **kwargs):
+                        # First ensure the parent has a template_manager attribute
+                        if not hasattr(parent, 'template_manager') or parent.template_manager is None:
+                            # Create a basic template_manager with just what we need for the dropdown
+                            class BasicTemplateManager:
+                                def __init__(self):
+                                    self.custom_structures = {}
+                                
+                                def get_structure(self, name):
+                                    print(f"BasicTemplateManager: get_structure called with name={name}")
+                                    if not name:
+                                        return []
+                                    
+                                    # Check if it's a built-in structure (case-insensitive)
+                                    name_lower = name.lower()
+                                    for key in DEFAULT_STRUCTURES:
+                                        if key.lower() == name_lower:
+                                            print(f"BasicTemplateManager: Found built-in structure: {key}")
+                                            return DEFAULT_STRUCTURES[key]
+                                    
+                                    print(f"BasicTemplateManager: Structure not found: {name}")
+                                    return []
+                            
+                            parent.template_manager = BasicTemplateManager()
+                        
+                        # Call the original constructor
+                        super().__init__(parent, **kwargs)
+                        
+                        # Ensure dropdown is populated with built-in structures
+                        self.populate_structure_dropdown()
+                
+                # Create and show the editor
+                editor = EnhancedStructureEditorWithFallback(
+                    parent_app,
+                    structure_name=None,
+                    is_new=True,
+                    project_type=None
+                )
+                editor.exec_()
+            else:
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.warning(gallery, "Error", "Could not access application context.")
+                
+        gallery.new_structure_button.clicked.connect(show_structure_editor_handler)
         
-        gallery.layout.addWidget(gallery.top_bar)
+        gallery.top_bar_layout.addWidget(gallery.new_structure_button)
+        
+        # Add spacer to push search box to the right
+        gallery.top_bar_layout.addStretch(1)
+        
+        # Add search box to top bar
+        GalleryUISetup.add_search_box(gallery)
+        
+        # Add the top bar container to the main layout
+        gallery.layout.addWidget(gallery.top_bar_container)
 
     @staticmethod
     def setup_action_bar(gallery):
@@ -176,13 +195,15 @@ class GalleryUISetup:
         gallery.button_layout.addStretch()
         
         # Template buttons
-        gallery.add_button = QPushButton("Add Template")
-        gallery.add_button.setStyleSheet(ACCENT_BUTTON_STYLE)
-        gallery.add_button.clicked.connect(gallery._on_add_template)
-        gallery.button_layout.addWidget(gallery.add_button)
+        # Moved to templates header area for better UX
+        # gallery.add_button = QPushButton("Add Template")
+        # gallery.add_button.setStyleSheet(ACCENT_BUTTON_STYLE)
+        # gallery.add_button.clicked.connect(gallery._on_add_template)
+        # gallery.button_layout.addWidget(gallery.add_button)
         
         # Remove edit and delete buttons - they're now available in the context menu
         
+        # Restore the Manage All button as requested by user
         gallery.manage_button = QPushButton("Manage All")
         gallery.manage_button.setStyleSheet(BUTTON_STYLE)
         gallery.manage_button.clicked.connect(gallery._on_manage_templates)
@@ -254,5 +275,13 @@ class GalleryUISetup:
         
         # Add the scroll area to the main layout
         gallery.layout.addWidget(gallery.gallery_scroll)
+
+    @staticmethod
+    def add_search_box(gallery):
+        """Add a search box to the top bar"""
+        # Search box
+        gallery.search_box = SearchBox(gallery, "Search templates...")
+        gallery.search_box.textChanged.connect(gallery._on_search)
+        gallery.top_bar_layout.addWidget(gallery.search_box, 2)
 
     # Note: Additional setup methods will be defined in gallery_folders.py and gallery_templates.py 

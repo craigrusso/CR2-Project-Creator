@@ -99,82 +99,87 @@ class ProjectBuilder:
             # Create base directory
             os.makedirs(project_path)
             
-            # If template_file is a template name, look it up
-            template_obj = None
-            if template_file and not os.path.exists(template_file):
-                # It might be a template name, try to find it
-                template_obj = self.template_manager.get_template_by_name(template_file)
-                if template_obj:
-                    if template_obj.get('type') == 'directory':
-                        template_file = template_obj.get('path')
-                    else:
-                        template_file = template_obj.get('file', '')
+            # Process template first (if provided and it's not our dummy gallery template)
+            if template_file and template_file != "gallery_template":
+                if os.path.isdir(template_file):
+                    # Directory-based template
+                    self._copy_template_directory(template_file, project_path, project_name)
+                elif os.path.isfile(template_file):
+                    # File-based template
+                    self._copy_template_file(template_file, project_path, project_name, project_type)
+                else:
+                    print(f"Warning: Template file does not exist: {template_file}")
             
-            # Check if we need to get structure name from the template
-            if template_obj and not structure_name:
-                # Check if template has a structure_name
-                if 'structure_name' in template_obj:
-                    structure_name = template_obj.get('structure_name')
-                # For directory templates, check the template.json file
-                elif template_obj.get('type') == 'directory' and os.path.exists(template_file):
-                    template_json_path = os.path.join(template_file, "template.json")
-                    if os.path.exists(template_json_path):
-                        try:
-                            with open(template_json_path, 'r') as f:
-                                template_info = json.load(f)
-                                if 'structure_name' in template_info:
-                                    structure_name = template_info['structure_name']
-                        except Exception as e:
-                            print(f"Error reading template.json: {e}")
-            
-            # Create folder structure based on template or type
-            if structure_name and structure_name in self.template_manager.custom_structures:
-                # Use custom structure
+            # Create directory structure - get structure from name if provided
+            if structure_name:
+                # Get the structure by name
                 directories = self.template_manager.get_structure(structure_name)
+                # Create the structure - pass the original project name
+                self._create_folder_structure(project_path, directories, original_project_name=project_name)
             else:
-                # Use default structure for project type
-                directories = self.template_manager.get_default_structure(project_type)
+                # Use an empty list for directories if none provided
+                directories = []
             
-            # Create all directories
-            self._create_folder_structure(project_path, directories)
-            
-            # Copy template file if selected
-            if template_file and os.path.exists(template_file):
-                self._process_template(template_file, project_path, project_name, project_type)
-            
-            # Create README file
+            # Create a readme file
             create_readme_file(project_path, project_name, project_type, directories)
             
             # Add to recent projects
             add_to_recent_projects(project_path)
             
+            # Return success
             return True, project_path
             
         except Exception as e:
-            error_msg = f"Failed to create project: {str(e)}"
-            print(error_msg)
-            return False, error_msg
+            import traceback
+            print(f"Error creating project: {e}")
+            traceback.print_exc()
+            return False, f"Error: {e}"
     
-    def _create_folder_structure(self, project_path, directories):
+    def _create_folder_structure(self, project_path, directories, original_project_name=None):
         """Create folder structure with improved handling of nested directories and files"""
+        # Use the original project name if provided, otherwise get from the path
+        # This ensures we use the correct project name in nested folders
+        if original_project_name is None:
+            project_name = os.path.basename(project_path)
+        else:
+            project_name = original_project_name
+            
+        print(f"Creating folder structure at {project_path} with project name: {project_name}")
+            
+        # Handle different types of directories input
         if isinstance(directories, list):
             for item in directories:
+                # Handle nested dict - this covers both folders with children and empty folders
                 if isinstance(item, dict):
-                    # Handle nested dictionary
                     for folder_name, sub_items in item.items():
+                        # Replace placeholders in folder_name if needed
+                        if isinstance(folder_name, str) and "{{PROJECT_NAME}}" in folder_name:
+                            new_folder_name = folder_name.replace("{{PROJECT_NAME}}", project_name)
+                            print(f"Renamed folder in structure: {folder_name} -> {new_folder_name}")
+                            folder_name = new_folder_name
+                            
                         # Create the parent folder
                         folder_path = os.path.join(project_path, folder_name)
                         os.makedirs(folder_path, exist_ok=True)
                         
-                        # Process subfolders recursively
-                        self._create_folder_structure(folder_path, sub_items)
-                else:
-                    # Handle string items (files or simple folders)
+                        # Process subfolders recursively - pass the original project name
+                        # Only process if there are subitems
+                        if sub_items:
+                            self._create_folder_structure(folder_path, sub_items, original_project_name=project_name)
+                # Handle string items (files or legacy format with trailing slash)
+                elif isinstance(item, str):
                     name = item
                     is_folder = name.endswith('/')
                     
+                    # Handle placeholder replacement in the name
+                    if "{{PROJECT_NAME}}" in name:
+                        # Replace the placeholder with the project name
+                        name = name.replace("{{PROJECT_NAME}}", project_name)
+                        print(f"Renamed item in structure: {item} -> {name}")
+                    
                     if is_folder:
-                        # It's a folder (ending with slash)
+                        # Legacy format - folder ending with slash
+                        # We'll still handle this format for existing structures
                         name = name[:-1]  # Remove the trailing slash
                         folder_path = os.path.join(project_path, name)
                         os.makedirs(folder_path, exist_ok=True)
@@ -190,7 +195,25 @@ class ProjectBuilder:
                             file_path = os.path.join(project_path, name)
                         
                         # Create an empty file
+                        print(f"Creating file: {file_path}")
                         open(file_path, 'a').close()
+        # Handle case where directories is a dict (may happen in recursive calls)
+        elif isinstance(directories, dict):
+            for folder_name, sub_items in directories.items():
+                # Replace placeholders in folder_name if needed
+                if isinstance(folder_name, str) and "{{PROJECT_NAME}}" in folder_name:
+                    new_folder_name = folder_name.replace("{{PROJECT_NAME}}", project_name)
+                    print(f"Renamed folder in structure: {folder_name} -> {new_folder_name}")
+                    folder_name = new_folder_name
+                    
+                # Create the parent folder
+                folder_path = os.path.join(project_path, folder_name)
+                os.makedirs(folder_path, exist_ok=True)
+                
+                # Process subfolders recursively - pass the original project name
+                # Only process if there are subitems
+                if sub_items:
+                    self._create_folder_structure(folder_path, sub_items, original_project_name=project_name)
     
     def _process_template(self, template_file, project_path, project_name, project_type):
         """Process template files with improved handling for different template types"""
@@ -202,6 +225,8 @@ class ProjectBuilder:
     
     def _copy_template_directory(self, template_dir, project_path, project_name):
         """Copy a directory template, renaming files that match specific patterns"""
+        print(f"Copying template directory: {template_dir} to {project_path}")
+        
         for root, dirs, files in os.walk(template_dir):
             # Skip template.json file
             if "template.json" in files:
@@ -215,7 +240,10 @@ class ProjectBuilder:
                 # Replace PROJECT_NAME in directory names if needed
                 rel_path_parts = []
                 for part in rel_path.split(os.sep):
-                    part = part.replace("{{PROJECT_NAME}}", project_name)
+                    if "{{PROJECT_NAME}}" in part:
+                        new_part = part.replace("{{PROJECT_NAME}}", project_name)
+                        print(f"Renamed directory: {part} -> {new_part}")
+                        part = new_part
                     rel_path_parts.append(part)
                 rel_path = os.path.join(*rel_path_parts)
                 target_dir = os.path.join(project_path, rel_path)
@@ -228,7 +256,11 @@ class ProjectBuilder:
                 source_file = os.path.join(root, file)
                 
                 # Handle file renaming if needed
-                target_file_name = file.replace("{{PROJECT_NAME}}", project_name)
+                target_file_name = file
+                if "{{PROJECT_NAME}}" in file:
+                    target_file_name = file.replace("{{PROJECT_NAME}}", project_name)
+                    print(f"Renamed file: {file} -> {target_file_name}")
+                
                 target_file = os.path.join(target_dir, target_file_name)
                 
                 # Copy the file
@@ -241,15 +273,41 @@ class ProjectBuilder:
     def _is_text_file(self, file_path):
         """Check if a file is likely a text file that can have placeholders replaced"""
         # Basic check based on extension
-        text_extensions = ['.txt', '.md', '.json', '.xml', '.html', '.css', '.js', '.py', '.c', '.cpp', '.h', '.java', '.config']
+        text_extensions = [
+            '.txt', '.md', '.json', '.xml', '.html', '.css', '.js', '.jsx', '.ts', '.tsx',
+            '.py', '.c', '.cpp', '.h', '.hpp', '.java', '.config', '.yaml', '.yml', '.toml',
+            '.sh', '.bash', '.bat', '.ps1', '.sql', '.php', '.rb', '.swift', '.dart',
+            '.gitignore', '.env', '.ini', '.cfg', '.conf', '.properties'
+        ]
         _, ext = os.path.splitext(file_path.lower())
+        
+        # Try to detect text files without extensions
+        if not ext and os.path.exists(file_path):
+            try:
+                # Try to open and read a few bytes
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    sample = f.read(1024)
+                    # If we can read it as text, it's likely a text file
+                    return '\0' not in sample  # Binary files often contain null bytes
+            except:
+                # If we can't read it as text, assume it's not a text file
+                return False
+                
         return ext in text_extensions
     
     def _replace_template_placeholders(self, file_path, project_name):
         """Replace placeholder content in a file with project-specific values"""
         try:
+            # Skip very large files to avoid performance issues
+            if os.path.getsize(file_path) > 10 * 1024 * 1024:  # 10 MB
+                print(f"Skipping placeholder replacement in large file: {file_path}")
+                return
+                
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
+            
+            # Check if there are any placeholders to replace
+            original_content = content
             
             # Create a dict of replacements
             current_date = datetime.datetime.now().strftime("%Y-%m-%d")
@@ -260,19 +318,26 @@ class ProjectBuilder:
                 "{{PROJECT NAME}}": project_name,
                 "{{PROJECTNAME}}": project_name,
                 "{{project_name}}": project_name.lower(),
+                "{{Project_Name}}": project_name.title(),
                 "{{DATE}}": current_date,
                 "{{YEAR}}": current_year
             }
             
             # Apply all replacements
+            placeholders_found = False
             for placeholder, value in replacements.items():
-                content = content.replace(placeholder, value)
+                if placeholder in content:
+                    placeholders_found = True
+                    content = content.replace(placeholder, value)
             
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(content)
+            if placeholders_found:
+                print(f"Replaced placeholders in file: {file_path}")
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
                 
         except UnicodeDecodeError:
             # Not a text file or uses a different encoding
+            print(f"Skipping placeholder replacement in non-text file: {file_path}")
             pass
         except Exception as e:
             print(f"Error replacing placeholders in {file_path}: {e}")
@@ -281,6 +346,13 @@ class ProjectBuilder:
         """Copy the template file to the appropriate location in the project"""
         filename = os.path.basename(template_file)
         _, ext = os.path.splitext(filename)
+        
+        # Check if filename contains placeholders
+        if "{{PROJECT_NAME}}" in filename:
+            print(f"Template filename contains placeholder: {filename}")
+            # Replace placeholder but keep the extension
+            filename = filename.replace("{{PROJECT_NAME}}", project_name)
+            print(f"Renamed template file to: {filename}")
         
         # Determine destination subfolder based on file type
         if ext.lower() in ['.prproj']:
@@ -300,10 +372,13 @@ class ProjectBuilder:
         # Make sure destination folder exists
         os.makedirs(dest_folder, exist_ok=True)
         
-        # Copy and rename the template file
-        new_filename = f"{project_name}{ext}"
-        dest_path = os.path.join(dest_folder, new_filename)
+        # Copy the template file
+        dest_path = os.path.join(dest_folder, filename)
         shutil.copy2(template_file, dest_path)
+        
+        # If it's a text file, replace placeholders in content
+        if self._is_text_file(template_file):
+            self._replace_template_placeholders(dest_path, project_name)
     
     def batch_create_projects(self, project_names, output_dir, template_file=None, 
                              project_type="Standard", structure_name=None,
@@ -353,6 +428,15 @@ class ProjectBuilder:
             
             # Log progress
             print(f"Creating project {i+1}/{len(self.project_queue)}: {name}")
+            
+            # Add debug info about the template being used
+            if template_file == "gallery_template":
+                print(f"Using gallery template with structure: {structure_name}")
+                print(f"Project name: {name}, Output dir: {output_dir}")
+            else:
+                print(f"Using template file: {template_file}")
+                if not os.path.exists(template_file):
+                    print(f"Warning: Template file does not exist: {template_file}")
             
             # Create project
             success, result = self.create_project(

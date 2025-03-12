@@ -10,27 +10,32 @@ from PyQt5.QtCore import Qt, pyqtSignal
 
 # Import from our centralized color scheme
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE
-from app.ui.ui_components_pyqt import StructureEditor
+# Import the enhanced structure editor instead of the basic one
+from app.ui.structure_editor_enhanced import EnhancedStructureEditor, save_structure_with_project_type
 
 
 def create_custom_structure(app):
     """Create a new custom folder structure"""
-    editor = StructureEditor(app, save_callback=lambda name, structure: save_custom_structure(app, name, structure))
+    # Use the enhanced editor with is_new=True
+    editor = EnhancedStructureEditor(
+        app, 
+        is_new=True,
+        save_callback=lambda name, structure: save_structure_with_project_type(app, name, structure)
+    )
     editor.exec_()
 
 
 def save_custom_structure(app, name, structure):
-    """Save a custom folder structure"""
+    """Save a custom structure"""
+    # Save the structure
     success = app.template_manager.save_custom_structure(name, structure)
+    
     if success:
-        QMessageBox.information(app, "Success", f"Structure '{name}' saved successfully")
-        app.template_manager.load_custom_structures()
-        update_structure_dropdown(app)
-        # In PyQt we use comboBox.setCurrentText instead of StringVar.set
-        app.structure_combo.setCurrentText(name)
-        highlight_current_structure(app)
-    else:
-        QMessageBox.critical(app, "Error", f"Failed to save structure '{name}'")
+        # Update UI if needed
+        if hasattr(app, '_update_structure_combo'):
+            app._update_structure_combo()
+    
+    return success
 
 
 def edit_structure(app):
@@ -43,125 +48,113 @@ def edit_structure(app):
     # Get the structure
     structure = app.template_manager.get_structure(structure_name)
     
-    # Open editor
-    editor = StructureEditor(app, structure=structure, title=f"Edit Structure - {structure_name}",
-                            save_callback=lambda name, s: update_custom_structure(app, structure_name, name, s))
-    # Set the name in PyQt
-    # editor.name_input.setText(structure_name)
+    # Open enhanced editor
+    editor = EnhancedStructureEditor(
+        app, 
+        structure_name=structure_name,
+        structure=structure,
+        save_callback=lambda name, s: update_custom_structure(app, structure_name, name, s)
+    )
     editor.exec_()
 
 
 def update_custom_structure(app, old_name, new_name, structure):
-    """Update an existing custom structure"""
-    # If name changed, rename first
-    if old_name != new_name:
-        renamed = app.template_manager.rename_custom_structure(old_name, new_name)
-        if not renamed:
-            QMessageBox.critical(app, "Error", f"Failed to rename structure from '{old_name}' to '{new_name}'")
-            return
+    """Update a custom structure"""
+    # If the name has changed, create a new one and delete the old
+    success = False
     
-    # Save the updated structure
-    success = app.template_manager.save_custom_structure(new_name, structure)
-    if success:
-        QMessageBox.information(app, "Success", f"Structure '{new_name}' updated successfully")
-        app.template_manager.load_custom_structures()
-        update_structure_dropdown(app)
-        app.structure_combo.setCurrentText(new_name)
-        highlight_current_structure(app)
+    if old_name != new_name:
+        # Create the new structure
+        success = app.template_manager.save_custom_structure(new_name, structure)
+        
+        if success:
+            # Delete the old structure
+            app.template_manager.delete_custom_structure(old_name)
+            
+            # Update UI
+            if hasattr(app, 'structure_combo'):
+                app.structure_combo.setCurrentText(new_name)
     else:
-        QMessageBox.critical(app, "Error", f"Failed to update structure '{new_name}'")
+        # Update the existing structure
+        success = app.template_manager.save_custom_structure(new_name, structure)
+    
+    # Update UI
+    if success and hasattr(app, '_update_structure_combo'):
+        app._update_structure_combo()
+    
+    return success
+
+
+def delete_custom_structure(app, name):
+    """Delete a custom structure"""
+    # Confirm deletion
+    confirm = QMessageBox.question(app, "Confirm Deletion", 
+                                 f"Are you sure you want to delete the structure '{name}'?",
+                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+    
+    if confirm == QMessageBox.Yes:
+        # Delete the structure
+        success = app.template_manager.delete_custom_structure(name)
+        
+        if success:
+            # Update UI
+            if hasattr(app, '_update_structure_combo'):
+                app._update_structure_combo()
+                
+            # Select Default if available
+            if hasattr(app, 'structure_combo'):
+                default_index = app.structure_combo.findText("Default")
+                if default_index >= 0:
+                    app.structure_combo.setCurrentIndex(default_index)
+            
+            return True
+    
+    return False
 
 
 def manage_structures(app):
-    """Manage custom folder structures"""
-    manage_dialog = QDialog(app)
-    manage_dialog.setWindowTitle("Manage Custom Structures")
-    manage_dialog.resize(500, 400)
+    """Show dialog to manage structures"""
+    # Create dialog
+    dialog = QDialog(app)
+    dialog.setWindowTitle("Manage Structures")
+    dialog.resize(600, 400)
     
-    # Main layout
-    layout = QVBoxLayout(manage_dialog)
-    layout.setContentsMargins(20, 20, 20, 20)
-    layout.setSpacing(10)
+    # Layout
+    layout = QVBoxLayout(dialog)
     
-    # Header
-    header_label = QLabel("Custom Folder Structures")
-    header_label.setStyleSheet("font-weight: bold; font-size: 14px;")
-    layout.addWidget(header_label)
+    # Instructions
+    instructions = QLabel("Manage your custom folder structures:")
+    layout.addWidget(instructions)
     
-    # Structure list
-    structure_listbox = QListWidget()
-    structure_listbox.setSelectionMode(QAbstractItemView.SingleSelection)
-    layout.addWidget(structure_listbox)
+    # Create list of structures
+    structures_list = QListWidget()
+    structures_list.setSelectionMode(QAbstractItemView.SingleSelection)
+    layout.addWidget(structures_list)
     
-    # Load structures
-    structures = list(app.template_manager.custom_structures.keys())
-    for structure in structures:
-        structure_listbox.addItem(structure)
-    
-    # Buttons frame
-    button_layout = QHBoxLayout()
-    layout.addLayout(button_layout)
+    # Populate list with custom structures
+    for name in sorted(app.template_manager.custom_structures.keys()):
+        structures_list.addItem(name)
     
     # Buttons
-    rename_btn = QPushButton("Rename")
-    rename_btn.clicked.connect(lambda: rename_structure(app, structure_listbox, structures))
-    button_layout.addWidget(rename_btn)
+    button_layout = QHBoxLayout()
     
     edit_btn = QPushButton("Edit")
-    edit_btn.clicked.connect(lambda: edit_structure_from_list(app, structure_listbox, structures))
+    edit_btn.clicked.connect(lambda: edit_structure_from_list(app, structures_list, dialog))
     button_layout.addWidget(edit_btn)
     
     delete_btn = QPushButton("Delete")
-    delete_btn.clicked.connect(lambda: delete_structure(app, structure_listbox, structures))
+    delete_btn.clicked.connect(lambda: delete_structure_from_list(app, structures_list, dialog))
     button_layout.addWidget(delete_btn)
     
-    new_btn = QPushButton("New Structure")
-    new_btn.clicked.connect(lambda: create_custom_structure(app))
-    button_layout.addWidget(new_btn)
+    layout.addLayout(button_layout)
     
+    # Close button
     close_btn = QPushButton("Close")
-    close_btn.clicked.connect(manage_dialog.close)
-    button_layout.addWidget(close_btn, 1, Qt.AlignRight)
+    close_btn.clicked.connect(dialog.accept)
+    layout.addWidget(close_btn)
     
     # Show dialog
-    manage_dialog.exec_()
-
-
-def rename_structure(app, listbox, structures):
-    """Rename a custom structure from the management list"""
-    selected_items = listbox.selectedItems()
-    if not selected_items:
-        QMessageBox.critical(app, "Error", "Please select a structure to rename")
-        return
-    
-    selected_item = selected_items[0]
-    row = listbox.row(selected_item)
-    name = selected_item.text()
-    
-    # Get new name
-    new_name, ok = QInputDialog.getText(app, "Rename Structure", 
-                                       "Enter new name:", text=name)
-    
-    if ok and new_name and new_name != name:
-        # Rename the structure
-        success = app.template_manager.rename_custom_structure(name, new_name)
-        
-        if success:
-            # Update list
-            structures[row] = new_name
-            selected_item.setText(new_name)
-            
-            # Update dropdown
-            update_structure_dropdown(app)
-            
-            # Update selected if needed
-            if app.structure_combo.currentText() == name:
-                app.structure_combo.setCurrentText(new_name)
-                highlight_current_structure(app)
-            
-            QMessageBox.information(app, "Success", f"Structure renamed to '{new_name}'")
-        else:
-            QMessageBox.critical(app, "Error", f"Failed to rename structure")
+    dialog.exec_()
 
 
 def edit_structure_from_list(app, listbox, structures):
@@ -178,46 +171,40 @@ def edit_structure_from_list(app, listbox, structures):
     # Get the structure
     structure = app.template_manager.get_structure(name)
     
-    # Open editor
-    editor = StructureEditor(app, structure=structure, title=f"Edit Structure - {name}",
-                           save_callback=lambda new_name, s: update_custom_structure_from_list(
-                               app, name, new_name, s, listbox, structures, row))
-    # Set the name
-    # editor.name_input.setText(name)
+    # Open enhanced editor
+    editor = EnhancedStructureEditor(
+        app, 
+        structure_name=name,
+        structure=structure,
+        save_callback=lambda new_name, s: update_custom_structure_from_list(
+            app, name, new_name, s, listbox, structures, row)
+    )
     editor.exec_()
 
 
-def update_custom_structure_from_list(app, old_name, new_name, structure, listbox, structures, index):
+def update_custom_structure_from_list(app, old_name, new_name, structure, listbox, structures, row):
     """Update a custom structure from the management list"""
-    # If name changed, rename first
-    if old_name != new_name:
-        renamed = app.template_manager.rename_custom_structure(old_name, new_name)
-        if not renamed:
-            QMessageBox.critical(app, "Error", f"Failed to rename structure from '{old_name}' to '{new_name}'")
-            return
-        
-        # Update list
-        structures[index] = new_name
-        listbox.item(index).setText(new_name)
-        
-        # Update dropdown
-        update_structure_dropdown(app)
-        
-        # Update selected if needed
-        if app.structure_combo.currentText() == old_name:
-            app.structure_combo.setCurrentText(new_name)
-            highlight_current_structure(app)
+    # Save the structure
+    success = update_custom_structure(app, old_name, new_name, structure)
     
-    # Save the updated structure
-    success = app.template_manager.save_custom_structure(new_name, structure)
     if success:
-        QMessageBox.information(app, "Success", f"Structure '{new_name}' updated successfully")
-        app.template_manager.load_custom_structures()
-    else:
-        QMessageBox.critical(app, "Error", f"Failed to update structure '{new_name}'")
+        # Update the list
+        if old_name != new_name:
+            # Remove the old item and add the new one
+            listbox.takeItem(row)
+            
+            # Add the new item
+            listbox.addItem(new_name)
+            
+            # Sort the list
+            listbox.sortItems()
+        
+        return True
+    
+    return False
 
 
-def delete_structure(app, listbox, structures):
+def delete_structure_from_list(app, listbox, structures):
     """Delete a custom structure from the management list"""
     selected_items = listbox.selectedItems()
     if not selected_items:
@@ -228,32 +215,12 @@ def delete_structure(app, listbox, structures):
     row = listbox.row(selected_item)
     name = selected_item.text()
     
-    # Confirm deletion
-    confirm = QMessageBox.question(app, "Confirm Deletion", 
-                                 f"Are you sure you want to delete the structure '{name}'?",
-                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-    if confirm != QMessageBox.Yes:
-        return
-    
     # Delete the structure
-    success = app.template_manager.delete_custom_structure(name)
+    success = delete_custom_structure(app, name)
     
     if success:
-        # Update list
-        del structures[row]
+        # Remove from list
         listbox.takeItem(row)
-        
-        # Update dropdown
-        update_structure_dropdown(app)
-        
-        # Reset selected if needed
-        if app.structure_combo.currentText() == name:
-            app.structure_combo.setCurrentText("Default")
-            highlight_current_structure(app)
-        
-        QMessageBox.information(app, "Success", f"Structure '{name}' deleted")
-    else:
-        QMessageBox.critical(app, "Error", f"Failed to delete structure '{name}'")
 
 
 def update_structure_dropdown(app):

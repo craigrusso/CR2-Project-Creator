@@ -2,32 +2,40 @@
 
 from PyQt5.QtWidgets import QFrame, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QMenu, QAction
 from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QMimeData
-from PyQt5.QtGui import QPixmap, QFont, QDrag
+from PyQt5.QtGui import QPixmap, QFont, QDrag, QPainter
 import os
 from .utils import SYSTEM_FONT
 from .common_styles import CARD_NORMAL, CARD_HOVER, CARD_SELECTED, colors
 
 def template_icon_path(template_name=None):
     """Return the path to the template icon."""
-    # Default icon
+    # Use our new SVG icon as the default
     icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
-                           "assets", "icons", "template_icon.png")
+                           "assets", "icons", "template_structure_icon.svg")
     
     # Check if template-specific icon exists
     if template_name:
-        custom_icon = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
-                                 "assets", "icons", "templates", f"{template_name}.png")
-        if os.path.exists(custom_icon):
-            icon_path = custom_icon
+        # First try SVG
+        custom_icon_svg = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
+                                 "assets", "icons", "templates", f"{template_name}.svg")
+        if os.path.exists(custom_icon_svg):
+            icon_path = custom_icon_svg
+        else:
+            # Then try PNG
+            custom_icon_png = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
+                                    "assets", "icons", "templates", f"{template_name}.png")
+            if os.path.exists(custom_icon_png):
+                icon_path = custom_icon_png
     
     return icon_path
 
 class TemplateCard(QFrame):
-    clicked = pyqtSignal(str)
+    clicked = pyqtSignal(object)
     doubleClicked = pyqtSignal(str)
     dragStarted = pyqtSignal(str)
     editRequested = pyqtSignal(str)  # New signal for edit action
     deleteRequested = pyqtSignal(str)  # New signal for delete action
+    moveToFolderRequested = pyqtSignal(str, str)  # template_name, folder_name
 
     def __init__(self, parent=None, template=None, app=None):
         super().__init__(parent)
@@ -45,20 +53,55 @@ class TemplateCard(QFrame):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
         
+        # Icon container with fixed height to maintain consistent positioning
+        icon_container = QWidget()
+        icon_container.setFixedHeight(70)  # Fixed height for icon area
+        icon_layout = QVBoxLayout(icon_container)
+        icon_layout.setContentsMargins(0, 0, 0, 0)
+        
         # Template icon
-        self.icon_label = QLabel(self)
+        self.icon_label = QLabel()
         try:
             icon_path = template_icon_path(template_name=self.template_name())
-            pixmap = QPixmap(icon_path)
-            if not pixmap.isNull():
-                pixmap = pixmap.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                self.icon_label.setPixmap(pixmap)
+            if icon_path.endswith('.svg'):
+                # Handle SVG files using QPixmap and QSvgRenderer
+                from PyQt5.QtSvg import QSvgRenderer
+                from PyQt5.QtCore import QByteArray, QSize
+                
+                # Create a renderer for the SVG
+                with open(icon_path, 'r') as f:
+                    svg_content = f.read()
+                
+                renderer = QSvgRenderer(QByteArray(svg_content.encode()))
+                if renderer.isValid():
+                    # Create a pixmap to render to
+                    pixmap = QPixmap(64, 64)
+                    pixmap.fill(Qt.transparent)  # Make the background transparent
+                    
+                    # Paint the SVG on the pixmap
+                    painter = QPainter(pixmap)
+                    renderer.render(painter)
+                    painter.end()
+                    
+                    self.icon_label.setPixmap(pixmap)
+                else:
+                    # Fallback to text
+                    self.icon_label.setText("📄")
+                    font = QFont(SYSTEM_FONT)
+                    font.setPointSize(24)
+                    self.icon_label.setFont(font)
             else:
-                # If pixmap is null, use text as a fallback
-                self.icon_label.setText("📄")
-                font = QFont(SYSTEM_FONT)
-                font.setPointSize(24)
-                self.icon_label.setFont(font)
+                # Handle PNG or fallback
+                pixmap = QPixmap(icon_path)
+                if not pixmap.isNull():
+                    pixmap = pixmap.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    self.icon_label.setPixmap(pixmap)
+                else:
+                    # If pixmap is null, use text as a fallback
+                    self.icon_label.setText("📄")
+                    font = QFont(SYSTEM_FONT)
+                    font.setPointSize(24)
+                    self.icon_label.setFont(font)
         except Exception as e:
             print(f"ERROR: Failed to load template icon: {e}")
             # Use text as a fallback
@@ -68,17 +111,26 @@ class TemplateCard(QFrame):
             self.icon_label.setFont(font)
         
         self.icon_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.icon_label, 1, Qt.AlignCenter)
+        icon_layout.addWidget(self.icon_label, 1, Qt.AlignCenter)
+        layout.addWidget(icon_container)
+        
+        # Text container with fixed height
+        text_container = QWidget()
+        text_container.setFixedHeight(50)  # Fixed height for text area
+        text_layout = QVBoxLayout(text_container)
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(2)
         
         # Template name label
         self.name_label = QLabel(self.template_name(), self)
         self.name_label.setAlignment(Qt.AlignCenter)
         self.name_label.setWordWrap(True)
+        self.name_label.setMaximumHeight(30)  # Limit height of name label
         font = QFont(SYSTEM_FONT)
         font.setPointSize(10)
         self.name_label.setFont(font)
         self.name_label.setStyleSheet(f"color: {colors['text']};")
-        layout.addWidget(self.name_label)
+        text_layout.addWidget(self.name_label)
         
         # Template category label
         category = self.template.get("category", self.template.get("type", "Custom"))
@@ -88,7 +140,9 @@ class TemplateCard(QFrame):
         font.setPointSize(8)
         self.category_label.setFont(font)
         self.category_label.setStyleSheet(f"color: {colors['secondary_text']};")
-        layout.addWidget(self.category_label)
+        text_layout.addWidget(self.category_label)
+        
+        layout.addWidget(text_container)
         
         # Initial styling
         self._update_styling()
@@ -108,7 +162,13 @@ class TemplateCard(QFrame):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
-            self.clicked.emit(self.template_name())
+            self.clicked.emit(self.template)
+
+    def mouseDoubleClickEvent(self, event):
+        """Handle double click to open template editor"""
+        if event.button() == Qt.LeftButton:
+            self.doubleClicked.emit(self.template_name())
+            event.accept()
 
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.LeftButton:
@@ -135,21 +195,73 @@ class TemplateCard(QFrame):
 
     def _update_styling(self):
         if self.selected:
-            bg_color = CARD_SELECTED
+            # Only style the container with a border, let children inherit the background
+            self.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {colors['highlight_bg']};
+                    border: 2px solid {colors['accent']};
+                    border-radius: 6px;
+                }}
+                QLabel {{
+                    color: {colors['highlight_text']};
+                    background-color: transparent;
+                    border: none;
+                }}
+            """)
+            
+            # Set text color but no borders on child elements
+            if hasattr(self, 'icon_label'):
+                self.icon_label.setStyleSheet("color: white; background-color: transparent; border: none;")
+            if hasattr(self, 'name_label'):
+                self.name_label.setStyleSheet("color: white; background-color: transparent; border: none; font-weight: bold;")
+            if hasattr(self, 'category_label'):
+                self.category_label.setStyleSheet("color: white; background-color: transparent; border: none;")
+                
         elif self.hover:
-            bg_color = CARD_HOVER
+            # Hover styling - clean with no individual element borders
+            self.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {colors['hover_bg']};
+                    border: 1px solid {colors['border']};
+                    border-radius: 6px;
+                }}
+                QLabel {{
+                    color: {colors['text']};
+                    background-color: transparent;
+                    border: none;
+                }}
+            """)
+            
+            # Reset label styles for hover state without borders
+            if hasattr(self, 'icon_label'):
+                self.icon_label.setStyleSheet("color: white; background-color: transparent; border: none;")
+            if hasattr(self, 'name_label'):
+                self.name_label.setStyleSheet("color: white; background-color: transparent; border: none;")
+            if hasattr(self, 'category_label'):
+                self.category_label.setStyleSheet("color: #AAAAAA; background-color: transparent; border: none;")
+                
         else:
-            bg_color = CARD_NORMAL
-
-        self.setStyleSheet(f"""
-            QFrame {{
-                background-color: {bg_color};
-                border-radius: 6px;
-            }}
-            QLabel {{
-                color: white;
-            }}
-        """)
+            # Default styling - clean with no borders on individual elements
+            self.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {colors['card_bg']};
+                    border: 1px solid {colors['card_bg']};
+                    border-radius: 6px;
+                }}
+                QLabel {{
+                    color: {colors['text']};
+                    background-color: transparent;
+                    border: none;
+                }}
+            """)
+            
+            # Reset label styles without borders
+            if hasattr(self, 'icon_label'):
+                self.icon_label.setStyleSheet("color: white; background-color: transparent; border: none;")
+            if hasattr(self, 'name_label'):
+                self.name_label.setStyleSheet("color: white; background-color: transparent; border: none;")
+            if hasattr(self, 'category_label'):
+                self.category_label.setStyleSheet("color: #AAAAAA; background-color: transparent; border: none;")
 
     def keyPressEvent(self, event):
         """Handle key press events for template operations"""
@@ -159,9 +271,8 @@ class TemplateCard(QFrame):
         super().keyPressEvent(event)
     
     def contextMenuEvent(self, event):
-        """Show context menu on right click"""
-        # Check if we have a valid app reference first
-        if not hasattr(self, 'app') or not self.app:
+        """Show context menu when right-clicked"""
+        if not self.app or not hasattr(self.app, 'template_manager'):
             return
             
         # Create context menu with styled appearance
@@ -172,10 +283,11 @@ class TemplateCard(QFrame):
                 color: #CCCCCC;
                 border: 1px solid #3C3C3C;
                 padding: 5px;
+                border-radius: 4px;
             }
             QMenu::item {
                 padding: 5px 20px 5px 20px;
-                border-radius: 2px;
+                border-radius: 3px;
             }
             QMenu::item:selected {
                 background-color: #2C4F76;
@@ -188,18 +300,105 @@ class TemplateCard(QFrame):
             }
         """)
         
-        # Add edit action
+        # Add "Edit" action
         edit_action = QAction("Edit", self)
         edit_action.triggered.connect(lambda: self.editRequested.emit(self.template_name()))
         context_menu.addAction(edit_action)
         
-        # Add delete action
+        # Add "Delete" action
         delete_action = QAction("Delete", self)
         delete_action.triggered.connect(lambda: self.deleteRequested.emit(self.template_name()))
         context_menu.addAction(delete_action)
         
+        # Add separator
+        context_menu.addSeparator()
+        
+        # Add move actions
+        move_to_menu = QMenu("Move to...", context_menu)
+        move_to_menu.setStyleSheet(context_menu.styleSheet())  # Apply same styling to submenu
+        
+        # Find current folder of this template
+        current_folder = None
+        template_manager = self.app.template_manager
+        if hasattr(template_manager, 'folders'):
+            for folder_name, templates in template_manager.folders.items():
+                if self.template_name() in templates:
+                    current_folder = folder_name
+                    break
+        
+        # Add "Move to Root" option if template is in a folder
+        if current_folder:
+            move_to_root_action = QAction("Root (No Folder)", self)
+            move_to_root_action.triggered.connect(lambda: self._move_template_out_of_folder(current_folder))
+            move_to_menu.addAction(move_to_root_action)
+            
+            move_to_menu.addSeparator()
+        
+        # Add all folders except current one
+        if hasattr(template_manager, 'folders'):
+            folders = sorted(list(template_manager.folders.keys()))
+            for folder_name in folders:
+                # Skip the current folder
+                if folder_name == current_folder:
+                    continue
+                    
+                folder_action = QAction(folder_name, self)
+                folder_action.triggered.connect(lambda checked=False, f=folder_name: 
+                                               self._move_to_folder_and_hide(f))
+                move_to_menu.addAction(folder_action)
+        
+        # Only add the Move To menu if it has items
+        if not move_to_menu.isEmpty():
+            context_menu.addMenu(move_to_menu)
+        
         # Show the menu
         context_menu.exec_(event.globalPos())
+    
+    def _move_template_out_of_folder(self, current_folder):
+        """Move template out of its current folder and hide it for immediate feedback"""
+        if not self.app or not hasattr(self.app, 'template_manager'):
+            return
+            
+        template_name = self.template_name()
+        template_manager = self.app.template_manager
+        
+        # Remove template from the current folder
+        if hasattr(template_manager, 'folders') and current_folder in template_manager.folders:
+            if template_name in template_manager.folders[current_folder]:
+                template_manager.folders[current_folder].remove(template_name)
+                
+                # Save folders
+                if hasattr(template_manager, 'save_folders'):
+                    template_manager.save_folders()
+                    
+                    # Hide this card immediately for visual feedback
+                    self.hide()
+                    
+                    # Refresh gallery if possible
+                    parent = self.parent()
+                    # List items may be in a different hierarchy
+                    if hasattr(parent, 'parent') and hasattr(parent.parent(), 'populate_gallery'):
+                        parent.parent().populate_gallery(force_refresh=True)
+                    elif hasattr(parent, 'populate_gallery'):
+                        parent.populate_gallery(force_refresh=True)
+                    
+                    # Show status message
+                    if hasattr(self.app, 'show_status_message'):
+                        self.app.show_status_message(f"Template '{template_name}' moved to root", "info")
+
+    def _move_to_folder_and_hide(self, folder_name):
+        """Move template to folder and hide it immediately for better visual feedback"""
+        template_name = self.template_name()
+        
+        # Emit the signal to actually move the template
+        self.moveToFolderRequested.emit(template_name, folder_name)
+        
+        # Hide this card immediately for visual feedback
+        self.hide()
+        
+        # Show status message if possible
+        if hasattr(self.app, 'show_status_message'):
+            self.app.show_status_message(f"Template '{template_name}' moved to folder '{folder_name}'", "info")
 
 class TemplateListItem(QFrame):
     """Template list item widget for displaying a template in list view"""
@@ -209,6 +408,7 @@ class TemplateListItem(QFrame):
     dragStarted = pyqtSignal(str)
     editRequested = pyqtSignal(str)  # New signal for edit action
     deleteRequested = pyqtSignal(str)  # New signal for delete action
+    moveToFolderRequested = pyqtSignal(str, str)  # template_name, folder_name
 
     def __init__(self, parent=None, template=None, app=None):
         super().__init__(parent)
@@ -232,16 +432,45 @@ class TemplateListItem(QFrame):
         self.icon_label = QLabel()
         try:
             icon_path = template_icon_path(template_name=self.template_name())
-            pixmap = QPixmap(icon_path)
-            if not pixmap.isNull():
-                pixmap = pixmap.scaled(24, 24, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                self.icon_label.setPixmap(pixmap)
+            if icon_path.endswith('.svg'):
+                # Handle SVG files using QPixmap and QSvgRenderer
+                from PyQt5.QtSvg import QSvgRenderer
+                from PyQt5.QtCore import QByteArray, QSize
+                
+                # Create a renderer for the SVG
+                with open(icon_path, 'r') as f:
+                    svg_content = f.read()
+                
+                renderer = QSvgRenderer(QByteArray(svg_content.encode()))
+                if renderer.isValid():
+                    # Create a pixmap to render to
+                    pixmap = QPixmap(24, 24)
+                    pixmap.fill(Qt.transparent)  # Make the background transparent
+                    
+                    # Paint the SVG on the pixmap
+                    painter = QPainter(pixmap)
+                    renderer.render(painter)
+                    painter.end()
+                    
+                    self.icon_label.setPixmap(pixmap)
+                else:
+                    # Fallback to text
+                    self.icon_label.setText("📄")
+                    font = QFont(SYSTEM_FONT)
+                    font.setPointSize(14)
+                    self.icon_label.setFont(font)
             else:
-                # If pixmap is null, use text as a fallback
-                self.icon_label.setText("📄")
-                font = QFont(SYSTEM_FONT)
-                font.setPointSize(14)
-                self.icon_label.setFont(font)
+                # Handle PNG or fallback
+                pixmap = QPixmap(icon_path)
+                if not pixmap.isNull():
+                    pixmap = pixmap.scaled(24, 24, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    self.icon_label.setPixmap(pixmap)
+                else:
+                    # If pixmap is null, use text as a fallback
+                    self.icon_label.setText("📄")
+                    font = QFont(SYSTEM_FONT)
+                    font.setPointSize(14)
+                    self.icon_label.setFont(font)
         except Exception as e:
             print(f"ERROR: Failed to load template icon: {e}")
             # Use text as a fallback
@@ -368,9 +597,8 @@ class TemplateListItem(QFrame):
         super().keyPressEvent(event)
     
     def contextMenuEvent(self, event):
-        """Show context menu on right click"""
-        # Check if we have a valid app reference first
-        if not hasattr(self, 'app') or not self.app:
+        """Show context menu when right-clicked"""
+        if not self.app or not hasattr(self.app, 'template_manager'):
             return
             
         # Create context menu with styled appearance
@@ -381,10 +609,11 @@ class TemplateListItem(QFrame):
                 color: #CCCCCC;
                 border: 1px solid #3C3C3C;
                 padding: 5px;
+                border-radius: 4px;
             }
             QMenu::item {
                 padding: 5px 20px 5px 20px;
-                border-radius: 2px;
+                border-radius: 3px;
             }
             QMenu::item:selected {
                 background-color: #2C4F76;
@@ -397,15 +626,102 @@ class TemplateListItem(QFrame):
             }
         """)
         
-        # Add edit action
+        # Add "Edit" action
         edit_action = QAction("Edit", self)
         edit_action.triggered.connect(lambda: self.editRequested.emit(self.template_name()))
         context_menu.addAction(edit_action)
         
-        # Add delete action
+        # Add "Delete" action
         delete_action = QAction("Delete", self)
         delete_action.triggered.connect(lambda: self.deleteRequested.emit(self.template_name()))
         context_menu.addAction(delete_action)
         
+        # Add separator
+        context_menu.addSeparator()
+        
+        # Add move actions
+        move_to_menu = QMenu("Move to...", context_menu)
+        move_to_menu.setStyleSheet(context_menu.styleSheet())  # Apply same styling to submenu
+        
+        # Find current folder of this template
+        current_folder = None
+        template_manager = self.app.template_manager
+        if hasattr(template_manager, 'folders'):
+            for folder_name, templates in template_manager.folders.items():
+                if self.template_name() in templates:
+                    current_folder = folder_name
+                    break
+        
+        # Add "Move to Root" option if template is in a folder
+        if current_folder:
+            move_to_root_action = QAction("Root (No Folder)", self)
+            move_to_root_action.triggered.connect(lambda: self._move_template_out_of_folder(current_folder))
+            move_to_menu.addAction(move_to_root_action)
+            
+            move_to_menu.addSeparator()
+        
+        # Add all folders except current one
+        if hasattr(template_manager, 'folders'):
+            folders = sorted(list(template_manager.folders.keys()))
+            for folder_name in folders:
+                # Skip the current folder
+                if folder_name == current_folder:
+                    continue
+                    
+                folder_action = QAction(folder_name, self)
+                folder_action.triggered.connect(lambda checked=False, f=folder_name: 
+                                               self._move_to_folder_and_hide(f))
+                move_to_menu.addAction(folder_action)
+        
+        # Only add the Move To menu if it has items
+        if not move_to_menu.isEmpty():
+            context_menu.addMenu(move_to_menu)
+        
         # Show the menu
         context_menu.exec_(event.globalPos())
+    
+    def _move_template_out_of_folder(self, current_folder):
+        """Move template out of its current folder and hide it for immediate feedback"""
+        if not self.app or not hasattr(self.app, 'template_manager'):
+            return
+            
+        template_name = self.template_name()
+        template_manager = self.app.template_manager
+        
+        # Remove template from the current folder
+        if hasattr(template_manager, 'folders') and current_folder in template_manager.folders:
+            if template_name in template_manager.folders[current_folder]:
+                template_manager.folders[current_folder].remove(template_name)
+                
+                # Save folders
+                if hasattr(template_manager, 'save_folders'):
+                    template_manager.save_folders()
+                    
+                    # Hide this card immediately for visual feedback
+                    self.hide()
+                    
+                    # Refresh gallery if possible
+                    parent = self.parent()
+                    # List items may be in a different hierarchy
+                    if hasattr(parent, 'parent') and hasattr(parent.parent(), 'populate_gallery'):
+                        parent.parent().populate_gallery(force_refresh=True)
+                    elif hasattr(parent, 'populate_gallery'):
+                        parent.populate_gallery(force_refresh=True)
+                    
+                    # Show status message
+                    if hasattr(self.app, 'show_status_message'):
+                        self.app.show_status_message(f"Template '{template_name}' moved to root", "info")
+
+    def _move_to_folder_and_hide(self, folder_name):
+        """Move template to folder and hide it immediately for better visual feedback"""
+        template_name = self.template_name()
+        
+        # Emit the signal to actually move the template
+        self.moveToFolderRequested.emit(template_name, folder_name)
+        
+        # Hide this card immediately for visual feedback
+        self.hide()
+        
+        # Show status message if possible
+        if hasattr(self.app, 'show_status_message'):
+            self.app.show_status_message(f"Template '{template_name}' moved to folder '{folder_name}'", "info")

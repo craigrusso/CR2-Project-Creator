@@ -1432,8 +1432,26 @@ class ProjectNameInput(QDialog):
         parent = self.parent()
         missing_requirements = []
         
-        if not hasattr(parent, 'template_file_path') or not parent.template_file_path:
-            missing_requirements.append("No template file selected")
+        # Check for a template - either from template_file_path or selected_template
+        has_template = False
+        
+        # Check for selected template from gallery first
+        if hasattr(parent, 'selected_template') and parent.selected_template:
+            has_template = True
+        # Then check for template file path as fallback
+        elif hasattr(parent, 'template_file_path') and parent.template_file_path:
+            has_template = True
+        # Finally check if there's a template gallery with selected template
+        elif hasattr(parent, 'template_gallery') and hasattr(parent.template_gallery, 'get_selected_template'):
+            try:
+                selected_template = parent.template_gallery.get_selected_template()
+                if selected_template:
+                    has_template = True
+            except Exception as e:
+                print(f"Error checking gallery template: {e}")
+        
+        if not has_template:
+            missing_requirements.append("No template selected")
         
         output_dir = parent.get_current_output_dir() if hasattr(parent, 'get_current_output_dir') else None
         if not output_dir:

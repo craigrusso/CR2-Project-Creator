@@ -53,6 +53,29 @@ class StructureOperations:
             print(f"Error deleting structure {name}: {e}")
             return False
     
+    def get_structures(self):
+        """Get a list of all available folder structures"""
+        # Return the names of all custom structures
+        custom_structures = list(self.custom_structures.keys())
+        
+        # Add built-in structures from constants
+        from app.constants import DEFAULT_STRUCTURES
+        all_structures = list(DEFAULT_STRUCTURES.keys()) + custom_structures
+        
+        # Filter out duplicates and sort
+        return sorted(list(set(all_structures)))
+    
+    def delete_structure(self, structure_name):
+        """Delete a folder structure by name"""
+        # Check if it's a built-in structure (which can't be deleted)
+        from app.constants import DEFAULT_STRUCTURES
+        if structure_name.lower() in DEFAULT_STRUCTURES:
+            print(f"Cannot delete built-in structure: {structure_name}")
+            return False
+        
+        # Try to delete as a custom structure
+        return self.delete_custom_structure(structure_name)
+    
     def rename_custom_structure(self, old_name, new_name):
         """Rename a custom structure"""
         if old_name == new_name:
@@ -107,4 +130,93 @@ class StructureOperations:
         }
         
         # Save to file
-        return self.save_custom_structure(structure["name"], unique_folders) 
+        return self.save_custom_structure(structure["name"], unique_folders)
+    
+    def get_structure(self, structure_name):
+        """Get a folder structure by name"""
+        structure = []
+        
+        # Check if it's a built-in structure
+        from app.constants import DEFAULT_STRUCTURES
+        if structure_name in DEFAULT_STRUCTURES:
+            structure = DEFAULT_STRUCTURES[structure_name]
+        
+        # Check if it's a custom structure
+        elif structure_name in self.custom_structures:
+            structure = self.custom_structures[structure_name].get("directories", [])
+        
+        # For compatbility with older format, ensure empty folders are dictionaries with empty lists
+        if structure:
+            structure = self._normalize_structure_format(structure)
+        
+        return structure
+    
+    def _normalize_structure_format(self, structure):
+        """Convert any string folder names to dictionary format with empty lists"""
+        result = []
+        
+        if isinstance(structure, list):
+            for item in structure:
+                if isinstance(item, str):
+                    # Convert string to dict with empty list
+                    if item.endswith('/'): 
+                        # Old format with trailing slash
+                        folder_name = item[:-1]  # Remove trailing slash
+                        result.append({folder_name: []})
+                    else:
+                        # Assume it's a folder if it doesn't contain a period (simple heuristic)
+                        if '.' not in item:
+                            result.append({item: []})
+                        else:
+                            # Keep files as strings
+                            result.append(item)
+                elif isinstance(item, dict):
+                    # Process nested dictionaries recursively
+                    processed_dict = {}
+                    for key, value in item.items():
+                        if isinstance(value, list) or isinstance(value, dict):
+                            processed_dict[key] = self._normalize_structure_format(value)
+                        else:
+                            processed_dict[key] = []
+                    result.append(processed_dict)
+                else:
+                    # Pass through other types
+                    result.append(item)
+        elif isinstance(structure, dict):
+            # Convert dict to list of dicts (for compatibility with various formats)
+            for key, value in structure.items():
+                if isinstance(value, dict) or isinstance(value, list):
+                    result.append({key: self._normalize_structure_format(value)})
+                else:
+                    result.append({key: []})
+        
+        return result
+    
+    def get_structure_for_project_type(self, project_type):
+        """Get the appropriate structure for a given project type"""
+        from app.constants import PROJECT_TYPE_TO_STRUCTURE
+        
+        # Get the structure name for this project type
+        structure_name = PROJECT_TYPE_TO_STRUCTURE.get(project_type)
+        
+        if structure_name:
+            # Get the structure
+            return self.get_structure(structure_name)
+        
+        # Fallback to a default structure
+        return self.get_structure("Video Editing - Standard")
+    
+    def get_default_structure(self, structure_type="standard"):
+        """Get a default structure by type"""
+        from app.constants import DEFAULT_STRUCTURES
+        
+        # Map the structure type to a default structure
+        if structure_type == "video":
+            return DEFAULT_STRUCTURES.get("Video Editing - Standard", [])
+        elif structure_type == "motion":
+            return DEFAULT_STRUCTURES.get("Motion Graphics - Standard", [])
+        elif structure_type == "vfx":
+            return DEFAULT_STRUCTURES.get("VFX - Standard", [])
+        else:
+            # Default to basic structure
+            return DEFAULT_STRUCTURES.get("Video Editing - Basic", []) 

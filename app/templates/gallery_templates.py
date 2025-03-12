@@ -3,13 +3,39 @@
 
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                             QFrame, QScrollArea, QGridLayout, QButtonGroup, 
-                            QToolButton, QSizePolicy)
+                            QToolButton, QSizePolicy, QPushButton)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
+import os
 from app.ui.color_scheme_pyqt import colors
+from app.ui.app_theme_pyqt import ACCENT_BUTTON_STYLE
 from .components.utils import SYSTEM_FONT
 from .components.template_card import TemplateCard, TemplateListItem
+from .gallery_events import GalleryEvents
+
+def handle_template_edit(gallery, template_name):
+    """Handle template editing bypassing gallery._on_edit_template to avoid None issues"""
+    try:
+        print(f"Direct edit of template: {template_name}")
+        # Import the dialog directly
+        from app.dialogs.dialog_windows_pyqt import show_edit_template
+        
+        # Get the template directly from the app's template manager
+        if hasattr(gallery, 'app') and hasattr(gallery.app, 'template_manager'):
+            template_manager = gallery.app.template_manager
+            template = template_manager.get_template_by_name(template_name)
+            if template:
+                # Open the template editor directly
+                show_edit_template(gallery, template, lambda t: template_manager.update_template(t))
+                gallery.populate_gallery()
+                return
+        
+        print(f"Could not edit template {template_name}: app or template_manager not available")
+    except Exception as e:
+        import traceback
+        print(f"Error in direct template edit: {e}")
+        print(traceback.format_exc())
 
 class GalleryTemplatesSetup:
     """Template-related functionality for the Template Gallery"""
@@ -86,6 +112,15 @@ class GalleryTemplatesSetup:
         
         # Add spacer to push buttons to the right
         gallery.templates_header_layout.addStretch(1)
+        
+        # Add template button to the left of view controls for consistency with folder section
+        gallery.add_button = QPushButton("Add Template")
+        # Use accent style to make it stand out
+        gallery.add_button.setStyleSheet(ACCENT_BUTTON_STYLE)
+        gallery.add_button.clicked.connect(gallery._on_add_template)
+        gallery.add_button.setFixedHeight(30)
+        gallery.add_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        gallery.templates_header_layout.addWidget(gallery.add_button)
         
         # Template view controls - similar layout to folder view controls
         gallery.template_view_controls = QWidget()
@@ -208,26 +243,51 @@ class GalleryTemplatesSetup:
             calculated_cols = max(min_cols, container_width // template_width)
             max_cols = min(8, calculated_cols)  # Limit max columns to 8
         
+        # Debug output to help diagnose issues
+        print(f"[DEBUG] Gallery: Populating templates grid with {len(templates_to_show)} templates")
+        print(f"[DEBUG] Gallery: Template keys: {list(templates_to_show.keys())}")
+        
+        # Sort templates by name for consistent display
+        sorted_templates = []
         for name, data in templates_to_show.items():
-            # Make sure we're passing the template data dictionary, not just the name
+            sorted_templates.append((name, data))
+        sorted_templates.sort(key=lambda x: x[0].lower())  # Sort by name case-insensitive
+        
+        for name, data in sorted_templates:
+            # Make sure we're passing the template data dictionary with the correct name
             if isinstance(data, dict):
-                template_data = data
+                # Ensure the template data has the correct name
+                template_data = dict(data)  # Create a copy to avoid modifying the original
+                template_data['name'] = name  # Ensure name is set correctly
+                # Also verify we're not using Template-# as the name
+                if name.startswith("Template-") and 'name' in data and not data['name'].startswith("Template-"):
+                    template_data['name'] = data['name']  # Use the real name from the data
+                
+                print(f"[DEBUG] Gallery: Creating template card for '{template_data['name']}'")
             else:
                 # If data is not a dictionary, create one with the name
                 template_data = {"name": name, "category": "Custom", "description": ""}
-                
+                print(f"[DEBUG] Gallery: Creating template card from name only '{name}'")
+            
             template_card = TemplateCard(gallery, template=template_data, app=gallery.app)
             
             # Connect the click handler with the template data
             template_card.clicked.connect(lambda checked=False, t=template_data: gallery._on_template_select(t))
             
-            # Connect context menu actions
-            template_card.editRequested.connect(lambda t_name: 
-                gallery._on_edit_template(t_name) if hasattr(gallery, 'app') 
-                and hasattr(gallery.app, 'template_manager') else None)
-            template_card.deleteRequested.connect(lambda t_name: 
-                gallery._on_delete_template(t_name) if hasattr(gallery, 'app') 
-                and hasattr(gallery.app, 'template_manager') else None)
+            # Connect double-click handler to edit template
+            template_card.doubleClicked.connect(lambda t_name=template_data.get('name', ''): 
+                handle_template_edit(gallery, t_name))
+            
+            # Connect context menu actions 
+            template_card.editRequested.connect(lambda t_name=template_data.get('name', ''): 
+                handle_template_edit(gallery, t_name))
+            template_card.deleteRequested.connect(lambda t_name=template_data.get('name', ''): 
+                GalleryEvents.on_delete_template(gallery, t_name))
+            
+            # Connect move to folder signal
+            template_card.moveToFolderRequested.connect(lambda t_name, folder_name, 
+                template_name=template_data.get('name', ''): 
+                GalleryEvents.on_move_template_to_folder(gallery, template_name, folder_name))
             
             gallery.templates_grid.addWidget(template_card, row, col)
             gallery.template_cards.append(template_card)
@@ -253,6 +313,10 @@ class GalleryTemplatesSetup:
             except Exception as e:
                 print(f"Error clearing grid: {e}")
         
+        # Debug output to help diagnose issues
+        print(f"[DEBUG] Gallery: Populating templates list with {len(templates_to_show)} templates")
+        print(f"[DEBUG] Gallery: Template keys: {list(templates_to_show.keys())}")
+        
         # Sort templates for consistent display
         sorted_templates = []
         for name, data in templates_to_show.items():
@@ -262,12 +326,20 @@ class GalleryTemplatesSetup:
         # Add each template to the grid in list mode (single column)
         row = 0
         for i, (name, data) in enumerate(sorted_templates):
-            # Make sure we're passing the template data dictionary, not just the name
+            # Make sure we're passing the template data dictionary with the correct name
             if isinstance(data, dict):
-                template_data = data
+                # Ensure the template data has the correct name
+                template_data = dict(data)  # Create a copy to avoid modifying the original
+                template_data['name'] = name  # Ensure name is set correctly
+                # Also verify we're not using Template-# as the name
+                if name.startswith("Template-") and 'name' in data and not data['name'].startswith("Template-"):
+                    template_data['name'] = data['name']  # Use the real name from the data
+                
+                print(f"[DEBUG] Gallery: Creating template list item for '{template_data['name']}'")
             else:
                 # If data is not a dictionary, create one with the name
                 template_data = {"name": name, "category": "Custom", "description": ""}
+                print(f"[DEBUG] Gallery: Creating template list item from name only '{name}'")
             
             # Create a list item (horizontal layout template item)
             template_item = TemplateListItem(gallery.templates_container, template=template_data, app=gallery.app)
@@ -286,21 +358,24 @@ class GalleryTemplatesSetup:
             # Connect click handlers
             template_item.clicked.connect(lambda checked=False, t=template_data: gallery._on_template_select(t))
             
-            # Connect double-click handler
-            if hasattr(gallery, '_on_template_double_click'):
-                template_item.doubleClicked.connect(lambda checked=False, t=template_data: gallery._on_template_double_click(t))
+            # Connect double-click handler to edit template
+            template_item.doubleClicked.connect(lambda t=template_data: 
+                handle_template_edit(gallery, t.get('name', '')))
             
             # Connect context menu actions
-            template_item.editRequested.connect(lambda t_name: 
-                gallery._on_edit_template(t_name) if hasattr(gallery, 'app') 
-                and hasattr(gallery.app, 'template_manager') else None)
-            template_item.deleteRequested.connect(lambda t_name: 
-                gallery._on_delete_template(t_name) if hasattr(gallery, 'app') 
-                and hasattr(gallery.app, 'template_manager') else None)
+            template_item.editRequested.connect(lambda t_name=template_data.get('name', ''): 
+                handle_template_edit(gallery, t_name))
+            template_item.deleteRequested.connect(lambda t_name=template_data.get('name', ''): 
+                GalleryEvents.on_delete_template(gallery, t_name))
+            
+            # Connect move to folder signal
+            template_item.moveToFolderRequested.connect(lambda t_name, folder_name, 
+                template_name=template_data.get('name', ''): 
+                GalleryEvents.on_move_template_to_folder(gallery, template_name, folder_name))
             
             # Add to grid layout as a single column
             try:
-                gallery.templates_grid.addWidget(template_item, row, 0)
+                gallery.templates_grid.addWidget(template_item, row, 0, 1, 2)
                 gallery.template_cards.append(template_item)
                 row += 1
             except Exception as e:
@@ -324,62 +399,67 @@ class GalleryTemplatesSetup:
     @staticmethod
     def get_templates_in_folder(gallery, folder_name):
         """Get templates in a specific folder"""
-        if hasattr(gallery.app, 'template_manager'):
-            # First, check if the template manager has a method for this
-            if hasattr(gallery.app.template_manager, 'get_templates_in_folder'):
-                # Use the template manager's method to get templates in the folder
-                templates_list = gallery.app.template_manager.get_templates_in_folder(folder_name)
-                
-                # Convert list to dict for consistency with the rest of the gallery code
-                templates_dict = {}
-                for template in templates_list:
-                    if isinstance(template, dict) and 'name' in template:
-                        templates_dict[template['name']] = template
-                    else:
-                        # Generate a unique key for templates without names
-                        templates_dict[f"Template-{len(templates_dict)}"] = template
-                
-                return templates_dict
-            
-            # Fallback: Try checking the folders dictionary directly
-            if hasattr(gallery.app.template_manager, 'folders') and folder_name in gallery.app.template_manager.folders:
-                # Get template names in the folder
-                template_names = gallery.app.template_manager.folders[folder_name]
-                templates = gallery.app.template_manager.templates
-                
-                # Convert to dictionary format
-                templates_dict = {}
-                
-                # Handle templates as dict or list
-                if isinstance(templates, dict):
-                    for name in template_names:
-                        if name in templates:
-                            templates_dict[name] = templates[name]
-                elif isinstance(templates, list):
-                    for name in template_names:
-                        for template in templates:
-                            if template.get('name') == name:
-                                templates_dict[name] = template
-                                break
-                
-                return templates_dict
-                
-            # Original method as fallback
-            templates = gallery.app.template_manager.templates
-            folder_templates = {}
-            
-            # Handle templates as dict or list
-            if isinstance(templates, dict):
-                for name, data in templates.items():
-                    if isinstance(data, dict) and 'folder' in data and data['folder'] == folder_name:
-                        folder_templates[name] = data
-            elif isinstance(templates, list):
-                for template in templates:
-                    if isinstance(template, dict) and 'folder' in template and template['folder'] == folder_name:
-                        # Use the name as the key if available, otherwise generate a unique key
-                        name = template.get('name', f"Template-{len(folder_templates)}")
-                        folder_templates[name] = template
-                
-            return folder_templates
+        print(f"[DEBUG] Gallery: Getting templates in folder '{folder_name}'")
         
-        return {} 
+        # Initialize an empty templates dictionary
+        templates_dict = {}
+        
+        if hasattr(gallery.app, 'template_manager'):
+            # Get templates directly from the template manager
+            template_manager = gallery.app.template_manager
+            
+            # Get all template objects first
+            all_templates = []
+            if hasattr(template_manager, 'templates'):
+                all_templates.extend(template_manager.templates)
+            if hasattr(template_manager, 'template_directories'):
+                all_templates.extend(template_manager.template_directories)
+            
+            # Get the list of template names in this folder
+            template_names_in_folder = []
+            if hasattr(template_manager, 'get_templates_in_folder'):
+                # Use the manager's method to get template names
+                template_names_in_folder = template_manager.get_templates_in_folder(folder_name)
+                print(f"[DEBUG] Gallery: Template names in folder from manager: {template_names_in_folder}")
+            elif hasattr(template_manager, 'folders') and folder_name in template_manager.folders:
+                # Direct access to folders dictionary
+                template_names_in_folder = template_manager.folders[folder_name]
+                print(f"[DEBUG] Gallery: Template names in folder from folders dict: {template_names_in_folder}")
+            
+            # Process each template name and find the actual template objects
+            if template_names_in_folder:
+                for template_name in template_names_in_folder:
+                    # Find the actual template object by name
+                    matching_template = None
+                    for template in all_templates:
+                        if template.get('name') == template_name:
+                            matching_template = template
+                            break
+                    
+                    if matching_template:
+                        # Use the real template name as the key, never generate random keys
+                        real_name = matching_template.get('name')
+                        print(f"[DEBUG] Gallery: Found template '{real_name}' in folder")
+                        templates_dict[real_name] = matching_template
+                    else:
+                        print(f"[DEBUG] Gallery: Could not find template '{template_name}' in the templates list")
+            else:
+                print(f"[DEBUG] Gallery: No templates found in folder '{folder_name}'")
+            
+            # If we found no templates, try legacy fallback methods
+            if not templates_dict:
+                print(f"[DEBUG] Gallery: Using fallback methods to find templates in folder")
+                # Original method as fallback - check if templates have a 'folder' attribute
+                for template in all_templates:
+                    if isinstance(template, dict) and 'folder' in template and template['folder'] == folder_name:
+                        name = template.get('name')
+                        if name:
+                            print(f"[DEBUG] Gallery: Found template '{name}' with folder attribute")
+                            templates_dict[name] = template
+            
+            # Final debug output
+            print(f"[DEBUG] Gallery: Returning {len(templates_dict)} templates for folder '{folder_name}'")
+            template_names = list(templates_dict.keys())
+            print(f"[DEBUG] Gallery: Template names: {template_names}")
+        
+        return templates_dict 
