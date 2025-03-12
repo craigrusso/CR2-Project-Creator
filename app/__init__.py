@@ -7,3 +7,6 @@ Project Creator Tool - Main Application Package (PyQt version)
 # Import core modules for easy access
 from app.core.app_module_pyqt import ProjectCreatorApp
 from app.core.app_config import APP_NAME, APP_VERSION
+
+# app package
+# This file ensures that py2app correctly identifies 'app' as a Python package

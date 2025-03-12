@@ -183,44 +183,30 @@ class EnhancedStructureEditor(QDialog):
         # Add built-in structures section
         self.structure_combo.addItem("=== Built-in Structures ===", None)
         
-        # If project_type is provided, filter structures related to that project type
-        if self.project_type:
-            # Get the related structure for this project type
-            related_structure = PROJECT_TYPE_TO_STRUCTURE.get(self.project_type)
-            
-            # Filter built-in structures that contain the project type in their name
-            filtered_structures = []
-            for name in sorted(DEFAULT_STRUCTURES.keys()):
-                if self.project_type.lower() in name.lower() or (related_structure and related_structure.lower() == name.lower()):
-                    filtered_structures.append(name)
-                    
-            # Add the filtered structures to the dropdown
-            for name in filtered_structures:
-                self.structure_combo.addItem(name, name)
-        else:
-            # No project type filter, add all built-in structures
-            for name in sorted(DEFAULT_STRUCTURES.keys()):
-                self.structure_combo.addItem(name, name)
+        # Always show all built-in structures, regardless of project type
+        for name in sorted(DEFAULT_STRUCTURES.keys()):
+            self.structure_combo.addItem(name, name)
         
         # Add custom structures section if template manager is available
         if self.template_manager and hasattr(self.template_manager, 'custom_structures'):
             self.structure_combo.addItem("=== Custom Structures ===", None)
             
-            # If project_type is provided, filter custom structures as well
-            if self.project_type:
-                for name in sorted(self.template_manager.custom_structures.keys()):
-                    if self.project_type.lower() in name.lower():
-                        self.structure_combo.addItem(name, name)
-            else:
-                # No project type filter, add all custom structures
-                for name in sorted(self.template_manager.custom_structures.keys()):
-                    self.structure_combo.addItem(name, name)
+            # Always show all custom structures
+            for name in sorted(self.template_manager.custom_structures.keys()):
+                self.structure_combo.addItem(name, name)
         
-        # Set current structure if specified
+        # If a structure_name was provided, try to select it
         if self.structure_name:
             index = self.structure_combo.findText(self.structure_name)
             if index >= 0:
                 self.structure_combo.setCurrentIndex(index)
+        # Otherwise if project_type is provided, find and select the default structure for that type
+        elif self.project_type:
+            default_structure = PROJECT_TYPE_TO_STRUCTURE.get(self.project_type)
+            if default_structure:
+                index = self.structure_combo.findText(default_structure)
+                if index >= 0:
+                    self.structure_combo.setCurrentIndex(index)
         
         # Connect signal for dropdown changes
         self.structure_combo.currentIndexChanged.connect(self.on_structure_selected)

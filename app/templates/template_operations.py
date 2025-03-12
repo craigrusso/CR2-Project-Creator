@@ -17,13 +17,21 @@ class TemplateOperations:
     def get_default_structure(self, project_type):
         """Get the default directory structure for a project type"""
         from app.constants import DEFAULT_STRUCTURES
-        structure_key = PROJECT_TYPE_TO_STRUCTURE.get(project_type, "Basic")
+        structure_key = PROJECT_TYPE_TO_STRUCTURE.get(project_type, "Video Editing - Basic")
         
-        # If structure_key is not in DEFAULT_STRUCTURES, use "Basic" as fallback
+        # If structure_key is not in DEFAULT_STRUCTURES, use a fallback
         if structure_key not in DEFAULT_STRUCTURES:
-            structure_key = "Basic"
+            # Try different fallback keys based on common values
+            if structure_key == "Basic":
+                structure_key = "Video Editing - Basic"
+            elif structure_key == "Standard":
+                structure_key = "Video Editing - Standard"
+            else:
+                # Default fallback to a structure that definitely exists
+                structure_key = "Video Editing - Basic"
         
-        return DEFAULT_STRUCTURES[structure_key]
+        # Return the structure or an empty list as last resort
+        return DEFAULT_STRUCTURES.get(structure_key, [])
     
     def get_structure(self, structure_name):
         """Get the folder structure for a template."""

@@ -579,7 +579,19 @@ def show_edit_template(parent, template, callback=None):
         # Get template name
         template_name = name_input.toPlainText().strip()
         
-        # Get structure name
+        # Get structure tab to access the current structure information
+        structure_tab = tabs.widget(1)
+        
+        # Find structure_name from the template's structure_type or get it from project_type
+        structure_type = template.get('structure_type')
+        
+        # If no structure_type specified, try to derive from category/project_type
+        if not structure_type:
+            project_type = template.get('category', 'Video Editing')
+            from app.constants import PROJECT_TYPE_TO_STRUCTURE
+            structure_type = PROJECT_TYPE_TO_STRUCTURE.get(project_type)
+        
+        # Use template name as fallback for structure name
         structure_name = f"Template_{template_name}"
         
         # Get structure from tree
@@ -592,6 +604,9 @@ def show_edit_template(parent, template, callback=None):
         # Keep the existing category if it exists, otherwise use 'General'
         if 'category' not in updated_template:
             updated_template['category'] = 'General'
+        
+        # Update structure information
+        updated_template['structure_type'] = structure_type
         updated_template['structure_name'] = structure_name
         updated_template['structure'] = structure  # Add the structure to the template
         
@@ -679,11 +694,13 @@ def create_structure_tab(tabs, template, parent):
     project_type = template.get('category', 'Video Editing')
     
     def open_structure_editor():
-        # Get current structure from tree
-        from app.constants import PROJECT_TYPE_TO_STRUCTURE
+        # Get the structure information from the template
+        structure_name = template.get('structure_type')
         
-        # Get the associated structure for this project type
-        structure_name = PROJECT_TYPE_TO_STRUCTURE.get(project_type)
+        # If no structure_type is specified, try to determine from project_type
+        if not structure_name:
+            from app.constants import PROJECT_TYPE_TO_STRUCTURE
+            structure_name = PROJECT_TYPE_TO_STRUCTURE.get(project_type)
         
         # Show the structure editor with the appropriate structure for the project type
         result = show_structure_editor(parent, structure_name, None, is_new=False, project_type=project_type)
@@ -696,8 +713,12 @@ def create_structure_tab(tabs, template, parent):
             root_item.setText(0, "Project Root")
             root_item.setExpanded(True)
             
-            # Get the updated structure based on project type
-            updated_structure = parent.template_manager.get_structure_for_project_type(project_type)
+            # Get the updated structure based on structure name or project type
+            if structure_name:
+                updated_structure = parent.template_manager.get_structure(structure_name)
+            else:
+                updated_structure = parent.template_manager.get_structure_for_project_type(project_type)
+                
             add_structure_items(root_item, updated_structure)
     
     structure_editor_btn.clicked.connect(open_structure_editor)
@@ -1324,16 +1345,43 @@ def delete_folder(parent, template_manager, folder_list, dialog):
         else:
             QMessageBox.warning(parent, "Error", f"Failed to delete folder '{folder_name}'.")
 
-def show_structure_editor(parent, structure_type=None, callback=None, is_new=False, project_type=None):
+def show_structure_editor(parent, structure_type=None, callback=None, is_new=False, project_type=None, suggested_name=None):
     """Show structure editor dialog"""
     # Use the enhanced structure editor instead
-    result = show_enhanced_structure_editor(parent, structure_name=structure_type, is_new=is_new, project_type=project_type)
+    from app.ui.structure_editor_enhanced import EnhancedStructureEditor
     
-    # Call the callback if provided and the dialog was accepted
-    if result and callback:
-        callback()
+    # Prepare the structure editor with the right parameters
+    structure_editor = EnhancedStructureEditor(
+        parent, 
+        structure_name=structure_type if not suggested_name else suggested_name, 
+        structure=None, 
+        project_type=project_type,
+        is_new=is_new
+    )
     
-    return result
+    # Explicitly populate the structure dropdown
+    structure_editor.populate_structure_dropdown()
+    
+    # If we have a suggested name and it's a new structure, set it in the UI
+    if is_new and suggested_name:
+        structure_editor.name_input.setText(suggested_name)
+        structure_editor.name_input.selectAll()
+        structure_editor.name_input.setFocus()
+    
+    # Create a callback wrapper to capture structure name and content
+    if callback:
+        original_callback = callback
+        
+        def save_callback(name, structure):
+            # Call the original callback with name and structure
+            return original_callback(name, structure)
+            
+        structure_editor.save_callback = save_callback
+    
+    # Show the dialog modally
+    if structure_editor.exec_():
+        return True
+    return False
 
 def show_enhanced_structure_editor(parent, structure_name=None, structure=None, is_new=False, project_type=None):
     """Show the enhanced structure editor dialog"""

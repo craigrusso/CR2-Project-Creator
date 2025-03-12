@@ -161,6 +161,9 @@ class TemplateCreationForm(QDialog):
         """Update the structure dropdown based on the selected project type"""
         self.structure_combo.clear()
         
+        # Add "Create a new structure" option at the top
+        self.structure_combo.addItem("Create a new structure")
+        
         # Get selected project type
         project_type = self.type_combo.currentText()
         
@@ -304,6 +307,30 @@ class TemplateCreationForm(QDialog):
             QMessageBox.warning(self, "Error", "Project type is required")
             return
             
+        # Handle "Create a new structure" selection
+        if structure_name == "Create a new structure":
+            # Ask user to create a structure first
+            from app.dialogs.dialog_windows_pyqt import show_structure_editor
+            
+            # Using suggested name based on template name
+            suggested_structure_name = f"Template_{name}"
+            
+            # Open structure editor dialog
+            result = show_structure_editor(
+                self.parent, 
+                None,  # No existing structure
+                callback=self._update_structure_and_continue,
+                is_new=True,
+                suggested_name=suggested_structure_name
+            )
+            
+            if not result:
+                # User cancelled structure creation
+                return
+                
+            # The callback will handle the rest of the template creation
+            return
+            
         # Create template
         success = False
         
@@ -325,6 +352,34 @@ class TemplateCreationForm(QDialog):
             
         if success:
             QMessageBox.information(self, "Success", f"Template '{name}' created successfully")
+            self.accept()
+        else:
+            QMessageBox.warning(self, "Error", f"Failed to create template '{name}'")
+    
+    def _update_structure_and_continue(self, structure_name, structure):
+        """Callback for structure editor - continue with template creation"""
+        # Get form values
+        name = self.name_input.text().strip()
+        project_type = self.type_combo.currentText()
+        
+        # Update the structure dropdown to include the new structure
+        self.update_structure_combo()
+        
+        # Select the newly created structure
+        index = self.structure_combo.findText(structure_name)
+        if index >= 0:
+            self.structure_combo.setCurrentIndex(index)
+        
+        # Create template with the new structure
+        success = self.template_manager.save_template(
+            name,
+            project_type,
+            "",
+            structure_name
+        )
+        
+        if success:
+            QMessageBox.information(self, "Success", f"Template '{name}' created successfully with new structure")
             self.accept()
         else:
             QMessageBox.warning(self, "Error", f"Failed to create template '{name}'")

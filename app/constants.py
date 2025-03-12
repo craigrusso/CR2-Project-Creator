@@ -290,8 +290,11 @@ DEFAULT_TEMPLATE_CATEGORIES = [
 
 # Project types
 PROJECT_TYPE_TO_STRUCTURE = {
+    "Standard": "Video Editing - Standard",
+    "Default": "Video Editing - Standard",
     "Video Editing": "Video Editing - Standard",
     "Motion Graphics": "Motion Graphics - Standard", 
-    "VFX": "VFX - Standard",
-    "Audio Production": "Video Editing - Basic"
+    "Design": "Video Editing - Basic",
+    "Audio": "Video Editing - Basic",
+    "VFX": "VFX - Standard"
 } 

@@ -210,13 +210,26 @@ class StructureOperations:
         """Get a default structure by type"""
         from app.constants import DEFAULT_STRUCTURES
         
-        # Map the structure type to a default structure
-        if structure_type == "video":
-            return DEFAULT_STRUCTURES.get("Video Editing - Standard", [])
-        elif structure_type == "motion":
-            return DEFAULT_STRUCTURES.get("Motion Graphics - Standard", [])
-        elif structure_type == "vfx":
-            return DEFAULT_STRUCTURES.get("VFX - Standard", [])
+        # Map common structure type keywords to our structure names in constants.py
+        structure_mapping = {
+            "standard": "Video Editing - Standard",
+            "basic": "Video Editing - Basic",
+            "video": "Video Editing - Standard",
+            "motion": "Motion Graphics - Standard",
+            "design": "Video Editing - Basic",
+            "vfx": "VFX - Standard",
+            "audio": "Video Editing - Basic"
+        }
+        
+        # Convert to lowercase for case-insensitive matching
+        structure_type_lower = structure_type.lower()
+        
+        # Check if we have a direct mapping
+        if structure_type_lower in structure_mapping:
+            structure_key = structure_mapping[structure_type_lower]
         else:
             # Default to basic structure
-            return DEFAULT_STRUCTURES.get("Video Editing - Basic", []) 
+            structure_key = "Video Editing - Basic"
+        
+        # Return the structure or an empty list as last resort
+        return DEFAULT_STRUCTURES.get(structure_key, []) 

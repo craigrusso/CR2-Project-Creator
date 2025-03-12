@@ -38,4 +38,8 @@ ehthumbs.db
 *.swo
 
 # Project specific
-*.log 
+*.log
+
+# Build artifacts
+*.spec
+*.dmg 
