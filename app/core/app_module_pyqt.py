@@ -7,12 +7,12 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QLabel, QPushButton, QComboBox, QLineEdit, 
                            QFileDialog, QMessageBox, QAction, QMenu, 
                            QStatusBar, QFrame, QSplitter, QScrollArea, QSizePolicy,
-                           QApplication)
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize
-from PyQt5.QtGui import QIcon, QFont
+                           QApplication, QGroupBox, QListView)
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex
+from PyQt5.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush
 
 from app.core.app_config import APP_NAME, APP_VERSION, RECENT_TEMPLATES_MAX
-from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, COMBOBOX_STYLE
+from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE, LISTVIEW_POPUP_STYLE
 from app.utils.utils import load_config, save_config, truncate_path
 from app.ui.ui_components_pyqt import ToolTip, CardFrame, SearchBox, TemplateFileCard
 from app.templates.template_manager import TemplateManager
@@ -168,8 +168,43 @@ class ProjectCreatorApp(QMainWindow):
         self.structure_layout = QHBoxLayout()
         self.structure_label = QLabel("Folder Structure:")
         self.structure_combo = QComboBox()
-        self.structure_combo.setStyleSheet(COMBOBOX_STYLE)
-        self.structure_combo.setMinimumWidth(250)
+        
+        # Apply a combination of the standard combobox style and popup list style
+        enhanced_style = COMBOBOX_STYLE + """
+        QComboBox QAbstractItemView {
+            selection-background-color: transparent;
+        }
+        
+        QComboBox QAbstractItemView::item {
+            min-height: 22px;
+            padding: 4px;
+        }
+        
+        QComboBox QAbstractItemView::item:hover {
+            background-color: """ + colors['accent'] + """;
+            color: white;
+            font-weight: bold;
+            border-left: 5px solid white;
+            border-top: 1px solid white;
+            border-bottom: 1px solid white;
+        }
+        
+        QComboBox QAbstractItemView::item:selected {
+            background-color: """ + colors['highlight_bg'] + """;
+            color: white;
+            border-left: 3px solid """ + colors['accent'] + """;
+        }
+        """
+        self.structure_combo.setStyleSheet(enhanced_style)
+        
+        # Enable mouse tracking on the view when it becomes available
+        if self.structure_combo.view():
+            self.structure_combo.view().setMouseTracking(True)
+            
+            # Also enable on the viewport
+            if hasattr(self.structure_combo.view(), 'viewport'):
+                self.structure_combo.view().viewport().setMouseTracking(True)
+        
         self.structure_btn = QPushButton("Edit...")
         self.structure_btn.clicked.connect(self._edit_structure)
         self.structure_layout.addWidget(self.structure_label)
@@ -588,4 +623,27 @@ class ProjectCreatorApp(QMainWindow):
         self.update_recent_templates_gallery()
         
         # Show status message
-        self.show_status_message("Template created successfully!", "success", 5000) 
+        self.show_status_message("Template created successfully!", "success", 5000)
+
+    def eventFilter(self, obj, event):
+        """Filter for specific events"""
+        # Handle hover effects for structure_combo dropdown
+        if hasattr(self, 'structure_combo') and self.structure_combo.view() and obj == self.structure_combo.view().viewport():
+            if event.type() == QEvent.MouseMove:
+                # Get the item under the mouse
+                pos = event.pos()
+                index = self.structure_combo.view().indexAt(pos)
+                
+                if index.isValid():
+                    # Set hover style directly
+                    for i in range(self.structure_combo.view().model().rowCount()):
+                        item_index = self.structure_combo.view().model().index(i, 0)
+                        rect = self.structure_combo.view().visualRect(item_index)
+                        
+                        # Apply style to the item under cursor
+                        if rect.contains(pos):
+                            # Force a repaint of the view
+                            self.structure_combo.view().update(item_index)
+                            
+        # Pass the event to the parent class
+        return super().eventFilter(obj, event) 

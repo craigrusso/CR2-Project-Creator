@@ -101,13 +101,24 @@ COMBOBOX_STYLE = f"""
         background-color: {colors['card_bg']};
         color: {colors['text']};
         border: 1px solid {colors['border']};
-        padding: 5px 25px 5px 5px;  /* Add more padding on the right for the arrow */
+        padding: 5px 25px 5px 5px;
         border-radius: 3px;
         min-height: 22px;
     }}
+    
+    /* Main combobox hover */
     QComboBox:hover {{
         border: 1px solid {colors['accent']};
+        background-color: {colors['hover_bg']};
+        color: {colors['highlight_text']};
     }}
+    
+    QComboBox:focus {{
+        border: 1px solid {colors['accent']};
+        background-color: {colors['highlight_bg_transparent']};
+    }}
+    
+    /* Drop-down button styling */
     QComboBox::drop-down {{
         subcontrol-origin: padding;
         subcontrol-position: top right;
@@ -118,24 +129,97 @@ COMBOBOX_STYLE = f"""
         border-top-right-radius: 3px;
         border-bottom-right-radius: 3px;
     }}
+    
+    QComboBox::drop-down:hover {{
+        background-color: {colors['accent']};
+        border-left-color: {colors['accent']};
+    }}
+    
+    /* Arrow styling */
     QComboBox::down-arrow {{
-        /* Use the SVG file with a letter V */
         image: url(app/assets/css/v_arrow.svg);
         width: 16px;
         height: 16px;
         border: none;
         background-color: transparent;
     }}
+    
     QComboBox::down-arrow:on {{
-        /* Use the SVG file with upside-down V */
         image: url(app/assets/css/v_arrow_up.svg);
     }}
+    
+    /* Popup widget styling */
     QComboBox QAbstractItemView {{
+        border: 1px solid {colors['accent']};
         background-color: {colors['card_bg']};
         color: {colors['text']};
-        selection-background-color: {colors['highlight_bg']};
-        selection-color: {colors['highlight_text']};
-        border: 1px solid {colors['border']};
+        outline: none; /* Remove focus outline */
+    }}
+    
+    /* Default item styling in popup */
+    QComboBox QAbstractItemView::item {{
+        border-left: 3px solid transparent;
+        padding: 6px;
+        min-height: 24px;
+    }}
+    
+    /* Very direct styling for hover state */
+    QComboBox QAbstractItemView::item:hover {{
+        background-color: {colors['accent']};  /* Use accent color for hover */
+        color: white;  /* White text on hover for maximum contrast */
+        font-weight: bold;  /* Bold text on hover */
+        border-left: 5px solid white;  /* White left border for emphasis */
+    }}
+    
+    /* Selected item (when dropdown is closed) */
+    QComboBox QAbstractItemView::item:selected {{
+        background-color: {colors['highlight_bg']};
+        color: {colors['highlight_text']};
+        border-left: 3px solid {colors['accent']};
+    }}
+"""
+
+# Create a specialized style just for QListView in popups - this will be applied directly
+LISTVIEW_POPUP_STYLE = f"""
+    QListView {{
+        background-color: {colors['card_bg']};
+        color: {colors['text']};
+        border: 1px solid {colors['accent']};
+        outline: none;
+        border-radius: 3px;
+        padding: 1px;
+        selection-background-color: transparent;
+    }}
+    
+    QListView::item {{
+        border-left: 3px solid transparent;
+        padding: 6px;
+        min-height: 24px;
+        margin: 2px;
+        border-radius: 2px;
+    }}
+    
+    QListView::item:hover {{
+        background-color: {colors['accent']};
+        color: white;
+        font-weight: bold;
+        border-left: 5px solid white;
+        border-bottom: 1px solid white;
+        border-top: 1px solid white;
+    }}
+    
+    QListView::item:selected {{
+        background-color: {colors['highlight_bg']};
+        color: {colors['highlight_text']};
+        border-left: 3px solid {colors['accent']};
+    }}
+
+    /* Force immediate hover response */
+    QListView::item:hover:!selected {{
+        background-color: {colors['accent']};
+        color: white;
+        font-weight: bold;
+        border-left: 5px solid white;
     }}
 """
 

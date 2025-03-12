@@ -304,7 +304,6 @@ class GalleryEvents:
             structure_combo.setMinimumWidth(250)
             
             # Apply the standard style from the structure editor
-            from app.ui.color_scheme_pyqt import COMBOBOX_STYLE
             structure_combo.setStyleSheet(COMBOBOX_STYLE)
             
             for structure in available_structures:

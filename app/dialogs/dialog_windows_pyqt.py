@@ -9,9 +9,10 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                            QMessageBox, QScrollArea, QWidget, QTabWidget, 
                            QTextEdit, QCheckBox, QListWidget, QLineEdit,
                            QInputDialog, QFileDialog, QApplication, QStyle,
-                           QTabWidget, QGridLayout, QGroupBox)
-from PyQt5.QtCore import Qt, QSize, QByteArray, QUrl, QRegExp
-from PyQt5.QtGui import QFont, QPixmap, QMovie, QIcon, QRegExpValidator
+                           QTabWidget, QGridLayout, QGroupBox, QRadioButton,
+                           QButtonGroup, QComboBox, QSplitter, QSizePolicy)
+from PyQt5.QtCore import Qt, QSize, QByteArray, QUrl, QRegExp, QCoreApplication, QMimeData
+from PyQt5.QtGui import QFont, QPixmap, QMovie, QIcon, QRegExpValidator, QDragEnterEvent, QDragMoveEvent, QDropEvent
 
 from app.core.app_config import APP_NAME, APP_VERSION
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
@@ -20,6 +21,9 @@ from app.ui.structure_editor_enhanced import show_enhanced_structure_editor
 
 def preview_structure(app, structure):
     """Show a preview of the project structure"""
+    print("PREVIEW_STRUCTURE FUNCTION CALLED WITH:")
+    print(json.dumps(structure, indent=2))
+    
     dialog = QDialog(app)
     dialog.setWindowTitle("Structure Preview")
     dialog.resize(500, 400)
@@ -58,12 +62,14 @@ def preview_structure(app, structure):
     
     # Helper function to add items recursively
     def add_items(parent_item, items):
+        print(f"Adding items to {parent_item.text(0)}: {items}")
         for item in items:
             if isinstance(item, dict):
                 # It's a directory (either with children or empty)
                 for dir_name, children in item.items():
                     dir_item = QTreeWidgetItem(parent_item)
                     dir_item.setText(0, f"📁 {dir_name}")
+                    dir_item.setExpanded(True)
                     # Mark as folder in data
                     dir_item.setData(0, Qt.UserRole, "folder")
                     # Add children if any exist
@@ -660,83 +666,95 @@ def create_basic_info_tab(tabs, template):
     
 def create_structure_tab(tabs, template, parent):
     """Create the structure tab"""
+    # Get the template_manager from parent or direct attribute
+    template_manager = parent.template_manager if hasattr(parent, 'template_manager') else None
+    if not template_manager:
+        print("WARNING: template_manager not found")
+        template_manager = None
+        
+    # Create the tab widget
     structure_tab = QWidget()
     structure_layout = QVBoxLayout(structure_tab)
     
-    # Get dialog reference
-    dialog = tabs.parent()
+    # Get template info
+    template_name = template.get('name', '')
+    template_type = template.get('type', '')
     
-    structure_info_label = QLabel("Define the folder structure that will be created when using this template:")
-    structure_info_label.setWordWrap(True)
-    structure_layout.addWidget(structure_info_label)
+    # Get project type - use a safe method
+    project_type = template.get("project_type", "")
+    if not project_type and "config" in template:
+        project_type = template["config"].get("project_type", "")
     
-    # Add emphasis on structure importance
-    structure_emphasis = QLabel("Each template has its own folder structure. This structure defines how your project folders will be organized when creating a new project from this template.")
-    structure_emphasis.setWordWrap(True)
-    structure_emphasis.setStyleSheet("color: #0066cc; font-style: italic;")
-    structure_layout.addWidget(structure_emphasis)
+    # Info section
+    info_label = QLabel("This tab allows you to customize the folder structure that will be created when using this template.")
+    info_label.setWordWrap(True)
     
     # Add drag and drop hint
-    drag_drop_hint = QLabel("Tip: You can drag and drop folders directly from your file system to quickly import an existing structure.")
+    drag_drop_hint = QLabel("Tip: You can drag and drop folders from your file system to quickly import an existing structure.")
     drag_drop_hint.setWordWrap(True)
     drag_drop_hint.setStyleSheet("color: #666; font-style: italic; font-size: 12px;")
+    
+    structure_layout.addWidget(info_label)
     structure_layout.addWidget(drag_drop_hint)
     
-    # Add a button to open the structure editor
-    editor_hint = QLabel("Need more control? Use the Structure Editor:")
-    editor_hint.setWordWrap(True)
-    structure_layout.addWidget(editor_hint)
+    # Structure selection section
+    structure_select_layout = QHBoxLayout()
+    structure_label = QLabel("Use Structure:")
     
-    structure_editor_btn = QPushButton("Open Structure Editor")
-    structure_editor_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
+    # Setup structure dropdown
+    structure_dropdown = QComboBox()
+    structure_dropdown.setMinimumWidth(250)
     
-    # Get the project type from the template
-    project_type = template.get('category', 'Video Editing')
-    
-    def open_structure_editor():
-        # Get the structure information from the template
-        structure_name = template.get('structure_type')
+    # If template_manager exists, populate dropdown
+    if template_manager:
+        # Get both built-in and custom structures
+        from app.constants import DEFAULT_STRUCTURES
         
-        # If no structure_type is specified, try to determine from project_type
-        if not structure_name:
-            from app.constants import PROJECT_TYPE_TO_STRUCTURE
-            structure_name = PROJECT_TYPE_TO_STRUCTURE.get(project_type)
+        # Add "none" option
+        structure_dropdown.addItem("None (No folder structure)", "")
         
-        # Show the structure editor with the appropriate structure for the project type
-        result = show_structure_editor(parent, structure_name, None, is_new=False, project_type=project_type)
-        
-        if result:
-            # Reload the tree with the updated structure
-            structure_tree.clear()
-            # Re-create root item
-            root_item = QTreeWidgetItem(structure_tree)
-            root_item.setText(0, "Project Root")
-            root_item.setExpanded(True)
+        # Add built-in structures section
+        structure_dropdown.addItem("=== Built-in Structures ===", None)
+        for name in sorted(DEFAULT_STRUCTURES.keys()):
+            structure_dropdown.addItem(name, name)
             
-            # Get the updated structure based on structure name or project type
-            if structure_name:
-                updated_structure = parent.template_manager.get_structure(structure_name)
-            else:
-                updated_structure = parent.template_manager.get_structure_for_project_type(project_type)
-                
-            add_structure_items(root_item, updated_structure)
+        # Add custom structures
+        if hasattr(template_manager, "custom_structures") and template_manager.custom_structures:
+            structure_dropdown.addItem("=== Custom Structures ===", None)
+            for name in sorted(template_manager.custom_structures.keys()):
+                structure_dropdown.addItem(name, name)
+    else:
+        structure_dropdown.addItem("Template Manager Not Available", "")
     
-    structure_editor_btn.clicked.connect(open_structure_editor)
-    structure_layout.addWidget(structure_editor_btn)
+    # Edit structure button
+    edit_btn = QPushButton("Edit Structure")
     
-    # Create a scroll area for the structure tree
+    # Add browse structure button
+    browse_btn = QPushButton("Browse Structures")
+    
+    # Add to layout
+    structure_select_layout.addWidget(structure_label)
+    structure_select_layout.addWidget(structure_dropdown)
+    structure_select_layout.addWidget(edit_btn)
+    structure_select_layout.addWidget(browse_btn)
+    structure_layout.addLayout(structure_select_layout)
+    
+    # Create structure display
     scroll = QScrollArea()
     scroll.setWidgetResizable(True)
-    scroll.setFrameShape(QScrollArea.NoFrame)
     
-    # Create the structure tree
+    # Create tree widget for structure
     structure_tree = QTreeWidget()
-    structure_tree.setHeaderHidden(True)
+    structure_tree.setHeaderLabels(["Folder/File"])
     structure_tree.setSelectionMode(QTreeWidget.SingleSelection)
+    structure_tree.setIndentation(20)
+    
+    # Enable drag and drop for the structure tree
     structure_tree.setDragEnabled(True)
     structure_tree.setAcceptDrops(True)
+    structure_tree.setDragDropMode(QTreeWidget.DragDrop)
+    structure_tree.viewport().setAcceptDrops(True)
     structure_tree.setDropIndicatorShown(True)
-    structure_tree.setDragDropMode(QTreeWidget.InternalMove)
     
     # Create root item
     root_item = QTreeWidgetItem(structure_tree)
@@ -824,6 +842,84 @@ def create_structure_tab(tabs, template, parent):
     # Add the structure items
     add_structure_items(root_item, structure_items)
     
+    # Define custom drag and drop event handlers
+    def _tree_dragEnterEvent(event):
+        """Custom drag enter event for the tree widget"""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            # For internal drag/drop operations
+            QTreeWidget.dragEnterEvent(structure_tree, event)
+            
+    def _tree_dragMoveEvent(event):
+        """Custom drag move event for the tree widget"""
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+        else:
+            # For internal drag/drop operations
+            QTreeWidget.dragMoveEvent(structure_tree, event)
+    
+    def _tree_dropEvent(event):
+        """Custom drop event for the tree widget"""
+        if event.mimeData().hasUrls():
+            # Get drop position
+            drop_item = structure_tree.itemAt(event.pos())
+            if not drop_item:
+                drop_item = root_item
+            
+            # Process the dropped URLs
+            for url in event.mimeData().urls():
+                file_path = url.toLocalFile()
+                
+                # Make sure path exists
+                if not os.path.exists(file_path):
+                    continue
+                    
+                # If it's a directory, import its structure
+                if os.path.isdir(file_path):
+                    _process_dropped_directory(file_path, drop_item)
+                    
+            # Accept the drop action
+            event.acceptProposedAction()
+        else:
+            # For internal drag/drop operations
+            QTreeWidget.dropEvent(structure_tree, event)
+    
+    def _process_dropped_directory(dir_path, parent_item):
+        """Process a dropped directory and add it to the structure"""
+        dir_name = os.path.basename(dir_path)
+        
+        # Create a folder item
+        folder_item = QTreeWidgetItem(parent_item)
+        folder_item.setText(0, dir_name)
+        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+        folder_item.setData(0, Qt.UserRole, "folder")
+        folder_item.setExpanded(True)
+        
+        # Recursively process subdirectories
+        try:
+            for item in sorted(os.listdir(dir_path)):
+                # Skip hidden files (starting with '.')
+                if item.startswith('.'):
+                    continue
+                    
+                item_full_path = os.path.join(dir_path, item)
+                if os.path.isdir(item_full_path):
+                    _process_dropped_directory(item_full_path, folder_item)
+                else:
+                    # Add as a file
+                    file_item = QTreeWidgetItem(folder_item)
+                    file_item.setText(0, item)
+                    file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+                    file_item.setData(0, Qt.UserRole, "file")
+        except Exception as e:
+            print(f"Error processing directory contents: {e}")
+    
+    # Assign the custom event handlers
+    structure_tree.dragEnterEvent = _tree_dragEnterEvent
+    structure_tree.dragMoveEvent = _tree_dragMoveEvent
+    structure_tree.dropEvent = _tree_dropEvent
+    
     # Buttons for tree manipulation
     tree_buttons = QHBoxLayout()
     
@@ -841,39 +937,97 @@ def create_structure_tab(tabs, template, parent):
     
     # Add folder action
     def add_folder():
-        folder_name, ok = QInputDialog.getText(dialog, "Add Folder", "Folder Name:")
+        # Get the parent dialog for proper modal behavior
+        parent_dialog = tabs.parentWidget()
+        
+        print("DEBUG: add_folder function called")
+        
+        # Get folder name from user
+        folder_name, ok = QInputDialog.getText(parent_dialog, "Add Folder", "Folder Name:")
+        
         if ok and folder_name:
+            print(f"DEBUG: Creating folder: {folder_name}")
+            # Get selected item or use root
             selected_items = structure_tree.selectedItems()
             parent_item = selected_items[0] if selected_items else root_item
+            
+            # If the selected item is a file, use its parent instead
+            if parent_item.data(0, Qt.UserRole) == "file":
+                parent_item = parent_item.parent() or root_item
+            
+            # Create new folder item
             folder_item = QTreeWidgetItem(parent_item)
             folder_item.setText(0, folder_name)
             folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-            # Mark as folder in user data
             folder_item.setData(0, Qt.UserRole, "folder")
             parent_item.setExpanded(True)
+            
+            # Print debug information
+            print(f"Added folder '{folder_name}' to '{parent_item.text(0)}'")
+            print(f"Structure tree now has {root_item.childCount()} top-level items")
+            # Print structure preview
+            print_structure_tree(root_item)
+            
+    # Add a debug function to print the structure tree
+    def print_structure_tree(item, indent=0):
+        """Debug function to print the structure tree"""
+        item_type = item.data(0, Qt.UserRole) or "unknown" 
+        print(f"{' ' * indent}[{item_type}] {item.text(0)} - {item.childCount()} children")
+        for i in range(item.childCount()):
+            print_structure_tree(item.child(i), indent + 4)
+    
+    # Function to get structure from tree for testing
+    def get_structure_from_tree():
+        """Convert the tree to a structure format for the preview"""
+        result = []
+        
+        def add_item_to_structure(item, parent_list):
+            if item.childCount() > 0:
+                # Folder with children
+                folder_dict = {item.text(0): []}
+                for i in range(item.childCount()):
+                    add_item_to_structure(item.child(i), folder_dict[item.text(0)])
+                parent_list.append(folder_dict)
+            else:
+                # Check if it's a file or empty folder
+                if item.data(0, Qt.UserRole) == "file":
+                    # It's a file
+                    parent_list.append(item.text(0))
+                else:
+                    # It's an empty folder
+                    parent_list.append({item.text(0): []})
+        
+        # Process root's children (skip root itself)
+        for i in range(root_item.childCount()):
+            add_item_to_structure(root_item.child(i), result)
+            
+        return result
     
     # Add file action
     def add_file():
+        # Get the parent dialog for proper modal behavior
+        parent_dialog = tabs.parentWidget()
+        
         # First, let user select a file
         file_path, _ = QFileDialog.getOpenFileName(
-            dialog,
-            "Select Template File",
+            parent_dialog,
+            "Select File",
             "",
-            "All Files (*);;Project Files (*.prproj *.aep *.aepx *.psd *.ai);;Text Files (*.html *.css *.js *.txt *.md)"
+            "All Files (*)"
         )
         
         if not file_path or not os.path.exists(file_path):
             return
             
-        # Get the filename and suggested name with {{PROJECT_NAME}} placeholder
+        # Get the filename and create a suggested name with {{PROJECT_NAME}} placeholder
         original_filename = os.path.basename(file_path)
         filename_base, filename_ext = os.path.splitext(original_filename)
         suggested_name = f"{{{{PROJECT_NAME}}}}{filename_ext}"
         
         # Ask for the filename to use (with the project name placeholder)
         new_filename, ok = QInputDialog.getText(
-            dialog,
-            "File Name in Template",
+            parent_dialog,
+            "File Name in Project",
             "Enter filename (use {{PROJECT_NAME}} as placeholder):",
             text=suggested_name
         )
@@ -886,32 +1040,65 @@ def create_structure_tab(tabs, template, parent):
         parent_item = selected_items[0] if selected_items else root_item
         
         # If the selected item is a file, use its parent as the directory
-        if parent_item != root_item and parent_item.icon(0).cacheKey() == QApplication.style().standardIcon(QStyle.SP_FileIcon).cacheKey():
+        if parent_item.data(0, Qt.UserRole) == "file":
             parent_item = parent_item.parent() or root_item
         
         # Add the file to the structure tree
         file_item = QTreeWidgetItem(parent_item)
         file_item.setText(0, new_filename)
         file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-        file_item.setData(0, Qt.UserRole, file_path)  # Store original file path
+        file_item.setData(0, Qt.UserRole, "file")
         parent_item.setExpanded(True)
         
-        # Notify user
-        QMessageBox.information(
-            dialog, 
-            "File Added", 
-            f"File '{new_filename}' added to the template structure.\n\n"
-            f"When a project is created, {{PROJECT_NAME}} placeholders will be replaced with the actual project name."
-        )
+        # Print debug information
+        print(f"Added file '{new_filename}' to '{parent_item.text(0)}'")
+        # Print structure preview
+        print_structure_tree(root_item)
+            
+    # Add a button to test the structure preview
+    test_btn = QPushButton("Test Structure Preview")
+    def test_preview():
+        # Get structure from tree
+        test_structure = get_structure_from_tree()
+        print("STRUCTURE FOR PREVIEW:")
+        print(json.dumps(test_structure, indent=2))
+        
+        # Show preview dialog
+        preview_structure(parent, test_structure)
+        
+    test_btn.clicked.connect(test_preview)
+    tree_buttons.addWidget(test_btn)
     
     # Remove action
     def remove_item():
+        # Get selected item
         selected_items = structure_tree.selectedItems()
-        if selected_items:
-            item = selected_items[0]
-            if item != root_item:  # Don't remove the root
-                parent = item.parent() or structure_tree.invisibleRootItem()
-                parent.removeChild(item)
+        
+        if not selected_items:
+            # No selection, show a message
+            QMessageBox.information(tabs.parentWidget(), "Remove Item", "Please select an item to remove.")
+            return
+            
+        item = selected_items[0]
+        
+        # Don't remove the root item
+        if item == root_item:
+            QMessageBox.warning(tabs.parentWidget(), "Cannot Remove", "Cannot remove the root item.")
+            return
+            
+        # Confirm deletion
+        confirm = QMessageBox.question(
+            tabs.parentWidget(),
+            "Confirm Removal",
+            f"Are you sure you want to remove '{item.text(0)}'?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if confirm == QMessageBox.Yes:
+            # Get parent and remove the child
+            parent = item.parent() or structure_tree.invisibleRootItem()
+            parent.removeChild(item)
     
     # Rename action
     def rename_item():
@@ -919,17 +1106,32 @@ def create_structure_tab(tabs, template, parent):
         if selected_items:
             item = selected_items[0]
             if item != root_item:  # Don't rename the root
-                name, ok = QInputDialog.getText(dialog, "Rename", "New Name:", text=item.text(0))
+                name, ok = QInputDialog.getText(tabs.parentWidget(), "Rename", "New Name:", text=item.text(0))
                 if ok and name:
                     item.setText(0, name)
     
+    # Clear existing connections (in case they exist)
+    add_folder_btn.clicked.disconnect() if add_folder_btn.receivers(add_folder_btn.clicked) > 0 else None
+    add_file_btn.clicked.disconnect() if add_file_btn.receivers(add_file_btn.clicked) > 0 else None
+    remove_btn.clicked.disconnect() if remove_btn.receivers(remove_btn.clicked) > 0 else None
+    rename_btn.clicked.disconnect() if rename_btn.receivers(rename_btn.clicked) > 0 else None
+    
+    # Connect the button signals to the slots
+    print("DEBUG: Connecting buttons in create_structure_tab")
+    print(f"DEBUG: Adding click handler to add_folder_btn: {id(add_folder_btn)}")
     add_folder_btn.clicked.connect(add_folder)
+    print(f"DEBUG: Adding click handler to add_file_btn: {id(add_file_btn)}")
     add_file_btn.clicked.connect(add_file)
+    print(f"DEBUG: Adding click handler to remove_btn: {id(remove_btn)}")
     remove_btn.clicked.connect(remove_item)
+    print(f"DEBUG: Adding click handler to rename_btn: {id(rename_btn)}")
     rename_btn.clicked.connect(rename_item)
+    print("DEBUG: Button connections complete")
     
     # Add tab
     tabs.addTab(structure_tab, "Folder Structure")
+    
+    return structure_tab
 
 def show_manage_templates(parent, template_manager, callback=None):
     """Show the template management dialog"""

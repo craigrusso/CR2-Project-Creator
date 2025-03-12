@@ -1,11 +1,126 @@
 #!/usr/bin/env python3
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
-from PyQt5.QtWidgets import QWidget, QLabel, QLineEdit, QPushButton, QComboBox, QFrame
-from PyQt5.QtCore import Qt, QEvent, QObject
-from PyQt5.QtGui import QPalette, QColor
-import sys
-from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE, LINEEDIT_STYLE, LABEL_STYLE
+from PyQt5.QtWidgets import QWidget, QLabel, QLineEdit, QPushButton, QComboBox, QFrame, QListView, QAbstractItemView, QStyledItemDelegate, QApplication, QProxyStyle, QStyle
+from PyQt5.QtCore import Qt, QEvent, QObject, QRect, QSize
+from PyQt5.QtGui import QPalette, QColor, QPainter, QBrush, QPen, QFont
+import sys, time
+from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE, LINEEDIT_STYLE, LABEL_STYLE, LISTVIEW_POPUP_STYLE
+
+# Remove the problematic global patch and classes
+
+class ComboBoxItemDelegate(QStyledItemDelegate):
+    """Custom delegate for rendering combo box items with enhanced hover effects"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.hovered_index = None
+        
+    def set_hovered_index(self, index):
+        """Set the index that is currently being hovered"""
+        self.hovered_index = index
+        
+    def paint(self, painter, option, index):
+        """Custom painting for combo box items"""
+        # Get the rect where we'll draw
+        rect = option.rect
+        
+        # Determine if this item is selected or hovered
+        is_selected = option.state & QStyledItemDelegate.State_Selected
+        is_hovered = (option.state & QStyle.State_MouseOver) or (self.hovered_index is not None and self.hovered_index == index)
+        
+        # Setup the painter
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Define colors based on state
+        bg_color = QColor(colors['card_bg'])
+        text_color = QColor(colors['text'])
+        border_color = QColor(colors['card_bg'])  # Same as bg by default
+        
+        # Draw different backgrounds based on state
+        if is_hovered:
+            # Hover state takes precedence
+            bg_color = QColor(colors['accent'])
+            text_color = QColor("white")
+            border_color = QColor("white")
+            
+            # Draw the background
+            painter.fillRect(rect, bg_color)
+            
+            # Draw left border
+            border_rect = QRect(rect.left(), rect.top(), 5, rect.height())
+            painter.fillRect(border_rect, border_color)
+            
+            # Draw top and bottom borders
+            painter.setPen(QPen(border_color, 1))
+            painter.drawLine(rect.left() + 5, rect.top(), rect.right(), rect.top())
+            painter.drawLine(rect.left() + 5, rect.bottom(), rect.right(), rect.bottom())
+            
+        elif is_selected:
+            # Selected state
+            bg_color = QColor(colors['highlight_bg'])
+            text_color = QColor(colors['highlight_text'])
+            border_color = QColor(colors['accent'])
+            
+            # Draw the background
+            painter.fillRect(rect, bg_color)
+            
+            # Draw left border
+            border_rect = QRect(rect.left(), rect.top(), 3, rect.height())
+            painter.fillRect(border_rect, border_color)
+        else:
+            # Normal state
+            painter.fillRect(rect, bg_color)
+        
+        # Draw the text
+        text = index.data(Qt.DisplayRole)
+        painter.setPen(QPen(text_color))
+        
+        # Use bold font for hovered items
+        if is_hovered:
+            font = painter.font()
+            font.setBold(True)
+            painter.setFont(font)
+        
+        # Text padding - leave space for left border
+        text_rect = rect.adjusted(10, 0, -5, 0)
+        painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, text)
+        
+        painter.restore()
+
+class ComboBoxPopupFilter(QObject):
+    """Global event filter specifically for combo box popups"""
+    
+    def eventFilter(self, obj, event):
+        """Filter events to catch and style combo box popups"""
+        # When a widget is shown, check if it's a combobox popup
+        if event.type() == QEvent.Show:
+            # Check if it's a ListView (typical for combo box popups)
+            if isinstance(obj, QListView) or (hasattr(obj, 'objectName') and obj.objectName() == "QComboBoxListView"):
+                # Apply our specialized popup style directly
+                obj.setStyleSheet(LISTVIEW_POPUP_STYLE)
+                
+                # Make sure the viewport has mouse tracking enabled
+                if hasattr(obj, 'viewport'):
+                    obj.viewport().setMouseTracking(True)
+                
+                # Set the hover mode explicitly
+                obj.setMouseTracking(True)
+                
+                # Set selection behavior and mode for better hover effects
+                obj.setSelectionMode(QAbstractItemView.SingleSelection)
+                obj.setSelectionBehavior(QAbstractItemView.SelectRows)
+                
+                # Create and set our custom delegate for advanced control
+                delegate = ComboBoxItemDelegate(obj)
+                obj.setItemDelegate(delegate)
+                
+                # Force the viewport to update now
+                obj.viewport().update()
+        
+        # Always pass the event to the standard handler
+        return False
 
 def configure_styles(app):
     """Configure the application styles"""
@@ -32,8 +147,10 @@ def configure_styles(app):
         }}
         
         QMenu::item:selected {{
-            background-color: {colors['highlight_bg']};
-            color: {colors['highlight_text']};
+            background-color: {colors['accent']};
+            color: white;
+            font-weight: bold;
+            border-left: 5px solid white;
         }}
         
         QStatusBar {{
@@ -79,7 +196,27 @@ def configure_styles(app):
         QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
             width: 0px;
         }}
+        
+        /* Direct and focused styling for combo box popup items */
+        QComboBox QAbstractItemView::item:hover {{
+            background-color: {colors['accent']};
+            color: white;
+            font-weight: bold;
+            border-left: 5px solid white;
+            border-top: 1px solid white;
+            border-bottom: 1px solid white;
+        }}
+        
+        QComboBox QAbstractItemView::item:selected {{
+            background-color: {colors['highlight_bg']};
+            color: {colors['highlight_text']};
+            border-left: 3px solid {colors['accent']};
+        }}
     """)
+    
+    # Install a global event filter to catch combo box popups
+    popup_filter = ComboBoxPopupFilter()
+    QApplication.instance().installEventFilter(popup_filter)
 
 def apply_theme_to_widgets(widget_or_app):
     """Apply theme to all widgets in the application"""
@@ -229,6 +366,12 @@ class ThemeEventFilter(QObject):
         if event.type() == QEvent.ChildAdded and isinstance(obj, QWidget):
             # Look for QComboBox in the added child widget's hierarchy
             self.apply_style_to_combos_recursively(event.child())
+        
+        # When a popup is shown, check if it's a combobox popup and style it
+        if event.type() == QEvent.Show and obj.objectName() == "QComboBoxListView":
+            # This is a combobox popup, style it directly
+            from app.ui.color_scheme_pyqt import COMBOBOX_STYLE
+            obj.setStyleSheet(COMBOBOX_STYLE)
             
         return super().eventFilter(obj, event)
     
@@ -238,6 +381,9 @@ class ThemeEventFilter(QObject):
         if isinstance(widget, QComboBox):
             widget.setStyleSheet(COMBOBOX_STYLE)
             
+            # Ensure the popup is styled when shown
+            widget.installEventFilter(self)
+        
         # Check children recursively
         for child in widget.findChildren(QWidget):
             self.apply_style_to_combos_recursively(child)
@@ -304,4 +450,81 @@ def apply_theme_to_widget(widget):
         widget.setStyleSheet(COMBOBOX_STYLE)
     elif isinstance(widget, QFrame):
         # Prevent overriding custom frame styling
-        pass 
+        pass
+
+class GlobalMouseEventFilter(QObject):
+    """Global filter to debug mouse events on the entire application"""
+    
+    def eventFilter(self, obj, event):
+        # Only log dropdown-related events to avoid console spam
+        if isinstance(obj, QListView) or (hasattr(obj, 'objectName') and "combo" in obj.objectName().lower()):
+            if event.type() == QEvent.MouseMove:
+                print(f"DEBUG: GLOBAL - Mouse move on {obj} at {time.time()}")
+            elif event.type() == QEvent.MouseButtonPress:
+                print(f"DEBUG: GLOBAL - Mouse press on {obj} at {time.time()}")
+        
+        # Important: always return False to allow event propagation
+        return False
+
+class ComboBoxItemHoverFilter(QObject):
+    """Event filter specifically for handling hover events in combo box popups"""
+    
+    def __init__(self, parent=None, delegate=None):
+        super().__init__(parent)
+        self.delegate = delegate
+        print("DEBUG: ComboBoxItemHoverFilter initialized")
+    
+    def eventFilter(self, obj, event):
+        """Handle mouse events to create hover effects"""
+        # Track all mouse-related events
+        event_names = {
+            QEvent.MouseMove: "MouseMove",
+            QEvent.MouseButtonPress: "MouseButtonPress", 
+            QEvent.MouseButtonRelease: "MouseButtonRelease",
+            QEvent.Enter: "Enter",
+            QEvent.Leave: "Leave"
+        }
+        
+        if event.type() in event_names:
+            print(f"DEBUG: {event_names[event.type()]} event on {obj}")
+            
+        if event.type() == QEvent.MouseMove and self.delegate:
+            print(f"DEBUG: Mouse move at position: {event.pos().x()}, {event.pos().y()}")
+            
+            # Get the list view this viewport belongs to
+            list_view = self.parent()
+            if isinstance(list_view, QListView):
+                # Convert mouse position to index
+                index = list_view.indexAt(event.pos())
+                
+                # Print debug info about the index
+                if index.isValid():
+                    print(f"DEBUG: Mouse over item at row {index.row()}, data: {index.data()}")
+                else:
+                    print("DEBUG: Mouse not over a valid item")
+                
+                # If we have a valid index, set it as hovered in the delegate
+                if index.isValid():
+                    self.delegate.set_hovered_index(index)
+                    list_view.viewport().update()  # Force repaint
+                    print("DEBUG: Forced repaint of viewport")
+                else:
+                    # Clear hover state
+                    self.delegate.set_hovered_index(None)
+                    list_view.viewport().update()  # Force repaint
+                    print("DEBUG: Cleared hover state and forced repaint")
+        
+        # When mouse leaves the viewport
+        elif event.type() == QEvent.Leave and self.delegate:
+            print("DEBUG: Mouse left the viewport/widget")
+            # Clear hover state
+            self.delegate.set_hovered_index(None)
+            
+            # Force redraw
+            list_view = self.parent()
+            if isinstance(list_view, QListView):
+                list_view.viewport().update()
+                print("DEBUG: Forced repaint after mouse leave")
+        
+        # Let the event continue propagation
+        return False 
