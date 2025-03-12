@@ -16,17 +16,19 @@ import sip
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
                            QFrame, QScrollArea, QGridLayout, QFileDialog, QMessageBox,
                            QInputDialog, QMenu, QAction, QApplication, QComboBox, QSizePolicy,
-                           QSlider, QButtonGroup, QToolButton, QLineEdit, QSplitter, QRadioButton, QStyle)
+                           QSlider, QButtonGroup, QToolButton, QLineEdit, QSplitter, QRadioButton, QStyle,
+                           QDialog, QStackedWidget, QListWidgetItem, QListWidget, QTextEdit)
 from PyQt5.QtCore import (Qt, pyqtSignal, QSize, QPoint, QEvent, QMimeData, 
-                        QByteArray, QTimer)
-from PyQt5.QtGui import QIcon, QFont, QColor, QPalette, QCursor, QDrag, QPixmap, QPainter
+                        QByteArray, QTimer, QObject)
+from PyQt5.QtGui import QIcon, QFont, QColor, QPalette, QCursor, QDrag, QPixmap, QPainter, QFontMetrics
 
-from app.ui.color_scheme_pyqt import colors, get_color, BUTTON_STYLE, ACCENT_BUTTON_STYLE, LABEL_STYLE
+from app.ui.color_scheme_pyqt import colors, get_color, BUTTON_STYLE, ACCENT_BUTTON_STYLE, LABEL_STYLE, COMBOBOX_STYLE
 from app.ui.ui_components_pyqt import ScrollableFrame, CardFrame, ToolTip, SearchBox
 from app.templates.template_manager import TemplateManager
 from app.templates.components import TemplateCard, CARD_NORMAL, CARD_HOVER, CARD_SELECTED, get_system_font, SYSTEM_FONT
 from app.dialogs.dialog_windows_pyqt import show_edit_template, show_manage_templates
 from app.templates.template_gallery_refactored import TemplateGallery
+from app.templates.gallery_events import GalleryEvents, StyledItemDialog
 
 # Constants for styling
 BLUE_HIGHLIGHT = colors["highlight_bg"]
@@ -1398,17 +1400,25 @@ class TemplateListItem(QFrame):
         if not ok or not template_name:
             return
             
-        # Get category
-        category, ok = QInputDialog.getItem(
+        # Get category using our custom styled dialog
+        categories = self.template_manager.get_categories()
+        
+        # Create and show the styled dialog
+        category_dialog = StyledItemDialog(
             self,
             "Template Category",
             "Select category:",
-            self.template_manager.get_categories(),
-            0,
-            False
+            categories
         )
         
-        if not ok or not category:
+        # Set default selection to first item
+        if category_dialog.combo.count() > 0:
+            category_dialog.combo.setCurrentIndex(0)
+        
+        if category_dialog.exec_() == QDialog.Accepted:
+            category = category_dialog.selectedItem()
+        else:
+            # User cancelled
             return
         
         # Create an empty template - no file association yet

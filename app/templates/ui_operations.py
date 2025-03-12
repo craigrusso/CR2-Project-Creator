@@ -15,6 +15,7 @@ except ImportError:
 
 from app.ui.ui_components_pyqt import ScrollableFrame
 from app.templates.components import TemplateCard
+from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, COMBOBOX_STYLE
 
 # Import colors from appropriate module
 try:
@@ -359,6 +360,7 @@ class UIOperations:
         category_combo = QComboBox()
         category_combo.addItems(categories)
         category_combo.setCurrentText("Custom")  # Default to Custom
+        category_combo.setStyleSheet(COMBOBOX_STYLE)
         main_layout.addWidget(category_combo)
         
         # Add some spacing
@@ -480,6 +482,7 @@ class UIOperations:
         category_combo = QComboBox()
         category_combo.addItems(categories)
         category_combo.setCurrentText("Custom")  # Default to Custom
+        category_combo.setStyleSheet(COMBOBOX_STYLE)
         layout.addWidget(category_combo)
         
         # Buttons

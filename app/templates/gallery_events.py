@@ -1,10 +1,61 @@
 #!/usr/bin/env python3
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
-from PyQt5.QtWidgets import QInputDialog, QMessageBox, QFileDialog
+from PyQt5.QtWidgets import QInputDialog, QMessageBox, QFileDialog, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QTextEdit, QApplication
 from PyQt5.QtCore import Qt
 import os
 from PyQt5.QtGui import QIcon, QFont, QPixmap
+
+# Import styling
+from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE
+
+# Create a custom dialog class that ensures dropdowns are styled correctly
+class StyledItemDialog(QDialog):
+    """A custom dialog that ensures all dropdowns have the correct styling"""
+    
+    def __init__(self, parent, title, label, items):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.resize(500, 300)
+        
+        # Create layout
+        layout = QVBoxLayout(self)
+        
+        # Add label
+        layout.addWidget(QLabel(label))
+        
+        # Create and style the dropdown
+        self.combo = QComboBox()
+        self.combo.setMinimumWidth(250)
+        self.combo.setStyleSheet(COMBOBOX_STYLE)  # Apply the standard style
+        
+        # Add items
+        for item in items:
+            self.combo.addItem(str(item))
+            
+        layout.addWidget(self.combo)
+        
+        # Create buttons
+        button_layout = QHBoxLayout()
+        
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.reject)
+        self.cancel_btn.setStyleSheet(BUTTON_STYLE)
+        
+        self.ok_btn = QPushButton("OK")
+        self.ok_btn.clicked.connect(self.accept)
+        self.ok_btn.setDefault(True)
+        self.ok_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(self.cancel_btn)
+        button_layout.addWidget(self.ok_btn)
+        
+        layout.addLayout(button_layout)
+    
+    def selectedItem(self):
+        """Get the selected item"""
+        return self.combo.currentText()
 
 class GalleryEvents:
     """Event handlers for the Template Gallery"""
@@ -581,8 +632,26 @@ class GalleryEvents:
             # Get folder name from dialog
             folder_name, ok = QInputDialog.getText(None, "Add Folder", "Folder Name:")
             if ok and folder_name:
-                gallery.app.template_manager.create_folder(folder_name)
-                gallery.populate_gallery()
+                # Get categories using our custom dropdown dialog for proper styling
+                categories = gallery.app.template_manager.get_categories() if hasattr(gallery.app.template_manager, 'get_categories') else ["Video Editing", "Motion Graphics", "Design", "Audio", "Custom"]
+                
+                # Create and show our custom styled dialog
+                dialog = StyledItemDialog(
+                    gallery,
+                    "Select Category",
+                    "Choose folder category:",
+                    categories
+                )
+                
+                if dialog.exec_() == QDialog.Accepted:
+                    category = dialog.selectedItem()
+                    # Create the folder
+                    gallery.app.template_manager.create_folder(folder_name, category)
+                    gallery.populate_gallery()
+                else:
+                    # If user cancels selecting a category, just create with default
+                    gallery.app.template_manager.create_folder(folder_name)
+                    gallery.populate_gallery()
     
     @staticmethod
     def on_rename_folder(gallery):

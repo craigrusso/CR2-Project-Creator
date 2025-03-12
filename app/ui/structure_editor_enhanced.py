@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                             QMenu, QAction, QStyle, QApplication, QInputDialog)
 from PyQt5.QtCore import Qt, pyqtSignal
 
-from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE
+from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, COMBOBOX_STYLE
 
 class EnhancedStructureEditor(QDialog):
     """
@@ -99,6 +99,7 @@ class EnhancedStructureEditor(QDialog):
         template_label = QLabel("Choose Structure:")
         self.structure_combo = QComboBox()
         self.structure_combo.setMinimumWidth(250)
+        self.structure_combo.setStyleSheet(COMBOBOX_STYLE)
         
         # Add "New Structure" option at the top
         self.new_structure_button = QPushButton("Create New")

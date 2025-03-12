@@ -2,7 +2,9 @@
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
 from PyQt5.QtWidgets import QWidget, QLabel, QLineEdit, QPushButton, QComboBox, QFrame
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QEvent, QObject
+from PyQt5.QtGui import QPalette, QColor
+import sys
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE, LINEEDIT_STYLE, LABEL_STYLE
 
 def configure_styles(app):
@@ -215,6 +217,31 @@ def apply_dark_theme_to_template_gallery(widget):
     if hasattr(widget, 'gallery_scroll'):
         widget.gallery_scroll.setStyleSheet(f"background-color: {colors['bg']};")
 
+class ThemeEventFilter(QObject):
+    """Event filter to apply theme to newly created widgets"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        
+    def eventFilter(self, obj, event):
+        """Filter events to catch widget creation"""
+        # If a QInputDialog is created or a QComboBox is created in any dialog
+        if event.type() == QEvent.ChildAdded and isinstance(obj, QWidget):
+            # Look for QComboBox in the added child widget's hierarchy
+            self.apply_style_to_combos_recursively(event.child())
+            
+        return super().eventFilter(obj, event)
+    
+    def apply_style_to_combos_recursively(self, widget):
+        """Recursively find and style QComboBox widgets"""
+        # Apply style if this is a QComboBox
+        if isinstance(widget, QComboBox):
+            widget.setStyleSheet(COMBOBOX_STYLE)
+            
+        # Check children recursively
+        for child in widget.findChildren(QWidget):
+            self.apply_style_to_combos_recursively(child)
+
 def apply_dark_theme_to_template_section(app):
     """Apply dark grey theme to template file section"""
     # Find the template file frame in PyQt version
@@ -246,4 +273,35 @@ def apply_dark_theme_to_template_section(app):
             # Also update all child widgets
             for child in widget.findChildren(QWidget):
                 if isinstance(child, QLabel) or isinstance(child, QFrame):
-                    child.setStyleSheet(f"background-color: #282828; color: {colors['text']};") 
+                    child.setStyleSheet(f"background-color: #282828; color: {colors['text']};")
+
+def apply_theme_recursively(widget):
+    """Apply theme to widget and its children recursively"""
+    apply_theme_to_widget(widget)
+    
+    # Process child widgets
+    for child in widget.findChildren(QWidget):
+        apply_theme_to_widget(child)
+
+def apply_theme_to_widget(widget):
+    """Apply appropriate theme to widget based on its type"""
+    if widget is None:
+        return
+        
+    # Apply appropriate styling based on widget type
+    if isinstance(widget, QPushButton):
+        if widget.property("accent"):
+            widget.setStyleSheet(ACCENT_BUTTON_STYLE)
+        else:
+            widget.setStyleSheet(BUTTON_STYLE)
+    elif isinstance(widget, QLineEdit):
+        widget.setStyleSheet(LINEEDIT_STYLE)
+    elif isinstance(widget, QLabel):
+        # Don't style labels with custom styling
+        if not widget.styleSheet():
+            widget.setStyleSheet(LABEL_STYLE)
+    elif isinstance(widget, QComboBox):
+        widget.setStyleSheet(COMBOBOX_STYLE)
+    elif isinstance(widget, QFrame):
+        # Prevent overriding custom frame styling
+        pass 

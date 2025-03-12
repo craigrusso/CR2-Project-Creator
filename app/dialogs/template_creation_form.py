@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                            QPushButton, QLineEdit, QComboBox, QGridLayout,
                            QMessageBox, QFileDialog, QGroupBox)
 from PyQt5.QtCore import Qt
-from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE
+from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, COMBOBOX_STYLE
 
 class TemplateCreationForm(QDialog):
     """
@@ -56,6 +56,9 @@ class TemplateCreationForm(QDialog):
         type_label = QLabel("Project Type:")
         self.type_combo = QComboBox()
         self.type_combo.currentIndexChanged.connect(self.on_project_type_changed)
+        # Apply the standard style from the structure editor
+        self.type_combo.setStyleSheet(COMBOBOX_STYLE)
+        self.type_combo.setMinimumWidth(250)
         
         # Add help text for project type
         type_help = QLabel("Project Type determines the default folder structure")
@@ -92,6 +95,9 @@ class TemplateCreationForm(QDialog):
         structure_label = QLabel("Structure:")
         self.structure_combo = QComboBox()
         self.structure_combo.currentIndexChanged.connect(self.update_structure_preview)
+        # Apply the standard style from the structure editor
+        self.structure_combo.setStyleSheet(COMBOBOX_STYLE)
+        self.structure_combo.setMinimumWidth(250)
         
         edit_structure_btn = QPushButton("Edit Structure")
         edit_structure_btn.clicked.connect(self.edit_structure)

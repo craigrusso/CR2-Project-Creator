@@ -12,7 +12,7 @@ from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize
 from PyQt5.QtGui import QIcon, QFont
 
 from app.core.app_config import APP_NAME, APP_VERSION, RECENT_TEMPLATES_MAX
-from app.ui.color_scheme_pyqt import get_color, colors
+from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, COMBOBOX_STYLE
 from app.utils.utils import load_config, save_config, truncate_path
 from app.ui.ui_components_pyqt import ToolTip, CardFrame, SearchBox, TemplateFileCard
 from app.templates.template_manager import TemplateManager
@@ -168,6 +168,8 @@ class ProjectCreatorApp(QMainWindow):
         self.structure_layout = QHBoxLayout()
         self.structure_label = QLabel("Folder Structure:")
         self.structure_combo = QComboBox()
+        self.structure_combo.setStyleSheet(COMBOBOX_STYLE)
+        self.structure_combo.setMinimumWidth(250)
         self.structure_btn = QPushButton("Edit...")
         self.structure_btn.clicked.connect(self._edit_structure)
         self.structure_layout.addWidget(self.structure_label)

@@ -7,10 +7,14 @@ import json
 from PyQt5.QtWidgets import QApplication, QDialog, QVBoxLayout, QPushButton, QLabel, QTextEdit, QComboBox
 from PyQt5.QtCore import Qt
 
-# Import the default structures
+# Add the parent directory to the path so we can import the app modules
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import the app modules
 from app.core.app_config import DEFAULT_STRUCTURES as APP_CONFIG_STRUCTURES
 from app.constants import DEFAULT_STRUCTURES as CONSTANTS_STRUCTURES
 from app.dialogs.dialog_windows_pyqt import preview_structure
+from app.ui.color_scheme_pyqt import COMBOBOX_STYLE
 
 class DefaultStructuresTestDialog(QDialog):
     """Dialog to test the updated default structures"""
@@ -46,6 +50,7 @@ class DefaultStructuresTestDialog(QDialog):
         self.source_combo.addItem("app/core/app_config.py", "app_config")
         self.source_combo.addItem("app/constants.py", "constants")
         self.source_combo.currentIndexChanged.connect(self.update_structure_list)
+        self.source_combo.setStyleSheet(COMBOBOX_STYLE)
         source_layout.addWidget(self.source_combo)
         layout.addLayout(source_layout)
         
@@ -58,6 +63,7 @@ class DefaultStructuresTestDialog(QDialog):
         self.structure_combo = QComboBox()
         self.structure_combo.setMinimumWidth(300)
         self.structure_combo.currentIndexChanged.connect(self.show_structure_preview)
+        self.structure_combo.setStyleSheet(COMBOBOX_STYLE)
         structure_layout.addWidget(self.structure_combo)
         layout.addLayout(structure_layout)
         

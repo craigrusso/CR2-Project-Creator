@@ -101,20 +101,41 @@ COMBOBOX_STYLE = f"""
         background-color: {colors['card_bg']};
         color: {colors['text']};
         border: 1px solid {colors['border']};
-        padding: 5px;
+        padding: 5px 25px 5px 5px;  /* Add more padding on the right for the arrow */
         border-radius: 3px;
+        min-height: 22px;
     }}
     QComboBox:hover {{
         border: 1px solid {colors['accent']};
     }}
     QComboBox::drop-down {{
+        subcontrol-origin: padding;
+        subcontrol-position: top right;
+        width: 20px;
+        border-left-width: 1px;
+        border-left-color: {colors['border']};
+        border-left-style: solid;
+        border-top-right-radius: 3px;
+        border-bottom-right-radius: 3px;
+    }}
+    QComboBox::down-arrow {{
+        /* Use the SVG file with a letter V */
+        image: url(app/assets/css/v_arrow.svg);
+        width: 16px;
+        height: 16px;
         border: none;
+        background-color: transparent;
+    }}
+    QComboBox::down-arrow:on {{
+        /* Use the SVG file with upside-down V */
+        image: url(app/assets/css/v_arrow_up.svg);
     }}
     QComboBox QAbstractItemView {{
         background-color: {colors['card_bg']};
         color: {colors['text']};
         selection-background-color: {colors['highlight_bg']};
         selection-color: {colors['highlight_text']};
+        border: 1px solid {colors['border']};
     }}
 """
 
