@@ -105,9 +105,6 @@ def populate_template_gallery(app):
             card.bind("<Enter>", lambda e, c=card: _on_card_hover_enter(c))
             card.bind("<Leave>", lambda e, c=card: _on_card_hover_leave(c))
             
-            # Add right-click menu
-            card.bind("<Button-3>", lambda e, t=template: _show_template_context_menu(app, e, t))
-            
             # Apply highlight if this is the current template
             should_highlight = False
             
@@ -767,44 +764,6 @@ def refresh_after_edit(app, template):
     
     # Show a success message
     app.show_status_message(f"Template '{template.get('name', 'Unknown')}' updated successfully")
-
-
-def _show_template_context_menu(app, event, template):
-    """Show a context menu for a template"""
-    # Create a popup menu
-    menu = tk.Menu(app.root, tearoff=0)
-    is_directory = template.get('type') == 'directory'
-    
-    # Select option
-    menu.add_command(label="Select Template", 
-                   command=lambda: select_template_from_gallery(app, template))
-    
-    # Edit structure option (works for all templates)
-    menu.add_command(label="Edit Folder Structure", 
-                   command=lambda: edit_template_structure(app, template))
-    
-    # Apply structure option
-    menu.add_command(label="Apply Custom Structure", 
-                   command=lambda: apply_structure_to_template(app, template))
-    
-    # Edit specific to directory templates
-    if is_directory:
-        menu.add_command(label="Edit Template Files", 
-                       command=lambda: edit_directory_template(app, template))
-    
-    # Separate with a line
-    menu.add_separator()
-    
-    # View details option
-    menu.add_command(label="View Details", 
-                   command=lambda: _show_template_details(app, template))
-    
-    # Display menu at pointer position
-    try:
-        menu.tk_popup(event.x_root, event.y_root)
-    finally:
-        # Make sure to release the grab
-        menu.grab_release()
 
 
 def _show_template_details(app, template):

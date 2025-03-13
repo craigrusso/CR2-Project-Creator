@@ -2,9 +2,11 @@
 
 from PyQt5.QtWidgets import QFrame, QLabel, QLineEdit, QVBoxLayout, QHBoxLayout, QMessageBox, QMenu, QAction
 from PyQt5.QtCore import pyqtSignal, Qt, QTimer, QEvent
-from PyQt5.QtGui import QFont
-from app.ui.color_scheme_pyqt import colors
+from PyQt5.QtGui import QFont, QIcon, QPixmap, QCursor, QColor
+from app.ui.color_scheme_pyqt import colors, MENU_DESTRUCTIVE_ITEM_STYLE, DELETE_TEXT_STYLE
 from .utils import SYSTEM_FONT
+import os
+from app.templates.components.menu_actions import ContextMenu
 
 class TemplateFolderCard(QFrame):
     clicked = pyqtSignal(str)
@@ -233,8 +235,8 @@ class TemplateFolderCard(QFrame):
 
     def contextMenuEvent(self, event):
         """Show context menu on right click"""
-        # Create context menu
-        context_menu = QMenu(self)
+        # Create context menu using our custom class
+        context_menu = ContextMenu(self)
         
         # Add rename action
         rename_action = QAction("Rename", self)
@@ -243,9 +245,11 @@ class TemplateFolderCard(QFrame):
         
         # Add delete action (unless it's a default folder)
         if self.folder_name not in ["General", "Development", "Business"]:
-            delete_action = QAction("Delete", self)
-            delete_action.triggered.connect(lambda: self._delete_folder())
-            context_menu.addAction(delete_action)
+            # Use our specialized helper method for red Delete text
+            context_menu.addRedDeleteAction(
+                parent=self, 
+                callback=lambda: self._delete_folder()
+            )
         
         # Show the menu
         context_menu.exec_(event.globalPos())
@@ -521,8 +525,8 @@ class TemplateFolderListItem(QFrame):
     
     def contextMenuEvent(self, event):
         """Show context menu on right click"""
-        # Create context menu
-        context_menu = QMenu(self)
+        # Create context menu using our custom class
+        context_menu = ContextMenu(self)
         
         # Add rename action
         rename_action = QAction("Rename", self)
@@ -531,9 +535,11 @@ class TemplateFolderListItem(QFrame):
         
         # Add delete action (unless it's a default folder)
         if self.folder_name not in ["General", "Development", "Business"]:
-            delete_action = QAction("Delete", self)
-            delete_action.triggered.connect(lambda: self._delete_folder())
-            context_menu.addAction(delete_action)
+            # Use our specialized helper method for red Delete text
+            context_menu.addRedDeleteAction(
+                parent=self, 
+                callback=lambda: self._delete_folder()
+            )
         
         # Show the menu
         context_menu.exec_(event.globalPos())

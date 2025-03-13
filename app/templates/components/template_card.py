@@ -1,11 +1,16 @@
 # template_card.py
 
-from PyQt5.QtWidgets import QFrame, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QMenu, QAction
-from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QMimeData
-from PyQt5.QtGui import QPixmap, QFont, QDrag, QPainter
+from PyQt5.QtWidgets import (
+    QFrame, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QMenu, QAction, QMessageBox, 
+    QListWidget, QListWidgetItem, QAbstractItemView, QScrollArea
+)
+from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QMimeData, QSize, QPoint, QRect
+from PyQt5.QtGui import QPixmap, QFont, QDrag, QPainter, QColor, QBrush, QPen, QIcon, QCursor
 import os
 from .utils import SYSTEM_FONT
 from .common_styles import CARD_NORMAL, CARD_HOVER, CARD_SELECTED, colors
+from app.ui.color_scheme_pyqt import MENU_DESTRUCTIVE_ITEM_STYLE, DELETE_TEXT_STYLE
+from app.templates.components.menu_actions import ContextMenu
 
 def template_icon_path(template_name=None):
     """Return the path to the template icon."""
@@ -275,47 +280,26 @@ class TemplateCard(QFrame):
         if not self.app or not hasattr(self.app, 'template_manager'):
             return
             
-        # Create context menu with styled appearance
-        context_menu = QMenu(self)
-        context_menu.setStyleSheet("""
-            QMenu {
-                background-color: #252526;
-                color: #CCCCCC;
-                border: 1px solid #3C3C3C;
-                padding: 5px;
-                border-radius: 4px;
-            }
-            QMenu::item {
-                padding: 5px 20px 5px 20px;
-                border-radius: 3px;
-            }
-            QMenu::item:selected {
-                background-color: #2C4F76;
-                color: #FFFFFF;
-            }
-            QMenu::separator {
-                height: 1px;
-                background: #3C3C3C;
-                margin: 5px 0px 5px 0px;
-            }
-        """)
+        # Create context menu using our custom class
+        context_menu = ContextMenu(self)
         
         # Add "Edit" action
         edit_action = QAction("Edit", self)
         edit_action.triggered.connect(lambda: self.editRequested.emit(self.template_name()))
         context_menu.addAction(edit_action)
         
-        # Add "Delete" action
-        delete_action = QAction("Delete", self)
-        delete_action.triggered.connect(lambda: self.deleteRequested.emit(self.template_name()))
-        context_menu.addAction(delete_action)
+        # Add "Delete" action using our helper method for red styling
+        context_menu.addRedDeleteAction(
+            parent=self,
+            callback=lambda: self.deleteRequested.emit(self.template_name())
+        )
         
         # Add separator
         context_menu.addSeparator()
         
         # Add move actions
-        move_to_menu = QMenu("Move to...", context_menu)
-        move_to_menu.setStyleSheet(context_menu.styleSheet())  # Apply same styling to submenu
+        move_to_menu = ContextMenu(context_menu)
+        move_to_menu.setTitle("Move to...")
         
         # Find current folder of this template
         current_folder = None
@@ -601,47 +585,26 @@ class TemplateListItem(QFrame):
         if not self.app or not hasattr(self.app, 'template_manager'):
             return
             
-        # Create context menu with styled appearance
-        context_menu = QMenu(self)
-        context_menu.setStyleSheet("""
-            QMenu {
-                background-color: #252526;
-                color: #CCCCCC;
-                border: 1px solid #3C3C3C;
-                padding: 5px;
-                border-radius: 4px;
-            }
-            QMenu::item {
-                padding: 5px 20px 5px 20px;
-                border-radius: 3px;
-            }
-            QMenu::item:selected {
-                background-color: #2C4F76;
-                color: #FFFFFF;
-            }
-            QMenu::separator {
-                height: 1px;
-                background: #3C3C3C;
-                margin: 5px 0px 5px 0px;
-            }
-        """)
+        # Create context menu using our custom class
+        context_menu = ContextMenu(self)
         
         # Add "Edit" action
         edit_action = QAction("Edit", self)
         edit_action.triggered.connect(lambda: self.editRequested.emit(self.template_name()))
         context_menu.addAction(edit_action)
         
-        # Add "Delete" action
-        delete_action = QAction("Delete", self)
-        delete_action.triggered.connect(lambda: self.deleteRequested.emit(self.template_name()))
-        context_menu.addAction(delete_action)
+        # Add "Delete" action using our helper method for red styling
+        context_menu.addRedDeleteAction(
+            parent=self,
+            callback=lambda: self.deleteRequested.emit(self.template_name())
+        )
         
         # Add separator
         context_menu.addSeparator()
         
         # Add move actions
-        move_to_menu = QMenu("Move to...", context_menu)
-        move_to_menu.setStyleSheet(context_menu.styleSheet())  # Apply same styling to submenu
+        move_to_menu = ContextMenu(context_menu)
+        move_to_menu.setTitle("Move to...")
         
         # Find current folder of this template
         current_folder = None

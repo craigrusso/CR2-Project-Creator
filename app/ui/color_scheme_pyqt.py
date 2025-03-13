@@ -28,6 +28,8 @@ APP_COLORS = {
     "success_text": "#003300",    # Text on success backgrounds
     "warning": "#F1AE3C",         # Warning (yellow/amber)
     "error": "#E8574C",           # Error (red)
+    "error_text": "#FF5555",      # Bright red for destructive actions
+    "error_hover": "#FFAAAA",     # Light red for destructive action hover
     
     # Selection/highlight colors
     "highlight_border": "#4682B4", # Steel Blue for highlight borders
@@ -246,6 +248,61 @@ SECONDARY_LABEL_STYLE = f"""
     QLabel {{
         color: {colors['secondary_text']};
     }}
+"""
+
+# Destructive action style (for delete buttons, menu items, etc.)
+DESTRUCTIVE_ACTION_STYLE = f"""
+    color: {colors['error_text']};
+"""
+
+# Special style for delete menu items in context menus
+MENU_DESTRUCTIVE_ITEM_STYLE = f"""
+    QMenu {{
+        background-color: #252526;
+        color: #CCCCCC;
+        border: 1px solid #3C3C3C;
+        padding: 5px;
+        border-radius: 4px;
+    }}
+    QMenu::item {{
+        padding: 5px 20px 5px 20px;
+        border-radius: 3px;
+    }}
+    QMenu::item:selected {{
+        background-color: #2C4F76;
+        color: white;
+    }}
+    
+    /* Style the destructive action - improved specificity for better macOS support */
+    QMenu QAction[destructive="true"] {{
+        color: {colors['error_text']};
+        font-weight: bold;
+    }}
+    
+    /* Use a more specific selector for Qt on macOS */
+    QMenu::item[destructive="true"]:!selected {{
+        color: {colors['error_text']};
+        font-weight: bold;
+    }}
+    
+    /* Use red background for destructive actions when hovered */
+    QMenu::item[destructive="true"]:selected {{
+        color: white;
+        background-color: #AA3333;
+        font-weight: bold;
+    }}
+    
+    QMenu::separator {{
+        height: 1px;
+        background: #3C3C3C;
+        margin: 5px 0px 5px 0px;
+    }}
+"""
+
+# Add a specific style for the Delete text that can be applied directly
+DELETE_TEXT_STYLE = f"""
+    color: {colors['error_text']};
+    font-weight: bold;
 """
 
 # Export specific color combinations for different UI elements

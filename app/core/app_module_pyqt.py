@@ -129,6 +129,18 @@ class ProjectCreatorApp(QMainWindow):
         self.status_message = QLabel("")
         self.status_bar.addWidget(self.status_message)
         
+        # Configure status bar for proper text display
+        self.status_bar.setStyleSheet("""
+            QStatusBar { 
+                padding-left: 8px; 
+                min-height: 24px;
+            }
+            QStatusBar::item {
+                border: none;
+                padding-left: 8px;
+            }
+        """)
+        
         # Add main horizontal splitter
         self.main_splitter = QSplitter(Qt.Horizontal)
         self.main_layout.addWidget(self.main_splitter)
@@ -510,15 +522,25 @@ class ProjectCreatorApp(QMainWindow):
         self.status_message_timer.stop()
         
         # Set message style based on type
-        style = ""
+        base_style = """
+            QStatusBar { 
+                padding-left: 8px; 
+                min-height: 24px;
+            }
+            QStatusBar::item {
+                border: none;
+                padding-left: 8px;
+            }
+        """
+        
         if message_type == "success":
-            style = f"background-color: {colors['success']}; color: {colors['success_text']}; padding: 5px;"
+            style = base_style + f"QStatusBar {{ background-color: {colors['success']}; color: {colors['success_text']}; }}"
         elif message_type == "error":
-            style = f"background-color: {colors['error']}; color: white; padding: 5px;"
+            style = base_style + f"QStatusBar {{ background-color: {colors['error']}; color: white; }}"
         elif message_type == "warning":
-            style = f"background-color: {colors['warning']}; color: black; padding: 5px;"
+            style = base_style + f"QStatusBar {{ background-color: {colors['warning']}; color: black; }}"
         else:  # info
-            style = f"background-color: {colors['accent']}; color: white; padding: 5px;"
+            style = base_style + f"QStatusBar {{ background-color: {colors['accent']}; color: white; }}"
         
         # Set status bar message and style
         self.status_bar.setStyleSheet(style)
@@ -535,7 +557,21 @@ class ProjectCreatorApp(QMainWindow):
         
         # Clear message and reset style
         self.status_bar.clearMessage()
-        self.status_bar.setStyleSheet(f"background-color: {colors['card_bg']}; color: {colors['text']}")
+        
+        # Reset to default style while maintaining proper padding
+        base_style = """
+            QStatusBar { 
+                padding-left: 8px; 
+                min-height: 24px;
+                background-color: """ + colors['card_bg'] + """; 
+                color: """ + colors['text'] + """;
+            }
+            QStatusBar::item {
+                border: none;
+                padding-left: 8px;
+            }
+        """
+        self.status_bar.setStyleSheet(base_style)
     
     def check_for_updates(self):
         """Check for application updates"""

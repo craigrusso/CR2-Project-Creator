@@ -631,26 +631,9 @@ class GalleryEvents:
             # Get folder name from dialog
             folder_name, ok = QInputDialog.getText(None, "Add Folder", "Folder Name:")
             if ok and folder_name:
-                # Get categories using our custom dropdown dialog for proper styling
-                categories = gallery.app.template_manager.get_categories() if hasattr(gallery.app.template_manager, 'get_categories') else ["Video Editing", "Motion Graphics", "Design", "Audio", "Custom"]
-                
-                # Create and show our custom styled dialog
-                dialog = StyledItemDialog(
-                    gallery,
-                    "Select Category",
-                    "Choose folder category:",
-                    categories
-                )
-                
-                if dialog.exec_() == QDialog.Accepted:
-                    category = dialog.selectedItem()
-                    # Create the folder
-                    gallery.app.template_manager.create_folder(folder_name, category)
-                    gallery.populate_gallery()
-                else:
-                    # If user cancels selecting a category, just create with default
-                    gallery.app.template_manager.create_folder(folder_name)
-                    gallery.populate_gallery()
+                # Create the folder without asking for a category
+                gallery.app.template_manager.create_folder(folder_name)
+                gallery.populate_gallery()
     
     @staticmethod
     def on_rename_folder(gallery):
