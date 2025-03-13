@@ -109,6 +109,6 @@ This application is built using PyQt5, which provides a modern, cross-platform u
 
 ## License
 
-This project is licensed under the Creative Commons Attribution-NonCommercial 4.0 International License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 Copyright (c) 2023-present Craig P. Russo and CR2 Creative
