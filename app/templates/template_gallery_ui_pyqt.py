@@ -1070,6 +1070,10 @@ class TemplateListItem(QFrame):
     """Template list item widget for displaying a template in list view"""
     
     clicked = pyqtSignal(object)
+    doubleClicked = pyqtSignal(object)  # Add signal for double-click
+    editRequested = pyqtSignal(str)     # Signal for edit request
+    deleteRequested = pyqtSignal(str)   # Signal for delete request
+    moveToFolderRequested = pyqtSignal(str, str)  # Signal for move to folder request
     
     def __init__(self, parent=None, template=None, app=None):
         super().__init__(parent)
@@ -1085,6 +1089,9 @@ class TemplateListItem(QFrame):
         self.setLineWidth(0)
         self.setFixedHeight(40)  # Slightly reduced height for macOS-like compactness
         self.setCursor(Qt.PointingHandCursor)
+        
+        # Size policy - make sure the item stretches to fill width
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         
         # Layout
         self.layout = QHBoxLayout(self)
@@ -1136,257 +1143,193 @@ class TemplateListItem(QFrame):
         self.icon_label.setStyleSheet(f"color: {colors['accent']}; background: transparent;")
         self.icon_label.setFixedWidth(40)
         self.layout.addWidget(self.icon_label)
-
-    def _display_templates(self, templates):
-        """Display templates in the template section"""
-        try:
-            print(f"_display_templates called with {len(templates)} templates")
-            
-            if not templates:
-                print("No templates to display")
-                return
-                
-            # Calculate available width for templates
-            available_width = self.templates_container.width()
-            if available_width <= 0:
-                available_width = self.width() - 40  # Use widget width with margin
-                
-            # Limit to a reasonable maximum width
-            available_width = min(available_width, 1200)
-            
-            # Calculate columns for templates
-            template_width = 200 + 10  # Template card width + spacing
-            max_cols = max(1, (available_width - 30) // template_width)
-            
-            row, col = 0, 0  # Reset row and column counters
-            
-            # Display templates based on view mode
-            print(f"Template view mode: {self.template_view_mode}")
-            if self.template_view_mode == "grid" or self.template_view_mode == "icon":
-                print("Using grid view for templates")
-                # Grid view
-                for template in templates:
-                    try:
-                        # Use a safer import approach
-                        template_name = template.get('name', 'Unknown')
-                        print(f"Creating template card for: {template_name}")
-                        
-                        # Import here to avoid circular imports, use a try-except block
-                        try:
-                            from app.templates.components import TemplateCard
-                        except ImportError as e:
-                            print(f"Error importing TemplateCard: {e}")
-                            # Create a simple placeholder frame instead
-                            temp_frame = QFrame()
-                            temp_layout = QVBoxLayout(temp_frame)
-                            temp_label = QLabel(f"Template: {template_name}")
-                            temp_label.setStyleSheet("color: white; background: transparent;")
-                            temp_layout.addWidget(temp_label)
-                            temp_frame.setStyleSheet("background-color: #333; padding: 10px; border-radius: 5px;")
-                            temp_frame.setMinimumSize(150, 100)
-                            template_card = temp_frame
-                            # Create a mousePressEvent for the frame
-                            def mousePressEvent(event, t=template):
-                                self._on_template_select(t)
-                            template_card.mousePressEvent = mousePressEvent.__get__(template_card, QFrame)
-                        else:
-                            template_card = TemplateCard(parent=self, template=template, app=self.app)
-                            # Connect to receive the template object directly
-                            template_card.clicked.connect(self._on_template_select)
-                            
-                        self.templates_grid.addWidget(template_card, row, col)
-                        self.template_cards.append(template_card)
-                        
-                        # Update grid position
-                        col += 1
-                        if col >= max_cols:
-                            col = 0
-                            row += 1
-                            
-                    except Exception as e:
-                        print(f"Error creating template card for {template.get('name', 'Unknown')}: {e}")
-            else:
-                print("Using list view for templates")
-                # List view
-                # Create a container for list view
-                list_container = QFrame()
-                list_container.setFrameShape(QFrame.NoFrame)
-                list_container.setStyleSheet("background-color: transparent; border: none;")
-                list_layout = QVBoxLayout(list_container)
-                list_layout.setContentsMargins(0, 0, 0, 0)
-                list_layout.setSpacing(0)  # No spacing between items
-                
-                # Add the list container to the grid
-                self.templates_grid.addWidget(list_container, 0, 0, 1, 1)
-                
-                for i, template in enumerate(templates):
-                    try:
-                        template_name = template.get('name', 'Unknown')
-                        template_desc = template.get('description', '')
-                        print(f"Creating template list item for: {template_name}")
-                        
-                        # Create a custom list item regardless of whether TemplateListItem is available
-                        list_item = QFrame()
-                        list_item.setFrameShape(QFrame.NoFrame)
-                        list_item.setFixedHeight(36)  # Fixed height for consistent rows
-                        if i % 2:
-                            list_item.setStyleSheet(f"background-color: {colors['card_bg']}; padding: 4px;")
-                        else:
-                            list_item.setStyleSheet(f"background-color: {colors['bg']}; padding: 4px;")
-                        
-                        item_layout = QHBoxLayout(list_item)
-                        item_layout.setContentsMargins(8, 2, 8, 2)  # Reduced vertical margins
-                        
-                        # Icon/Type indicator
-                        icon_label = QLabel("📄")
-                        icon_label.setFont(QFont(SYSTEM_FONT, 14))  # Smaller font
-                        icon_label.setStyleSheet("color: white; background: transparent;")
-                        item_layout.addWidget(icon_label)
-                        
-                        # Name and description
-                        text_container = QWidget()
-                        text_layout = QHBoxLayout(text_container)  # Use horizontal layout
-                        text_layout.setContentsMargins(0, 0, 0, 0)
-                        text_layout.setSpacing(8)
-                        
-                        name_label = QLabel(template_name)
-                        name_label.setFont(QFont(SYSTEM_FONT, 11, QFont.Bold))
-                        name_label.setStyleSheet("color: white; background: transparent;")
-                        text_layout.addWidget(name_label)
-                        
-                        if template_desc:
-                            desc_label = QLabel(template_desc[:60] + ('...' if len(template_desc) > 60 else ''))
-                            desc_label.setStyleSheet("color: #AAAAAA; background: transparent;")
-                            # Make sure description doesn't push the name off-screen
-                            name_label.setMinimumWidth(150)
-                            name_label.setMaximumWidth(200)
-                            text_layout.addWidget(desc_label, 1)  # Give stretch to description
-                        
-                        item_layout.addWidget(text_container, 1)  # Give stretch factor
-                        
-                        # Make the list item clickable
-                        def mousePressEvent(event, t=template):
-                            self._on_template_select(t)
-                        list_item.mousePressEvent = mousePressEvent.__get__(list_item, QFrame)
-                        list_item.setCursor(Qt.PointingHandCursor)
-                        
-                        list_layout.addWidget(list_item)
-                        self.template_cards.append(list_item)
-                        
-                    except Exception as e:
-                        print(f"Error creating template list item for {template.get('name', 'Unknown')}: {e}")
-                        
-            print("Templates displayed successfully")
-        except Exception as e:
-            print(f"Error in _display_templates: {e}")
-            import traceback
-            traceback.print_exc()
+        
+        # Template name (title)
+        self.name_label = QLabel(template.get('name', 'Untitled Template'))
+        self.name_label.setFont(QFont(SYSTEM_FONT, 11, QFont.Bold))
+        self.name_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.layout.addWidget(self.name_label, 1)  # Give name label stretch priority
+        
+        # Template category
+        category = template.get('category', 'Default')
+        self.category_label = QLabel(category)
+        self.category_label.setFont(QFont(SYSTEM_FONT, 10))
+        self.category_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.category_label.setFixedWidth(150)
+        self.layout.addWidget(self.category_label)
+        
+        # Set initial styling
+        self._update_styling()
     
-    def _clear_gallery(self):
-        """Clear all cards from the gallery"""
-        # First, delete all folder cards
-        for card in self.folder_cards:
-            try:
-                card.deleteLater()
-            except RuntimeError:
-                pass
-        self.folder_cards = []
+    def mousePressEvent(self, event):
+        """Handle mouse press events - emit clicked signal with template data"""
+        # Print debug statement
+        print(f"⭐ List item clicked for template: {self.template.get('name', 'Unknown')}")
         
-        # Delete all template cards
-        for card in self.template_cards:
-            try:
-                card.deleteLater()
-            except RuntimeError:
-                pass
-        self.template_cards = []
+        # Emit the clicked signal with the template data
+        self.clicked.emit(self.template)
+        super().mousePressEvent(event)
+    
+    def mouseDoubleClickEvent(self, event):
+        """Handle double-click events - emit doubleClicked signal with template data"""
+        self.doubleClicked.emit(self.template)
+        super().mouseDoubleClickEvent(event)
+    
+    def enterEvent(self, event):
+        """Handle mouse enter events - update hover state"""
+        self.hover = True
+        self._update_styling()
+        super().enterEvent(event)
+    
+    def leaveEvent(self, event):
+        """Handle mouse leave events - update hover state"""
+        self.hover = False
+        self._update_styling()
+        super().leaveEvent(event)
+    
+    def set_selected(self, selected):
+        """Set the selected state of the list item"""
+        # Debug output
+        print(f"⭐ TemplateListItem.set_selected({selected}) called for {self.template.get('name', 'Unknown')}")
         
-        # Completely remove and recreate the folders container with a new grid layout
-        if self.folders_container:
-            self.folders_container.deleteLater()
+        # Track changed state 
+        old_state = self.selected
+        self.selected = selected
         
-        self.folders_container = QWidget()
-        self.folders_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.folders_grid = QGridLayout(self.folders_container)
-        self.folders_grid.setContentsMargins(0, 0, 0, 0)
-        self.folders_grid.setHorizontalSpacing(6)
-        self.folders_grid.setVerticalSpacing(12)
-        self.folders_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        # Update styling
+        self._update_styling()
         
-        self.folders_scroll.setWidget(self.folders_container)
+        # Debug output
+        print(f"⭐ TemplateListItem selection changed: {old_state} -> {selected} for {self.template.get('name', 'Unknown')}")
+    
+    def _update_styling(self):
+        """Update styling based on selected, hover, and row-type state"""
+        template_name = self.template.get('name', 'Unknown')
         
-        # Completely remove and recreate the templates container with a new grid layout
-        if self.templates_container:
-            self.templates_container.deleteLater()
+        # Debug styling
+        print(f"⭐ TemplateListItem._update_styling() for {template_name}, selected={self.selected}, hover={self.hover}")
         
-        self.templates_container = QWidget()
-        self.templates_grid = QGridLayout(self.templates_container)
-        self.templates_grid.setContentsMargins(0, 0, 0, 0)
-        self.templates_grid.setHorizontalSpacing(5)
-        self.templates_grid.setVerticalSpacing(5)
-        self.templates_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-        self.templates_section_layout.addWidget(self.templates_container)
-
-    def _update_categories(self):
-        """Update project type dropdown with available project types"""
-        templates = list(self.templates_dict.values())
-        
-        # Get unique project types from templates
-        project_types = sorted(set(t.get('category', 'General') for t in templates))
-        
-        # Remember current project type
-        current_project_type = self.current_category
-        
-        # Update dropdown
-        self.project_type_combo.blockSignals(True)
-        self.project_type_combo.clear()
-        
-        # Add "All" option
-        self.project_type_combo.addItem("All")
-        
-        # Add all project types
-        for project_type in project_types:
-            self.project_type_combo.addItem(project_type)
-        
-        # Set to current project type if it exists, otherwise default to "All"
-        index = self.project_type_combo.findText(current_project_type)
-        if index >= 0:
-            self.project_type_combo.setCurrentIndex(index)
+        if self.selected:
+            # Selected styling - use macOS blue highlight color
+            print(f"⭐ Applying SELECTED style to {template_name}")
+            self.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {colors['highlight_bg']};
+                    border: none;
+                }}
+            """)
+            self.icon_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
+            self.name_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
+            self.category_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
+        elif self.hover:
+            # Hover styling - light hover effect
+            self.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {colors['hover_bg']};
+                    border: none;
+                }}
+            """)
+            self.icon_label.setStyleSheet(f"color: {colors['accent']}; background: transparent;")
+            self.name_label.setStyleSheet("color: white; background: transparent;")
+            self.category_label.setStyleSheet("color: #cccccc; background: transparent;")
         else:
-            self.project_type_combo.setCurrentIndex(0)
-            self.current_category = "All"
+            # Normal styling - alternate row colors
+            row_type = self.property("row_type")
+            if row_type == "odd":
+                bg_color = colors.get("alternate_row", "#2A2A2A")
+            else:
+                bg_color = colors.get("card_bg", "#333333")
+                
+            self.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {bg_color};
+                    border: none;
+                }}
+            """)
+            self.icon_label.setStyleSheet(f"color: {colors['accent']}; background: transparent;")
+            self.name_label.setStyleSheet("color: white; background: transparent;")
+            self.category_label.setStyleSheet("color: #cccccc; background: transparent;")
         
-        self.project_type_combo.blockSignals(False)
-        
-    def on_project_type_changed(self, index):
-        """Handle project type selection from dropdown"""
-        project_type = self.project_type_combo.itemText(index)
-        self._on_category_select(project_type)
-    
-    def _on_search(self, search_text):
-        """Handle search box changes"""
-        self.populate_gallery()
+        # Force immediate update
+        self.update()
     
     def _on_template_select(self, template):
-        """Handle template selection"""
+        """Handle template selection with enhanced debugging"""
         try:
-            # Update selected card
-            for card in self.template_cards:
-                # Check if this card's template is the selected one
-                if hasattr(card, 'template') and card.template is template:
-                    card.set_selected(True)
-                    self.selected_template = template
-                else:
-                    card.set_selected(False)
+            # Handle case where same template is clicked
+            if hasattr(self, 'selected_template') and self.selected_template == template:
+                print("Same template selected, no change needed")
+                return
+                
+            # Visual debug indicator for clicks
+            print("\n\n")
+            print(f"🔵 TEMPLATE CLICK DETECTED: {template.get('name', 'Unnamed')}")
             
-            # Update edit/delete button state
+            # Store the template first
+            self.selected_template = template
+            selected_name = template.get('name', 'Unnamed')
+            print(f"App-level selected_template has been updated")
+            print(f"Selected template set to: {template}")
+            
+            # Update the app-level selected template
+            if hasattr(self.app, 'set_selected_template'):
+                self.app.set_selected_template(template)
+            
+            # Update UI buttons state
             self._update_button_state()
             
-            # Emit signal for template selection
-            if template:
-                self.template_selected.emit(template)
+            # Apply template highlighting to all cards
+            print(f"Updating card styling for {len(self.template_cards)} cards")
+            
+            # First, unselect all cards
+            for card in self.template_cards:
+                if hasattr(card, 'set_selected'):
+                    card.set_selected(False)
+            
+            # Then select only the matching card
+            for card in self.template_cards:
+                try:
+                    # Get card template name
+                    card_template = None
+                    card_name = "Unknown"
+                    
+                    if hasattr(card, 'template'):
+                        card_template = card.template
+                        if isinstance(card_template, dict):
+                            card_name = card_template.get('name', 'Unknown')
+                        else:
+                            card_name = str(card_template)
+                    
+                    # Check if this card matches our selected template
+                    is_match = False
+                    
+                    # Check if the card template matches our selected template
+                    if card_template == template:
+                        is_match = True
+                    # Or if the card name matches our selected template name
+                    elif card_name == selected_name:
+                        is_match = True
+                    
+                    # Apply selection state - should work for both card and list items
+                    if is_match:
+                        print(f"Setting card selected for template: {template}")
+                        if hasattr(card, 'set_selected'):
+                            card.set_selected(True)
+                        
+                except Exception as e:
+                    print(f"Error updating card styling: {e}")
+            
+            # Force UI updates
+            from PyQt5.QtWidgets import QApplication
+            QApplication.processEvents()
+            
+            # Emit selection signal
+            self.template_selected.emit(template)
+            
         except Exception as e:
-            print(f"Error in template selection: {str(e)}")
-            # Gracefully handle any errors
+            print(f"🔴 CRITICAL ERROR in template selection: {str(e)}")
+            import traceback
+            traceback.print_exc()
     
     def _on_add_template(self):
         """Handle add template button click"""
@@ -1532,25 +1475,87 @@ class TemplateListItem(QFrame):
     def _on_folder_select(self, folder_name):
         """Handle folder selection - only selects the folder, enabling rename and delete buttons"""
         try:
+            # DEBUG - VISUAL INDICATOR FOR FOLDER SELECTION
+            print("\n\n")
+            print("🟢" * 50)
+            print(f"🟩 FOLDER SELECTION: {folder_name}")
+            
+            # Show where in the code this was called from
+            import traceback
+            frames = traceback.extract_stack()
+            caller = frames[-2]  # The caller of this function
+            print(f"🟩 Called from: {caller.filename}:{caller.lineno}")
+            
             # Clear any previously selected template
             self.selected_template = None
             
             # Store the selected folder name
             self.selected_folder = folder_name
             
-            # Deselect all folders
-            for folder_card in self.folder_cards:
-                if folder_card and not sip.isdeleted(folder_card) and hasattr(folder_card, 'set_selected'):
-                    folder_card.set_selected(folder_card.folder_name == folder_name)
+            # Add debug visualization
+            from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton
+            debug_dialog = QDialog(self)
+            debug_dialog.setWindowTitle("Folder Selection Debug")
+            debug_dialog.setMinimumWidth(600)
             
-            # Enable rename and delete buttons
+            debug_layout = QVBoxLayout(debug_dialog)
+            
+            # Show what folder was clicked
+            debug_layout.addWidget(QLabel(f"Selected folder: {folder_name}"))
+            debug_layout.addWidget(QLabel(f"Folder card count: {len(self.folder_cards)}"))
+            
+            # Add a list of all folder cards for debugging
+            folder_list = QLabel("Folder cards: " + ", ".join(
+                [f.folder_name if hasattr(f, 'folder_name') else "Unknown" for f in self.folder_cards]))
+            folder_list.setWordWrap(True)
+            debug_layout.addWidget(folder_list)
+            
+            # Add close button
+            close_button = QPushButton("Continue (Close Debug)")
+            close_button.clicked.connect(debug_dialog.accept)
+            debug_layout.addWidget(close_button)
+            
+            # Show the debug dialog
+            debug_dialog.exec_()
+            
+            # Deselect all folders and then select the right one
+            print("🟩 Highlighting folder...")
+            
+            # Track what gets updated
+            updated_count = 0
+            
+            for folder_card in self.folder_cards:
+                if folder_card and not sip.isdeleted(folder_card):
+                    is_match = hasattr(folder_card, 'folder_name') and folder_card.folder_name == folder_name
+                    
+                    print(f"🟩 Checking folder card: {getattr(folder_card, 'folder_name', 'Unknown')} {'[MATCH]' if is_match else ''}")
+                    
+                    if hasattr(folder_card, 'set_selected'):
+                        try:
+                            folder_card.set_selected(is_match)
+                            if is_match:
+                                print(f"🟩 Applied set_selected(True) to {folder_card.folder_name}")
+                                # Capture the styling to see what's being applied 
+                                print(f"🟩 Folder card style: {folder_card.styleSheet()}")
+                                updated_count += 1
+                            else:
+                                print(f"🟩 Applied set_selected(False) to {getattr(folder_card, 'folder_name', 'Unknown')}")
+                        except Exception as e:
+                            print(f"🔴 Error in folder card set_selected: {e}")
+            
+            print(f"🟩 Updated {updated_count} folder cards")
+            
+            # Enable rename button only
             self.rename_folder_button.setEnabled(True)
-            self.delete_folder_button.setEnabled(True)
             
             # Update UI to show folder is selected but don't enter it
             self._update_button_state()
+            
+            print("🟢" * 50 + "\n\n")
         except Exception as e:
-            print(f"Error in _on_folder_select: {e}")
+            print(f"🔴 Error in _on_folder_select: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _on_folder_enter(self, folder_name):
         """Handle folder navigation - actually enter the folder"""
@@ -1637,15 +1642,13 @@ class TemplateListItem(QFrame):
             self.folder_label.hide()
             self.add_folder_button.show()
             # Don't show rename button: self.rename_folder_button.hide()
-            self.delete_folder_button.hide()  # Always hide delete button
         else:
-            # Folder view - show all folder management except rename and delete
+            # Folder view - show all folder management except rename
             # (we're using in-place renaming and keyboard/context menu for deletion now)
             self.folder_nav.show()
             self.folder_label.show()
             self.add_folder_button.show()
             # Don't show rename button: self.rename_folder_button.show()
-            self.delete_folder_button.hide()  # Always hide delete button
     
     def _on_add_folder(self):
         """Handle add folder button click"""
@@ -1855,35 +1858,65 @@ class TemplateListItem(QFrame):
         return min_width
         
     def _update_layout_after_resize(self):
-        """Update layout after resize with proper timing"""
+        """Update layout after resizing is complete"""
         try:
-            # Block signals to prevent repainting cascade
-            self.blockSignals(True)
+            print(f"[DEBUG] Gallery resize complete, width = {self.width()}")
             
-            # Force recalculation of container widths
-            if hasattr(self, 'folders_container') and self.folders_container:
-                parent_width = self.width()
-                available_width = min(parent_width - 40, 1200)
+            # Only continue if the width is reasonable
+            if self.width() < 50:
+                return
                 
-                viewport_width = self.folders_scroll.viewport().width()
-                if viewport_width > 0:
-                    available_width = viewport_width
+            # Update main sections width if necessary
+            if hasattr(self, 'folders_container') and hasattr(self, 'templates_container'):
                 
-                # Set the width without triggering layout
-                self.folders_container.setMinimumWidth(available_width)
-                self.folders_container.setMaximumWidth(available_width)
+                # Calculate available width for content, leaving space for margins
+                available_width = self.width() - 30  # Account for margins
+                
+                # Update folder grid layout - this will handle row width calculations
+                folders_width = min(available_width, 1200)  # Cap at a reasonable max
+                self.folders_container.setMinimumWidth(folders_width)
+                
+                # Update templates grid layout
+                templates_width = min(available_width, 1200)  # Cap at a reasonable max
+                self.templates_container.setMinimumWidth(templates_width)
+                
+                # Look for list container if in list view and update its width
+                if self.template_view_mode == "list":
+                    # Find list container widget in templates grid
+                    for i in range(self.templates_grid.count()):
+                        item = self.templates_grid.itemAt(i)
+                        if item and item.widget():
+                            widget = item.widget()
+                            if isinstance(widget, QFrame):
+                                # This is likely our list container
+                                widget.setMinimumWidth(templates_width)
+                                # Also update child scroll area width
+                                for j in range(widget.layout().count()):
+                                    child = widget.layout().itemAt(j)
+                                    if child and child.widget() and isinstance(child.widget(), QScrollArea):
+                                        child.widget().setMinimumWidth(templates_width)
+                                
+                                # Force immediate update and repaint
+                                widget.updateGeometry()
+                                widget.update()
+                
+                # Force update
+                self.folders_container.updateGeometry()
+                self.templates_container.updateGeometry()
+                
+            # Update icon and list size based on current settings
+            self._update_card_sizes()
             
-            # Also update templates container width
-            if hasattr(self, 'templates_container') and self.templates_container:
-                parent_width = self.width()
-                available_width = min(parent_width - 40, 1200)
-                
-                # Set the width without triggering layout
-                self.templates_container.setMinimumWidth(available_width)
-                self.templates_container.setMaximumWidth(available_width)
-        finally:
-            # Always unblock signals
-            self.blockSignals(False)
+            # Force an immediate repaint to prevent visual glitches
+            self.update()
+            
+            # Force immediate processing of all pending UI events
+            QApplication.processEvents()
+            
+        except Exception as e:
+            print(f"Error in _update_layout_after_resize: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _on_icon_scale_changed(self, value):
         """Handle icon scale slider changes"""

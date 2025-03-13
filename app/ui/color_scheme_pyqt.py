@@ -20,8 +20,8 @@ APP_COLORS = {
     "secondary_text": "#858585",  # Secondary/dimmed text
     
     # Accent colors
-    "accent": "#007ACC",          # Blue accent color
-    "accent_hover": "#0066B3",    # Darker blue for hover states
+    "accent": "#2C4F76",          # Dark blue accent color - more subtle and elegant
+    "accent_hover": "#36648B",    # Darker blue for hover states
     
     # Status/notification colors
     "success": "#4CAF50",         # Success (green)
@@ -33,7 +33,7 @@ APP_COLORS = {
     
     # Selection/highlight colors
     "highlight_border": "#4682B4", # Steel Blue for highlight borders
-    "highlight_bg": "#2C4F76",    # Darker blue for highlight backgrounds
+    "highlight_bg": "#2C4F76",    # Dark blue for highlight backgrounds - consistent with accent
     "highlight_bg_transparent": "#2C4F7633",  # Transparent highlight background (33=20% opacity)
     "highlight_darker": "#36648B", # Darker blue for hover on highlighted items
     "highlight_text": "#FFFFFF",  # White text for highlighted items

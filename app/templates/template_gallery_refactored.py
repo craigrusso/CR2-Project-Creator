@@ -304,8 +304,7 @@ class TemplateGallery(QWidget):
         has_folder_selected = self.selected_folder is not None
         
         # Special case for rename folder - don't show the button at all
-        # Only enable folder delete if a folder is selected
-        self.delete_folder_button.setEnabled(has_folder_selected)
+        # Delete folder button removed - using context menu and keystroke delete instead
     
     def _update_card_sizes(self):
         """Update card sizes after resize or scale change"""

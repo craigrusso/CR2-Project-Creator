@@ -2,7 +2,7 @@
 
 from PyQt5.QtWidgets import (
     QFrame, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QMenu, QAction, QMessageBox, 
-    QListWidget, QListWidgetItem, QAbstractItemView, QScrollArea
+    QListWidget, QListWidgetItem, QAbstractItemView, QScrollArea, QSizePolicy
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QMimeData, QSize, QPoint, QRect
 from PyQt5.QtGui import QPixmap, QFont, QDrag, QPainter, QColor, QBrush, QPen, QIcon, QCursor
@@ -51,7 +51,12 @@ class TemplateCard(QFrame):
         self.setAcceptDrops(False)
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedSize(140, 140)
+        
+        # Initial style - will be updated by _update_styling
         self.setStyleSheet(f"background-color: {CARD_NORMAL}; border-radius: 6px;")
+        
+        # Set property to track if this is a template card (for styling)
+        self.setProperty("is_template_card", True)
         
         # Main layout
         layout = QVBoxLayout(self)
@@ -195,78 +200,85 @@ class TemplateCard(QFrame):
         self._update_styling()
 
     def set_selected(self, selected):
+        """Set the selected state of this card"""
+        print(f"⭐ TemplateCard.set_selected({selected}) called for {self.template_name()}")
+        
+        # Store previous state for debugging
+        was_selected = self.selected
+        
+        # Update the state
         self.selected = selected
+        
+        # Set property for styling
+        self.setProperty("is_selected", selected)
+        
+        # Visual feedback
         self._update_styling()
+        
+        # Debug feedback
+        print(f"⭐ TemplateCard selection changed: {was_selected} -> {self.selected} for {self.template_name()}")
 
     def _update_styling(self):
+        """Update card styling based on selection and hover states"""
+        # Debug output
+        print(f"⭐ TemplateCard._update_styling() for {self.template_name()}, selected={self.selected}, hover={self.hover}")
+        
+        # Store current selected state as a property on the widget itself
+        self.setProperty("is_selected", self.selected)
+        
         if self.selected:
-            # Only style the container with a border, let children inherit the background
-            self.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {colors['highlight_bg']};
-                    border: 2px solid {colors['accent']};
-                    border-radius: 6px;
-                }}
-                QLabel {{
-                    color: {colors['highlight_text']};
-                    background-color: transparent;
+            # Simple, high-contrast selection style for maximum visibility
+            print(f"⭐ Applying SELECTED style to {self.template_name()}")
+            
+            # Card background
+            self.setStyleSheet("""
+                QFrame {
+                    background-color: #2C4F76;
                     border: none;
-                }}
+                    border-radius: 6px;
+                }
             """)
             
-            # Set text color but no borders on child elements
-            if hasattr(self, 'icon_label'):
-                self.icon_label.setStyleSheet("color: white; background-color: transparent; border: none;")
-            if hasattr(self, 'name_label'):
-                self.name_label.setStyleSheet("color: white; background-color: transparent; border: none; font-weight: bold;")
-            if hasattr(self, 'category_label'):
-                self.category_label.setStyleSheet("color: white; background-color: transparent; border: none;")
-                
+            # Text colors
+            self.name_label.setStyleSheet("color: white; font-weight: bold; background-color: transparent;")
+            self.category_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
+            self.icon_label.setStyleSheet("color: white; background-color: transparent;")
+            
+            # Debug - print style that was applied
+            print(f"⭐ Template card style: {self.styleSheet()}")
+        
         elif self.hover:
-            # Hover styling - clean with no individual element borders
+            # Hover styling
             self.setStyleSheet(f"""
                 QFrame {{
                     background-color: {colors['hover_bg']};
-                    border: 1px solid {colors['border']};
-                    border-radius: 6px;
-                }}
-                QLabel {{
-                    color: {colors['text']};
-                    background-color: transparent;
                     border: none;
+                    border-radius: 6px;
                 }}
             """)
             
-            # Reset label styles for hover state without borders
-            if hasattr(self, 'icon_label'):
-                self.icon_label.setStyleSheet("color: white; background-color: transparent; border: none;")
-            if hasattr(self, 'name_label'):
-                self.name_label.setStyleSheet("color: white; background-color: transparent; border: none;")
-            if hasattr(self, 'category_label'):
-                self.category_label.setStyleSheet("color: #AAAAAA; background-color: transparent; border: none;")
-                
+            # Text colors for hover state
+            self.name_label.setStyleSheet("color: white; background-color: transparent;")
+            self.category_label.setStyleSheet("color: #AAAAAA; background-color: transparent;")
+            self.icon_label.setStyleSheet("color: white; background-color: transparent;")
+        
         else:
-            # Default styling - clean with no borders on individual elements
+            # Default unselected styling
             self.setStyleSheet(f"""
                 QFrame {{
                     background-color: {colors['card_bg']};
-                    border: 1px solid {colors['card_bg']};
-                    border-radius: 6px;
-                }}
-                QLabel {{
-                    color: {colors['text']};
-                    background-color: transparent;
                     border: none;
+                    border-radius: 6px;
                 }}
             """)
             
-            # Reset label styles without borders
-            if hasattr(self, 'icon_label'):
-                self.icon_label.setStyleSheet("color: white; background-color: transparent; border: none;")
-            if hasattr(self, 'name_label'):
-                self.name_label.setStyleSheet("color: white; background-color: transparent; border: none;")
-            if hasattr(self, 'category_label'):
-                self.category_label.setStyleSheet("color: #AAAAAA; background-color: transparent; border: none;")
+            # Default text colors
+            self.name_label.setStyleSheet("color: white; background-color: transparent;")
+            self.category_label.setStyleSheet("color: #AAAAAA; background-color: transparent;")
+            self.icon_label.setStyleSheet("color: white; background-color: transparent;")
+        
+        # Force immediate update
+        self.update()
 
     def keyPressEvent(self, event):
         """Handle key press events for template operations"""
@@ -402,14 +414,17 @@ class TemplateListItem(QFrame):
         self.selected = False
         self.setAcceptDrops(False)
         self.setCursor(Qt.PointingHandCursor)
-        self.setFixedHeight(36)  # Fixed height for list view items
+        self.setFixedHeight(36)  # Match folder list item height exactly
+        
+        # Size policy - make sure the item stretches to the full width of its container
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         
         # Set alternating row color property (will be set by parent)
         self.setProperty("row_type", "even")  # Default to even
         
-        # Main layout - horizontal for list view
+        # Main layout - horizontal for list view with same margins as folders
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 4, 10, 4)
+        layout.setContentsMargins(10, 8, 10, 8)  # Match folder list item margins
         layout.setSpacing(8)
         
         # Template icon (smaller for list view)
@@ -428,7 +443,7 @@ class TemplateListItem(QFrame):
                 renderer = QSvgRenderer(QByteArray(svg_content.encode()))
                 if renderer.isValid():
                     # Create a pixmap to render to
-                    pixmap = QPixmap(24, 24)
+                    pixmap = QPixmap(22, 22)  # Slightly larger icon to match folders
                     pixmap.fill(Qt.transparent)  # Make the background transparent
                     
                     # Paint the SVG on the pixmap
@@ -441,45 +456,48 @@ class TemplateListItem(QFrame):
                     # Fallback to text
                     self.icon_label.setText("📄")
                     font = QFont(SYSTEM_FONT)
-                    font.setPointSize(14)
+                    font.setPointSize(14)  # Match folder font size
                     self.icon_label.setFont(font)
             else:
                 # Handle PNG or fallback
                 pixmap = QPixmap(icon_path)
                 if not pixmap.isNull():
-                    pixmap = pixmap.scaled(24, 24, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    pixmap = pixmap.scaled(22, 22, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                     self.icon_label.setPixmap(pixmap)
                 else:
                     # If pixmap is null, use text as a fallback
                     self.icon_label.setText("📄")
                     font = QFont(SYSTEM_FONT)
-                    font.setPointSize(14)
+                    font.setPointSize(14)  # Match folder font size
                     self.icon_label.setFont(font)
         except Exception as e:
             print(f"ERROR: Failed to load template icon: {e}")
             # Use text as a fallback
             self.icon_label.setText("📄")
             font = QFont(SYSTEM_FONT)
-            font.setPointSize(14)
+            font.setPointSize(14)  # Match folder font size
             self.icon_label.setFont(font)
         
-        self.icon_label.setFixedSize(24, 24)
+        self.icon_label.setFixedSize(22, 22)  # Match folder icon size
         layout.addWidget(self.icon_label)
         
         # Template name label
         self.name_label = QLabel(self.template_name())
         font = QFont(SYSTEM_FONT)
-        font.setPointSize(12)
+        font.setPointSize(12)  # Match folder font size
         self.name_label.setFont(font)
-        layout.addWidget(self.name_label, 1)
+        # Make name expand to fill available space
+        self.name_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        layout.addWidget(self.name_label, 1)  # Stretch factor 1 to expand
         
         # Template category label
         category = self.template.get("category", self.template.get("type", "Custom"))
         self.category_label = QLabel(str(category))
         font = QFont(SYSTEM_FONT)
-        font.setPointSize(10)
+        font.setPointSize(10)  # Match folder font size for secondary text
         self.category_label.setFont(font)
         self.category_label.setFixedWidth(120)  # Fixed width for consistent layout
+        self.category_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)  # Right-aligned
         layout.addWidget(self.category_label)
         
         # Initial styling
@@ -530,26 +548,27 @@ class TemplateListItem(QFrame):
         self._update_styling()
     
     def _update_styling(self):
+        """Update the styling based on current state - exactly match folder list item styling"""
         # First get the base background color based on row type
         if self.property("row_type") == "odd":
-            bg_color = colors["card_bg"]  # Darker for odd rows
+            bg_color = colors.get("alternate_row", "#2A2A2A")  # Darker for odd rows
         else:
-            bg_color = colors["bg"]  # Lighter for even rows
+            bg_color = colors.get("bg", "#333333")  # Lighter for even rows
                 
         if self.selected:
-            # Selected style
+            # Selected style - match folder list item selected style exactly
             self.setStyleSheet(f"""
                 QFrame {{
-                    background-color: {colors["accent"]};
+                    background-color: {colors["highlight_bg"]};
                     border: none;
                     border-radius: 0px;
                 }}
             """)
-            self.name_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent; font-weight: bold;")
+            self.name_label.setStyleSheet(f"color: {colors['highlight_text']}; font-weight: bold; background: transparent;")
             self.category_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
             self.icon_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
         elif self.hover:
-            # Hover style
+            # Hover style - match folder list item hover style exactly
             self.setStyleSheet(f"""
                 QFrame {{
                     background-color: {colors["hover_bg"]};
@@ -561,7 +580,7 @@ class TemplateListItem(QFrame):
             self.category_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
             self.icon_label.setStyleSheet("background: transparent;")
         else:
-            # Normal style - use alternating row colors
+            # Normal style - match folder list item normal style exactly
             self.setStyleSheet(f"""
                 QFrame {{
                     background-color: {bg_color};
@@ -572,6 +591,9 @@ class TemplateListItem(QFrame):
             self.name_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
             self.category_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
             self.icon_label.setStyleSheet("background: transparent;")
+            
+        # Force immediate update
+        self.update()
 
     def keyPressEvent(self, event):
         """Handle key press events for template operations"""

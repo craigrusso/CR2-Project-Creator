@@ -124,8 +124,7 @@ class GalleryEvents:
         gallery.selected_folder = folder_name
         gallery.selected_template = None  # Reset template selection
         
-        # Update button states (removed edit and delete buttons)
-        gallery.delete_folder_button.setEnabled(True)
+        # Update button states (removal of delete folder button)
         
         # Update card styling for folders
         for card in gallery.folder_cards:

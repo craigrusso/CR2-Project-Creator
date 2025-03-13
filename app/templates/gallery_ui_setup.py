@@ -186,11 +186,7 @@ class GalleryUISetup:
         gallery.rename_folder_button.setEnabled(False)
         # Not adding to layout as per original code
         
-        gallery.delete_folder_button = QPushButton("Delete Folder")
-        gallery.delete_folder_button.setStyleSheet(BUTTON_STYLE)
-        gallery.delete_folder_button.clicked.connect(gallery._on_delete_folder)
-        gallery.delete_folder_button.setEnabled(False)
-        gallery.button_layout.addWidget(gallery.delete_folder_button)
+        # Delete folder button removed as it's not needed - we can delete with keystroke and context menu
         
         gallery.button_layout.addStretch()
         
@@ -200,8 +196,6 @@ class GalleryUISetup:
         # gallery.add_button.setStyleSheet(ACCENT_BUTTON_STYLE)
         # gallery.add_button.clicked.connect(gallery._on_add_template)
         # gallery.button_layout.addWidget(gallery.add_button)
-        
-        # Remove edit and delete buttons - they're now available in the context menu
         
         # Restore the Manage All button as requested by user
         gallery.manage_button = QPushButton("Manage All")
