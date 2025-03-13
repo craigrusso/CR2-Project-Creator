@@ -189,7 +189,7 @@ class EnhancedStructureEditor(QDialog):
         self.save_as_btn.setStyleSheet(BUTTON_STYLE)
         
         save_btn = QPushButton("Save")
-        save_btn.clicked.connect(self.save_structure)
+        save_btn.clicked.connect(self.accept)
         save_btn.setStyleSheet(BUTTON_STYLE)
         
         bottom_buttons.addWidget(cancel_btn)
@@ -650,44 +650,92 @@ class EnhancedStructureEditor(QDialog):
         return result
         
     def save_structure(self):
-        """Save the structure"""
-        # Get name
-        structure_name = self.name_input.text().strip()
-        if not structure_name:
-            QMessageBox.warning(self, "Error", "Structure name is required")
-            return
+        """Save the current structure with the given name"""
+        print("DEBUG: save_structure method called")
         
-        # If this is a built-in structure, prompt to save as new
-        if self.is_built_in:
+        # Get the current structure from the tree
+        structure = self.get_structure_from_tree()
+        print(f"DEBUG: Got structure with {len(structure)} items")
+        
+        # Ensure we have a valid structure name
+        if not self.name_input.text():
+            print("DEBUG: No structure name provided")
+            QMessageBox.warning(self, "Error", "Please enter a structure name.")
+            self.name_input.setFocus()
+            return False
+            
+        structure_name = self.name_input.text()
+        print(f"DEBUG: Saving structure with name: '{structure_name}'")
+        
+        # Check if we're trying to overwrite a built-in structure
+        from app.constants import DEFAULT_STRUCTURES
+        if structure_name in DEFAULT_STRUCTURES and not self.is_built_in:
+            print("DEBUG: Attempting to overwrite built-in structure")
             confirm = QMessageBox.question(
                 self,
-                "Save Built-in Structure",
-                "This is a built-in structure that cannot be modified directly.\n\nWould you like to save it as a new structure?",
+                "Confirm Overwrite",
+                f"'{structure_name}' is a built-in structure. Do you want to create a custom version with the same name?",
                 QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes
+                QMessageBox.No
             )
             
-            if confirm == QMessageBox.Yes:
-                self.save_structure_as()
-                return
-            else:
-                return
+            if confirm != QMessageBox.Yes:
+                print("DEBUG: User declined to overwrite built-in structure")
+                return False
         
-        # Get structure from tree
-        structure = self.get_structure_from_tree()
+        # Store the result for returning, regardless of template manager
+        self.result_structure = structure
+        self.result_name = structure_name
+        print(f"DEBUG: Stored result structure with {len(structure)} items and name '{structure_name}'")
         
-        # Call save callback
-        if self.save_callback:
-            success = self.save_callback(structure_name, structure)
+        # Save the structure to the template manager
+        if hasattr(self, 'template_manager') and self.template_manager:
+            print(f"DEBUG: Saving to template manager: {structure_name}")
+            success = self.template_manager.save_custom_structure(structure_name, structure)
+            print(f"DEBUG: Saved structure '{structure_name}' to template manager")
             
-            if success:
-                self.accept()
-            else:
-                QMessageBox.warning(self, "Error", "Failed to save structure")
+            # Call the save callback if provided
+            if self.save_callback:
+                print("DEBUG: Calling save callback")
+                self.save_callback(structure_name, structure)
+            
+            # Return success
+            return success
         else:
-            # No callback, just accept dialog
-            self.accept()
+            # If we don't have a template manager, just call the callback
+            print("DEBUG: No template manager, calling callback directly")
+            if self.save_callback:
+                self.save_callback(structure_name, structure)
+                
+            # Return success
+            return True
             
+        print("DEBUG: Failed to save structure")
+        return False
+        
+    def accept(self):
+        """Override accept to save the structure before closing"""
+        print("DEBUG: accept method called")
+        # Call save_structure but don't call accept() again
+        success = self.save_structure()
+        print(f"DEBUG: save_structure returned {success}")
+        
+        if success:
+            # Store a successful result flag to indicate dialog was accepted
+            print("DEBUG: Setting dialog result code to 1 (Accepted)")
+            self.setResult(1)  # Explicitly set result to Accepted (1) 
+            print("DEBUG: Calling super().accept() to close dialog")
+            # Call the parent's accept method to close the dialog
+            super(EnhancedStructureEditor, self).accept()
+        else:
+            print("DEBUG: Not closing dialog due to save failure")
+        
+    def get_result(self):
+        """Get the edited structure if the dialog was accepted"""
+        if hasattr(self, 'result_structure'):
+            return self.result_structure
+        return None
+
     def _tree_dragEnterEvent(self, event):
         """Custom drag enter event for the tree widget"""
         print("DEBUG: Tree dragEnterEvent")
@@ -1010,13 +1058,28 @@ def save_structure_with_project_type(app, name, structure):
     
 def show_enhanced_structure_editor(parent, structure_name=None, structure=None, is_new=False, project_type=None):
     """Show the enhanced structure editor dialog"""
-    editor = EnhancedStructureEditor(
-        parent,
-        structure_name=structure_name,
-        structure=structure,
+    print(f"DEBUG: show_enhanced_structure_editor called with structure_name={structure_name}")
+    
+    # Create and show the dialog
+    structure_editor = EnhancedStructureEditor(
+        parent, 
+        structure_name=structure_name, 
+        structure=structure, 
         project_type=project_type,
-        save_callback=lambda name, structure: save_structure_with_project_type(parent, name, structure),
         is_new=is_new
     )
     
-    return editor.exec_() 
+    # Show the dialog modally
+    result = structure_editor.exec_()
+    print(f"DEBUG: Editor dialog returned result={result}")
+    
+    # If successful, retrieve both the structure and name
+    if result:
+        updated_structure = structure_editor.get_result()
+        updated_name = getattr(structure_editor, 'result_name', structure_name)
+        print(f"DEBUG: Returning success with structure of {len(updated_structure) if updated_structure else 'None'} items and name '{updated_name}'")
+        return True, updated_structure, updated_name
+    
+    # If canceled, return False and None values
+    print("DEBUG: Returning failure (canceled)")
+    return False, None, None 

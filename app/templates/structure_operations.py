@@ -17,6 +17,9 @@ class StructureOperations:
         if not name or not directories:
             return False
         
+        # Ensure directories are properly formatted
+        directories = self._normalize_structure_format(directories)
+        
         structure = {
             "name": name,
             "directories": directories,
@@ -151,46 +154,60 @@ class StructureOperations:
         
         return structure
     
-    def _normalize_structure_format(self, structure):
-        """Convert any string folder names to dictionary format with empty lists"""
-        result = []
+    def _normalize_structure_format(self, structure_items):
+        """
+        Ensure the structure items are properly formatted.
+        - Folders should be dictionaries with arrays: {"folder_name": []}
+        - Files should be simple strings
+        """
+        if not structure_items:
+            return []
+            
+        normalized = []
         
-        if isinstance(structure, list):
-            for item in structure:
-                if isinstance(item, str):
-                    # Convert string to dict with empty list
-                    if item.endswith('/'): 
-                        # Old format with trailing slash
-                        folder_name = item[:-1]  # Remove trailing slash
-                        result.append({folder_name: []})
+        for item in structure_items:
+            # If it's already a dictionary, process its children
+            if isinstance(item, dict):
+                processed_dict = {}
+                
+                # Get the single folder name and its children
+                for folder_name, children in item.items():
+                    # Process children recursively if they exist
+                    if children:
+                        processed_dict[folder_name] = self._normalize_structure_format(children)
                     else:
-                        # Assume it's a folder if it doesn't contain a period (simple heuristic)
-                        if '.' not in item:
-                            result.append({item: []})
-                        else:
-                            # Keep files as strings
-                            result.append(item)
-                elif isinstance(item, dict):
-                    # Process nested dictionaries recursively
-                    processed_dict = {}
-                    for key, value in item.items():
-                        if isinstance(value, list) or isinstance(value, dict):
-                            processed_dict[key] = self._normalize_structure_format(value)
-                        else:
-                            processed_dict[key] = []
-                    result.append(processed_dict)
+                        # Make sure empty folders are represented as empty lists
+                        processed_dict[folder_name] = []
+                        
+                normalized.append(processed_dict)
+            # If it's a string that ends with a slash (legacy format), convert to dict
+            elif isinstance(item, str) and item.endswith('/'):
+                folder_name = item[:-1]  # Remove the trailing slash
+                normalized.append({folder_name: []})
+            # If it's a regular string (file or single folder from older format)
+            elif isinstance(item, str):
+                # Check for revision folders (REV01, REV02, etc.)
+                if item.upper().startswith('REV') and len(item) >= 4 and item[3:].isdigit():
+                    print(f"Converting revision folder '{item}' to folder format during structure save")
+                    normalized.append({item: []})
+                # Try to detect if this is a folder based on naming convention
+                elif ('.' not in item or item.startswith('_')) and not item.startswith('{{PROJECT_NAME}}'):
+                    # Folders often have numeric prefixes like "1_Footage"
+                    if (item.startswith(tuple("0123456789")) and '_' in item) or \
+                       any(folder_keyword in item.lower() for folder_keyword in ['folder', 'dir', 'footage', 'audio', 'video', 'gfx', 'exports']):
+                        print(f"Converting string '{item}' to folder format during structure save")
+                        normalized.append({item: []})
+                    else:
+                        # It's a file or we can't be sure, leave it as is
+                        normalized.append(item)
                 else:
-                    # Pass through other types
-                    result.append(item)
-        elif isinstance(structure, dict):
-            # Convert dict to list of dicts (for compatibility with various formats)
-            for key, value in structure.items():
-                if isinstance(value, dict) or isinstance(value, list):
-                    result.append({key: self._normalize_structure_format(value)})
-                else:
-                    result.append({key: []})
-        
-        return result
+                    # It's likely a file, leave it as is
+                    normalized.append(item)
+            else:
+                # Unknown type, add as is (though this shouldn't happen)
+                normalized.append(item)
+                
+        return normalized
     
     def get_structure_for_project_type(self, project_type):
         """Get the appropriate structure for a given project type"""

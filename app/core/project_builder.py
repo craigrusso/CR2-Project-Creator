@@ -120,9 +120,6 @@ class ProjectBuilder:
                 # Use an empty list for directories if none provided
                 directories = []
             
-            # Create a readme file
-            create_readme_file(project_path, project_name, project_type, directories)
-            
             # Add to recent projects
             add_to_recent_projects(project_path)
             
@@ -169,7 +166,29 @@ class ProjectBuilder:
                 # Handle string items (files or legacy format with trailing slash)
                 elif isinstance(item, str):
                     name = item
-                    is_folder = name.endswith('/')
+                    
+                    # FIXED: Better detection of folder vs file
+                    # Check if this is a folder (using various signals)
+                    is_folder = False
+                    
+                    # Legacy format - folder ending with slash
+                    if name.endswith('/'):
+                        is_folder = True
+                        name = name[:-1]  # Remove the trailing slash
+                    
+                    # Check for revision folders (REV01, REV02, etc.)
+                    elif name.upper().startswith('REV') and len(name) >= 4 and name[3:].isdigit():
+                        is_folder = True
+                        print(f"Detected '{name}' as a revision folder")
+                    
+                    # Check for folder naming conventions 
+                    # e.g., folders typically don't have extensions, or have specific numeric prefixes
+                    elif ('.' not in name or name.startswith('_')) and not name.startswith('{{PROJECT_NAME}}'):
+                        # Folders often have numeric prefixes like "1_Footage" or other folder-like naming
+                        if (name.startswith(tuple("0123456789")) and '_' in name) or \
+                           any(folder_keyword in name.lower() for folder_keyword in ['folder', 'dir', 'footage', 'audio', 'video', 'gfx', 'exports']):
+                            is_folder = True
+                            print(f"Detected '{name}' as a folder based on naming convention")
                     
                     # Handle placeholder replacement in the name
                     if "{{PROJECT_NAME}}" in name:
@@ -178,10 +197,9 @@ class ProjectBuilder:
                         print(f"Renamed item in structure: {item} -> {name}")
                     
                     if is_folder:
-                        # Legacy format - folder ending with slash
-                        # We'll still handle this format for existing structures
-                        name = name[:-1]  # Remove the trailing slash
+                        # It's a folder - create directory
                         folder_path = os.path.join(project_path, name)
+                        print(f"Creating folder: {folder_path}")
                         os.makedirs(folder_path, exist_ok=True)
                     else:
                         # It's a file, create placeholder or empty file
