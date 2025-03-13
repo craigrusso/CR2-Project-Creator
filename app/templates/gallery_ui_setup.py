@@ -56,9 +56,9 @@ class GalleryUISetup:
         gallery.top_bar_layout.setContentsMargins(10, 5, 10, 5)
         gallery.top_bar_layout.setSpacing(10)
         
-        # Create New Structure button
-        gallery.new_structure_button = QPushButton("Create New Structure")
-        gallery.new_structure_button.setStyleSheet(BUTTON_STYLE)
+        # Create New Structure button - moved to templates section
+        # gallery.new_structure_button = QPushButton("Create New Structure")
+        # gallery.new_structure_button.setStyleSheet(BUTTON_STYLE)
         
         # Fix the structure editor call by using a callback to the main app
         from app.dialogs.dialog_windows_pyqt import show_structure_editor
@@ -122,13 +122,13 @@ class GalleryUISetup:
             else:
                 from PyQt5.QtWidgets import QMessageBox
                 QMessageBox.warning(gallery, "Error", "Could not access application context.")
-                
-        gallery.new_structure_button.clicked.connect(show_structure_editor_handler)
         
-        gallery.top_bar_layout.addWidget(gallery.new_structure_button)
+        # Button moved to templates section, so don't connect event handler here
+        # gallery.new_structure_button.clicked.connect(show_structure_editor_handler)
+        # gallery.top_bar_layout.addWidget(gallery.new_structure_button)
         
-        # Add spacer to push search box to the right
-        gallery.top_bar_layout.addStretch(1)
+        # No need for stretcher since we don't have the button anymore
+        # gallery.top_bar_layout.addStretch(1)
         
         # Add search box to top bar
         GalleryUISetup.add_search_box(gallery)
@@ -197,11 +197,11 @@ class GalleryUISetup:
         # gallery.add_button.clicked.connect(gallery._on_add_template)
         # gallery.button_layout.addWidget(gallery.add_button)
         
-        # Restore the Manage All button as requested by user
-        gallery.manage_button = QPushButton("Manage All")
-        gallery.manage_button.setStyleSheet(BUTTON_STYLE)
-        gallery.manage_button.clicked.connect(gallery._on_manage_templates)
-        gallery.button_layout.addWidget(gallery.manage_button)
+        # Removing the "Manage All" button as it's redundant with other functionality
+        # gallery.manage_button = QPushButton("Manage All")
+        # gallery.manage_button.setStyleSheet(BUTTON_STYLE)
+        # gallery.manage_button.clicked.connect(gallery._on_manage_templates)
+        # gallery.button_layout.addWidget(gallery.manage_button)
         
         gallery.action_bar_layout.addWidget(gallery.button_frame)
         gallery.layout.addWidget(gallery.action_bar)

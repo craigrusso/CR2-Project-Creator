@@ -683,7 +683,12 @@ class UIOperations:
             return False
     
     def manage_templates(self, parent=None):
-        """Show dialog to manage all templates, folders, and structures"""
+        """Show dialog to manage all templates, folders, and structures
+        
+        Note: The "Manage All" button has been removed from the UI as its functionality
+        is redundant with other UI elements, but this method is kept for programmatic use
+        or in case it's called from elsewhere in the codebase.
+        """
         try:
             # Import here to avoid circular imports
             from app.dialogs.dialog_windows_pyqt import show_manage_templates

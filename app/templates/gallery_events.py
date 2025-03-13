@@ -618,7 +618,12 @@ class GalleryEvents:
     
     @staticmethod
     def on_manage_templates(gallery):
-        """Handle manage templates button click"""
+        """Handle manage templates button click
+        
+        Note: The "Manage All" button has been removed from the UI as its functionality
+        is redundant with other UI elements, but this method is kept for programmatic use
+        or in case it's called from elsewhere in the codebase.
+        """
         if hasattr(gallery.app, 'template_manager') and hasattr(gallery.app.template_manager, 'manage_templates'):
             gallery.app.template_manager.manage_templates()
             gallery.populate_gallery()

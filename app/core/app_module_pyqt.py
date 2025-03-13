@@ -176,61 +176,10 @@ class ProjectCreatorApp(QMainWindow):
         self.output_dir_layout.addWidget(self.output_dir_btn)
         self.left_layout.addLayout(self.output_dir_layout)
         
-        # Structure selection
-        self.structure_layout = QHBoxLayout()
-        self.structure_label = QLabel("Folder Structure:")
+        # Create dummy structure_combo property for compatibility
+        # This ensures other parts of the code that reference it will still work
         self.structure_combo = QComboBox()
-        
-        # Apply a combination of the standard combobox style and popup list style
-        enhanced_style = COMBOBOX_STYLE + """
-        QComboBox QAbstractItemView {
-            selection-background-color: transparent;
-        }
-        
-        QComboBox QAbstractItemView::item {
-            min-height: 22px;
-            padding: 4px;
-        }
-        
-        QComboBox QAbstractItemView::item:hover {
-            background-color: """ + colors['accent'] + """;
-            color: white;
-            font-weight: bold;
-            border-left: 5px solid white;
-            border-top: 1px solid white;
-            border-bottom: 1px solid white;
-        }
-        
-        QComboBox QAbstractItemView::item:selected {
-            background-color: """ + colors['highlight_bg'] + """;
-            color: white;
-            border-left: 3px solid """ + colors['accent'] + """;
-        }
-        """
-        self.structure_combo.setStyleSheet(enhanced_style)
-        
-        # Enable mouse tracking on the view when it becomes available
-        if self.structure_combo.view():
-            self.structure_combo.view().setMouseTracking(True)
-            
-            # Also enable on the viewport
-            if hasattr(self.structure_combo.view(), 'viewport'):
-                self.structure_combo.view().viewport().setMouseTracking(True)
-        
-        self.structure_btn = QPushButton("Edit...")
-        self.structure_btn.clicked.connect(self._edit_structure)
-        self.structure_layout.addWidget(self.structure_label)
-        self.structure_layout.addWidget(self.structure_combo)
-        self.structure_layout.addWidget(self.structure_btn)
-        self.left_layout.addLayout(self.structure_layout)
-        
-        # Populate structure combo
-        self._update_structure_combo()
-        
-        # Preview button
-        self.preview_btn = QPushButton("Preview Structure")
-        self.preview_btn.clicked.connect(self._preview_structure)
-        self.left_layout.addWidget(self.preview_btn)
+        self.structure_combo.hide()  # Hide it from view
         
         # Create project button
         self.create_btn = QPushButton("Create Project")
@@ -371,11 +320,6 @@ class ProjectCreatorApp(QMainWindow):
         refresh_gallery_action = QAction("Refresh Template Gallery", self)
         refresh_gallery_action.triggered.connect(lambda: self.template_gallery.populate_gallery())
         view_menu.addAction(refresh_gallery_action)
-        
-        # Refresh Structure List
-        refresh_structure_action = QAction("Refresh Structure List", self)
-        refresh_structure_action.triggered.connect(self._update_structure_combo)
-        view_menu.addAction(refresh_structure_action)
         
         # Tools menu
         tools_menu = menubar.addMenu("Tools")
@@ -587,7 +531,11 @@ class ProjectCreatorApp(QMainWindow):
         self.show_status_message("Your application is up to date!", "success", 5000)
     
     def _update_structure_combo(self):
-        """Update the structure dropdown with available structures"""
+        """Update the structure dropdown with available structures
+        
+        Note: The UI element has been removed, but we keep this method for compatibility.
+        We still populate the hidden combo box to ensure the structure selection works properly.
+        """
         self.structure_combo.clear()
         
         # Add default structures
@@ -600,24 +548,35 @@ class ProjectCreatorApp(QMainWindow):
         # Add custom structures
         for name in sorted(self.template_manager.custom_structures.keys()):
             self.structure_combo.addItem(name)
+            
+        # Select the default structure
+        self.structure_combo.setCurrentIndex(0)
     
     def _select_template_file(self):
         """This method is no longer needed as templates contain their files"""
         pass  # Keeping the method as a stub for compatibility
     
     def _edit_structure(self):
-        """Open structure editor dialog"""
-        # Get current structure type
-        structure_type = self.structure_combo.currentText()
+        """Open structure editor dialog
+        
+        Note: The UI element for this has been removed. This method is kept
+        for compatibility with other parts of the code.
+        """
+        # Use Standard as the default structure type
+        structure_type = "Standard"
         
         # Show structure editor dialog
         from app.dialogs.dialog_windows_pyqt import show_structure_editor
         show_structure_editor(self, structure_type, self._update_structure_combo)
     
     def _preview_structure(self):
-        """Preview the selected structure"""
-        # Get current structure type
-        structure_type = self.structure_combo.currentText()
+        """Preview the selected structure
+        
+        Note: The UI element for this has been removed. This method is kept
+        for compatibility with other parts of the code.
+        """
+        # Use Standard as the default structure type
+        structure_type = "Standard"
         
         # Get structure
         structure = self.template_manager.get_structure(structure_type)
@@ -663,23 +622,23 @@ class ProjectCreatorApp(QMainWindow):
 
     def eventFilter(self, obj, event):
         """Filter for specific events"""
-        # Handle hover effects for structure_combo dropdown
-        if hasattr(self, 'structure_combo') and self.structure_combo.view() and obj == self.structure_combo.view().viewport():
-            if event.type() == QEvent.MouseMove:
-                # Get the item under the mouse
-                pos = event.pos()
-                index = self.structure_combo.view().indexAt(pos)
-                
-                if index.isValid():
-                    # Set hover style directly
-                    for i in range(self.structure_combo.view().model().rowCount()):
-                        item_index = self.structure_combo.view().model().index(i, 0)
-                        rect = self.structure_combo.view().visualRect(item_index)
-                        
-                        # Apply style to the item under cursor
-                        if rect.contains(pos):
-                            # Force a repaint of the view
-                            self.structure_combo.view().update(item_index)
+        # Handle hover effects for structure_combo dropdown - no longer needed as the UI has been removed
+        # if hasattr(self, 'structure_combo') and self.structure_combo.view() and obj == self.structure_combo.view().viewport():
+        #     if event.type() == QEvent.MouseMove:
+        #         # Get the item under the mouse
+        #         pos = event.pos()
+        #         index = self.structure_combo.view().indexAt(pos)
+        #         
+        #         if index.isValid():
+        #             # Set hover style directly
+        #             for i in range(self.structure_combo.view().model().rowCount()):
+        #                 item_index = self.structure_combo.view().model().index(i, 0)
+        #                 rect = self.structure_combo.view().visualRect(item_index)
+        #                 
+        #                 # Apply style to the item under cursor
+        #                 if rect.contains(pos):
+        #                     # Force a repaint of the view
+        #                     self.structure_combo.view().update(item_index)
                             
         # Pass the event to the parent class
         return super().eventFilter(obj, event) 

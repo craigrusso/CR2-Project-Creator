@@ -1469,7 +1469,12 @@ class TemplateListItem(QFrame):
                 self.populate_gallery()
     
     def _on_manage_templates(self):
-        """Handle manage templates button click"""
+        """Handle manage templates button click
+        
+        Note: The "Manage All" button has been removed from the UI as its functionality
+        is redundant with other UI elements, but this method is kept for programmatic use
+        or in case it's called from elsewhere in the codebase.
+        """
         show_manage_templates(self, self.template_manager, self.populate_gallery)
     
     def _on_folder_select(self, folder_name):

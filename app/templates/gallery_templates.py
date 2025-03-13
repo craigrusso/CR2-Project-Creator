@@ -9,7 +9,7 @@ from PyQt5.QtGui import QFont
 
 import os
 from app.ui.color_scheme_pyqt import colors
-from app.ui.app_theme_pyqt import ACCENT_BUTTON_STYLE
+from app.ui.app_theme_pyqt import ACCENT_BUTTON_STYLE, BUTTON_STYLE
 from .components.utils import SYSTEM_FONT
 from .components.template_card import TemplateCard, TemplateListItem
 from .gallery_events import GalleryEvents
@@ -129,6 +129,15 @@ class GalleryTemplatesSetup:
         gallery.add_button.setFixedHeight(30)
         gallery.add_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         gallery.templates_header_layout.addWidget(gallery.add_button)
+        
+        # Add the structure editor button next to Add Template button
+        gallery.new_structure_button = QPushButton("Add | Edit Structures")
+        gallery.new_structure_button.setStyleSheet(BUTTON_STYLE)
+        gallery.new_structure_button.setFixedHeight(30)
+        gallery.new_structure_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        # We need to connect this to the structure editor handler in the main gallery class
+        # The actual connection will be done in the main gallery init
+        gallery.templates_header_layout.addWidget(gallery.new_structure_button)
         
         # Template view controls - similar layout to folder view controls
         gallery.template_view_controls = QWidget()

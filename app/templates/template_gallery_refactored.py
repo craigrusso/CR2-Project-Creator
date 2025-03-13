@@ -48,6 +48,10 @@ class TemplateGallery(QWidget):
         # Set up the UI
         GalleryUISetup.setup_ui(self)
         
+        # Connect the new structure button click event
+        if hasattr(self, 'new_structure_button'):
+            self.new_structure_button.clicked.connect(self._on_structure_editor)
+        
         # Populate the gallery initially - do this after UI setup
         self.populate_gallery()
     
@@ -227,6 +231,12 @@ class TemplateGallery(QWidget):
         GalleryEvents.on_delete_template(self, template_name)
     
     def _on_manage_templates(self):
+        """Handle manage templates button click
+        
+        Note: The "Manage All" button has been removed from the UI as its functionality
+        is redundant with other UI elements, but this method is kept for programmatic use
+        or in case it's called from elsewhere in the codebase.
+        """
         GalleryEvents.on_manage_templates(self)
     
     def _on_add_folder(self):
@@ -242,7 +252,67 @@ class TemplateGallery(QWidget):
         GalleryEvents.on_rename_folder_done(self, old_name, new_name)
     
     def _on_delete_folder(self):
+        """Handle delete folder button click"""
         GalleryEvents.on_delete_folder(self)
+    
+    def _on_structure_editor(self):
+        """Handle structure editor button click"""
+        # Get the parent app if available
+        parent_app = None
+        if hasattr(self, 'app') and self.app is not None:
+            parent_app = self.app
+        elif hasattr(self, 'parent') and callable(self.parent) and self.parent() is not None:
+            parent_app = self.parent()
+        
+        if parent_app is not None:
+            # Create a custom implementation of show_enhanced_structure_editor
+            # that handles missing template_manager
+            from app.constants import DEFAULT_STRUCTURES
+            from app.ui.structure_editor_enhanced import EnhancedStructureEditor
+            
+            # Create a modified editor with fallback for template_manager
+            class EnhancedStructureEditorWithFallback(EnhancedStructureEditor):
+                def __init__(self, parent, **kwargs):
+                    # First ensure the parent has a template_manager attribute
+                    if not hasattr(parent, 'template_manager') or parent.template_manager is None:
+                        # Create a basic template_manager with just what we need for the dropdown
+                        class BasicTemplateManager:
+                            def __init__(self):
+                                self.custom_structures = {}
+                            
+                            def get_structure(self, name):
+                                print(f"BasicTemplateManager: get_structure called with name={name}")
+                                if not name:
+                                    return []
+                                
+                                # Check if it's a built-in structure (case-insensitive)
+                                name_lower = name.lower()
+                                for key in DEFAULT_STRUCTURES:
+                                    if key.lower() == name_lower:
+                                        print(f"BasicTemplateManager: Found built-in structure: {key}")
+                                        return DEFAULT_STRUCTURES[key]
+                                
+                                print(f"BasicTemplateManager: Structure not found: {name}")
+                                return []
+                        
+                        parent.template_manager = BasicTemplateManager()
+                    
+                    # Call the original constructor
+                    super().__init__(parent, **kwargs)
+                    
+                    # Ensure dropdown is populated with built-in structures
+                    self.populate_structure_dropdown()
+            
+            # Create and show the editor
+            editor = EnhancedStructureEditorWithFallback(
+                parent_app,
+                structure_name=None,
+                is_new=True,
+                project_type=None
+            )
+            editor.exec_()
+        else:
+            QMessageBox.warning(self, "Error", "Could not access application context.")
     
     def _on_icon_scale_changed(self, value):
         GalleryEvents.on_icon_scale_changed(self, value)
