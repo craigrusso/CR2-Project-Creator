@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QLabel, QPushButton, QComboBox, QLineEdit, 
                            QFileDialog, QMessageBox, QAction, QMenu, 
                            QStatusBar, QFrame, QSplitter, QScrollArea, QSizePolicy,
-                           QApplication, QGroupBox, QListView)
+                           QApplication, QGroupBox, QListView, QTextEdit)
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex
 from PyQt5.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush
 
@@ -17,15 +17,16 @@ from app.utils.utils import load_config, save_config, truncate_path
 from app.ui.ui_components_pyqt import ToolTip, CardFrame, SearchBox, TemplateFileCard
 from app.templates.template_manager import TemplateManager
 from app.core.project_builder import ProjectBuilder
-from app.dialogs.dialog_windows_pyqt import (preview_structure, show_batch_create, show_about, 
-                                show_tutorial, show_preferences, show_structure_editor)
+from app.dialogs.dialog_windows_pyqt import (preview_structure, show_about, 
+                                show_tutorial, show_preferences, show_structure_editor,
+                                show_batch_results)
 from app.templates.template_utils import (get_template_file, clear_template_file, clear_structure_template,
                        rename_current_template, rename_template_file)
 from app.templates.refactored_template_gallery import create_template_gallery, select_template_from_gallery
 from app.ui.app_theme_pyqt import apply_dark_theme_to_template_gallery
 from app.core.structures_pyqt import (create_custom_structure, edit_structure, update_structure_dropdown,
                      manage_structures, _update_structure_combo, _preview_structure, _edit_structure)
-from app.core.project_operations import (create_project, handle_batch_create, 
+from app.core.project_operations import (handle_batch_create, 
                              open_recent_project, clear_recent_projects,
                              use_recent_template, clear_recent_templates,
                              add_to_recent_templates, update_card_highlighting,
@@ -154,14 +155,54 @@ class ProjectCreatorApp(QMainWindow):
         self.settings_header.setStyleSheet("font-weight: bold; font-size: 14px;")
         self.left_layout.addWidget(self.settings_header)
         
-        # Project name input
-        self.project_name_layout = QHBoxLayout()
-        self.project_name_label = QLabel("Project Name:")
-        self.project_name_input = QLineEdit()
-        self.project_name_input.setPlaceholderText("Enter project name...")
-        self.project_name_layout.addWidget(self.project_name_label)
-        self.project_name_layout.addWidget(self.project_name_input)
-        self.left_layout.addLayout(self.project_name_layout)
+        # Batch project input area - integrated directly into the main UI
+        self.batch_projects_header = QLabel("Enter Project Names")
+        self.batch_projects_header.setStyleSheet("font-weight: bold; font-size: 13px;")
+        self.left_layout.addWidget(self.batch_projects_header)
+        
+        # Instructions for batch projects
+        self.batch_instructions = QLabel(
+            "Enter one project name per line. You can also separate names with commas or semicolons.\n"
+            "All projects will be created using the selected template and output location."
+        )
+        self.batch_instructions.setWordWrap(True)
+        self.batch_instructions.setStyleSheet(f"color: {colors['secondary_text']};")
+        self.left_layout.addWidget(self.batch_instructions)
+        
+        # Create dummy structure_combo property for compatibility
+        # This ensures other parts of the code that reference it will still work
+        self.structure_combo = QComboBox()
+        self.structure_combo.hide()  # Hide it from view
+        
+        # Create a stretching middle section for the batch text edit
+        middle_container = QWidget()
+        middle_layout = QVBoxLayout(middle_container)
+        middle_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Text input area for batch projects - this should expand
+        self.batch_text_edit = QTextEdit()
+        self.batch_text_edit.setPlaceholderText("Project 1\nProject 2\nProject 3")
+        self.batch_text_edit.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 8px;
+                font-family: 'Segoe UI';
+                font-size: 13px;
+            }}
+        """)
+        # Set size policy to make text edit expand
+        self.batch_text_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        middle_layout.addWidget(self.batch_text_edit)
+        
+        # Add the expandable middle section
+        self.left_layout.addWidget(middle_container, 1)  # Use stretch factor of 1
+        
+        # Create a fixed bottom section for output directory and create button
+        bottom_container = QWidget()
+        bottom_layout = QVBoxLayout(bottom_container)
+        bottom_layout.setContentsMargins(0, 10, 0, 0)  # Add some top margin for separation
         
         # Output directory
         self.output_dir_layout = QHBoxLayout()
@@ -174,25 +215,21 @@ class ProjectCreatorApp(QMainWindow):
         self.output_dir_layout.addWidget(self.output_dir_label)
         self.output_dir_layout.addWidget(self.output_dir_input)
         self.output_dir_layout.addWidget(self.output_dir_btn)
-        self.left_layout.addLayout(self.output_dir_layout)
+        bottom_layout.addLayout(self.output_dir_layout)
         
-        # Create dummy structure_combo property for compatibility
-        # This ensures other parts of the code that reference it will still work
-        self.structure_combo = QComboBox()
-        self.structure_combo.hide()  # Hide it from view
-        
-        # Create project button
-        self.create_btn = QPushButton("Create Project")
-        self.create_btn.clicked.connect(lambda: create_project(self))
-        self.left_layout.addWidget(self.create_btn)
+        # Add some spacing before the create button
+        bottom_layout.addSpacing(10)
         
         # Batch create project button
-        self.batch_create_btn = QPushButton("Batch Create Projects")
-        self.batch_create_btn.clicked.connect(lambda: show_batch_create(self))
-        self.left_layout.addWidget(self.batch_create_btn)
+        self.batch_create_btn = QPushButton("Create Projects")
+        self.batch_create_btn.clicked.connect(self.process_batch_projects)
+        self.batch_create_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
+        # Set minimum height for the button to make it more prominent
+        self.batch_create_btn.setMinimumHeight(40)
+        bottom_layout.addWidget(self.batch_create_btn)
         
-        # Add spacing
-        self.left_layout.addStretch(1)
+        # Add the bottom container to the main layout (fixed size, won't stretch)
+        self.left_layout.addWidget(bottom_container, 0)  # Use stretch factor of 0
         
         # Create right panel with template gallery
         self.right_panel = QWidget()
@@ -326,7 +363,7 @@ class ProjectCreatorApp(QMainWindow):
         
         # Batch Create action
         batch_create_action = QAction("Batch Create...", self)
-        batch_create_action.triggered.connect(lambda: show_batch_create(self))
+        batch_create_action.triggered.connect(self.process_batch_projects)
         tools_menu.addAction(batch_create_action)
         
         # Create Custom Structure action
@@ -642,3 +679,88 @@ class ProjectCreatorApp(QMainWindow):
                             
         # Pass the event to the parent class
         return super().eventFilter(obj, event) 
+
+    def process_batch_projects(self):
+        """Process the entered project names for batch creation"""
+        import re
+        from PyQt5.QtWidgets import QMessageBox
+        from app.core.project_operations import handle_batch_create
+        from app.dialogs.dialog_windows_pyqt import show_batch_results
+        
+        # Get text from the batch input area
+        text = self.batch_text_edit.toPlainText().strip()
+        
+        if not text:
+            QMessageBox.warning(self, "Warning", "Please enter at least one project name.")
+            return
+        
+        # Split by newlines, commas, or semicolons
+        project_names = re.split(r'[\n,;]+', text)
+        project_names = [name.strip() for name in project_names if name.strip()]
+        
+        if not project_names:
+            QMessageBox.warning(self, "Warning", "No valid project names found.")
+            return
+        
+        # Check for duplicate names
+        if len(project_names) != len(set(project_names)):
+            duplicates = [name for name in project_names if project_names.count(name) > 1]
+            if QMessageBox.question(
+                self, 
+                "Duplicate Names", 
+                f"The following names appear more than once: {', '.join(set(duplicates))}\n\nDo you want to continue anyway?",
+                QMessageBox.Yes | QMessageBox.No
+            ) == QMessageBox.No:
+                return
+        
+        # Validate requirements for project creation
+        missing_requirements = []
+        
+        # Check for a template
+        has_template = False
+        
+        # Check for selected template from gallery first
+        if hasattr(self, 'selected_template') and self.selected_template:
+            has_template = True
+        # Then check for template file path as fallback
+        elif hasattr(self, 'template_file_path') and self.template_file_path:
+            has_template = True
+        # Finally check if there's a template gallery with selected template
+        elif hasattr(self, 'template_gallery') and hasattr(self.template_gallery, 'get_selected_template'):
+            try:
+                selected_template = self.template_gallery.get_selected_template()
+                if selected_template:
+                    has_template = True
+            except Exception as e:
+                print(f"Error checking gallery template: {e}")
+        
+        if not has_template:
+            missing_requirements.append("No template selected")
+        
+        output_dir = self.get_current_output_dir()
+        if not output_dir:
+            missing_requirements.append("No output directory selected")
+        
+        if missing_requirements:
+            QMessageBox.critical(
+                self, 
+                "Missing Requirements", 
+                "Cannot create projects due to the following issues:\n\n" + 
+                "\n".join([f"• {item}" for item in missing_requirements])
+            )
+            return
+        
+        # Removed confirmation dialog - directly create projects
+        
+        # Convert list of project names to a string for handle_batch_create
+        projects_text = "\n".join(project_names)
+        
+        # Show creating message in status bar
+        self.show_status_message(f"Creating {len(project_names)} projects...", message_type="info")
+        
+        # Execute batch creation
+        results = handle_batch_create(self, projects_text)
+        
+        # Display the results if it's not just a boolean success indicator
+        if results and not isinstance(results, bool):
+            show_batch_results(self, results) 

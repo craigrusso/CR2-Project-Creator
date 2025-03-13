@@ -245,7 +245,11 @@ def handle_batch_create(app, project_names_text):
     
     # Prepare project builder
     project_builder = app.project_builder
-    project_type = app.project_type_var.get() if hasattr(app, 'project_type_var') else "Standard"
+    project_type = "Standard"  # Default to Standard project type
+    
+    # Check if project_type_var is available (backward compatibility)
+    if hasattr(app, 'project_type_var'):
+        project_type = app.project_type_var.get()
     
     # Starting batch creation
     print(f"Starting batch creation. Template: {template_file}, Structure: {structure_name}, Output: {output_dir}")
@@ -261,6 +265,8 @@ def handle_batch_create(app, project_names_text):
         create_backup=True,
         callback=lambda results: batch_creation_complete(app, results, selected_template)
     )
+    
+    return True
 
 
 def batch_creation_complete(app, results, selected_template=None):
@@ -273,22 +279,36 @@ def batch_creation_complete(app, results, selected_template=None):
     failures = len(results) - successes
     
     # Add successful projects to recent projects
-    for name, success, result in results:
+    recent_projects = []
+    for name, success, path in results:
         if success:
-            add_to_recent_projects(app, name, result)
+            # Add path to recent projects
+            recent_projects.append({"name": name, "path": path})
     
-    # Add template to recent templates if one was used but preserve order
-    if app.template_file_path:
-        add_to_recent_templates(app, app.template_file_path, preserve_order=True)
-    elif selected_template:
-        # Also add the selected gallery template if there's no file path
-        add_to_recent_templates(app, selected_template, preserve_order=True)
+    # Update recent projects (no more than 10)
+    if recent_projects:
+        app.recent_projects = recent_projects + app.recent_projects
+        app.recent_projects = app.recent_projects[:10]
+        save_recent_projects(app.recent_projects)
     
-    # Set appropriate message based on results
-    if failures == 0:
-        app.show_status_message(f"{successes} projects created successfully", message_type="success")
-    else:
-        app.show_status_message(f"{successes} projects created, {failures} failed", message_type="warning")
+    # Update recent templates
+    template_file = None
+    
+    # Check if there's a direct path available
+    if hasattr(app, 'template_file_path') and app.template_file_path:
+        template_file = app.template_file_path
+    
+    # If we have a gallery template, add it to recent templates
+    if selected_template and isinstance(selected_template, dict) and 'name' in selected_template:
+        # Add the gallery template to recent templates
+        from app.templates.template_utils import add_to_recent_templates as add_to_recent_templates_util
+        add_to_recent_templates_util(app, selected_template)
+    elif template_file:
+        # Add the direct template file to recent templates
+        add_to_recent_templates(app, template_file)
+    
+    # Show status message
+    app.show_status_message(f"Batch creation complete: {successes} projects created", message_type="success")
 
 
 def add_to_recent_projects(app, project_name, project_path, max_recent=10):

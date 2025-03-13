@@ -107,28 +107,6 @@ def preview_structure(app, structure):
     
     dialog.exec_()
 
-def show_batch_create(app):
-    """Show the batch project creation dialog"""
-    from app.ui.ui_components_pyqt import ProjectNameInput
-    
-    dialog = ProjectNameInput(parent=app, callback=lambda projects: handle_batch_projects(app, projects))
-    dialog.exec_()
-
-def handle_batch_projects(app, projects):
-    """Process a list of batch projects"""
-    from app.core.project_operations import handle_batch_create
-    
-    # Convert list of project names to a string for handle_batch_create
-    projects_text = "\n".join(projects)
-    
-    # handle_batch_create may return a boolean to indicate success/failure
-    # or it may return the actual results list
-    results = handle_batch_create(app, projects_text)
-    
-    # Only show results if it's not just a boolean success indicator
-    if results and not isinstance(results, bool):
-        show_batch_results(app, results)
-
 def show_batch_results(app, results):
     """Show the results of batch project creation"""
     # If results is None or False, don't show the dialog
@@ -806,7 +784,7 @@ def edit_template_structure(parent, template, structure_tab):
     """Launch the enhanced structure editor for template editing"""
     print("DEBUG: edit_template_structure called")
     
-    from app.ui.structure_editor_enhanced import show_enhanced_structure_editor
+    from app.ui.structure_editor_enhanced import EnhancedStructureEditor
     
     # Get the current structure name and items
     structure_name = getattr(structure_tab, 'structure_name', None)
@@ -1454,4 +1432,28 @@ def add_file_to_tree(file_path, parent_item):
     # Auto-expand the parent
     parent_item.setExpanded(True)
     
-    return file_item 
+    return file_item
+
+# No longer needed - batch creation is now handled directly in the UI
+# Keeping this as a comment for documentation purposes
+# def show_batch_create(app):
+#     """Show the batch project creation dialog"""
+#     from app.ui.ui_components_pyqt import ProjectNameInput
+#     
+#     dialog = ProjectNameInput(parent=app, callback=lambda projects: handle_batch_projects(app, projects))
+#     dialog.exec_()
+
+def handle_batch_projects(app, projects):
+    """Process a list of batch projects"""
+    from app.core.project_operations import handle_batch_create
+    
+    # Convert list of project names to a string for handle_batch_create
+    projects_text = "\n".join(projects)
+    
+    # handle_batch_create may return a boolean to indicate success/failure
+    # or it may return the actual results list
+    results = handle_batch_create(app, projects_text)
+    
+    # Only show results if it's not just a boolean success indicator
+    if results and not isinstance(results, bool):
+        show_batch_results(app, results) 

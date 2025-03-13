@@ -10,11 +10,19 @@ UI_FRAMEWORK = 'pyqt'
 
 # PyQt dialogs are implemented in dialog_windows_pyqt.py
 from app.dialogs.dialog_windows_pyqt import (
-    show_about,
-    show_preferences,
-    show_tutorial,
-    show_batch_create,
-    show_batch_results,
     preview_structure,
+    show_batch_results,
+    show_about,
+    show_tutorial,
+    show_preferences,
     show_structure_editor
 )
+
+__all__ = [
+    'preview_structure',
+    'show_batch_results',
+    'show_about',
+    'show_tutorial',
+    'show_preferences',
+    'show_structure_editor'
+]
