@@ -14,7 +14,7 @@ from app.templates.template_manager_migration import TemplateManagerMigration
 UI_FRAMEWORK = 'pyqt'
 
 def main():
-    """Main entry point for the CR2 Creative Pro application"""
+    """Main entry point for the Echelon application"""
     # Setup DPI awareness for Windows
     setup_dpi_awareness()
     
@@ -28,7 +28,7 @@ def main():
     if platform.system() == "Windows":
         try:
             import ctypes
-            myappid = 'cr2creative.projectcreator.pro.2.1'
+            myappid = 'cr2creative.echelon.2.1'
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         except Exception as e:
             print(f"Warning: Could not set app ID: {e}")

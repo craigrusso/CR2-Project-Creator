@@ -41,9 +41,9 @@ OPTIONS = {
     'iconfile': 'Creator.icns',
     'excludes': ['tkinter', 'numpy', 'scipy', 'pandas', 'matplotlib'],  # Exclude unnecessary large packages
     'plist': {
-        'CFBundleName': 'CR2 Creative Pro',
-        'CFBundleDisplayName': 'CR2 Creative Pro',
-        'CFBundleIdentifier': 'com.cr2creative.projectcreator',
+        'CFBundleName': 'Echelon',
+        'CFBundleDisplayName': 'Echelon',
+        'CFBundleIdentifier': 'com.cr2creative.echelon',
         'CFBundleShortVersionString': '2.1.0',
         'CFBundleVersion': '2.1.0', 
         'NSHumanReadableCopyright': 'Copyright © 2023-present Craig P. Russo and CR2 Creative. All rights reserved.',
@@ -60,9 +60,9 @@ OPTIONS = {
 }
 
 setup(
-    name='CR2 Creative Pro',
+    name='Echelon',
     version='2.1.0',
-    description='Project creation tool for CR2 Creative Pro',
+    description='Smart Folder Templates & Batch File Organizer',
     author='Craig P. Russo',
     author_email='contact@cr2creative.com',
     url='https://www.cr2creative.com',

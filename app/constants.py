@@ -6,7 +6,7 @@ Constants module to prevent circular imports
 """
 
 # App constants
-APP_NAME = "CR2 Project Creator"
+APP_NAME = "Echelon"
 APP_VERSION = "0.08"
 RECENT_PROJECTS_MAX = 5
 RECENT_TEMPLATES_MAX = 5

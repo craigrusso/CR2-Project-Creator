@@ -1,6 +1,15 @@
-# CR2 Creative Project Creator v4
+# Echelon – Smart Folder Templates & Batch File Organizer
 
-A powerful template-based project creator for creative professionals. This application allows you to create project folder structures from templates with ease.
+Create, save, and apply custom folder structures with ease! Echelon is the ultimate tool for organizing projects, renaming files in bulk, and setting up consistent directory templates for video editing, photography, music production, software development, and more.
+
+## Key Features
+
+✅ Save & Reuse Folder Structures – Create and store custom folder templates.
+✅ Batch Naming & Organization – Select a template, choose a name (or multiple names), and auto-generate the structured folders.
+✅ File Insertion & Renaming – Insert default files into new projects and rename them automatically.
+✅ Fast & Efficient Workflow – Perfect for video editors, photographers, designers, musicians, and professionals who need structured project setups.
+
+Stop wasting time manually setting up folders—Echelon does it for you in seconds. Get organized today!
 
 ## Recent UX Improvements
 
