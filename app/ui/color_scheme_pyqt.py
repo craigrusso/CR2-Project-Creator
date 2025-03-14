@@ -225,6 +225,45 @@ LISTVIEW_POPUP_STYLE = f"""
     }}
 """
 
+# Context menu styling with hover effects
+CONTEXT_MENU_STYLE = f"""
+    QMenu {{
+        background-color: {colors['card_bg']};
+        color: {colors['text']};
+        border: 1px solid {colors['border']};
+        border-radius: 3px;
+        padding: 2px;
+    }}
+    
+    QMenu::item {{
+        padding: 5px 25px 5px 20px;
+        border: 1px solid transparent;
+        border-radius: 2px;
+        min-width: 150px;
+    }}
+    
+    QMenu::item:selected {{
+        background-color: {colors['hover_bg']};
+        color: {colors['highlight_text']};
+        border: 1px solid {colors['accent']};
+    }}
+    
+    QMenu::item:disabled {{
+        color: {colors['secondary_text']};
+    }}
+    
+    /* Special styling for destructive actions */
+    QMenu::item[destructive="true"] {{
+        color: {colors['error_text']};
+    }}
+    
+    QMenu::item[destructive="true"]:selected {{
+        background-color: {colors['error_hover']};
+        color: {colors['error']};
+        border: 1px solid {colors['error']};
+    }}
+"""
+
 LINEEDIT_STYLE = f"""
     QLineEdit {{
         background-color: {colors['card_bg']};

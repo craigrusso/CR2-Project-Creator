@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, pyqtSignal, QUrl, QMimeData
 from PyQt5.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent, QFont, QIcon
 
-from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, LINEEDIT_STYLE, LABEL_STYLE, COMBOBOX_STYLE
+from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, LINEEDIT_STYLE, LABEL_STYLE, COMBOBOX_STYLE, CONTEXT_MENU_STYLE
 
 class EnhancedStructureEditor(QDialog):
     """
@@ -485,6 +485,7 @@ class EnhancedStructureEditor(QDialog):
             return
             
         menu = QMenu(self)
+        menu.setStyleSheet(CONTEXT_MENU_STYLE)
         item_data = item.data(0, Qt.UserRole)
         
         if item_data and item_data.get("type") == "category":
@@ -501,6 +502,7 @@ class EnhancedStructureEditor(QDialog):
             if not item_data.get("is_default", False):
                 delete_action = QAction("Delete Category", self)
                 delete_action.triggered.connect(lambda: self.delete_category(item))
+                delete_action.setProperty("destructive", "true")  # Mark as destructive action
                 menu.addAction(delete_action)
                 
         elif item_data and item_data.get("type") in ["custom", "default"]:
@@ -512,6 +514,7 @@ class EnhancedStructureEditor(QDialog):
                 
                 delete_action = QAction("Delete", self)
                 delete_action.triggered.connect(lambda: self.delete_structure_from_item(item))
+                delete_action.setProperty("destructive", "true")  # Mark as destructive action
                 menu.addAction(delete_action)
             
             duplicate_action = QAction("Duplicate...", self)
@@ -1388,6 +1391,19 @@ class StructureManagerDialog(QDialog):
         self.init_ui()
         self.populate_structures()
         
+    def keyPressEvent(self, event):
+        """Handle key press events for Delete/Backspace keys"""
+        # Check for Delete key press or Backspace key (common on Mac)
+        if event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
+            # If delete button is enabled, trigger delete action
+            if self.delete_button.isEnabled():
+                self.delete_structure()
+                event.accept()
+                return
+        
+        # Pass other key events to parent class
+        super().keyPressEvent(event)
+        
     def init_ui(self):
         """Initialize the UI"""
         main_layout = QVBoxLayout(self)
@@ -2035,6 +2051,7 @@ class StructureManagerDialog(QDialog):
             return
             
         menu = QMenu(self)
+        menu.setStyleSheet(CONTEXT_MENU_STYLE)
         item_data = item.data(0, Qt.UserRole)
         
         if item_data and item_data.get("type") == "category":
@@ -2051,6 +2068,7 @@ class StructureManagerDialog(QDialog):
             if not item_data.get("is_default", False):
                 delete_action = QAction("Delete Category", self)
                 delete_action.triggered.connect(lambda: self.delete_category(item))
+                delete_action.setProperty("destructive", "true")  # Mark as destructive action
                 menu.addAction(delete_action)
                 
         elif item_data and item_data.get("type") in ["custom", "default"]:
@@ -2062,6 +2080,7 @@ class StructureManagerDialog(QDialog):
                 
                 delete_action = QAction("Delete", self)
                 delete_action.triggered.connect(lambda: self.delete_structure_from_item(item))
+                delete_action.setProperty("destructive", "true")  # Mark as destructive action
                 menu.addAction(delete_action)
             
             duplicate_action = QAction("Duplicate...", self)
