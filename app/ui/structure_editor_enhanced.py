@@ -1370,6 +1370,10 @@ class EnhancedStructureEditor(QDialog):
         if dialog.exec_():
             # Refresh the structure dropdown after management
             self.populate_structure_dropdown()
+            
+            # Also refresh the category dropdown in case categories were renamed
+            if hasattr(self, 'category_combo'):
+                self.populate_category_dropdown()
 
     def populate_category_dropdown(self):
         """Populate the category dropdown"""
@@ -2082,6 +2086,11 @@ class StructureManagerDialog(QDialog):
         # Update our internal category_items dictionary
         if old_name in self.category_items:
             self.category_items[new_name] = self.category_items.pop(old_name)
+            
+        # If this dialog was opened from an EnhancedStructureEditor, update its category dropdown
+        if self.parent and isinstance(self.parent, EnhancedStructureEditor):
+            if hasattr(self.parent, 'category_combo'):
+                self.parent.populate_category_dropdown()
 
     def show_context_menu(self, position):
         """Show context menu for tree items"""
