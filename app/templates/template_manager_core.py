@@ -27,6 +27,9 @@ class TemplateManagerCore:
         self.folders = {}
         self.current_folder = None
         
+        # Add preferences dictionary
+        self.preferences = {}
+        
         # Create required directories if they don't exist
         self._ensure_directories_exist()
         
@@ -35,6 +38,7 @@ class TemplateManagerCore:
         self.load_custom_structures()
         self.load_template_directories()
         self.load_folders()
+        self.load_preferences()
         
         # Clean up any problematic templates
         self.cleanup_templates()
@@ -195,3 +199,37 @@ class TemplateManagerCore:
         
         # Save updated folders
         self.save_folders() 
+    
+    def load_preferences(self):
+        """Load user preferences"""
+        # Path to preferences configuration file
+        preferences_path = os.path.join(self.paths["templates_dir"], "preferences.json")
+        
+        # Load preferences if file exists
+        if os.path.exists(preferences_path):
+            try:
+                with open(preferences_path, 'r') as f:
+                    self.preferences = json.load(f)
+            except Exception as e:
+                print(f"Error loading preferences: {e}")
+                self.preferences = {}
+        else:
+            # Create default preferences
+            self.preferences = {
+                "show_default_structures": True,
+                "structure_categories": {},
+                "structure_assignments": {}
+            }
+            self.save_preferences()
+    
+    def save_preferences(self):
+        """Save user preferences"""
+        preferences_path = os.path.join(self.paths["templates_dir"], "preferences.json")
+        
+        try:
+            with open(preferences_path, 'w') as f:
+                json.dump(self.preferences, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"Error saving preferences: {e}")
+            return False 

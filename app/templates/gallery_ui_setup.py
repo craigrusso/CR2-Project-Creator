@@ -176,7 +176,7 @@ class GalleryUISetup:
         
         # Folder management buttons
         gallery.add_folder_button = QPushButton("New Folder")
-        gallery.add_folder_button.setStyleSheet(BUTTON_STYLE)
+        gallery.add_folder_button.setStyleSheet(ACCENT_BUTTON_STYLE)
         gallery.add_folder_button.clicked.connect(gallery._on_add_folder)
         gallery.button_layout.addWidget(gallery.add_folder_button)
         
