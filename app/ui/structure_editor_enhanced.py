@@ -13,6 +13,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, QUrl, QMimeData
 from PyQt5.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent, QFont, QIcon
 
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, LINEEDIT_STYLE, LABEL_STYLE, COMBOBOX_STYLE, CONTEXT_MENU_STYLE
+from app.templates.components.menu_actions import CustomMenu
 
 class EnhancedStructureEditor(QDialog):
     """
@@ -181,6 +182,31 @@ class EnhancedStructureEditor(QDialog):
         self.tree.dragEnterEvent = self._tree_dragEnterEvent
         self.tree.dragMoveEvent = self._tree_dragMoveEvent
         self.tree.dropEvent = self._tree_dropEvent
+        
+        # Apply consistent styling to the tree widget - improved visual feedback
+        self.tree.setStyleSheet(f"""
+            QTreeWidget {{ 
+                background-color: {colors['card_bg']}; 
+                color: {colors['text']}; 
+                border: 1px solid {colors['border']}; 
+            }}
+            QTreeWidget::item {{ 
+                padding: 3px; 
+                border-radius: 2px;
+            }}
+            QTreeWidget::item:hover {{ 
+                background-color: {colors['hover_bg']};
+            }}
+            QTreeWidget::item:selected {{ 
+                background-color: {colors['highlight_bg']}; 
+                color: {colors['highlight_text']}; 
+                border: 1px solid {colors['accent']};
+            }}
+            QTreeWidget::item:selected:active {{ 
+                background-color: {colors['highlight_bg']}; 
+                color: {colors['highlight_text']}; 
+            }}
+        """)
         
         tree_layout.addWidget(self.tree)
         
@@ -484,8 +510,7 @@ class EnhancedStructureEditor(QDialog):
         if not item:
             return
             
-        menu = QMenu(self)
-        menu.setStyleSheet(CONTEXT_MENU_STYLE)
+        menu = CustomMenu(self)
         item_data = item.data(0, Qt.UserRole)
         
         if item_data and item_data.get("type") == "category":
@@ -500,10 +525,11 @@ class EnhancedStructureEditor(QDialog):
             
             # Don't allow deleting the default category
             if not item_data.get("is_default", False):
-                delete_action = QAction("Delete Category", self)
-                delete_action.triggered.connect(lambda: self.delete_category(item))
-                delete_action.setProperty("destructive", "true")  # Mark as destructive action
-                menu.addAction(delete_action)
+                # Add the Delete action with red styling
+                menu.addRedDeleteAction(
+                    parent=self,
+                    callback=lambda: self.delete_category(item)
+                )
                 
         elif item_data and item_data.get("type") in ["custom", "default"]:
             # Context menu for structure items
@@ -512,10 +538,11 @@ class EnhancedStructureEditor(QDialog):
                 rename_action.triggered.connect(lambda: self.rename_structure_from_item(item))
                 menu.addAction(rename_action)
                 
-                delete_action = QAction("Delete", self)
-                delete_action.triggered.connect(lambda: self.delete_structure_from_item(item))
-                delete_action.setProperty("destructive", "true")  # Mark as destructive action
-                menu.addAction(delete_action)
+                # Add the Delete action with red styling
+                menu.addRedDeleteAction(
+                    parent=self,
+                    callback=lambda: self.delete_structure_from_item(item)
+                )
             
             duplicate_action = QAction("Duplicate...", self)
             duplicate_action.triggered.connect(lambda: self.duplicate_structure_from_item(item))
@@ -1461,9 +1488,21 @@ class StructureManagerDialog(QDialog):
                 color: {colors['text']}; 
                 border: 1px solid {colors['border']}; 
             }}
+            QTreeWidget::item {{ 
+                padding: 3px; 
+                border-radius: 2px;
+            }}
+            QTreeWidget::item:hover {{ 
+                background-color: {colors['hover_bg']};
+            }}
             QTreeWidget::item:selected {{ 
                 background-color: {colors['highlight_bg']}; 
-                color: {colors['text']}; 
+                color: {colors['highlight_text']}; 
+                border: 1px solid {colors['accent']};
+            }}
+            QTreeWidget::item:selected:active {{ 
+                background-color: {colors['highlight_bg']}; 
+                color: {colors['highlight_text']}; 
             }}
             QHeaderView::section {{
                 background-color: {colors['hover_bg']};
@@ -2050,8 +2089,7 @@ class StructureManagerDialog(QDialog):
         if not item:
             return
             
-        menu = QMenu(self)
-        menu.setStyleSheet(CONTEXT_MENU_STYLE)
+        menu = CustomMenu(self)
         item_data = item.data(0, Qt.UserRole)
         
         if item_data and item_data.get("type") == "category":
@@ -2066,10 +2104,11 @@ class StructureManagerDialog(QDialog):
             
             # Don't allow deleting the default category
             if not item_data.get("is_default", False):
-                delete_action = QAction("Delete Category", self)
-                delete_action.triggered.connect(lambda: self.delete_category(item))
-                delete_action.setProperty("destructive", "true")  # Mark as destructive action
-                menu.addAction(delete_action)
+                # Add the Delete action with red styling
+                menu.addRedDeleteAction(
+                    parent=self,
+                    callback=lambda: self.delete_category(item)
+                )
                 
         elif item_data and item_data.get("type") in ["custom", "default"]:
             # Context menu for structure items
@@ -2078,10 +2117,11 @@ class StructureManagerDialog(QDialog):
                 rename_action.triggered.connect(lambda: self.rename_structure_from_item(item))
                 menu.addAction(rename_action)
                 
-                delete_action = QAction("Delete", self)
-                delete_action.triggered.connect(lambda: self.delete_structure_from_item(item))
-                delete_action.setProperty("destructive", "true")  # Mark as destructive action
-                menu.addAction(delete_action)
+                # Add the Delete action with red styling
+                menu.addRedDeleteAction(
+                    parent=self,
+                    callback=lambda: self.delete_structure_from_item(item)
+                )
             
             duplicate_action = QAction("Duplicate...", self)
             duplicate_action.triggered.connect(lambda: self.duplicate_structure_from_item(item))
