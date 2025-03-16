@@ -171,6 +171,12 @@ class EnhancedStructureEditor(QDialog):
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self.show_context_menu)
         
+        # Enable multi-selection
+        self.tree.setSelectionMode(QTreeWidget.ExtendedSelection)
+        
+        # Connect double-click event to rename
+        self.tree.itemDoubleClicked.connect(self.on_item_double_clicked)
+        
         # Enable drag and drop for the tree widget
         self.tree.setDragEnabled(True)
         self.tree.setAcceptDrops(True)
@@ -436,25 +442,19 @@ class EnhancedStructureEditor(QDialog):
         # Get current structure name from input
         current_name = self.name_input.text().strip()
         
-        # Prompt for a new name
-        new_name, ok = QInputDialog.getText(
-            self, 
-            "Save Structure As", 
-            "Enter new structure name:", 
-            text=f"{current_name}_copy" if current_name else "New Structure"
-        )
+        # Set a suggested name
+        self.name_input.setText(f"{current_name}_copy" if current_name else "New Structure")
         
-        if ok and new_name:
-            # Update the name field
-            self.name_input.setText(new_name)
-            self.is_built_in = False
-            self.name_input.setReadOnly(False)
-            # Use standard line edit style
-            self.name_input.setStyleSheet(LINEEDIT_STYLE)
-            
-            # Save with the new name
-            self.save_structure()
-
+        # Select the text to make it easy to change
+        self.name_input.selectAll()
+        self.name_input.setFocus()
+        
+        # Set built-in flag to false since this is a new custom structure
+        self.is_built_in = False
+        self.name_input.setReadOnly(False)
+        # Use standard line edit style
+        self.name_input.setStyleSheet(LINEEDIT_STYLE)
+        
     def populate_structure(self):
         """Populate the structure tree"""
         if self.structure is None:
@@ -466,6 +466,8 @@ class EnhancedStructureEditor(QDialog):
         root_item = QTreeWidgetItem(self.tree)
         root_item.setText(0, "Project Root")
         root_item.setExpanded(True)
+        # Make root item not editable
+        root_item.setFlags(root_item.flags() & ~Qt.ItemIsEditable)
         
         # Recursively add structure items
         self.add_structure_items(root_item, self.structure)
@@ -481,6 +483,8 @@ class EnhancedStructureEditor(QDialog):
                     folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
                     # Store that this is a folder in the data
                     folder_item.setData(0, Qt.UserRole, "folder")
+                    # Make folder items editable
+                    folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
                     self.add_structure_items(folder_item, sub_items)
             else:
                 # Handle string item
@@ -498,59 +502,111 @@ class EnhancedStructureEditor(QDialog):
                     item_widget.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
                     # Store that this is a folder in the data
                     item_widget.setData(0, Qt.UserRole, "folder")
+                    # Make folder items editable
+                    item_widget.setFlags(item_widget.flags() | Qt.ItemIsEditable)
                 else:
                     # File
                     item_widget.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
                     # Store that this is a file in the data
                     item_widget.setData(0, Qt.UserRole, "file")
+                    # Make file items editable
+                    item_widget.setFlags(item_widget.flags() | Qt.ItemIsEditable)
                     
     def show_context_menu(self, position):
         """Show context menu for tree items"""
-        item = self.tree.itemAt(position)
-        if not item:
+        selected_items = self.tree.selectedItems()
+        if not selected_items:
             return
             
         menu = CustomMenu(self)
-        item_data = item.data(0, Qt.UserRole)
         
-        if item_data and item_data.get("type") == "category":
-            # Context menu for category items
-            if item_data.get("is_built_in", False):
-                # No actions for built-in category
-                return
-                
-            rename_action = QAction("Rename Category", self)
-            rename_action.triggered.connect(lambda: self.edit_category(item))
-            menu.addAction(rename_action)
+        # Check if multiple items are selected
+        if len(selected_items) > 1:
+            # Group selected items by type to determine available actions
+            folders = []
+            files = []
             
-            # Don't allow deleting the default category
-            if not item_data.get("is_default", False):
-                # Add the Delete action with red styling
+            for item in selected_items:
+                item_data = item.data(0, Qt.UserRole)
+                if isinstance(item_data, str) and item_data == "folder":
+                    folders.append(item)
+                elif isinstance(item_data, str) and item_data == "file":
+                    files.append(item)
+            
+            # Only show delete option for multiple selection
+            if folders or files:
+                # Skip if root item is in selection
+                root_item = self.tree.invisibleRootItem().child(0)
+                if root_item in selected_items:
+                    return
+                    
+                delete_action = QAction(f"Delete {len(selected_items)} Items", self)
+                delete_action.triggered.connect(self.delete_item)
                 menu.addRedDeleteAction(
                     parent=self,
-                    callback=lambda: self.delete_category(item)
+                    callback=self.delete_item
                 )
-                
-        elif item_data and item_data.get("type") in ["custom", "default"]:
-            # Context menu for structure items
-            if item_data.get("type") == "custom":
-                rename_action = QAction("Rename...", self)
-                rename_action.triggered.connect(lambda: self.rename_structure_from_item(item))
+        else:
+            # Single item selected - show full context menu
+            item = selected_items[0]
+            item_data = item.data(0, Qt.UserRole)
+            
+            # Check if item_data is a dictionary before trying to use get()
+            if isinstance(item_data, dict) and item_data.get("type") == "category":
+                # Context menu for category items
+                if item_data.get("is_built_in", False):
+                    # No actions for built-in category
+                    return
+                    
+                rename_action = QAction("Rename Category", self)
+                rename_action.triggered.connect(lambda: self.edit_category(item))
                 menu.addAction(rename_action)
                 
-                # Add the Delete action with red styling
+                # Don't allow deleting the default category
+                if not item_data.get("is_default", False):
+                    # Add the Delete action with red styling
+                    menu.addRedDeleteAction(
+                        parent=self,
+                        callback=lambda: self.delete_category(item)
+                    )
+                    
+            elif isinstance(item_data, dict) and item_data.get("type") in ["custom", "default"]:
+                # Context menu for structure items
+                if item_data.get("type") == "custom":
+                    rename_action = QAction("Rename...", self)
+                    rename_action.triggered.connect(lambda: self.rename_structure_from_item(item))
+                    menu.addAction(rename_action)
+                    
+                    # Add the Delete action with red styling
+                    menu.addRedDeleteAction(
+                        parent=self,
+                        callback=lambda: self.delete_structure_from_item(item)
+                    )
+                
+                duplicate_action = QAction("Duplicate...", self)
+                duplicate_action.triggered.connect(lambda: self.duplicate_structure_from_item(item))
+                menu.addAction(duplicate_action)
+            # Add handling for string item_data (folder or file items)
+            elif isinstance(item_data, str) and item_data in ["folder", "file"]:
+                # Skip root item
+                root_item = self.tree.invisibleRootItem().child(0)
+                if item == root_item:
+                    return
+                    
+                # Context menu for folder and file items
+                rename_action = QAction("Rename...", self)
+                rename_action.triggered.connect(lambda: self.rename_item(item))
+                menu.addAction(rename_action)
+                
+                # Add red styling for delete action
                 menu.addRedDeleteAction(
                     parent=self,
-                    callback=lambda: self.delete_structure_from_item(item)
+                    callback=lambda: self.delete_item(item)
                 )
-            
-            duplicate_action = QAction("Duplicate...", self)
-            duplicate_action.triggered.connect(lambda: self.duplicate_structure_from_item(item))
-            menu.addAction(duplicate_action)
         
         if not menu.isEmpty():
             menu.exec_(self.tree.viewport().mapToGlobal(position))
-            
+    
     def edit_category(self, item):
         """Edit a category by making it editable"""
         if item and item.flags() & Qt.ItemIsEditable:
@@ -562,7 +618,7 @@ class EnhancedStructureEditor(QDialog):
             return
             
         item_data = item.data(0, Qt.UserRole)
-        if not item_data or item_data.get("type") != "category" or item_data.get("is_default", False) or item_data.get("is_built_in", False):
+        if not isinstance(item_data, dict) or item_data.get("type") != "category" or item_data.get("is_default", False) or item_data.get("is_built_in", False):
             return
             
         # Get the category name
@@ -629,21 +685,21 @@ class EnhancedStructureEditor(QDialog):
         """Rename structure from context menu"""
         if item:
             item_data = item.data(0, Qt.UserRole)
-            if item_data and item_data.get("type") == "custom":
+            if isinstance(item_data, dict) and item_data.get("type") == "custom":
                 # Create a temporary selection
-                self.tree.setCurrentItem(item)
+                self.structures_list.setCurrentItem(item)
                 # Call the main rename function
-                self.rename_item()
+                self.rename_structure()
                 
     def delete_structure_from_item(self, item):
         """Delete structure from context menu"""
         if item:
             item_data = item.data(0, Qt.UserRole)
-            if item_data and item_data.get("type") == "custom":
+            if isinstance(item_data, dict) and item_data.get("type") == "custom":
                 # Create a temporary selection
-                self.tree.setCurrentItem(item)
+                self.structures_list.setCurrentItem(item)
                 # Call the main delete function
-                self.delete_item()
+                self.delete_structure()
                 
     def duplicate_structure_from_item(self, item):
         """Duplicate structure from context menu"""
@@ -651,9 +707,9 @@ class EnhancedStructureEditor(QDialog):
             item_data = item.data(0, Qt.UserRole)
             if item_data:
                 # Create a temporary selection
-                self.tree.setCurrentItem(item)
+                self.structures_list.setCurrentItem(item)
                 # Call the main duplicate function
-                self.import_from_folder()
+                self.duplicate_structure()
 
     def add_folder(self, parent=None):
         """Add a folder to the structure"""
@@ -691,6 +747,8 @@ class EnhancedStructureEditor(QDialog):
             folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
             # Mark this item as a folder in user data
             folder_item.setData(0, Qt.UserRole, "folder")
+            # Make folder editable
+            folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
             
             # Expand parent if it's a valid QTreeWidgetItem
             if hasattr(parent, 'setExpanded'):
@@ -760,6 +818,8 @@ class EnhancedStructureEditor(QDialog):
                 file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
                 # Mark this item as a file in user data
                 file_item.setData(0, Qt.UserRole, "file")
+                # Make file editable
+                file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
                 
                 # Expand parent if it's a valid QTreeWidgetItem
                 if hasattr(parent, 'setExpanded'):
@@ -783,6 +843,8 @@ class EnhancedStructureEditor(QDialog):
             file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
             # Mark this item as a file in user data
             file_item.setData(0, Qt.UserRole, "file")
+            # Make file editable
+            file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
             
             # Expand parent if it's a valid QTreeWidgetItem
             if hasattr(parent, 'setExpanded'):
@@ -797,65 +859,59 @@ class EnhancedStructureEditor(QDialog):
             print(f"DEBUG: Added file '{file_name}' successfully")
             
     def delete_item(self, item=None):
-        """Delete an item from the structure"""
+        """Delete an item from the tree"""
         print("DEBUG: EnhancedStructureEditor.delete_item called")
         
-        # Properly handle triggered signals that might pass a boolean
-        # Qt signals often pass True when triggered, which we need to handle
-        if isinstance(item, bool):
-            print("DEBUG: Received boolean instead of item, using current selection")
-            item = None
-            
-        # If no item specified or boolean passed instead, use selected item
+        # If no item specified, use selected items
+        selected_items = []
         if item is None:
-            item = self.tree.currentItem()
-            if item is None:
-                print("DEBUG: No item selected for deletion")
-                return
+            selected_items = self.tree.selectedItems()
+        else:
+            selected_items = [item]
             
-        # Check if this is the root item
+        if not selected_items:
+            return
+
+        # Skip deletion if any selected item is the root
         root_item = self.tree.invisibleRootItem().child(0)
-        if item == root_item:
+        if root_item in selected_items:
             print("DEBUG: Cannot delete root item")
             return
             
-        # Safety check for item validity
-        try:
-            item_text = item.text(0)
-            print(f"DEBUG: Attempting to delete item: '{item_text}'")
-        except Exception as e:
-            print(f"DEBUG: Invalid item for deletion: {e}")
-            return
-            
-        # No confirmation dialog - directly delete the item
-        try:
-            # Get parent of the item
+        # Confirm deletion if multiple items selected
+        if len(selected_items) > 1:
+            confirm = QMessageBox.question(
+                self,
+                "Confirm Delete",
+                f"Are you sure you want to delete {len(selected_items)} items?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if confirm != QMessageBox.Yes:
+                return
+        
+        # Process deletions in reverse order of tree traversal to maintain valid parent-child relationships
+        # First, convert selected items to a list and sort by depth (deepest first)
+        items_to_delete = []
+        for item in selected_items:
+            depth = 0
             parent = item.parent()
-            
-            # Remove the item
+            while parent:
+                depth += 1
+                parent = parent.parent()
+            items_to_delete.append((depth, item))
+        
+        # Sort by depth in descending order
+        items_to_delete.sort(reverse=True)
+        
+        # Now delete items
+        for _, item in items_to_delete:
+            print(f"DEBUG: Attempting to delete item: '{item.text(0)}'")
+            parent = item.parent()
             if parent:
                 index = parent.indexOfChild(item)
-                if index >= 0:
-                    # Use takeChild which properly detaches the item
-                    taken_item = parent.takeChild(index)
-                    
-                    # Select the parent after deletion
-                    self.tree.setCurrentItem(parent)
-            else:
-                # If no parent, get index and remove directly from the tree
-                index = self.tree.indexOfTopLevelItem(item)
-                if index >= 0:
-                    taken_item = self.tree.takeTopLevelItem(index)
-            
-            # Force the tree to update
-            self.tree.update()
-            self.tree.viewport().update()
-            
-            print(f"DEBUG: Deleted item '{item_text}' successfully")
-        except Exception as e:
-            print(f"DEBUG: Error deleting item: {e}")
-            QMessageBox.warning(self, "Delete Error", f"Could not delete item: {str(e)}")
-                
+                parent.takeChild(index)
+                print(f"DEBUG: Deleted item '{item.text(0)}' successfully")
+    
     def rename_item(self, item=None):
         """Rename an item in the structure"""
         # If no item specified, use selected item
@@ -869,55 +925,9 @@ class EnhancedStructureEditor(QDialog):
         # Make sure item is a valid QTreeWidgetItem
         if not hasattr(item, 'text') or not callable(item.text):
             return
-            
-        # Get current name
-        current_name = item.text(0)
         
-        # Create a custom dialog to match our styling
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton
-        
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Rename")
-        dialog.setMinimumWidth(400)
-        
-        layout = QVBoxLayout(dialog)
-        
-        # Add instruction label
-        label = QLabel("Enter new name:")
-        label.setStyleSheet(LABEL_STYLE)
-        layout.addWidget(label)
-        
-        # Add input field with consistent styling
-        input_field = QLineEdit()
-        input_field.setText(current_name)
-        input_field.setStyleSheet(LINEEDIT_STYLE)
-        input_field.selectAll()
-        layout.addWidget(input_field)
-        
-        # Add buttons
-        button_layout = QHBoxLayout()
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(dialog.reject)
-        
-        ok_btn = QPushButton("OK")
-        ok_btn.clicked.connect(dialog.accept)
-        ok_btn.setDefault(True)
-        ok_btn.setStyleSheet(BUTTON_STYLE)
-        
-        button_layout.addStretch()
-        button_layout.addWidget(cancel_btn)
-        button_layout.addWidget(ok_btn)
-        
-        layout.addLayout(button_layout)
-        
-        # Apply dialog styling
-        dialog.setStyleSheet(f"background-color: {colors['bg']}; color: {colors['text']};")
-        
-        # Show dialog
-        if dialog.exec_() == QDialog.Accepted:
-            new_name = input_field.text().strip()
-            if new_name:
-                item.setText(0, new_name)
+        # Simply start editing the item inline
+        self.tree.editItem(item, 0)
     
     def get_structure_from_tree(self):
         """Convert tree to structure format"""
@@ -973,18 +983,7 @@ class EnhancedStructureEditor(QDialog):
         # Check if we're trying to overwrite a built-in structure
         from app.constants import DEFAULT_STRUCTURES
         if structure_name in DEFAULT_STRUCTURES and not self.is_built_in:
-            print("DEBUG: Attempting to overwrite built-in structure")
-            confirm = QMessageBox.question(
-                self,
-                "Confirm Overwrite",
-                f"'{structure_name}' is a built-in structure. Do you want to create a custom version with the same name?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            
-            if confirm != QMessageBox.Yes:
-                print("DEBUG: User declined to overwrite built-in structure")
-                return False
+            print("DEBUG: Creating custom version of built-in structure")
         
         # Store the result for returning, regardless of template manager
         self.result_structure = structure
@@ -1077,141 +1076,136 @@ class EnhancedStructureEditor(QDialog):
             QTreeWidget.dragMoveEvent(self.tree, event)
     
     def _tree_dropEvent(self, event):
-        """Custom drop event for the tree widget"""
+        """Handle drop events on the tree"""
         print("DEBUG: Tree dropEvent called")
-        if event.mimeData().hasUrls():
+        
+        # Determine target item (where the drop occurred)
+        drop_position = event.pos()
+        target_item = self.tree.itemAt(drop_position)
+        
+        if target_item:
+            print(f"DEBUG: Dropping onto item: '{target_item.text(0)}'")
+        else:
+            print("DEBUG: No item at drop position, using root")
+            target_item = self.tree.invisibleRootItem().child(0)
+        
+        # Handle external drops (files from file system)
+        mime_data = event.mimeData()
+        
+        if mime_data.hasUrls():
             print("DEBUG: External drop with URLs")
-            # Get drop position
-            drop_item = self.tree.itemAt(event.pos())
-            if not drop_item:
-                drop_item = self.tree.invisibleRootItem().child(0)  # Root item
-                print("DEBUG: No item at drop position, using root")
-            else:
-                print(f"DEBUG: Dropping onto item: '{drop_item.text(0)}'")
-                
-            # Process the dropped URLs
-            for url in event.mimeData().urls():
+            event.accept()
+            
+            # Process each URL
+            for url in mime_data.urls():
+                # Convert QUrl to local file path
                 file_path = url.toLocalFile()
-                
-                # Clean up the path - remove trailing slashes
-                file_path = file_path.rstrip(os.path.sep)
-                
                 print(f"DEBUG: Processing dropped URL: {file_path}")
                 
-                # Make sure path exists
-                if not os.path.exists(file_path):
-                    print(f"DEBUG: Path does not exist: {file_path}")
+                if os.path.isdir(file_path):
+                    # Import directory structure
+                    print(f"DEBUG: Importing directory structure: {file_path}")
+                    self._process_dropped_directory(file_path, target_item)
+                elif os.path.isfile(file_path):
+                    # Add as a file
+                    file_name = os.path.basename(file_path)
+                    file_item = QTreeWidgetItem(target_item)
+                    file_item.setText(0, file_name)
+                    file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+                    file_item.setData(0, Qt.UserRole, "file")
+                    # Make file editable
+                    file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+            
+            # Expand the target item
+            target_item.setExpanded(True)
+            
+            return
+        
+        # Handle internal drag and drop (items within the tree)
+        if event.source() == self.tree:
+            event.accept()
+            
+            # Get all selected items
+            source_items = self.tree.selectedItems()
+            
+            # Skip if no items selected or if target is in selected items
+            if not source_items or target_item in source_items:
+                return
+                
+            # Check if target is a child of any source item (can't move to own child)
+            for source_item in source_items:
+                current = target_item
+                while current:
+                    if current == source_item:
+                        print(f"DEBUG: Can't move an item to its own child")
+                        return
+                    current = current.parent()
+            
+            # Sort items by their depth to maintain hierarchy (deepest items first)
+            items_to_move = []
+            for item in source_items:
+                depth = 0
+                parent = item.parent()
+                while parent:
+                    depth += 1
+                    parent = parent.parent()
+                items_to_move.append((depth, item))
+            
+            # Sort by depth in descending order
+            items_to_move.sort(reverse=True)
+            
+            # Get item data before moving
+            items_data = []
+            for _, item in items_to_move:
+                children = []
+                for i in range(item.childCount()):
+                    children.append(item.child(i))
+                items_data.append({
+                    'text': item.text(0),
+                    'data': item.data(0, Qt.UserRole),
+                    'children': children
+                })
+            
+            # Process each item
+            for _, source_item in items_to_move:
+                # Skip root item
+                if source_item == self.tree.invisibleRootItem().child(0):
                     continue
                     
-                # If it's a directory, import its structure
-                if os.path.isdir(file_path):
-                    print(f"DEBUG: Importing directory structure: {file_path}")
-                    self._process_dropped_directory(file_path, drop_item)
-                else:
-                    print(f"DEBUG: Skipping file drop (only directories supported): {file_path}")
-                    
-            # Accept the drop action
-            event.acceptProposedAction()
-        else:
-            # Handle internal drag/drop - custom implementation for moving items
-            print("DEBUG: Internal tree drag-and-drop")
-            try:
-                # Get the current item being dragged
-                current_item = self.tree.currentItem()
-                if not current_item:
-                    print("DEBUG: No item selected for drag")
-                    event.ignore()
-                    return
+                # Get source item parent and index
+                source_parent = source_item.parent()
+                if not source_parent:
+                    continue  # Skip if no parent (shouldn't happen)
                 
-                # Can't move the root item
-                root_item = self.tree.invisibleRootItem().child(0)
-                if current_item == root_item:
-                    print("DEBUG: Cannot move root item")
-                    event.ignore()
-                    return
+                source_index = source_parent.indexOfChild(source_item)
                 
-                # Get the target item
-                target_item = self.tree.itemAt(event.pos())
-                if not target_item:
-                    target_item = root_item  # Default to root
-                    print("DEBUG: No target item at position, using root")
-                    
-                print(f"DEBUG: Moving '{current_item.text(0)}' to '{target_item.text(0)}'")
+                # Determine if source_item is a file or folder
+                item_data = source_item.data(0, Qt.UserRole)
+                is_folder = item_data == "folder"
                 
-                # If target is a file, use its parent as the target
-                if target_item.data(0, Qt.UserRole) == "file":
-                    target_item = target_item.parent() or root_item
-                    print(f"DEBUG: Target is a file, using parent: '{target_item.text(0)}'")
-                
-                # Prevent dropping an item onto itself
-                if current_item == target_item:
-                    print("DEBUG: Cannot drop item onto itself")
-                    event.ignore()
-                    return
-                
-                # Prevent dropping an item into one of its children
-                parent = target_item
-                while parent:
-                    if parent == current_item:
-                        print("DEBUG: Cannot drop item into its own child")
-                        event.ignore()
-                        return
-                    parent = parent.parent()
-                
-                # Store current item's data and properties
-                item_text = current_item.text(0)
-                item_type = current_item.data(0, Qt.UserRole)
-                item_expanded = current_item.isExpanded()
-                
-                print(f"DEBUG: Creating new item '{item_text}' in target")
-                # Create a new item in the target location
+                # Create new item in target
                 new_item = QTreeWidgetItem(target_item)
-                new_item.setText(0, item_text)
-                new_item.setData(0, Qt.UserRole, item_type)
+                new_item.setText(0, source_item.text(0))
                 
-                # Set proper icon based on type
-                if item_type == "folder":
+                # Set appropriate icon and data
+                if is_folder:
                     new_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+                    new_item.setData(0, Qt.UserRole, "folder")
                 else:
                     new_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+                    new_item.setData(0, Qt.UserRole, "file")
                 
-                # If the item has children, recursively move them too
-                child_count = current_item.childCount()
-                if child_count > 0:
-                    print(f"DEBUG: Moving {child_count} children")
-                    self._move_children(current_item, new_item)
+                # Copy flags
+                new_item.setFlags(source_item.flags())
                 
-                # Delete the original item - save parent reference before deletion
-                orig_parent = current_item.parent()
-                if orig_parent:
-                    print(f"DEBUG: Removing original item from parent '{orig_parent.text(0)}'")
-                else:
-                    print("DEBUG: Removing original item from top level")
+                # Move all children to the new item
+                self._move_children(source_item, new_item)
                 
-                # Remove from parent
-                if orig_parent:
-                    index = orig_parent.indexOfChild(current_item)
-                    if index >= 0:
-                        orig_parent.takeChild(index)
-                else:
-                    index = self.tree.indexOfTopLevelItem(current_item)
-                    if index >= 0:
-                        self.tree.takeTopLevelItem(index)
-                
-                # Expand the new item if the original was expanded
-                new_item.setExpanded(item_expanded)
-                
-                # Make the new item visible by selecting it
-                self.tree.setCurrentItem(new_item)
-                target_item.setExpanded(True)
-                
-                # Accept the drop
-                event.acceptProposedAction()
-                print(f"DEBUG: Successfully moved '{item_text}'")
-            except Exception as e:
-                print(f"DEBUG: Error during internal drag/drop: {e}")
-                # Do not call the default handler to avoid duplicating the item
-                event.ignore()
+                # Remove the original item
+                source_parent.takeChild(source_index)
+            
+            # Expand the target
+            target_item.setExpanded(True)
     
     def _move_children(self, source_item, target_item):
         """Recursively move children from source to target"""
@@ -1310,6 +1304,8 @@ class EnhancedStructureEditor(QDialog):
         folder_item.setText(0, dir_name)
         folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
         folder_item.setData(0, Qt.UserRole, "folder")
+        # Make folder editable
+        folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
         
         # Expand the parent
         parent_item.setExpanded(True)
@@ -1344,6 +1340,8 @@ class EnhancedStructureEditor(QDialog):
                 file_item.setText(0, file_name)
                 file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
                 file_item.setData(0, Qt.UserRole, "file")
+                # Make file editable
+                file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
                 
             # If this folder has no children but had a name extracted from the path, keep it
             if folder_item.childCount() == 0 and not os.path.basename(dir_path):
@@ -1399,6 +1397,11 @@ class EnhancedStructureEditor(QDialog):
             index = self.category_combo.findData(current_category)
             if index >= 0:
                 self.category_combo.setCurrentIndex(index)
+
+    def on_item_double_clicked(self, item, column):
+        """Handle double-click event to rename items in the tree widget"""
+        if column == 0:
+            self.rename_item(item)
 
 # Add this new dialog class at the bottom of the file, before the utility functions
 class StructureManagerDialog(QDialog):
@@ -1473,7 +1476,9 @@ class StructureManagerDialog(QDialog):
         # Tree widget for the structure list
         self.structures_list = QTreeWidget()
         self.structures_list.setHeaderLabels(["Name", "Type"])
-        self.structures_list.setSelectionMode(QTreeWidget.SingleSelection)
+        self.structures_list.setColumnWidth(0, 250)
+        self.structures_list.setAlternatingRowColors(True)
+        self.structures_list.setSelectionMode(QTreeWidget.ExtendedSelection)
         self.structures_list.itemSelectionChanged.connect(self.update_buttons)
         # Connect itemChanged signal to handle category renaming
         self.structures_list.itemChanged.connect(self.on_item_changed)
@@ -1657,68 +1662,43 @@ class StructureManagerDialog(QDialog):
                 # Use custom folder icon
                 item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
                 
-                # Enable drag and drop for custom structures
-                item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsDragEnabled)
+                # Enable drag and drop and editing for custom structures
+                item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsDragEnabled | Qt.ItemIsEditable)
     
     def add_category(self):
         """Add a new custom category"""
-        # Create a custom dialog to match our styling
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton
+        # Create default category name
+        category_name = "New Category"
         
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Add Category")
-        dialog.setMinimumWidth(400)
-        dialog.setStyleSheet(f"background-color: {colors['bg']}; color: {colors['text']};")
+        # Check if name already exists, append number if needed
+        index = 1
+        temp_name = category_name
+        while temp_name in self.category_items:
+            temp_name = f"{category_name} {index}"
+            index += 1
+        category_name = temp_name
         
-        layout = QVBoxLayout(dialog)
-        
-        # Add instruction label
-        label = QLabel("Enter category name:")
-        label.setStyleSheet(LABEL_STYLE)
-        layout.addWidget(label)
-        
-        # Add input field with consistent styling
-        input_field = QLineEdit()
-        input_field.setStyleSheet(LINEEDIT_STYLE)
-        layout.addWidget(input_field)
-        
-        # Add buttons
-        button_layout = QHBoxLayout()
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(dialog.reject)
-        cancel_btn.setStyleSheet(BUTTON_STYLE)
-        
-        ok_btn = QPushButton("OK")
-        ok_btn.clicked.connect(dialog.accept)
-        ok_btn.setDefault(True)
-        ok_btn.setStyleSheet(BUTTON_STYLE)
-        
-        button_layout.addStretch()
-        button_layout.addWidget(cancel_btn)
-        button_layout.addWidget(ok_btn)
-        
-        layout.addLayout(button_layout)
-        
-        # Show dialog
-        if dialog.exec_() == QDialog.Accepted:
-            category_name = input_field.text().strip()
-            
-            if category_name:
-                # Make sure name is unique
-                if category_name in self.category_items:
-                    QMessageBox.warning(self, "Error", f"Category '{category_name}' already exists.")
-                    return
-                    
-                # Add to preferences
-                if self.template_manager and hasattr(self.template_manager, 'preferences'):
-                    if 'structure_categories' not in self.template_manager.preferences:
-                        self.template_manager.preferences['structure_categories'] = {}
-                        
-                    self.template_manager.preferences['structure_categories'][category_name] = []
-                    self.save_preferences()
+        # Add to preferences
+        if self.template_manager and hasattr(self.template_manager, 'preferences'):
+            if 'structure_categories' not in self.template_manager.preferences:
+                self.template_manager.preferences['structure_categories'] = {}
                 
-                # Update the UI
-                self.populate_structures()
+            self.template_manager.preferences['structure_categories'][category_name] = []
+            self.save_preferences()
+        
+        # Update the UI
+        self.populate_structures()
+        
+        # Find and select the new category
+        for i in range(self.structures_list.topLevelItemCount()):
+            category = self.structures_list.topLevelItem(i)
+            if category.text(0) == category_name:
+                category.setSelected(True)
+                self.structures_list.scrollToItem(category)
+                # Make the category editable and start editing immediately
+                category.setFlags(category.flags() | Qt.ItemIsEditable)
+                self.structures_list.editItem(category, 0)
+                return
 
     def accept(self):
         """Override accept to save the category arrangement before closing"""
@@ -1843,6 +1823,7 @@ class StructureManagerDialog(QDialog):
     
     def rename_structure(self):
         """Rename the selected structure"""
+        # Get selected item
         selected_items = self.structures_list.selectedItems()
         if not selected_items:
             return
@@ -1850,114 +1831,66 @@ class StructureManagerDialog(QDialog):
         selected_item = selected_items[0]
         item_data = selected_item.data(0, Qt.UserRole)
         
-        if not item_data or item_data.get("type") == "default":
+        if not isinstance(item_data, dict) or item_data.get("type") == "default":
             return
-            
-        current_name = item_data.get("name")
         
-        # Create a custom dialog to match our styling
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton
+        # Make sure the item is editable
+        selected_item.setFlags(selected_item.flags() | Qt.ItemIsEditable)
         
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Rename Structure")
-        dialog.setMinimumWidth(400)
-        dialog.setStyleSheet(f"background-color: {colors['bg']}; color: {colors['text']};")
-        
-        layout = QVBoxLayout(dialog)
-        
-        # Add instruction label
-        label = QLabel("Enter new name:")
-        label.setStyleSheet(LABEL_STYLE)
-        layout.addWidget(label)
-        
-        # Add input field with consistent styling
-        input_field = QLineEdit()
-        input_field.setText(current_name)
-        input_field.setStyleSheet(LINEEDIT_STYLE)
-        input_field.selectAll()
-        layout.addWidget(input_field)
-        
-        # Add buttons
-        button_layout = QHBoxLayout()
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(dialog.reject)
-        cancel_btn.setStyleSheet(BUTTON_STYLE)
-        
-        ok_btn = QPushButton("OK")
-        ok_btn.clicked.connect(dialog.accept)
-        ok_btn.setDefault(True)
-        ok_btn.setStyleSheet(BUTTON_STYLE)
-        
-        button_layout.addStretch()
-        button_layout.addWidget(cancel_btn)
-        button_layout.addWidget(ok_btn)
-        
-        layout.addLayout(button_layout)
-        
-        # Show dialog
-        if dialog.exec_() == QDialog.Accepted:
-            new_name = input_field.text().strip()
-            
-            if new_name and new_name != current_name:
-                # Attempt to rename the structure
-                if self.template_manager and hasattr(self.template_manager, "rename_custom_structure"):
-                    success = self.template_manager.rename_custom_structure(current_name, new_name)
-                    
-                    if success:
-                        QMessageBox.information(self, "Success", f"Structure '{current_name}' renamed to '{new_name}'")
-                        # Refresh the list
-                        self.populate_structures()
-                    else:
-                        QMessageBox.warning(self, "Error", f"Failed to rename structure '{current_name}'")
-                else:
-                    # Legacy method - save as new name and delete old
-                    if self.template_manager:
-                        # Get the structure
-                        structure = self.template_manager.get_structure(current_name)
-                        if structure:
-                            # Save with new name
-                            success1 = self.template_manager.save_custom_structure(new_name, structure)
-                            # Delete old structure
-                            success2 = self.template_manager.delete_custom_structure(current_name)
-                            
-                            if success1 and success2:
-                                QMessageBox.information(self, "Success", f"Structure '{current_name}' renamed to '{new_name}'")
-                                # Refresh the list
-                                self.populate_structures()
-                            else:
-                                QMessageBox.warning(self, "Error", f"Failed to rename structure '{current_name}'")
+        # Start editing the item inline
+        self.structures_list.editItem(selected_item, 0)
     
     def delete_structure(self):
-        """Delete the selected structure"""
         selected_items = self.structures_list.selectedItems()
         if not selected_items:
             return
-            
-        selected_item = selected_items[0]
-        item_data = selected_item.data(0, Qt.UserRole)
         
-        if not item_data or item_data.get("type") == "default":
+        # Check if any of the selected structures are default structures
+        default_structures = []
+        deletable_structures = []
+        
+        for selected_item in selected_items:
+            item_data = selected_item.data(0, Qt.UserRole)
+            
+            if not isinstance(item_data, dict) or item_data.get("type") == "default":
+                default_structures.append(selected_item.text(0))
+            else:
+                deletable_structures.append(selected_item)
+                
+        # Warn about default structures that can't be deleted
+        if default_structures:
+            if len(default_structures) == 1:
+                QMessageBox.warning(self, "Cannot Delete", f"'{default_structures[0]}' is a default structure and cannot be deleted.")
+            else:
+                QMessageBox.warning(self, "Cannot Delete", f"The following are default structures and cannot be deleted:\n• {', '.join(default_structures)}")
+                
+        # If no deletable structures, return
+        if not deletable_structures:
             return
             
-        structure_name = item_data.get("name")
-        
         # Confirm deletion
+        confirm_message = f"Are you sure you want to delete {len(deletable_structures)} structure(s)?"
         confirm = QMessageBox.question(
-            self,
-            "Confirm Deletion",
-            f"Are you sure you want to delete the structure '{structure_name}'?\nThis cannot be undone.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            self, 
+            "Confirm Delete", 
+            confirm_message,
+            QMessageBox.Yes | QMessageBox.No
         )
         
-        if confirm == QMessageBox.Yes:
-            # Attempt to delete the structure
-            if self.template_manager and hasattr(self.template_manager, "delete_custom_structure"):
+        if confirm != QMessageBox.Yes:
+            return
+            
+        # Delete each structure
+        for item in deletable_structures:
+            structure_name = item.data(0, Qt.UserRole).get("name")
+            
+            if self.template_manager and structure_name:
                 success = self.template_manager.delete_custom_structure(structure_name)
-                
                 if success:
-                    # Refresh the list
-                    self.populate_structures()
+                    # If parent is a category, remove from the category
+                    parent = item.parent()
+                    if parent:
+                        parent.removeChild(item)
                 else:
                     QMessageBox.warning(self, "Error", f"Failed to delete structure '{structure_name}'")
     
@@ -1975,166 +1908,218 @@ class StructureManagerDialog(QDialog):
             
         structure_name = item_data.get("name")
         
-        # Create a custom dialog to match our styling
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton
+        # Create a default new name
+        new_name = f"{structure_name}_copy"
         
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Duplicate Structure")
-        dialog.setMinimumWidth(400)
-        dialog.setStyleSheet(f"background-color: {colors['bg']}; color: {colors['text']};")
-        
-        layout = QVBoxLayout(dialog)
-        
-        # Add instruction label
-        label = QLabel("Enter name for the duplicate:")
-        label.setStyleSheet(LABEL_STYLE)
-        layout.addWidget(label)
-        
-        # Add input field with consistent styling
-        input_field = QLineEdit()
-        input_field.setText(f"{structure_name}_copy")
-        input_field.setStyleSheet(LINEEDIT_STYLE)
-        input_field.selectAll()
-        layout.addWidget(input_field)
-        
-        # Add buttons
-        button_layout = QHBoxLayout()
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(dialog.reject)
-        cancel_btn.setStyleSheet(BUTTON_STYLE)
-        
-        ok_btn = QPushButton("OK")
-        ok_btn.clicked.connect(dialog.accept)
-        ok_btn.setDefault(True)
-        ok_btn.setStyleSheet(BUTTON_STYLE)
-        
-        button_layout.addStretch()
-        button_layout.addWidget(cancel_btn)
-        button_layout.addWidget(ok_btn)
-        
-        layout.addLayout(button_layout)
-        
-        # Show dialog
-        if dialog.exec_() == QDialog.Accepted:
-            new_name = input_field.text().strip()
+        # Get the structure
+        structure = None
+        if self.template_manager:
+            structure = self.template_manager.get_structure(structure_name)
             
-            if new_name:
-                # Get the structure
-                structure = None
-                if self.template_manager:
-                    structure = self.template_manager.get_structure(structure_name)
-                    
-                if structure:
-                    # Save with the new name
-                    success = self.template_manager.save_custom_structure(new_name, structure)
-                    
-                    if success:
-                        QMessageBox.information(self, "Success", f"Structure '{structure_name}' duplicated as '{new_name}'")
-                        # Refresh the list
-                        self.populate_structures()
-                    else:
-                        QMessageBox.warning(self, "Error", f"Failed to duplicate structure '{structure_name}'")
+        if structure:
+            # Save with the new name
+            success = self.template_manager.save_custom_structure(new_name, structure)
+            
+            if success:
+                # Refresh the list
+                self.populate_structures()
+                
+                # Find and select the new item
+                for i in range(self.structures_list.topLevelItemCount()):
+                    category = self.structures_list.topLevelItem(i)
+                    for j in range(category.childCount()):
+                        item = category.child(j)
+                        if item.text(0) == new_name:
+                            item.setSelected(True)
+                            self.structures_list.scrollToItem(item)
+                            # Make the new item editable and start editing immediately
+                            item.setFlags(item.flags() | Qt.ItemIsEditable)
+                            self.structures_list.editItem(item, 0)
+                            return
+            else:
+                QMessageBox.warning(self, "Error", f"Failed to duplicate structure '{structure_name}'")
 
     def on_item_changed(self, item, column=0):
-        """Handle item change in the structure list (primarily category renaming)"""
+        """Handle item change in the structure list (category renaming and structure renaming)"""
         # Only process changes to the name column (0)
         if column != 0:
             return
             
         # Get the item data
         item_data = item.data(0, Qt.UserRole)
-        if not item_data or item_data.get("type") != "category":
+        if not isinstance(item_data, dict):
             return
             
-        # Get the new category name
-        new_name = item.text(0)
-        
-        # Get the old name by finding this item in our category_items dictionary
-        old_name = None
-        for name, category_item in self.category_items.items():
-            if category_item == item:
-                old_name = name
-                break
-                
-        if not old_name or old_name == new_name:
-            return  # No change or couldn't find old name
+        # Handle category renaming
+        if item_data.get("type") == "category":
+            # Get the new category name
+            new_name = item.text(0)
             
-        # Check if this is the default category
-        is_default = item_data.get("is_default", False)
-        
-        # Update the template manager preferences
-        if self.template_manager and hasattr(self.template_manager, 'preferences'):
-            # Update the default category name if this is the default category
-            if is_default:
-                self.template_manager.preferences['default_category_name'] = new_name
-                
-            # Update structure category assignments
-            structure_assignments = self.template_manager.preferences.get('structure_assignments', {})
-            for structure_name, category in structure_assignments.items():
-                if category == old_name:
-                    structure_assignments[structure_name] = new_name
+            # Get the old name by finding this item in our category_items dictionary
+            old_name = None
+            for name, category_item in self.category_items.items():
+                if category_item == item:
+                    old_name = name
+                    break
                     
-            # If this was a user-defined category, update it in the categories dictionary
-            if not is_default and "structure_categories" in self.template_manager.preferences:
-                categories = self.template_manager.preferences['structure_categories']
-                if old_name in categories:
-                    categories[new_name] = categories.pop(old_name)
+            if not old_name or old_name == new_name:
+                return  # No change or couldn't find old name
+                
+            # Check if this is the default category
+            is_default = item_data.get("is_default", False)
+            
+            # Update the template manager preferences
+            if self.template_manager and hasattr(self.template_manager, 'preferences'):
+                # Update the default category name if this is the default category
+                if is_default:
+                    self.template_manager.preferences['default_category_name'] = new_name
                     
-            # Save the changes
-            self.save_preferences()
+                # Update structure category assignments
+                structure_assignments = self.template_manager.preferences.get('structure_assignments', {})
+                for structure_name, category in structure_assignments.items():
+                    if category == old_name:
+                        structure_assignments[structure_name] = new_name
+                        
+                # If this was a user-defined category, update it in the categories dictionary
+                if not is_default and "structure_categories" in self.template_manager.preferences:
+                    categories = self.template_manager.preferences['structure_categories']
+                    if old_name in categories:
+                        categories[new_name] = categories.pop(old_name)
+                        
+                # Save the changes
+                self.save_preferences()
+                
+            # Update our internal category_items dictionary
+            if old_name in self.category_items:
+                self.category_items[new_name] = self.category_items.pop(old_name)
+                
+            # If this dialog was opened from an EnhancedStructureEditor, update its category dropdown
+            if self.parent and isinstance(self.parent, EnhancedStructureEditor):
+                if hasattr(self.parent, 'category_combo'):
+                    self.parent.populate_category_dropdown()
+        
+        # Handle structure renaming
+        elif item_data.get("type") == "custom":
+            # Get the new and old structure names
+            new_name = item.text(0)
+            old_name = item_data.get("name")
             
-        # Update our internal category_items dictionary
-        if old_name in self.category_items:
-            self.category_items[new_name] = self.category_items.pop(old_name)
+            if not old_name or old_name == new_name:
+                return  # No change or couldn't get old name
             
-        # If this dialog was opened from an EnhancedStructureEditor, update its category dropdown
-        if self.parent and isinstance(self.parent, EnhancedStructureEditor):
-            if hasattr(self.parent, 'category_combo'):
-                self.parent.populate_category_dropdown()
+            # Update the data in the item
+            item_data["name"] = new_name
+            item.setData(0, Qt.UserRole, item_data)
+            
+            # Attempt to rename the structure
+            if self.template_manager and hasattr(self.template_manager, "rename_custom_structure"):
+                success = self.template_manager.rename_custom_structure(old_name, new_name)
+                
+                if not success:
+                    # Restore the old name if renaming failed
+                    item.setText(0, old_name)
+                    item_data["name"] = old_name
+                    item.setData(0, Qt.UserRole, item_data)
+                    QMessageBox.warning(self, "Error", f"Failed to rename structure '{old_name}'")
+            else:
+                # Legacy method - save as new name and delete old
+                if self.template_manager:
+                    # Get the structure
+                    structure = self.template_manager.get_structure(old_name)
+                    if structure:
+                        # Save with new name
+                        success1 = self.template_manager.save_custom_structure(new_name, structure)
+                        # Delete old structure
+                        success2 = self.template_manager.delete_custom_structure(old_name)
+                        
+                        if not (success1 and success2):
+                            # Restore the old name if renaming failed
+                            item.setText(0, old_name)
+                            item_data["name"] = old_name
+                            item.setData(0, Qt.UserRole, item_data)
+                            QMessageBox.warning(self, "Error", f"Failed to rename structure '{old_name}'")
 
     def show_context_menu(self, position):
-        """Show context menu for tree items"""
-        item = self.structures_list.itemAt(position)
-        if not item:
+        """Show context menu for structures list items"""
+        selected_items = self.structures_list.selectedItems()
+        if not selected_items:
             return
             
         menu = CustomMenu(self)
-        item_data = item.data(0, Qt.UserRole)
         
-        if item_data and item_data.get("type") == "category":
-            # Context menu for category items
-            if item_data.get("is_built_in", False):
-                # No actions for built-in category
-                return
-                
-            rename_action = QAction("Rename Category", self)
-            rename_action.triggered.connect(lambda: self.edit_category(item))
-            menu.addAction(rename_action)
+        # Check if multiple items are selected
+        if len(selected_items) > 1:
+            # Check if all items are of the same type to determine available actions
+            all_custom = True
+            all_default = True
             
-            # Don't allow deleting the default category
-            if not item_data.get("is_default", False):
-                # Add the Delete action with red styling
+            for item in selected_items:
+                item_data = item.data(0, Qt.UserRole)
+                if not isinstance(item_data, dict):
+                    all_custom = False
+                    all_default = False
+                    break
+                    
+                if item_data.get("type") != "custom":
+                    all_custom = False
+                    
+                if item_data.get("type") != "default":
+                    all_default = False
+            
+            # Only show delete option for multiple custom structures
+            if all_custom:
+                delete_action = QAction(f"Delete {len(selected_items)} Structures", self)
+                delete_action.triggered.connect(self.delete_structure)
                 menu.addRedDeleteAction(
                     parent=self,
-                    callback=lambda: self.delete_category(item)
+                    callback=self.delete_structure
                 )
-                
-        elif item_data and item_data.get("type") in ["custom", "default"]:
-            # Context menu for structure items
-            if item_data.get("type") == "custom":
-                rename_action = QAction("Rename...", self)
-                rename_action.triggered.connect(lambda: self.rename_structure_from_item(item))
+            
+            # Show duplicate for either all custom or all default
+            if all_custom or all_default:
+                duplicate_action = QAction("Duplicate Selected Structures", self)
+                duplicate_action.triggered.connect(self.duplicate_selected_structures)
+                menu.addAction(duplicate_action)
+        else:
+            # Single item selected - show full context menu
+            item = selected_items[0]
+            item_data = item.data(0, Qt.UserRole)
+            
+            # Check if item_data is a dictionary before trying to use get()
+            if isinstance(item_data, dict) and item_data.get("type") == "category":
+                # Context menu for category items
+                if item_data.get("is_built_in", False):
+                    # No actions for built-in category
+                    return
+                    
+                rename_action = QAction("Rename Category", self)
+                rename_action.triggered.connect(lambda: self.edit_category(item))
                 menu.addAction(rename_action)
                 
-                # Add the Delete action with red styling
-                menu.addRedDeleteAction(
-                    parent=self,
-                    callback=lambda: self.delete_structure_from_item(item)
-                )
-            
-            duplicate_action = QAction("Duplicate...", self)
-            duplicate_action.triggered.connect(lambda: self.duplicate_structure_from_item(item))
-            menu.addAction(duplicate_action)
+                # Don't allow deleting the default category
+                if not item_data.get("is_default", False):
+                    # Add the Delete action with red styling
+                    menu.addRedDeleteAction(
+                        parent=self,
+                        callback=lambda: self.delete_category(item)
+                    )
+                    
+            elif isinstance(item_data, dict) and item_data.get("type") in ["custom", "default"]:
+                # Context menu for structure items
+                if item_data.get("type") == "custom":
+                    rename_action = QAction("Rename...", self)
+                    rename_action.triggered.connect(lambda: self.rename_structure_from_item(item))
+                    menu.addAction(rename_action)
+                    
+                    # Add the Delete action with red styling
+                    menu.addRedDeleteAction(
+                        parent=self,
+                        callback=lambda: self.delete_structure_from_item(item)
+                    )
+                
+                duplicate_action = QAction("Duplicate...", self)
+                duplicate_action.triggered.connect(lambda: self.duplicate_structure_from_item(item))
+                menu.addAction(duplicate_action)
         
         if not menu.isEmpty():
             menu.exec_(self.structures_list.viewport().mapToGlobal(position))
@@ -2150,7 +2135,7 @@ class StructureManagerDialog(QDialog):
             return
             
         item_data = item.data(0, Qt.UserRole)
-        if not item_data or item_data.get("type") != "category" or item_data.get("is_default", False) or item_data.get("is_built_in", False):
+        if not isinstance(item_data, dict) or item_data.get("type") != "category" or item_data.get("is_default", False) or item_data.get("is_built_in", False):
             return
             
         # Get the category name
@@ -2217,7 +2202,7 @@ class StructureManagerDialog(QDialog):
         """Rename structure from context menu"""
         if item:
             item_data = item.data(0, Qt.UserRole)
-            if item_data and item_data.get("type") == "custom":
+            if isinstance(item_data, dict) and item_data.get("type") == "custom":
                 # Create a temporary selection
                 self.structures_list.setCurrentItem(item)
                 # Call the main rename function
@@ -2227,7 +2212,7 @@ class StructureManagerDialog(QDialog):
         """Delete structure from context menu"""
         if item:
             item_data = item.data(0, Qt.UserRole)
-            if item_data and item_data.get("type") == "custom":
+            if isinstance(item_data, dict) and item_data.get("type") == "custom":
                 # Create a temporary selection
                 self.structures_list.setCurrentItem(item)
                 # Call the main delete function
@@ -2242,6 +2227,51 @@ class StructureManagerDialog(QDialog):
                 self.structures_list.setCurrentItem(item)
                 # Call the main duplicate function
                 self.duplicate_structure()
+
+    def duplicate_selected_structures(self):
+        """Duplicate multiple selected structures"""
+        selected_items = self.structures_list.selectedItems()
+        if not selected_items:
+            return
+            
+        # Gather structure information
+        structures_to_duplicate = []
+        for item in selected_items:
+            item_data = item.data(0, Qt.UserRole)
+            if isinstance(item_data, dict):
+                structure_name = item_data.get("name")
+                if structure_name and self.template_manager:
+                    structure = self.template_manager.get_structure(structure_name)
+                    if structure:
+                        structures_to_duplicate.append((structure_name, structure))
+        
+        # Duplicate each structure
+        duplicated_count = 0
+        for original_name, structure in structures_to_duplicate:
+            # Create a default new name with numeric suffix to avoid conflicts
+            base_name = f"{original_name}_copy"
+            new_name = base_name
+            suffix = 1
+            
+            # Check if the name already exists and generate a unique name
+            while self.template_manager.structure_exists(new_name):
+                suffix += 1
+                new_name = f"{base_name}_{suffix}"
+            
+            # Save with the new name
+            success = self.template_manager.save_custom_structure(new_name, structure)
+            if success:
+                duplicated_count += 1
+        
+        # Refresh the structure list if any duplicates were created
+        if duplicated_count > 0:
+            self.populate_structures()
+            
+            # Show success message
+            if duplicated_count == 1:
+                QMessageBox.information(self, "Success", f"1 structure was duplicated successfully.")
+            else:
+                QMessageBox.information(self, "Success", f"{duplicated_count} structures were duplicated successfully.")
 
 # Utility functions for working with the enhanced structure editor
 

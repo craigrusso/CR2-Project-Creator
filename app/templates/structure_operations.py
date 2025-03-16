@@ -165,6 +165,10 @@ class StructureOperations:
             
         normalized = []
         
+        # Common folder names that should always be treated as folders
+        common_folder_names = ['footage', 'graphics', 'audio', 'exports', 'project_files', 
+                             'documents', 'assets', 'renders', 'source_files', 'references']
+        
         for item in structure_items:
             # If it's already a dictionary, process its children
             if isinstance(item, dict):
@@ -186,8 +190,12 @@ class StructureOperations:
                 normalized.append({folder_name: []})
             # If it's a regular string (file or single folder from older format)
             elif isinstance(item, str):
+                # First check if it's in our common folder list
+                if item.lower() in common_folder_names:
+                    print(f"Converting common folder name '{item}' to folder format")
+                    normalized.append({item: []})
                 # Check for revision folders (REV01, REV02, etc.)
-                if item.upper().startswith('REV') and len(item) >= 4 and item[3:].isdigit():
+                elif item.upper().startswith('REV') and len(item) >= 4 and item[3:].isdigit():
                     print(f"Converting revision folder '{item}' to folder format during structure save")
                     normalized.append({item: []})
                 # Try to detect if this is a folder based on naming convention

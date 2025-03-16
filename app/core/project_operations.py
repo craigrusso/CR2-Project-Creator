@@ -66,16 +66,13 @@ def create_project(app):
     # Get output directory
     output_dir = app.get_current_output_dir() if hasattr(app, 'get_current_output_dir') else app.root_path
     
-    # If no output directory is set, prompt the user to select one
+    # If no output directory is set, directly prompt the user to select one
     if not output_dir:
-        app.show_status_message("Please select an output location", message_type="warning")
-        
-        # Prompt user to select a location
         output_dir = app.get_output_dir()
         
         # If user still hasn't selected a location, abort
         if not output_dir:
-            app.show_status_message("Please select an output location", message_type="error")
+            app.show_status_message("Project creation cancelled - no output location selected", message_type="warning")
             return
     
     # Ensure the output directory is saved in the config
@@ -240,8 +237,13 @@ def handle_batch_create(app, project_names_text):
     # Get the output directory
     output_dir = app.get_current_output_dir()
     if not output_dir:
-        app.show_status_message("Please select an output directory", message_type="error")
-        return
+        # Directly prompt user to select an output directory
+        output_dir = app.get_output_dir()
+        
+        # If user still hasn't selected a location, abort
+        if not output_dir:
+            app.show_status_message("Batch project creation cancelled - no output location selected", message_type="warning")
+            return
     
     # Prepare project builder
     project_builder = app.project_builder
