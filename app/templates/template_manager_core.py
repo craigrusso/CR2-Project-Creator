@@ -5,6 +5,8 @@ import os
 import json
 import datetime
 import shutil
+import time
+from pathlib import Path
 
 from app.utils.utils import load_json_file, save_json_file, get_config_paths
 from app.constants import DEFAULT_STRUCTURES, PROJECT_TYPE_TO_STRUCTURE, DEFAULT_TEMPLATE_CATEGORIES
@@ -12,32 +14,39 @@ from app.templates.folder_operations import FolderOperations
 from app.templates.structure_operations import StructureOperations
 from app.templates.template_operations import TemplateOperations
 from app.templates.project_type_manager import ProjectTypeManager
+from app.core.app_config import APP_VERSION
 
-class TemplateManagerCore:
+class TemplateManagerCore(TemplateOperations):
     """
     Core functionality for managing project templates and custom structures
     """
-    def __init__(self):
-        self.paths = get_config_paths()
-        self.custom_structures = {}
+    _instance = None  # Singleton instance
+    
+    def __init__(self, app=None):
+        """Initialize the template manager core"""
+        TemplateOperations.__init__(self)
+        
+        # Store the application instance
+        self.app = app
+        
+        # Initialize template storage
         self.templates = []
         self.template_directories = []
+        self.custom_structures = []
+        self.selected_template = None
+        self.folders = {}  # Map of folder name to list of template names
+        self.preferences = {}  # User preferences
         
-        # Add folder management
-        self.folders = {}
-        self.current_folder = None
-        
-        # Add preferences dictionary
-        self.preferences = {}
-        
-        # Create required directories if they don't exist
+        # Create template directory if it doesn't exist
         self._ensure_directories_exist()
         
-        # Load templates and structures
+        # Load templates, structures, and folders
+        self.load_template_directories()
         self.load_templates()
         self.load_custom_structures()
-        self.load_template_directories()
         self.load_folders()
+        
+        # Load user preferences
         self.load_preferences()
         
         # Clean up any problematic templates
@@ -45,6 +54,9 @@ class TemplateManagerCore:
         
         # Initialize additional managers
         self.init_managers()
+        
+        # For project types (replacing categories)
+        self.project_type_manager = ProjectTypeManager(self)
     
     def _ensure_directories_exist(self):
         """Ensure all required directories exist"""
@@ -154,13 +166,16 @@ class TemplateManagerCore:
     
     def init_managers(self):
         """Initialize additional managers"""
-        # Creating separate modules for each concern
-        self.category_manager = None  # For backward compatibility, may be removed later
-        self.project_type_manager = ProjectTypeManager(self)
+        # Legacy attribute for backward compatibility, can be removed in future
+        self.category_manager = None
     
     def get_categories(self):
-        """Get a list of all template categories (project types)"""
-        # Delegate to project_type_manager for better organization
+        """
+        Get all used categories in templates
+        This is a deprecated method kept for backward compatibility
+        It now returns project types instead of categories
+        """
+        # Delegate to project type manager
         return self.project_type_manager.get_all_project_types()
         
     def get_all_templates(self):

@@ -231,16 +231,21 @@ class GalleryEvents:
             
             # Create an empty template - no category (using 'Default' as placeholder)
             # and no file association yet
-            success = gallery.app.template_manager.save_template(
-                template_name,
-                "Default",  # Using Default instead of category since categories are no longer used
-                "",  # No file yet - user will add files in the editor
-                "Standard"
-            )
-            
-            if not success:
-                QMessageBox.warning(gallery, "Error", f"Failed to create template '{template_name}'.")
-                return
+            try:
+                success = gallery.app.template_manager.save_template(
+                    template_name,
+                    "",  # No file path yet - user will add files in the editor
+                    "Standard",  # Structure type
+                    "New template"  # Description
+                )
+                
+                if success:
+                    # Refresh gallery with the new template
+                    gallery.populate_gallery(force_refresh=True)
+                else:
+                    print(f"Error adding template: Failed to save template")
+            except Exception as e:
+                print(f"Error adding template: {e}")
             
             # Get the newly created template
             new_template = gallery.app.template_manager.get_template_by_name(template_name)
@@ -591,6 +596,91 @@ class GalleryEvents:
         """Handle delete template action (from button, context menu, or keyboard)"""
         print(f"[DEBUG] Gallery: Delete request for template '{template_name}'")
         
+        # Check if we're dealing with multi-selected templates
+        has_multi = (hasattr(gallery, 'multi_selected_templates') and 
+                    gallery.multi_selected_templates and 
+                    len(gallery.multi_selected_templates) > 0)
+        
+        # Check if we need to handle multi-selection deletion
+        if has_multi:
+            # Create a list to hold all templates to delete
+            templates_to_delete_set = set()
+            templates_to_delete = []
+            
+            # Always include the primary selected template first
+            if hasattr(gallery, 'selected_template') and gallery.selected_template:
+                primary_name = gallery.selected_template.get('name', 'Unknown')
+                templates_to_delete.append(gallery.selected_template)
+                templates_to_delete_set.add(id(gallery.selected_template))
+                print(f"[DEBUG] Gallery: Including primary selected template '{primary_name}' in multi-delete")
+            
+            # Add all multi-selected templates
+            for template in gallery.multi_selected_templates:
+                template_id = id(template)
+                if template_id not in templates_to_delete_set:
+                    templates_to_delete.append(template)
+                    templates_to_delete_set.add(template_id)
+                    print(f"[DEBUG] Gallery: Adding multi-selected template '{template.get('name', 'Unknown')}' to delete operation")
+            
+            # Process all templates
+            template_names = []
+            for template in templates_to_delete:
+                if isinstance(template, dict):
+                    name = template.get('name', 'Unknown')
+                else:
+                    name = str(template)
+                
+                if name and name not in template_names:
+                    template_names.append(name)
+            
+            # Create confirmation message
+            if len(template_names) == 1:
+                message = f"Are you sure you want to delete template '{template_names[0]}'?"
+            else:
+                message = f"Are you sure you want to delete these {len(template_names)} templates?"
+            
+            # Show single confirmation for all templates
+            confirm = QMessageBox.question(
+                gallery,
+                "Confirm Delete",
+                message,
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if confirm == QMessageBox.Yes:
+                # Delete all templates
+                if hasattr(gallery.app, 'template_manager'):
+                    template_manager = gallery.app.template_manager
+                    for name in template_names:
+                        print(f"[DEBUG] Gallery: Deleting template '{name}' in multi-delete")
+                        template_manager.delete_template(name)
+                    
+                    # Reset selection
+                    gallery.selected_template = None
+                    
+                    # Clear multi-selection
+                    gallery.multi_selected_templates.clear()
+                    
+                    # Force reload of template data
+                    if hasattr(template_manager, 'load_templates'):
+                        template_manager.load_templates()
+                    if hasattr(template_manager, 'load_folders'):
+                        template_manager.load_folders()
+                    
+                    # Refresh the gallery
+                    gallery.populate_gallery(force_refresh=True)
+                    
+                    # Show success message
+                    if hasattr(gallery.app, 'show_status_message'):
+                        if len(template_names) == 1:
+                            gallery.app.show_status_message(f"Deleted template '{template_names[0]}'", "success")
+                        else:
+                            gallery.app.show_status_message(f"Deleted {len(template_names)} templates", "success")
+                
+                return
+        
+        # Single template deletion (original behavior)
         # Get the template name - either directly passed or from the selected template
         if template_name is None and gallery.selected_template:
             if isinstance(gallery.selected_template, dict):
@@ -741,17 +831,27 @@ class GalleryEvents:
     
     @staticmethod
     def key_press_event(gallery, event):
-        """Handle keyboard events for the template gallery."""
-        # Ignore keyboard events when in folder tree view
-        if hasattr(gallery, 'folder_tree') and gallery.folder_tree and gallery.folder_tree.hasFocus():
-            return
+        """Handle keyboard events in the template gallery"""
+        # Check for dialogs - safely check for attribute first
+        if hasattr(gallery, 'isDialogOpen') and gallery.isDialogOpen:
+            return False
             
         key = event.key()
+        modifiers = event.modifiers()
         
-        # Get keyboard modifiers
-        modifiers = QApplication.keyboardModifiers()
-        alt_modifier = bool(modifiers & Qt.AltModifier)
-        ctrl_modifier = bool(modifiers & Qt.ControlModifier) or bool(modifiers & Qt.MetaModifier)
+        # Handle undo/redo shortcuts
+        if modifiers & Qt.ControlModifier:
+            if key == Qt.Key_Z:
+                print(f"🔍 LISTENER: Ctrl+Z pressed")
+                if hasattr(gallery.app, 'undo'):
+                    gallery.app.undo()
+                return True
+            elif (key == Qt.Key_Y) or (modifiers & Qt.ShiftModifier and key == Qt.Key_Z):
+                print(f"🔍 LISTENER: Ctrl+Y or Ctrl+Shift+Z pressed")
+                if hasattr(gallery.app, 'redo'):
+                    gallery.app.redo()
+                return True
+                
         shift_modifier = bool(modifiers & Qt.ShiftModifier)
         
         # Multi-select with arrow keys while holding Shift
@@ -824,7 +924,7 @@ class GalleryEvents:
             if len(template_names) == 1:
                 message = f"Are you sure you want to delete template '{template_names[0]}'?"
             else:
-                message = f"Are you sure you want to delete {len(template_names)} templates?"
+                message = f"Are you sure you want to delete these {len(template_names)} templates?"
             
             # Single confirmation for all templates
             confirm = QMessageBox.question(
@@ -855,13 +955,22 @@ class GalleryEvents:
                 if hasattr(gallery, 'multi_selected_templates'):
                     gallery.multi_selected_templates.clear()
                     
-                # Refresh gallery
+                # Reload template data
+                if (hasattr(gallery.app, 'template_manager') and 
+                    hasattr(gallery.app.template_manager, 'load_templates')):
+                    gallery.app.template_manager.load_templates()
+                    
+                if (hasattr(gallery.app, 'template_manager') and 
+                    hasattr(gallery.app.template_manager, 'load_folders')):
+                    gallery.app.template_manager.load_folders()
+                
+                # Refresh the gallery
                 gallery.populate_gallery(force_refresh=True)
-            
+                
             return True
         else:
             # Call the parent's keyPressEvent
-            pass  # This will be handled in the refactored main class
+            return False
 
     @staticmethod
     def on_move_template_to_folder(gallery, template_name, folder_name):

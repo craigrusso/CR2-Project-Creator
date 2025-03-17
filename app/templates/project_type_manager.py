@@ -51,11 +51,7 @@ class ProjectTypeManager:
         for project_type in self.custom_project_types.keys():
             project_types.add(project_type)
         
-        # Add from templates
-        for template in self.template_manager.templates:
-            category = template.get("category")
-            if category:
-                project_types.add(category)
+        # No longer need to add from templates since we're not storing categories anymore
         
         return sorted(list(project_types))
     
@@ -102,11 +98,12 @@ class ProjectTypeManager:
         return "standard"
     
     def change_template_project_type(self, template_name, new_project_type):
-        """Change the project type (category) of a template"""
+        """Change the project type of a template"""
         for template in self.template_manager.templates:
             if template["name"] == template_name:
-                old_category = template["category"]
-                template["category"] = new_project_type
+                # Update the type field instead of category
+                old_type = template.get("type", "")
+                template["type"] = new_project_type
                 
                 # Save the template file
                 filename = template_name.replace(" ", "_").replace("/", "-").replace("\\", "-")
@@ -117,8 +114,8 @@ class ProjectTypeManager:
                         json.dump(template, f, indent=2)
                     return True
                 except Exception as e:
-                    # Restore old category on error
-                    template["category"] = old_category
+                    # Restore old type on error
+                    template["type"] = old_type
                     print(f"Error changing template project type: {e}")
                     return False
         

@@ -1073,91 +1073,85 @@ class TemplateListItem(QFrame):
     deleteRequested = pyqtSignal(str)   # Signal for delete request
     moveToFolderRequested = pyqtSignal(str, str)  # Signal for move to folder request
     
-    def __init__(self, parent=None, template=None, app=None):
-        super().__init__(parent)
+    def __init__(self, gallery, template=None, app=None):
+        super().__init__()
+        self.gallery = gallery
         self.template = template
         self.app = app
         self.selected = False
-        self.hover = False
-        self.is_odd_row = False  # Add this attribute to fix list view disappearing
+        self.multi_selected = False
+        self.hover = False  # Add hover state
+        self.is_odd_row = False
         
-        # Configure frame appearance - use clean, borderless macOS style
-        self.setFrameShape(QFrame.NoFrame)
-        self.setFrameShadow(QFrame.Plain)
-        self.setLineWidth(0)
-        self.setFixedHeight(40)  # Slightly reduced height for macOS-like compactness
+        self.setFrameShape(QFrame.StyledPanel)
         self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet("background-color: transparent; border: none;")
         
-        # Size policy - make sure the item stretches to fill width
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # Set up layout
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(6)
         
-        # Layout
-        self.layout = QHBoxLayout(self)
-        self.layout.setContentsMargins(10, 5, 10, 5)
-        self.layout.setSpacing(10)
-        
-        # Template icon
-        icon_text = template.get('icon', '📄')
+        # Icon
         self.icon_label = QLabel()
-        
-        # Try to use SVG icon if available
-        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
-                               "assets", "icons", "template_structure_icon.svg")
-        
-        if os.path.exists(icon_path):
-            try:
-                from PyQt5.QtSvg import QSvgRenderer
-                
-                # Create a renderer for the SVG
-                with open(icon_path, 'r') as f:
-                    svg_content = f.read()
-                
-                renderer = QSvgRenderer(QByteArray(svg_content.encode()))
-                if renderer.isValid():
-                    # Create a pixmap to render to
-                    pixmap = QPixmap(30, 30)
-                    pixmap.fill(Qt.transparent)  # Make the background transparent
-                    
-                    # Paint the SVG on the pixmap
-                    painter = QPainter(pixmap)
-                    renderer.render(painter)
-                    painter.end()
-                    
-                    self.icon_label.setPixmap(pixmap)
-                else:
-                    # Fallback to text if renderer is not valid
-                    self.icon_label.setText(icon_text)
-                    self.icon_label.setFont(QFont(SYSTEM_FONT, 20))
-            except Exception as e:
-                print(f"ERROR: Failed to load SVG icon: {e}")
-                # Fallback to text if SVG loading fails
-                self.icon_label.setText(icon_text)
-                self.icon_label.setFont(QFont(SYSTEM_FONT, 20))
-        else:
-            # Fallback to text if file doesn't exist
-            self.icon_label.setText(icon_text)
-            self.icon_label.setFont(QFont(SYSTEM_FONT, 20))
-            
+        self.icon_label.setFixedSize(22, 22)
         self.icon_label.setStyleSheet(f"color: {colors['accent']}; background: transparent;")
-        self.icon_label.setFixedWidth(40)
-        self.layout.addWidget(self.icon_label)
+        # Use document icon for templates
+        self.icon_label.setText("📄")
+        layout.addWidget(self.icon_label)
         
-        # Template name (title)
-        self.name_label = QLabel(template.get('name', 'Untitled Template'))
-        self.name_label.setFont(QFont(SYSTEM_FONT, 11, QFont.Bold))
+        # Name label
+        self.name_label = QLabel()
+        self.name_label.setStyleSheet(f"color: {colors['primary_text']}; background: transparent;")
+        
+        # Ensure name label gets priority in sizing
         self.name_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.layout.addWidget(self.name_label, 1)  # Give name label stretch priority
+        layout.addWidget(self.name_label, 1)  # Give it stretch priority
         
-        # Template category
-        category = template.get('category', 'Default')
-        self.category_label = QLabel(category)
-        self.category_label.setFont(QFont(SYSTEM_FONT, 10))
-        self.category_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.category_label.setFixedWidth(150)
-        self.layout.addWidget(self.category_label)
+        # Format the creation date (fallback to current time if not available)
+        created_timestamp = template.get('created', time.time()) if template else time.time()
+        created_date_str = self._format_timestamp(created_timestamp)
         
-        # Set initial styling
-        self._update_styling()
+        # Create the created date label
+        self.created_date_label = QLabel(created_date_str)
+        self.created_date_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.created_date_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
+        self.created_date_label.setFixedWidth(130)  # Fixed width to prevent resizing issues
+        layout.addWidget(self.created_date_label)
+        
+        # Format the modified date (fallback to creation date if not available)
+        modified_timestamp = template.get('modified', created_timestamp) if template else time.time()
+        modified_date_str = self._format_timestamp(modified_timestamp)
+        
+        # Create the modified date label
+        self.modified_date_label = QLabel(modified_date_str)
+        self.modified_date_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.modified_date_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
+        self.modified_date_label.setFixedWidth(130)  # Fixed width to prevent resizing issues
+        layout.addWidget(self.modified_date_label)
+        
+        # Set fixed height for the list item
+        self.setFixedHeight(40)
+        
+        # Load template data
+        if template:
+            self._load_template_data(template)
+        
+        # Connect signals for hover effects
+        self.installEventFilter(self)
+
+    def _format_timestamp(self, timestamp):
+        """Format a timestamp into a readable date string"""
+        try:
+            if isinstance(timestamp, (int, float)):
+                # Convert timestamp to datetime
+                dt = datetime.datetime.fromtimestamp(timestamp)
+                # Format as YYYY-MM-DD HH:MM
+                return dt.strftime("%Y-%m-%d %H:%M")
+            return "Unknown"
+        except Exception as e:
+            print(f"Error formatting timestamp: {e}")
+            return "Unknown"
     
     def mousePressEvent(self, event):
         """Handle mouse press events - emit clicked signal with template data"""
@@ -1201,52 +1195,28 @@ class TemplateListItem(QFrame):
         print(f"⭐ TemplateListItem selection changed: {old_state} -> {selected} for {self.template.get('name', 'Unknown')}")
     
     def _update_styling(self):
-        """Update styling based on selected, hover, and row-type state"""
-        template_name = self.template.get('name', 'Unknown')
-        
-        # Debug styling
-        print(f"⭐ TemplateListItem._update_styling() for {template_name}, selected={self.selected}, hover={self.hover}")
-        
+        """Update styling based on selection and hover state"""
         if self.selected:
-            # Selected styling - use macOS blue highlight color
-            print(f"⭐ Applying SELECTED style to {template_name}")
-            self.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {colors['highlight_bg']};
-                    border: none;
-                }}
-            """)
+            # Selected state
+            self.setStyleSheet(f"background-color: {colors['highlight_bg']}; border-radius: 4px;")
+            self.name_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent; font-weight: bold;")
             self.icon_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
-            self.name_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
-            self.category_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
+            self.created_date_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
+            self.modified_date_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
         elif self.hover:
-            # Hover styling - light hover effect
-            self.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {colors['hover_bg']};
-                    border: none;
-                }}
-            """)
+            # Hover state
+            self.setStyleSheet(f"background-color: {colors['hover_bg']}; border-radius: 4px;")
+            self.name_label.setStyleSheet(f"color: {colors['primary_text']}; background: transparent; font-weight: bold;")
             self.icon_label.setStyleSheet(f"color: {colors['accent']}; background: transparent;")
-            self.name_label.setStyleSheet("color: white; background: transparent;")
-            self.category_label.setStyleSheet("color: #cccccc; background: transparent;")
+            self.created_date_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
+            self.modified_date_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
         else:
-            # Normal styling - alternate row colors
-            row_type = self.property("row_type")
-            if row_type == "odd":
-                bg_color = colors.get("alternate_row", "#2A2A2A")
-            else:
-                bg_color = colors.get("card_bg", "#333333")
-                
-            self.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {bg_color};
-                    border: none;
-                }}
-            """)
+            # Normal state
+            self.setStyleSheet(f"background-color: transparent; border-radius: 4px;")
+            self.name_label.setStyleSheet(f"color: {colors['primary_text']}; background: transparent; font-weight: bold;")
             self.icon_label.setStyleSheet(f"color: {colors['accent']}; background: transparent;")
-            self.name_label.setStyleSheet("color: white; background: transparent;")
-            self.category_label.setStyleSheet("color: #cccccc; background: transparent;")
+            self.created_date_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
+            self.modified_date_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
         
         # Force immediate update
         self.update()
@@ -1330,69 +1300,71 @@ class TemplateListItem(QFrame):
             traceback.print_exc()
     
     def _on_add_template(self):
-        """Handle add template button click"""
-        # Get template name from user
-        template_name, ok = QInputDialog.getText(
-            self,
-            "New Template",
-            "Enter template name:"
-        )
-        
-        if not ok or not template_name:
-            return
+        """Open the template creation dialog"""
+        try:
+            if not self.app or not hasattr(self.app, 'template_manager'):
+                print("No template manager available")
+                return
             
-        # Get category using our custom styled dialog
-        categories = self.template_manager.get_categories()
-        
-        # Create and show the styled dialog
-        category_dialog = StyledItemDialog(
-            self,
-            "Template Category",
-            "Select category:",
-            categories
-        )
-        
-        # Set default selection to first item
-        if category_dialog.combo.count() > 0:
-            category_dialog.combo.setCurrentIndex(0)
-        
-        if category_dialog.exec_() == QDialog.Accepted:
-            category = category_dialog.selectedItem()
-        else:
-            # User cancelled
-            return
-        
-        # Create an empty template - no file association yet
-        success = self.template_manager.save_template(
-            template_name,
-            category,
-            "",  # No file yet - user will add files in the editor
-            "Standard"
-        )
-        
-        if not success:
-            QMessageBox.warning(self, "Error", f"Failed to create template '{template_name}'.")
-            return
+            # Get template manager
+            template_manager = self.app.template_manager
             
-        # If we're in a folder, add the template to it
-        if self.current_folder:
-            print(f"Adding new template '{template_name}' to current folder '{self.current_folder}'")
-            self.template_manager.add_to_folder(self.current_folder, template_name)
-        
-        # Get the newly created template
-        new_template = self.template_manager.get_template_by_name(template_name)
-        
-        if not new_template:
-            QMessageBox.warning(self, "Error", f"Failed to retrieve template '{template_name}' after creation.")
+            # Get structure types (project types)
+            template_manager.structure_types = []
+            if hasattr(template_manager, 'get_structure_types'):
+                template_manager.structure_types = template_manager.get_structure_types()
+            
+            # Setup import path
+            import_path = os.path.expanduser("~/Documents")
+            if hasattr(self.app, 'settings'):
+                if self.app.settings.value("last_import_path"):
+                    import_path = self.app.settings.value("last_import_path")
+                else:
+                    self.app.settings.setValue("last_import_path", import_path)
+            
+            # Get categories using our custom styled dialog
+            # Remove category dialog and related code
+            
+            # Show file dialog to select a folder or zip file
+            folder_name, ok = QInputDialog.getText(
+                self,
+                "New Template",
+                "Enter template name:"
+            )
+            
+            if not ok or not folder_name:
+                return
+            
+            # Check if the template exists
+            if not import_path or not os.path.exists(import_path):
+                QMessageBox.warning(self, "Invalid Path", "Please select a valid folder or ZIP file.")
+                return
+            
+            # Remove category parameter from save_template call
+            template_manager.save_template(
+                folder_name, 
+                import_path,  
+                "Standard"
+            )
+            
+            # Get the newly created template
+            new_template = template_manager.get_template_by_name(folder_name)
+            
+            if not new_template:
+                QMessageBox.warning(self, "Error", f"Failed to retrieve template '{folder_name}' after creation.")
+                self.populate_gallery()
+                return
+            
+            # Open the editor immediately so user can add files and set up structure
+            from app.dialogs.dialog_windows_pyqt import show_edit_template
+            show_edit_template(self, new_template, self._on_template_edited)
+            
+            # Refresh the gallery to show the new template
             self.populate_gallery()
-            return
-            
-        # Open the editor immediately so user can add files and set up structure
-        from app.dialogs.dialog_windows_pyqt import show_edit_template
-        show_edit_template(self, new_template, self._on_template_edited)
-        
-        # Refresh the gallery to show the new template
-        self.populate_gallery()
+        except Exception as e:
+            print(f"Error in _on_add_template: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _on_edit_template(self):
         """Handle edit template button click"""
@@ -1413,41 +1385,32 @@ class TemplateListItem(QFrame):
             print(f"ERROR: Template not found: {template_name}")
     
     def _on_template_edited(self, template):
-        """Handle template edit completion"""
-        if template:
-            print(f"DEBUG: Template edited: {template.get('name')}")
+        """Handle when a template is edited"""
+        if not template or not self.app or not hasattr(self.app, 'template_manager'):
+            return
             
-            # Check if the template has a structure
-            if 'structure' in template:
-                print(f"DEBUG: Template has structure data")
-                structure_name = f"Template_{template.get('name')}"
-                print(f"DEBUG: Saving structure as {structure_name}")
-                
-                # Save the structure first
-                self.template_manager.save_custom_structure(structure_name, template.get('structure', []))
-                
-                # Make sure structure_name is set in the template
-                template['structure_name'] = structure_name
+        # Get template details
+        template_name = template.get('name', '')
+        # Remove category reference
+        category = template.get('category', '')
+        path = template.get('path', '')
+        template_type = template.get('type', '')
+        
+        if not template_name or not path:
+            return
             
-            # Check if update_template exists, otherwise use save_template as fallback
-            if hasattr(self.template_manager, 'update_template'):
-                print(f"DEBUG: Using update_template method")
-                self.template_manager.update_template(template)
-            else:
-                # Fallback to save_template if update_template doesn't exist
-                print(f"DEBUG: Using save_template fallback")
-                template_name = template.get('name', '')
-                category = template.get('category', '')
-                path = template.get('path', '')
-                template_type = template.get('type', 'Standard')
-                self.template_manager.save_template(template_name, category, path, template_type)
-            
-            self.populate_gallery()
+        # Save the updated template
+        self.template_manager.save_template(template_name, path, template_type)
     
     def _on_delete_template(self):
-        """Handle delete template button click"""
-        if self.selected_template:
-            template_name = self.selected_template.get('name', 'Unnamed Template')
+        """Delete the selected template"""
+        try:
+            # Get template name and category
+            template_name = self.template.get('name', '')
+            # Remove category reference
+            
+            if not template_name:
+                return
             
             confirm = QMessageBox.question(
                 self, 
@@ -1465,6 +1428,10 @@ class TemplateListItem(QFrame):
                 
                 self.selected_template = None
                 self.populate_gallery()
+        except Exception as e:
+            print(f"Error in _on_delete_template: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _on_manage_templates(self):
         """Handle manage templates button click
@@ -1893,10 +1860,12 @@ class TemplateListItem(QFrame):
                             if isinstance(widget, QFrame):
                                 # This is likely our list container
                                 widget.setMinimumWidth(templates_width)
-                                # Also update child scroll area width
+                                # Ensure the scroll policy is set correctly for list view
+                                # Don't allow horizontal scrolling for list items
                                 for j in range(widget.layout().count()):
                                     child = widget.layout().itemAt(j)
                                     if child and child.widget() and isinstance(child.widget(), QScrollArea):
+                                        child.widget().setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
                                         child.widget().setMinimumWidth(templates_width)
                                 
                                 # Force immediate update and repaint
@@ -2156,6 +2125,47 @@ class TemplateListItem(QFrame):
     def set_selected_template(self, template):
         """Set the currently selected template"""
         self.selected_template = template
+
+    def _load_template_data(self, template):
+        """Load template data into the widget"""
+        try:
+            if not template:
+                return
+                
+            # Set name
+            if isinstance(template, dict):
+                name = template.get('name', 'Untitled Template')
+                self.name_label.setText(name)
+            elif isinstance(template, str):
+                self.name_label.setText(template)
+                
+            # Apply default styling
+            self._update_styling()
+        except Exception as e:
+            print(f"Error loading template data: {e}")
+    
+    def enterEvent(self, event):
+        """Handle mouse enter event"""
+        self.hover = True
+        self._update_styling()
+        super().enterEvent(event)
+    
+    def leaveEvent(self, event):
+        """Handle mouse leave event"""
+        self.hover = False
+        self._update_styling()
+        super().leaveEvent(event)
+
+    def eventFilter(self, obj, event):
+        """Filter events for hover effects"""
+        if obj == self:
+            if event.type() == QEvent.Enter:
+                self.hover = True
+                self._update_styling()
+            elif event.type() == QEvent.Leave:
+                self.hover = False
+                self._update_styling()
+        return super().eventFilter(obj, event)
 
 def create_template_gallery(app):
     """Create and return the template gallery widget"""

@@ -6,17 +6,65 @@ class FolderOperations:
     Operations for managing template folders (categories for organizing templates)
     """
     
+    def __init__(self):
+        """Initialize folder operations"""
+        # Only initialize folders if it doesn't already exist
+        # This is important when inheriting from TemplateManagerCore which already sets self.folders
+        if not hasattr(self, 'folders') or self.folders is None:
+            print("[DEBUG] FolderOps: Initializing folders attribute")
+            self.folders = {}
+        else:
+            print("[DEBUG] FolderOps: Using existing folders attribute with", len(self.folders), "folders")
+    
     def get_folders(self):
         """Get list of all folders"""
+        if not hasattr(self, 'folders') or self.folders is None:
+            print("[DEBUG] FolderOps: Warning - folders attribute is missing in get_folders()")
+            return []
         return list(self.folders.keys())
         
     def create_folder(self, folder_name):
-        """Create a new template folder"""
-        if not folder_name or folder_name in self.folders:
+        """Create a new folder with the given name
+        
+        Args:
+            folder_name (str): Name of the folder to create
+            
+        Returns:
+            bool: True if folder was created successfully, False otherwise
+        """
+        print(f"[DEBUG] FolderOps: Creating folder '{folder_name}'")
+        
+        # Validate input
+        if not folder_name or not isinstance(folder_name, str):
+            print(f"[DEBUG] FolderOps: Invalid folder name: '{folder_name}'")
             return False
         
-        self.folders[folder_name] = []
-        return self.save_folders()
+        # Trim whitespace
+        folder_name = folder_name.strip()
+        
+        if not folder_name:
+            print(f"[DEBUG] FolderOps: Empty folder name after trimming")
+            return False
+        
+        # Check if folder already exists
+        if folder_name in self.folders:
+            print(f"[DEBUG] FolderOps: Folder '{folder_name}' already exists")
+            return False
+        
+        try:
+            # Create the new folder
+            self.folders[folder_name] = []
+            
+            # Save the folders to disk
+            print(f"[DEBUG] FolderOps: Saving folders after creation")
+            self.save_folders()
+            
+            return True
+        except Exception as e:
+            import traceback
+            print(f"[DEBUG] FolderOps: Error creating folder: {e}")
+            traceback.print_exc()
+            return False
     
     # Alias for backwards compatibility
     add_folder = create_folder

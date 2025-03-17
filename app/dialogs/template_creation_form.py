@@ -3,392 +3,422 @@
 
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                            QPushButton, QLineEdit, QComboBox, QGridLayout,
-                           QMessageBox, QFileDialog, QGroupBox)
-from PyQt5.QtCore import Qt
-from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, COMBOBOX_STYLE
+                           QMessageBox, QFileDialog, QGroupBox, QTextEdit,
+                           QFrame, QWidget, QTabWidget, QScrollArea, QFormLayout,
+                           QSizePolicy, QTreeWidget, QTreeWidgetItem, QStyle)
+from PyQt5.QtCore import Qt, pyqtSignal, QSize
+from PyQt5.QtGui import QIcon, QFont, QFontMetrics
+from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE
+from app.templates.template_manager import TemplateManager
+from app.templates.components import get_system_font, SYSTEM_FONT
 
 class TemplateCreationForm(QDialog):
     """
-    Enhanced template creation form that makes the relationship between 
-    project types and folder structures clear
+    Dialog for creating or editing a template.
     """
     
-    def __init__(self, parent):
+    # Signal emitted when template is created or edited
+    template_created = pyqtSignal(dict)
+    template_edited = pyqtSignal(dict)
+    
+    def __init__(self, parent=None, template=None, template_manager=None, callback=None):
         super().__init__(parent)
-        self.parent = parent
-        self.template_manager = parent.template_manager if hasattr(parent, 'template_manager') else None
-        self.template_file_path = ""
+        self.setWindowTitle("Template Creator")
+        self.resize(700, 600)
+        self.template = template or {}
+        self.template_manager = template_manager
+        self.callback = callback
+        self.is_editing = bool(template and template.get("name"))
         
-        self.setWindowTitle("Create New Template")
-        self.resize(600, 450)
+        # Set the window flags to make it modal
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
         
+        # Set window title based on mode
+        if self.is_editing:
+            template_name = template.get("name", "Unknown")
+            self.setWindowTitle(f"Edit Template: {template_name}")
+        else:
+            self.setWindowTitle("Create New Template")
+        
+        # Set up the UI
         self.init_ui()
-        self.update_structure_preview()
         
+        # Fill form with template data if editing
+        if self.is_editing:
+            self.load_template_data()
+            
     def init_ui(self):
-        """Initialize the UI"""
+        """Initialize the user interface"""
+        # Main layout
         main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(20, 20, 20, 20)
-        main_layout.setSpacing(15)
         
-        # Header
-        header_label = QLabel("Create a New Project Template")
-        header_label.setStyleSheet("font-size: 18px; font-weight: bold;")
-        main_layout.addWidget(header_label)
+        # Tab widget
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet("""
+            QTabWidget::pane {
+                border: 1px solid #444;
+                border-radius: 3px;
+                background-color: #333;
+            }
+            QTabBar::tab {
+                background-color: #444;
+                color: #ddd;
+                padding: 8px 20px;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                margin-right: 2px;
+            }
+            QTabBar::tab:selected {
+                background-color: #555;
+                color: white;
+            }
+            QTabBar::tab:hover:!selected {
+                background-color: #505050;
+            }
+        """)
         
-        # Description
-        desc_label = QLabel("Create a template to use for future projects. Templates can be based on an existing project file or created from scratch.")
-        desc_label.setWordWrap(True)
-        main_layout.addWidget(desc_label)
+        # Create basic info tab
+        self.basic_info_tab = QWidget()
+        self.setup_basic_info_tab()
+        self.tabs.addTab(self.basic_info_tab, "Basic Info")
         
-        # Form layout
-        form_group = QGroupBox("Template Details")
-        form_layout = QGridLayout(form_group)
-        form_layout.setColumnStretch(1, 1)  # Make the second column stretch
+        # Create files tab if editing
+        if self.is_editing:
+            self.files_tab = QWidget()
+            self.setup_files_tab()
+            self.tabs.addTab(self.files_tab, "Files")
+            
+            # Create structure tab
+            self.structure_tab = QWidget()
+            self.setup_structure_tab()
+            self.tabs.addTab(self.structure_tab, "Structure")
+            
+        # Add tabs to main layout
+        main_layout.addWidget(self.tabs)
         
-        # Template name
-        name_label = QLabel("Template Name:")
-        self.name_input = QLineEdit()
-        form_layout.addWidget(name_label, 0, 0)
-        form_layout.addWidget(self.name_input, 0, 1)
-        
-        # Project Type (formerly Category)
-        type_label = QLabel("Project Type:")
-        self.type_combo = QComboBox()
-        self.type_combo.currentIndexChanged.connect(self.on_project_type_changed)
-        # Apply the standard style from the structure editor
-        self.type_combo.setStyleSheet(COMBOBOX_STYLE)
-        self.type_combo.setMinimumWidth(250)
-        
-        # Add help text for project type
-        type_help = QLabel("Project Type determines the default folder structure")
-        type_help.setStyleSheet("color: #666; font-style: italic; font-size: 11px;")
-        
-        form_layout.addWidget(type_label, 1, 0)
-        form_layout.addWidget(self.type_combo, 1, 1)
-        form_layout.addWidget(type_help, 2, 0, 1, 2)
-        
-        # Optional template file
-        file_label = QLabel("Template File (optional):")
-        
-        file_layout = QHBoxLayout()
-        self.file_input = QLineEdit()
-        self.file_input.setReadOnly(True)
-        browse_btn = QPushButton("Browse...")
-        browse_btn.clicked.connect(self.browse_file)
-        
-        file_layout.addWidget(self.file_input)
-        file_layout.addWidget(browse_btn)
-        
-        form_layout.addWidget(file_label, 3, 0)
-        form_layout.addLayout(file_layout, 3, 1)
-        
-        # Add form to main layout
-        main_layout.addWidget(form_group)
-        
-        # Structure preview
-        structure_group = QGroupBox("Folder Structure Preview")
-        structure_layout = QVBoxLayout(structure_group)
-        
-        # Structure combobox
-        structure_header = QHBoxLayout()
-        structure_label = QLabel("Structure:")
-        self.structure_combo = QComboBox()
-        self.structure_combo.currentIndexChanged.connect(self.update_structure_preview)
-        # Apply the standard style from the structure editor
-        self.structure_combo.setStyleSheet(COMBOBOX_STYLE)
-        self.structure_combo.setMinimumWidth(250)
-        
-        edit_structure_btn = QPushButton("Edit Structure")
-        edit_structure_btn.clicked.connect(self.edit_structure)
-        
-        structure_header.addWidget(structure_label)
-        structure_header.addWidget(self.structure_combo, 1)  # 1 = stretch factor
-        structure_header.addWidget(edit_structure_btn)
-        
-        structure_layout.addLayout(structure_header)
-        
-        # Structure preview text
-        self.structure_preview = QLabel()
-        self.structure_preview.setStyleSheet("background-color: #f0f0f0; padding: 10px; border-radius: 5px;")
-        self.structure_preview.setWordWrap(True)
-        self.structure_preview.setMinimumHeight(100)
-        
-        structure_layout.addWidget(self.structure_preview)
-        
-        # Add structure preview to main layout
-        main_layout.addWidget(structure_group)
-        
-        # Explanation of the relationship
-        relationship_label = QLabel(
-            "<b>Note:</b> Each Project Type is associated with a default folder structure. "
-            "You can customize the structure by editing it above."
-        )
-        relationship_label.setWordWrap(True)
-        relationship_label.setStyleSheet("color: #333; font-style: italic;")
-        main_layout.addWidget(relationship_label)
-        
-        # Bottom buttons
+        # Add buttons at the bottom
         button_layout = QHBoxLayout()
         button_layout.addStretch(1)
         
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(self.reject)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setStyleSheet(BUTTON_STYLE)
+        self.cancel_button.clicked.connect(self.reject)
         
-        create_btn = QPushButton("Create Template")
-        create_btn.clicked.connect(self.create_template)
-        create_btn.setStyleSheet(BUTTON_STYLE)
+        self.save_button = QPushButton("Save Template")
+        self.save_button.setStyleSheet(ACCENT_BUTTON_STYLE)
+        self.save_button.clicked.connect(self.save_template)
         
-        button_layout.addWidget(cancel_btn)
-        button_layout.addWidget(create_btn)
+        button_layout.addWidget(self.cancel_button)
+        button_layout.addWidget(self.save_button)
         
         main_layout.addLayout(button_layout)
         
-        # Populate dropdown
-        self.populate_dropdowns()
+    def setup_basic_info_tab(self):
+        """Set up the basic info tab"""
+        layout = QFormLayout(self.basic_info_tab)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
         
-    def populate_dropdowns(self):
-        """Populate project type and structure dropdowns"""
-        if not self.template_manager:
-            return
-            
-        # Project types (categories)
-        for category in sorted(self.template_manager.get_categories()):
-            self.type_combo.addItem(category)
-            
-        # Default to first item
-        if self.type_combo.count() > 0:
-            self.type_combo.setCurrentIndex(0)
-            
-        # Update structure combo
-        self.update_structure_combo()
+        # Template Name
+        self.name_edit = QLineEdit()
+        self.name_edit.setMinimumHeight(30)
+        self.name_edit.setStyleSheet("""
+            QLineEdit {
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 5px;
+                background-color: #444;
+                color: white;
+                selection-background-color: #666;
+            }
+            QLineEdit:focus {
+                border: 1px solid #888;
+            }
+        """)
         
-    def update_structure_combo(self):
-        """Update the structure dropdown based on the selected project type"""
-        self.structure_combo.clear()
+        # Project Type (formerly Category)
+        self.type_combo = QComboBox()
+        self.type_combo.setMinimumHeight(30)
+        self.type_combo.setStyleSheet("""
+            QComboBox {
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 5px;
+                background-color: #444;
+                color: white;
+                selection-background-color: #666;
+            }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 20px;
+                border-left-width: 1px;
+                border-left-color: #555;
+                border-left-style: solid;
+            }
+            QComboBox::down-arrow {
+                image: url(app/assets/icons/down_arrow.png);
+                width: 14px;
+                height: 14px;
+            }
+            QComboBox QAbstractItemView {
+                border: 1px solid #555;
+                selection-background-color: #666;
+                background-color: #444;
+                color: white;
+            }
+        """)
         
-        # Add "Create a new structure" option at the top
-        self.structure_combo.addItem("Create a new structure")
+        # Add project types
+        for project_type in self.template_manager.get_structure_types():
+            self.type_combo.addItem(project_type)
         
-        # Get selected project type
-        project_type = self.type_combo.currentText()
+        # Description
+        self.desc_edit = QTextEdit()
+        self.desc_edit.setMinimumHeight(100)
+        self.desc_edit.setStyleSheet("""
+            QTextEdit {
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 5px;
+                background-color: #444;
+                color: white;
+                selection-background-color: #666;
+            }
+            QTextEdit:focus {
+                border: 1px solid #888;
+            }
+        """)
         
-        # Get associated structure
-        if project_type and hasattr(self.template_manager, 'project_type_manager'):
-            structure_name = self.template_manager.project_type_manager.get_structure_for_project_type(project_type)
-            if structure_name:
-                self.structure_combo.addItem(structure_name)
-                
-        # Add all custom structures
-        if hasattr(self.template_manager, 'custom_structures'):
-            for name in sorted(self.template_manager.custom_structures.keys()):
-                # Skip if already added
-                if self.structure_combo.findText(name) == -1:
-                    self.structure_combo.addItem(name)
-                    
-    def on_project_type_changed(self, index):
-        """Handle project type change"""
-        # Update structure dropdown based on selected project type
-        self.update_structure_combo()
+        # Source file/folder
+        self.path_layout = QHBoxLayout()
         
-        # Update preview
-        self.update_structure_preview()
+        self.path_edit = QLineEdit()
+        self.path_edit.setMinimumHeight(30)
+        self.path_edit.setReadOnly(True)
+        self.path_edit.setStyleSheet("""
+            QLineEdit {
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 5px;
+                background-color: #3a3a3a;
+                color: #ccc;
+            }
+        """)
         
-    def update_structure_preview(self):
-        """Update the structure preview"""
-        structure_name = self.structure_combo.currentText()
-        if not structure_name or not self.template_manager:
-            self.structure_preview.setText("No structure selected")
-            return
-            
-        # Get structure
-        structure = self.template_manager.get_structure(structure_name)
+        self.browse_button = QPushButton("Browse...")
+        self.browse_button.setStyleSheet(BUTTON_STYLE)
+        self.browse_button.clicked.connect(self.browse_for_path)
         
-        # Format structure as text
-        preview_text = self.format_structure(structure)
-        self.structure_preview.setText(preview_text)
+        self.path_layout.addWidget(self.path_edit, 5)
+        self.path_layout.addWidget(self.browse_button, 1)
         
-    def format_structure(self, structure, indent=""):
-        """Format structure as text for preview"""
-        result = []
+        # Add fields to form layout
+        layout.addRow("Template Name:", self.name_edit)
+        layout.addRow("Project Type:", self.type_combo)
+        layout.addRow("Description:", self.desc_edit)
+        layout.addRow("Source File/Folder:", self.path_layout)
         
-        for item in structure:
-            if isinstance(item, dict):
-                # It's a directory with children
-                for dir_name, children in item.items():
-                    result.append(f"{indent}📁 {dir_name}/")
-                    result.append(self.format_structure(children, indent + "  "))
-            elif isinstance(item, str):
-                # It's a file or empty directory
-                if item.endswith('/'):
-                    result.append(f"{indent}📁 {item}")
-                else:
-                    result.append(f"{indent}📄 {item}")
+    def setup_files_tab(self):
+        """Set up the files tab with tree view of template files"""
+        layout = QVBoxLayout(self.files_tab)
+        layout.setContentsMargins(20, 20, 20, 20)
         
-        return "\n".join(result)
+        # Instructions label
+        instructions = QLabel("Template Files:")
+        instructions.setFont(QFont(SYSTEM_FONT, 12))
+        instructions.setStyleSheet("color: white;")
+        layout.addWidget(instructions)
         
-    def browse_file(self):
-        """Browse for a template file"""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select Template File",
-            "",
-            "All Files (*);;Project Files (*.prproj *.aep *.aepx *.psd *.ai)"
-        )
+        # Tree widget for files
+        self.file_tree = QTreeWidget()
+        self.file_tree.setHeaderLabels(["Name", "Type", "Size"])
+        self.file_tree.setAlternatingRowColors(True)
+        self.file_tree.setStyleSheet("""
+            QTreeWidget {
+                border: 1px solid #555;
+                background-color: #444;
+                color: white;
+                alternate-background-color: #505050;
+                selection-background-color: #666;
+            }
+            QTreeWidget::item {
+                padding: 5px;
+            }
+            QTreeWidget::item:selected {
+                background-color: #666;
+            }
+            QHeaderView::section {
+                background-color: #333;
+                color: white;
+                padding: 5px;
+                border: 1px solid #555;
+            }
+        """)
         
-        if file_path:
-            self.file_input.setText(file_path)
-            self.template_file_path = file_path
-            
-            # If name is empty, use filename as default
-            if not self.name_input.text():
-                import os
-                filename = os.path.basename(file_path)
-                name = os.path.splitext(filename)[0]
-                self.name_input.setText(name)
-                
-            # Detect project type from file extension
-            self.detect_project_type_from_file(file_path)
-            
-    def detect_project_type_from_file(self, file_path):
-        """Detect project type from file extension"""
-        import os
-        _, ext = os.path.splitext(file_path)
-        ext = ext.lower()
+        # Add buttons for file operations
+        button_layout = QHBoxLayout()
         
-        # Map extensions to project types
-        type_map = {
-            '.prproj': "Video Editing",
-            '.aep': "Motion Graphics",
-            '.aepx': "Motion Graphics",
-            '.psd': "Design",
-            '.ai': "Design",
-            '.wav': "Audio",
-            '.mp3': "Audio",
-            '.aup': "Audio"
-        }
+        self.add_file_button = QPushButton("Add Files...")
+        self.add_file_button.setStyleSheet(BUTTON_STYLE)
+        self.add_file_button.clicked.connect(self.add_files)
         
-        if ext in type_map:
-            project_type = type_map[ext]
-            index = self.type_combo.findText(project_type)
+        self.remove_file_button = QPushButton("Remove Selected")
+        self.remove_file_button.setStyleSheet(BUTTON_STYLE)
+        self.remove_file_button.clicked.connect(self.remove_files)
+        
+        button_layout.addWidget(self.add_file_button)
+        button_layout.addWidget(self.remove_file_button)
+        button_layout.addStretch(1)
+        
+        layout.addWidget(self.file_tree)
+        layout.addLayout(button_layout)
+        
+    def setup_structure_tab(self):
+        """Set up the structure tab"""
+        layout = QVBoxLayout(self.structure_tab)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Instructions label
+        instructions = QLabel("Template Structure:")
+        instructions.setFont(QFont(SYSTEM_FONT, 12))
+        instructions.setStyleSheet("color: white;")
+        layout.addWidget(instructions)
+        
+        # Tree widget for structure
+        self.structure_tree = QTreeWidget()
+        self.structure_tree.setHeaderLabels(["Name", "Type"])
+        self.structure_tree.setAlternatingRowColors(True)
+        self.structure_tree.setStyleSheet("""
+            QTreeWidget {
+                border: 1px solid #555;
+                background-color: #444;
+                color: white;
+                alternate-background-color: #505050;
+                selection-background-color: #666;
+            }
+            QTreeWidget::item {
+                padding: 5px;
+            }
+            QTreeWidget::item:selected {
+                background-color: #666;
+            }
+            QHeaderView::section {
+                background-color: #333;
+                color: white;
+                padding: 5px;
+                border: 1px solid #555;
+            }
+        """)
+        
+        # Add buttons for structure operations
+        button_layout = QHBoxLayout()
+        
+        self.add_folder_button = QPushButton("Add Folder")
+        self.add_folder_button.setStyleSheet(BUTTON_STYLE)
+        self.add_folder_button.clicked.connect(self.add_folder)
+        
+        self.remove_struct_button = QPushButton("Remove Selected")
+        self.remove_struct_button.setStyleSheet(BUTTON_STYLE)
+        self.remove_struct_button.clicked.connect(self.remove_structure_item)
+        
+        button_layout.addWidget(self.add_folder_button)
+        button_layout.addWidget(self.remove_struct_button)
+        button_layout.addStretch(1)
+        
+        layout.addWidget(self.structure_tree)
+        layout.addLayout(button_layout)
+        
+    def load_template_data(self):
+        """Load existing template data into the form"""
+        self.name_edit.setText(self.template.get("name", ""))
+        
+        # Handle template type/structure_type (formerly category)
+        template_type = self.template.get("type", self.template.get("structure_type", ""))
+        if template_type:
+            index = self.type_combo.findText(template_type)
             if index >= 0:
                 self.type_combo.setCurrentIndex(index)
-                
-    def edit_structure(self):
-        """Edit the selected structure"""
-        structure_name = self.structure_combo.currentText()
-        if not structure_name:
-            QMessageBox.warning(self, "Error", "Please select a structure first")
-            return
-            
-        # Get structure
-        structure = self.template_manager.get_structure(structure_name)
         
-        # Show enhanced structure editor
-        from app.ui.structure_editor_enhanced import show_enhanced_structure_editor
-        result = show_enhanced_structure_editor(
-            self,
-            structure_name=structure_name,
-            structure=structure
-        )
+        self.desc_edit.setText(self.template.get("description", ""))
+        self.path_edit.setText(self.template.get("path", self.template.get("file", "")))
         
-        if result:
-            # Refresh dropdowns
-            self.update_structure_combo()
-            self.update_structure_preview()
-            
-    def create_template(self):
-        """Create the template"""
-        # Get form values
-        name = self.name_input.text().strip()
-        project_type = self.type_combo.currentText()
-        structure_name = self.structure_combo.currentText()
+        # Load files and structure if available
+        if self.is_editing:
+            self.load_files()
+            self.load_structure()
         
-        # Validate
+    def save_template(self):
+        """Save the template"""
+        name = self.name_edit.text().strip()
         if not name:
-            QMessageBox.warning(self, "Error", "Template name is required")
+            QMessageBox.warning(self, "Input Error", "Template name is required.")
             return
             
-        if not project_type:
-            QMessageBox.warning(self, "Error", "Project type is required")
-            return
-            
-        # Handle "Create a new structure" selection
-        if structure_name == "Create a new structure":
-            # Ask user to create a structure first
-            from app.dialogs.dialog_windows_pyqt import show_structure_editor
-            
-            # Using suggested name based on template name
-            suggested_structure_name = f"Template_{name}"
-            
-            # Open structure editor dialog
-            result = show_structure_editor(
-                self.parent, 
-                None,  # No existing structure
-                callback=self._update_structure_and_continue,
-                is_new=True,
-                suggested_name=suggested_structure_name
-            )
-            
-            if not result:
-                # User cancelled structure creation
-                return
-                
-            # The callback will handle the rest of the template creation
-            return
-            
-        # Create template
-        success = False
+        project_type = self.type_combo.currentText()
+        description = self.desc_edit.toPlainText().strip()
+        path = self.path_edit.text()
         
-        if self.template_file_path:
-            # Create from file
-            success = self.template_manager.import_template_file(
-                self.template_file_path,
-                name=name,
-                category=project_type
-            )
+        if not path and not self.is_editing:
+            QMessageBox.warning(self, "Input Error", "Please select a source file or folder.")
+            return
+            
+        # Create or update the template
+        template = {
+            "name": name,
+            "type": project_type,
+            "description": description,
+            "path": path
+        }
+        
+        # Get structured files if editing
+        if self.is_editing and hasattr(self, 'structure_tree'):
+            structure = self.get_structure_from_tree()
+            template["structure"] = structure
+            
+        # Set uuid if editing
+        if self.is_editing and "uuid" in self.template:
+            template["uuid"] = self.template["uuid"]
+        
+        # Set created timestamp if editing
+        if self.is_editing and "created" in self.template:
+            template["created"] = self.template["created"]
+        
+        # Save template through template manager
+        success = False
+        if self.is_editing:
+            # Update existing template
+            if hasattr(self.template_manager, 'update_template'):
+                success = self.template_manager.update_template(template)
+            else:
+                # Fallback to save_template
+                success = self.template_manager.save_template(
+                    name,
+                    path,
+                    project_type,
+                    description
+                )
         else:
-            # Create empty template
+            # Create new template
             success = self.template_manager.save_template(
                 name,
+                path,
                 project_type,
-                "",
-                structure_name
+                description
             )
             
         if success:
-            QMessageBox.information(self, "Success", f"Template '{name}' created successfully")
+            if self.callback:
+                self.callback(template)
+            
+            if self.is_editing:
+                self.template_edited.emit(template)
+            else:
+                self.template_created.emit(template)
+                
             self.accept()
         else:
-            QMessageBox.warning(self, "Error", f"Failed to create template '{name}'")
-    
-    def _update_structure_and_continue(self, structure_name, structure):
-        """Callback for structure editor - continue with template creation"""
-        # Get form values
-        name = self.name_input.text().strip()
-        project_type = self.type_combo.currentText()
-        
-        # Update the structure dropdown to include the new structure
-        self.update_structure_combo()
-        
-        # Select the newly created structure
-        index = self.structure_combo.findText(structure_name)
-        if index >= 0:
-            self.structure_combo.setCurrentIndex(index)
-        
-        # Create template with the new structure
-        success = self.template_manager.save_template(
-            name,
-            project_type,
-            "",
-            structure_name
-        )
-        
-        if success:
-            QMessageBox.information(self, "Success", f"Template '{name}' created successfully with new structure")
-            self.accept()
-        else:
-            QMessageBox.warning(self, "Error", f"Failed to create template '{name}'")
+            QMessageBox.critical(self, "Error", "Failed to save the template. Please try again.")
 
 def show_template_creation_form(parent):
     """Show the enhanced template creation form"""

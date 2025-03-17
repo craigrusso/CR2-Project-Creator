@@ -33,15 +33,121 @@ class GalleryFoldersSetup:
         gallery.folders_header_layout = QHBoxLayout(gallery.folders_header)
         gallery.folders_header_layout.setContentsMargins(15, 10, 15, 10)  # Increase padding for better spacing
         
-        # Folders section header
+        # Folders section header - should stretch
         gallery.folders_label = QLabel("Folders")
         gallery.folders_label.setFont(QFont(SYSTEM_FONT, 14, QFont.Bold))
         gallery.folders_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold; background: transparent;")
-        gallery.folders_header_layout.addWidget(gallery.folders_label)
+        gallery.folders_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        gallery.folders_header_layout.addWidget(gallery.folders_label, 1)  # Give stretch factor of 1
         
-        # Setup view controls
-        GalleryFoldersSetup.setup_folder_view_controls(gallery)
+        # Folder size label and slider
+        gallery.folder_size_label = QLabel("Size:")
+        gallery.folder_size_label.setStyleSheet("color: #AAAAAA; background: transparent;")
+        gallery.folders_header_layout.addWidget(gallery.folder_size_label)
         
+        # Size slider
+        gallery.folder_size_slider = QSlider(Qt.Horizontal)
+        gallery.folder_size_slider.setRange(50, 300)  # 50% to 300% scaling
+        gallery.folder_size_slider.setValue(gallery.icon_scale)  # Use current scale value
+        gallery.folder_size_slider.setFixedWidth(100)
+        gallery.folder_size_slider.setTickPosition(QSlider.TicksBelow)
+        gallery.folder_size_slider.setTickInterval(50)
+        gallery.folder_size_slider.valueChanged.connect(gallery._on_icon_scale_changed)
+        gallery.folder_size_slider.setStyleSheet("""
+            QSlider::groove:horizontal {
+                border: 1px solid #3C3C3C;
+                height: 8px;
+                background: #2A2A2A;
+                margin: 2px 0;
+                border-radius: 4px;
+            }
+            QSlider::handle:horizontal {
+                background: #909090;
+                border: 1px solid #5A5A5A;
+                width: 14px;
+                margin: -4px 0;
+                border-radius: 7px;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #AAAAAA;
+            }
+        """)
+        gallery.folders_header_layout.addWidget(gallery.folder_size_slider)
+        
+        # Create view toggle buttons
+        gallery.folder_grid_view_btn = QToolButton()
+        gallery.folder_grid_view_btn.setCheckable(True)
+        gallery.folder_grid_view_btn.setToolTip("Grid View")
+        gallery.folder_grid_view_btn.setText("Grid")
+        gallery.folder_grid_view_btn.setChecked(gallery.folder_view_mode == "grid")
+        gallery.folder_grid_view_btn.clicked.connect(lambda: gallery._set_folder_view_mode("grid"))
+        gallery.folder_grid_view_btn.setFixedSize(65, 24)
+        
+        gallery.folder_grid_view_btn.setStyleSheet("""
+            QToolButton {
+                background-color: #2A2A2A;
+                color: #CCCCCC;
+                border: 1px solid #3C3C3C;
+                border-top-left-radius: 3px;
+                border-bottom-left-radius: 3px;
+                border-top-right-radius: 0px;
+                border-bottom-right-radius: 0px;
+                padding: 3px 8px;
+                min-width: 50px;
+            }
+            QToolButton:checked {
+                background-color: #3E3E3E;
+                color: white;
+                border-color: #585858;
+            }
+            QToolButton:hover:!checked {
+                background-color: #323232;
+                border-color: #585858;
+            }
+        """)
+        
+        gallery.folder_list_view_btn = QToolButton()
+        gallery.folder_list_view_btn.setCheckable(True)
+        gallery.folder_list_view_btn.setToolTip("List View")
+        gallery.folder_list_view_btn.setText("List")
+        gallery.folder_list_view_btn.setChecked(gallery.folder_view_mode == "list")
+        gallery.folder_list_view_btn.clicked.connect(lambda: gallery._set_folder_view_mode("list"))
+        gallery.folder_list_view_btn.setFixedSize(65, 24)
+        
+        gallery.folder_list_view_btn.setStyleSheet("""
+            QToolButton {
+                background-color: #2A2A2A;
+                color: #CCCCCC;
+                border: 1px solid #3C3C3C;
+                border-top-left-radius: 0px;
+                border-bottom-left-radius: 0px;
+                border-top-right-radius: 3px;
+                border-bottom-right-radius: 3px;
+                border-left: none;
+                padding: 3px 8px;
+                min-width: 50px;
+            }
+            QToolButton:checked {
+                background-color: #3E3E3E;
+                color: white;
+                border-color: #585858;
+            }
+            QToolButton:hover:!checked {
+                background-color: #323232;
+                border-color: #585858;
+            }
+        """)
+        
+        # Create a button group to manage selection
+        gallery.folder_view_toggle_group = QButtonGroup(gallery)
+        gallery.folder_view_toggle_group.addButton(gallery.folder_grid_view_btn)
+        gallery.folder_view_toggle_group.addButton(gallery.folder_list_view_btn)
+        
+        # Add view toggle buttons to header layout
+        gallery.folders_header_layout.addWidget(gallery.folder_grid_view_btn)
+        gallery.folders_header_layout.addWidget(gallery.folder_list_view_btn)
+        
+        # Add the header to the section layout
         gallery.folders_section_layout.addWidget(gallery.folders_header)
         
         # Add a small margin between header and content
@@ -73,171 +179,6 @@ class GalleryFoldersSetup:
         # Set the container as the scroll area widget
         gallery.folders_scroll.setWidget(gallery.folders_container)
         gallery.folders_section_layout.addWidget(gallery.folders_scroll)
-
-    @staticmethod
-    def setup_folder_view_controls(gallery):
-        """Set up the folder view controls"""
-        # View controls
-        gallery.folder_view_controls = QWidget()
-        gallery.folder_view_controls_layout = QHBoxLayout(gallery.folder_view_controls)
-        gallery.folder_view_controls_layout.setContentsMargins(0, 0, 0, 0)
-        gallery.folder_view_controls_layout.setSpacing(10)
-        
-        # Size control with minimal styling (no borders or backgrounds)
-        gallery.folder_size_control = QWidget()
-        gallery.folder_size_control.setStyleSheet("background: transparent;")
-        gallery.folder_size_layout = QHBoxLayout(gallery.folder_size_control)
-        gallery.folder_size_layout.setContentsMargins(0, 0, 0, 0)
-        gallery.folder_size_layout.setSpacing(5)
-        
-        # Add small label for folder size
-        gallery.folder_size_label = QLabel("Folder Size:")
-        gallery.folder_size_label.setStyleSheet("color: #AAAAAA; background: transparent;")
-        gallery.folder_size_layout.addWidget(gallery.folder_size_label)
-        
-        # Size slider
-        gallery.folder_size_slider = QSlider(Qt.Horizontal)
-        gallery.folder_size_slider.setRange(50, 300)  # 50% to 300% scaling (was 150%)
-        gallery.folder_size_slider.setValue(gallery.icon_scale)  # Use current scale value
-        gallery.folder_size_slider.setFixedWidth(100)
-        gallery.folder_size_slider.setTickPosition(QSlider.TicksBelow)
-        gallery.folder_size_slider.setTickInterval(50)  # Increased tick interval for wider range
-        gallery.folder_size_slider.valueChanged.connect(gallery._on_icon_scale_changed)
-        gallery.folder_size_slider.setStyleSheet("""
-            QSlider::groove:horizontal {
-                border: 1px solid #3C3C3C;
-                height: 8px;
-                background: #2A2A2A;
-                margin: 2px 0;
-                border-radius: 4px;
-            }
-            QSlider::handle:horizontal {
-                background: #909090;
-                border: 1px solid #5A5A5A;
-                width: 14px;
-                margin: -4px 0;
-                border-radius: 7px;
-            }
-            QSlider::handle:horizontal:hover {
-                background: #AAAAAA;
-            }
-        """)
-        
-        # Add to layout
-        gallery.folder_size_layout.addWidget(gallery.folder_size_slider)
-        
-        # Create an invisible placeholder with the same size as the size control
-        # This will be shown when the size control is hidden to keep the layout stable
-        gallery.size_control_placeholder = QWidget()
-        gallery.size_control_placeholder.setFixedSize(gallery.folder_size_control.sizeHint())
-        gallery.size_control_placeholder.setStyleSheet("background: transparent;")
-        gallery.size_control_placeholder.setVisible(False)  # Hidden by default
-        
-        # Create a container to hold either the size control or the placeholder
-        gallery.size_control_container = QWidget()
-        gallery.size_control_container.setStyleSheet("background: transparent;")
-        gallery.size_container_layout = QHBoxLayout(gallery.size_control_container)
-        gallery.size_container_layout.setContentsMargins(0, 0, 0, 0)
-        gallery.size_container_layout.setSpacing(0)
-        
-        # Add both controls to the container
-        gallery.size_container_layout.addWidget(gallery.folder_size_control)
-        gallery.size_container_layout.addWidget(gallery.size_control_placeholder)
-        
-        # Add the container to the view controls
-        gallery.folder_view_controls_layout.addWidget(gallery.size_control_container)
-        
-        # Create a horizontal button group for toggling between grid and list views
-        gallery.folder_view_buttons = QWidget()
-        gallery.folder_view_buttons.setStyleSheet("background: transparent;")
-        gallery.folder_view_buttons_layout = QHBoxLayout(gallery.folder_view_buttons)
-        gallery.folder_view_buttons_layout.setContentsMargins(0, 0, 0, 0)
-        gallery.folder_view_buttons_layout.setSpacing(0)
-        
-        gallery.folder_view_toggle_group = QButtonGroup(gallery)
-        
-        # Grid view button (replacing icon view)
-        gallery.folder_grid_view_btn = QToolButton()
-        gallery.folder_grid_view_btn.setCheckable(True)
-        gallery.folder_grid_view_btn.setToolTip("Grid View")
-        gallery.folder_grid_view_btn.setText("Grid")
-        gallery.folder_grid_view_btn.setChecked(gallery.folder_view_mode == "grid")
-        gallery.folder_grid_view_btn.clicked.connect(lambda: gallery._set_folder_view_mode("grid"))
-        gallery.folder_grid_view_btn.setFixedSize(65, 24)
-        
-        # Apply styling
-        gallery.folder_grid_view_btn.setStyleSheet("""
-            QToolButton {
-                background-color: #2A2A2A;
-                color: #CCCCCC;
-                border: 1px solid #3C3C3C;
-                border-top-left-radius: 3px;
-                border-bottom-left-radius: 3px;
-                border-top-right-radius: 0px;
-                border-bottom-right-radius: 0px;
-                padding: 3px 8px;
-                min-width: 50px;
-            }
-            QToolButton:checked {
-                background-color: #3E3E3E;
-                color: white;
-                border-color: #585858;
-            }
-            QToolButton:hover:!checked {
-                background-color: #323232;
-                border-color: #585858;
-            }
-        """)
-        gallery.folder_view_toggle_group.addButton(gallery.folder_grid_view_btn)
-        gallery.folder_view_buttons_layout.addWidget(gallery.folder_grid_view_btn)
-        
-        # List view button
-        gallery.folder_list_view_btn = QToolButton()
-        gallery.folder_list_view_btn.setCheckable(True)
-        gallery.folder_list_view_btn.setToolTip("List View")
-        gallery.folder_list_view_btn.setText("List")
-        gallery.folder_list_view_btn.setChecked(gallery.folder_view_mode == "list")
-        gallery.folder_list_view_btn.clicked.connect(lambda: gallery._set_folder_view_mode("list"))
-        gallery.folder_list_view_btn.setFixedSize(65, 24)  # Fixed size to prevent layout shifts
-        
-        # Apply the same styling as the template list view button
-        gallery.folder_list_view_btn.setStyleSheet("""
-            QToolButton {
-                background-color: #2A2A2A;
-                color: #CCCCCC;
-                border: 1px solid #3C3C3C;
-                border-top-left-radius: 0px;
-                border-bottom-left-radius: 0px;
-                border-top-right-radius: 3px;
-                border-bottom-right-radius: 3px;
-                border-left: none;
-                padding: 3px 8px;
-                min-width: 50px;
-            }
-            QToolButton:checked {
-                background-color: #3E3E3E;
-                color: white;
-                border-color: #585858;
-            }
-            QToolButton:hover:!checked {
-                background-color: #323232;
-                border-color: #585858;
-            }
-        """)
-        gallery.folder_view_toggle_group.addButton(gallery.folder_list_view_btn)
-        gallery.folder_view_buttons_layout.addWidget(gallery.folder_list_view_btn)
-        
-        # Add buttons to controls
-        gallery.folder_view_controls_layout.addWidget(gallery.folder_view_buttons)
-        
-        # Make sure folder view controls maintain their size
-        gallery.folder_view_controls.setMinimumWidth(320)  # Increased to accommodate slider
-        gallery.folder_view_controls.setMaximumWidth(320)
-        gallery.folder_view_controls.setFixedHeight(30)
-        gallery.folder_view_controls.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        
-        # Add folder view controls to the header layout
-        gallery.folders_header_layout.addWidget(gallery.folder_view_controls)
 
     @staticmethod
     def populate_folders_grid(gallery, folders):
@@ -335,9 +276,9 @@ class GalleryFoldersSetup:
                     gallery.folders_grid.setSpacing(0)
                     GalleryFoldersSetup.populate_folders_list(gallery, folders)
             
-            # Show size control only in grid mode
-            gallery.folder_size_control.setVisible(mode == "grid")
-            gallery.size_control_placeholder.setVisible(mode == "list")
+            # Show or hide size slider based on mode (visible only in grid mode)
+            gallery.folder_size_label.setVisible(mode == "grid")
+            gallery.folder_size_slider.setVisible(mode == "grid")
             
             # Update card sizes for the new view mode
             gallery._update_folder_card_sizes(gallery.icon_scale)

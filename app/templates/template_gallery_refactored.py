@@ -2,7 +2,7 @@
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
 from PyQt5.QtWidgets import QDesktopWidget, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QComboBox, \
-     QPushButton, QLineEdit, QFrame, QGridLayout, QMessageBox, QApplication, QSizePolicy, QTabWidget, QMainWindow, QDockWidget, QToolButton
+     QPushButton, QLineEdit, QFrame, QGridLayout, QMessageBox, QApplication, QSizePolicy, QTabWidget, QMainWindow, QDockWidget, QToolButton, QButtonGroup
 from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSignal, QPoint
 
 # Import modular components
@@ -31,11 +31,18 @@ class TemplateGallery(QWidget):
         self.selected_folder = None
         self.folder_cards = []
         self.template_cards = []
+        self.template_item_map = {}  # Add this attribute for list view items
         self.multi_selected_templates = []  # Track multi-selected templates
         self.icon_scale = 100  # Default scale in percentage
         self.folder_view_mode = "grid"  # Default to grid view for folders
         self.template_view_mode = "grid"  # Default to grid view for templates
         self.templates_loaded = False  # Track if templates have been loaded
+        
+        # Set minimum size to ensure all UI elements are visible
+        self.setMinimumSize(800, 400)
+        
+        # Configure size policy to always expand
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
         # Initialize grid layouts to avoid AttributeError
         self.folders_grid = None
@@ -232,6 +239,7 @@ class TemplateGallery(QWidget):
         # Reset arrays
         self.folder_cards = []
         self.template_cards = []
+        self.template_item_map = {}  # Clear the template item map as well
     
     # Event handlers - connect to the modular handlers
     def _on_category_select(self, category):
@@ -525,16 +533,20 @@ class TemplateGallery(QWidget):
         GalleryFoldersSetup.update_folder_card_sizes(self, scale_percent)
     
     def _handle_resize_timeout(self):
-        """Handle resize event after debounce timeout"""
+        """Handle resize event after a timeout to prevent excessive updates"""
         self._update_layout_after_resize()
     
     def _update_layout_after_resize(self):
-        """Update layout after resize"""
-        # Recalculate card sizes after resize
+        """Update layout after resizing is complete"""
+        # Update grid column count and card sizes based on new size
+        self._update_grid_columns()
         self._update_card_sizes()
         
-        # Recalculate number of columns based on container width
-        self._update_grid_columns()
+        # For list view, ensure horizontal scrolling is disabled
+        if hasattr(self, 'template_view_mode') and self.template_view_mode == "list":
+            # Find the scroll area in the templates section
+            if hasattr(self, 'templates_scroll'):
+                self.templates_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
     
     def _update_grid_columns(self):
         """Update the number of columns in the grid layouts based on container width"""
@@ -547,11 +559,7 @@ class TemplateGallery(QWidget):
     
     def keyPressEvent(self, event):
         """Handle keyboard shortcuts"""
-        # Handle Delete key for multi-selected templates
-        if event.key() in (Qt.Key_Delete, Qt.Key_Backspace) and self.multi_selected_templates:
-            self._delete_selected_templates()
-            return
-            
+        # Let the GalleryEvents handle all keyboard events including deletion
         GalleryEvents.key_press_event(self, event)
         super().keyPressEvent(event)
     
@@ -719,4 +727,24 @@ class TemplateGallery(QWidget):
         """Handle window resize events"""
         # Start/restart the resize timer to avoid excessive updates
         self.resize_timer.start()
-        super().resizeEvent(event) 
+        super().resizeEvent(event)
+    
+    def _on_sort_column(self, field):
+        """Sort the templates list by the given field"""
+        if not hasattr(self, 'current_sort_field'):
+            self.current_sort_field = 'name'
+        if not hasattr(self, 'current_sort_order'):
+            self.current_sort_order = 'asc'
+        
+        # Toggle sort order if the same field is clicked twice
+        if self.current_sort_field == field:
+            self.current_sort_order = 'desc' if self.current_sort_order == 'asc' else 'asc'
+        else:
+            # Default to ascending order for new field
+            self.current_sort_field = field
+            self.current_sort_order = 'asc'
+        
+        print(f"[DEBUG] Gallery: Sorting by {self.current_sort_field} ({self.current_sort_order})")
+        
+        # Refresh the gallery with new sort settings
+        self.populate_gallery(force_refresh=True) 

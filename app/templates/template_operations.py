@@ -5,6 +5,7 @@ import os
 import json
 import datetime
 import shutil
+import time
 
 from app.utils.utils import save_json_file
 from app.constants import PROJECT_TYPE_TO_STRUCTURE
@@ -13,6 +14,11 @@ class TemplateOperations:
     """
     Operations for managing templates (create, read, update, delete)
     """
+    
+    def __init__(self):
+        """Initialize template operations"""
+        from app.utils.utils import get_config_paths
+        self.paths = get_config_paths()
     
     def get_default_structure(self, project_type):
         """Get the default directory structure for a project type"""
@@ -99,146 +105,180 @@ class TemplateOperations:
     
     def filter_templates(self, search_term=None, category=None):
         """Filter templates based on search term and category"""
-        all_templates = self.get_all_templates()
-        filtered = []
+        filtered_templates = []
         
-        for template in all_templates:
-            # Filter by category if specified
-            if category and category != "All" and template.get("category") != category:
-                continue
-            
+        for template in self.templates:
             # Filter by search term if specified
-            if search_term:
-                search_term = search_term.lower()
-                name = template.get("name", "").lower()
-                desc = template.get("description", "").lower()
+            if search_term and search_term.lower() not in template.get("name", "").lower():
+                continue
                 
-                if search_term not in name and search_term not in desc:
-                    continue
+            filtered_templates.append(template)
             
-            filtered.append(template)
+        return filtered_templates
         
-        return filtered
+    def create_template_directory(self, name, source_dir, description=""):
+        """Create a template directory structure from a source directory"""
+        # Create readable directory name from template name
+        dirname = name.replace(" ", "_").replace("/", "-").replace("\\", "-")
         
-    def create_template_directory(self, name, category, source_dir, description=""):
-        """Create a template directory from a source directory"""
-        if not name or not source_dir or not os.path.isdir(source_dir):
-            return False, "Invalid template name or source directory"
+        # Generate the template directory path
+        template_dir = os.path.join(self.paths["templates_dir"], dirname)
         
-        # Create a clean directory name
-        dir_name = name.replace(" ", "_").replace("/", "-").replace("\\", "-")
-        template_dir = os.path.join(self.paths["template_directories_dir"], dir_name)
+        # Create the directory if it doesn't exist
+        if not os.path.exists(template_dir):
+            os.makedirs(template_dir)
         
-        # Check if template directory already exists
-        if os.path.exists(template_dir):
-            return False, f"Template '{name}' already exists"
+        # Create the template JSON file
+        template_file = os.path.join(template_dir, "template.json")
         
+        # Create the template data
+        template_data = {
+            "name": name,
+            "description": description or f"Template based on {os.path.basename(source_dir)}",
+            "type": "template",
+            "path": source_dir
+        }
+        
+        # Write the template JSON file
         try:
-            # Create template directory
-            os.makedirs(template_dir, exist_ok=True)
-            
-            # Copy contents from source directory
-            for item in os.listdir(source_dir):
-                source_item = os.path.join(source_dir, item)
-                target_item = os.path.join(template_dir, item)
-                
-                if os.path.isdir(source_item):
-                    shutil.copytree(source_item, target_item)
-                else:
-                    shutil.copy2(source_item, target_item)
-            
-            # Create template.json
-            template_info = {
-                "name": name,
-                "category": category,
-                "description": description,
-                "created": datetime.datetime.now().isoformat(),
-                "type": "directory"
-            }
-            
-            with open(os.path.join(template_dir, "template.json"), 'w') as f:
-                json.dump(template_info, f, indent=2)
-            
-            # Update in-memory templates
-            template_info["path"] = template_dir
-            self.template_directories.append(template_info)
-            
-            return True, template_dir
-            
+            with open(template_file, 'w') as f:
+                json.dump(template_data, f, indent=2)
         except Exception as e:
-            error_msg = f"Failed to create template directory: {str(e)}"
-            print(error_msg)
-            return False, error_msg
-    
-    def save_template(self, name, category, file_path, structure_type, description=None):
-        """Save a template"""
-        # Prevent empty, "Unnamed", or "Unnamed Template" templates from being created
-        if not name or not category or name.strip() == "" or name.strip() == "Unnamed" or name.strip() == "Unnamed Template":
-            print(f"Rejecting invalid template name: '{name}'")
+            print(f"Error creating template directory: {e}")
             return False
+            
+        return True
+    
+    def _validate_template(self, template):
+        """Validate that a template has all required fields
         
-        # Create template info
+        Args:
+            template (dict): Template to validate
+            
+        Returns:
+            bool: True if template is valid, False otherwise
+        """
+        try:
+            # Check if template is a dictionary
+            if not isinstance(template, dict):
+                print(f"[DEBUG] Template: Invalid template - not a dictionary")
+                return False
+            
+            # Check for required fields
+            required_fields = ['name', 'created']
+            for field in required_fields:
+                if field not in template:
+                    print(f"[DEBUG] Template: Invalid template - missing required field '{field}'")
+                    return False
+                
+            # Check that name is a string
+            if not isinstance(template['name'], str):
+                print(f"[DEBUG] Template: Invalid template - name is not a string")
+                return False
+            
+            # Check that name is not empty
+            if not template['name'].strip():
+                print(f"[DEBUG] Template: Invalid template - name is empty")
+                return False
+            
+            return True
+        except Exception as e:
+            print(f"[DEBUG] Template: Error validating template: {e}")
+            return False
+
+    def save_template(self, name, file_path, structure_type, description=None):
+        """Save a template to the database"""
+        # Validate name
+        if not name or name.strip() == "" or name.strip() == "Unnamed" or name.strip() == "Unnamed Template":
+            print(f"Error: Invalid template name: {name}")
+            return False
+            
+        # Get current timestamp
+        current_time = time.time()
+        
+        # Check if template already exists to determine if this is an update
+        existing_template = None
+        for template in self.templates:
+            if template.get("name") == name:
+                existing_template = template
+                break
+                
+        # Prepare template data
         template = {
             "name": name,
-            "category": category,
-            "file": file_path if file_path else "",
+            "path": file_path,
             "type": structure_type,
-            "description": description or f"{category} template",
-            "structure_type": structure_type,
-            "created": datetime.datetime.now().isoformat()
+            "description": description or f"Template for {structure_type}",
+            "modified": current_time  # Always update modified time
         }
         
-        # Determine icon based on category
-        icons = {
-            "Video Editing": "🎬",
-            "Motion Graphics": "✨",
-            "Design": "📷",
-            "Audio": "🎧",
-            "Custom": "📂"
-        }
-        template["icon"] = icons.get(category, "📂")
+        # If it's a new template, set created time
+        if not existing_template:
+            template["created"] = current_time
+        else:
+            # Preserve the original creation time
+            template["created"] = existing_template.get("created", current_time)
         
-        # Save to file
+        # Determine icon based on structure_type
+        if structure_type == "Folder":
+            template["icon"] = "📁"
+        else:
+            template["icon"] = "📄"
+            
+        # Validate template before saving
+        if not self._validate_template(template):
+            print(f"Error: Template validation failed for {name}")
+            return False
+        
+        # Save the template to file
         filename = name.replace(" ", "_").replace("/", "-").replace("\\", "-")
         file_path = os.path.join(self.paths["templates_dir"], f"{filename}.json")
         
-        success = save_json_file(file_path, template)
-        if success:
-            # Update in-memory cache
-            self.templates.append(template)
-        
-        return success
-    
-    def import_template_file(self, file_path, name=None, category=None):
-        """Import a file as a template"""
-        if not file_path or not os.path.exists(file_path):
+        try:
+            with open(file_path, 'w') as f:
+                json.dump(template, f, indent=2)
+            
+            # Update or add to in-memory list
+            if existing_template:
+                # Update existing template
+                for i, t in enumerate(self.templates):
+                    if t.get("name") == name:
+                        self.templates[i] = template
+                        break
+            else:
+                # Add new template
+                self.templates.append(template)
+            return True
+        except Exception as e:
+            print(f"Error saving template: {e}")
             return False
-        
-        # Get filename as default name if not provided
+    
+    def import_template_file(self, file_path, name=None, structure_type=None):
+        """Import a template from a file"""
+        # Check if the file exists
+        if not os.path.exists(file_path):
+            print(f"Error: Template file does not exist: {file_path}")
+            return False
+            
+        # Determine name from file path if not provided
         if not name:
-            name = os.path.basename(file_path)
-            name = os.path.splitext(name)[0]  # Remove extension
-        
-        # Determine project type from file extension
-        _, ext = os.path.splitext(file_path)
-        if not category:
-            if ext.lower() in ['.prproj']:
-                category = "Video Editing"
+            name = os.path.splitext(os.path.basename(file_path))[0].replace("_", " ")
+            
+        # Determine structure type from file extension if not provided
+        if not structure_type:
+            ext = os.path.splitext(file_path)[1].lower()
+            
+            if ext in (".prproj", ".xml"):
                 structure_type = "Video Editing"
-            elif ext.lower() in ['.aep', '.aepx']:
-                category = "Motion Graphics"
+            elif ext in (".aep", ".aet"):
                 structure_type = "Motion Graphics"
-            elif ext.lower() in ['.psd', '.ai']:
-                category = "Design"
+            elif ext in (".psd", ".ai", ".indd"):
                 structure_type = "Design"
             else:
-                category = "Custom"
-                structure_type = "Standard"
-        else:
-            structure_type = category
-        
-        # Save template
-        return self.save_template(name, category, file_path, structure_type)
+                structure_type = "Custom"
+            
+        # Save the template
+        return self.save_template(name, file_path, structure_type)
     
     def delete_template(self, template_name):
         """Delete a template by name"""

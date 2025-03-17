@@ -42,12 +42,19 @@ class TemplateCard(QFrame):
     deleteRequested = pyqtSignal(str)  # New signal for delete action
     moveToFolderRequested = pyqtSignal(str, str)  # template_name, folder_name
 
+    # Static variable to track if deletion is in progress
+    _deletion_in_progress = False
+
     def __init__(self, parent=None, template=None, app=None):
+        """Initialize the template card"""
         super().__init__(parent)
         self.template = template or {}  # Use empty dict if template is None
         self.app = app
         self.hover = False
         self.selected = False
+        self.multi_selected = False
+        self.clicking_multi_selected = False
+        self.dragging = False
         self.setAcceptDrops(False)
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedSize(140, 140)
@@ -142,15 +149,15 @@ class TemplateCard(QFrame):
         self.name_label.setStyleSheet(f"color: {colors['text']};")
         text_layout.addWidget(self.name_label)
         
-        # Template category label
-        category = self.template.get("category", self.template.get("type", "Custom"))
-        self.category_label = QLabel(str(category), self)
-        self.category_label.setAlignment(Qt.AlignCenter)
+        # Template type label
+        type_str = self.template.get("type", "")
+        self.type_label = QLabel(str(type_str), self)
+        self.type_label.setAlignment(Qt.AlignCenter)
         font = QFont(SYSTEM_FONT)
         font.setPointSize(8)
-        self.category_label.setFont(font)
-        self.category_label.setStyleSheet(f"color: {colors['secondary_text']};")
-        text_layout.addWidget(self.category_label)
+        self.type_label.setFont(font)
+        self.type_label.setStyleSheet(f"color: {colors['secondary_text']};")
+        text_layout.addWidget(self.type_label)
         
         layout.addWidget(text_container)
         
@@ -165,6 +172,25 @@ class TemplateCard(QFrame):
         # Handle different ways the name might be stored
         if isinstance(self.template, dict):
             return self.template.get("name", "Unnamed Template")
+        elif isinstance(self.template, str):
+            return self.template
+        else:
+            return str(self.template)
+
+    def template_info(self):
+        """Get a string representation of the template info."""
+        if isinstance(self.template, dict):
+            name = self.template.get("name", "")
+            
+            # Use type instead of category
+            type_str = self.template.get("type", "")
+            
+            if name and type_str:
+                return f"{name} ({type_str})"
+            elif name:
+                return name
+            else:
+                return "Unnamed Template"
         elif isinstance(self.template, str):
             return self.template
         else:
@@ -507,7 +533,7 @@ class TemplateCard(QFrame):
             
             # Text colors
             self.name_label.setStyleSheet("color: white; font-weight: bold; background-color: transparent;")
-            self.category_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
+            self.type_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
             self.icon_label.setStyleSheet("color: white; background-color: transparent;")
             
             print(f"⭐ Applied SELECTED style to {self.template_name()}")
@@ -552,7 +578,7 @@ class TemplateCard(QFrame):
             
             # Text colors
             self.name_label.setStyleSheet("color: white; font-weight: bold; background-color: transparent;")
-            self.category_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
+            self.type_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
             self.icon_label.setStyleSheet("color: white; background-color: transparent;")
             
         elif self.selected:
@@ -570,7 +596,7 @@ class TemplateCard(QFrame):
             
             # Text colors
             self.name_label.setStyleSheet("color: white; font-weight: bold; background-color: transparent;")
-            self.category_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
+            self.type_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
             self.icon_label.setStyleSheet("color: white; background-color: transparent;")
             
             # Debug - print style that was applied
@@ -588,14 +614,14 @@ class TemplateCard(QFrame):
             
             # Text colors for hover state
             self.name_label.setStyleSheet("color: white; background-color: transparent;")
-            self.category_label.setStyleSheet("color: #AAAAAA; background-color: transparent;")
+            self.type_label.setStyleSheet("color: #AAAAAA; background-color: transparent;")
             self.icon_label.setStyleSheet("color: white; background-color: transparent;")
         
         else:
             # Default unselected styling
             self.setStyleSheet(f"""
                 QFrame {{
-                    background-color: {colors['card_bg']};
+                    background-color: {CARD_NORMAL};
                     border: none;
                     border-radius: 6px;
                 }}
@@ -603,7 +629,7 @@ class TemplateCard(QFrame):
             
             # Default text colors
             self.name_label.setStyleSheet("color: white; background-color: transparent;")
-            self.category_label.setStyleSheet("color: #AAAAAA; background-color: transparent;")
+            self.type_label.setStyleSheet("color: #AAAAAA; background-color: transparent;")
             self.icon_label.setStyleSheet("color: white; background-color: transparent;")
         
         # Force immediate update
@@ -613,7 +639,19 @@ class TemplateCard(QFrame):
         """Handle key press events for template operations"""
         # Handle both Delete and Backspace (for Mac) for template deletion when selected
         if (event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace) and self.selected:
-            self.deleteRequested.emit(self.template_name())
+            # Find the parent gallery for multi-selection handling
+            gallery = None
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, 'multi_selected_templates'):
+                    gallery = parent
+                    break
+                parent = parent.parent()
+            
+            # Always use _delete_multi_selected which handles both single and multi-selections properly
+            if gallery:
+                self._delete_multi_selected(gallery)
+            
         super().keyPressEvent(event)
     
     def contextMenuEvent(self, event):
@@ -629,10 +667,32 @@ class TemplateCard(QFrame):
         edit_action.triggered.connect(lambda: self.editRequested.emit(self.template_name()))
         context_menu.addAction(edit_action)
         
-        # Add "Delete" action using our helper method for red styling
+        # Find the parent gallery for multi-selection handling
+        gallery = None
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'multi_selected_templates'):
+                gallery = parent
+                break
+            parent = parent.parent()
+        
+        # Check if we're in a multi-selection state
+        has_multi = (gallery and hasattr(gallery, 'multi_selected_templates') and 
+                    gallery.multi_selected_templates and 
+                    len(gallery.multi_selected_templates) > 0)
+                    
+        # Add "Delete" action with appropriate callback based on selection state
+        if has_multi:
+            delete_text = "Delete Selected Templates"
+            delete_callback = lambda: self._delete_multi_selected(gallery)
+        else:
+            delete_text = "Delete"
+            delete_callback = lambda: self.deleteRequested.emit(self.template_name())
+            
         context_menu.addRedDeleteAction(
             parent=self,
-            callback=lambda: self.deleteRequested.emit(self.template_name())
+            callback=delete_callback,
+            text=delete_text
         )
         
         # Add separator
@@ -727,11 +787,10 @@ class TemplateCard(QFrame):
         count = len(templates_to_move)
         print(f"🔍 LISTENER: Moving {count} templates out of folder '{current_folder}'")
         
-        # Get template names for each template object
-        template_names = []
         template_manager = self.app.template_manager
         
         # Process each template
+        template_names = []
         for template in templates_to_move:
             if isinstance(template, dict):
                 template_name = template.get('name', 'Unknown')
@@ -863,119 +922,122 @@ class TemplateCard(QFrame):
         """Delete all selected templates"""
         if not gallery:
             return
-        
-        # Print current selection states
-        if hasattr(gallery, 'selected_template') and gallery.selected_template:
-            print(f"🔍 LISTENER: Current primary selection: {gallery.selected_template.get('name', 'Unknown')}")
-        else:
-            print(f"🔍 LISTENER: No primary selection")
             
-        if hasattr(gallery, 'multi_selected_templates'):
-            print(f"🔍 LISTENER: Current multi-selection: {[t.get('name', 'Unknown') for t in gallery.multi_selected_templates]}")
-        
-        # First, detect what we're deleting
-        has_primary = hasattr(gallery, 'selected_template') and gallery.selected_template is not None
-        has_multi = (hasattr(gallery, 'multi_selected_templates') and 
-                    gallery.multi_selected_templates and 
-                    len(gallery.multi_selected_templates) > 0)
-        
-        # If nothing to delete, exit
-        if not has_primary and not has_multi:
-            print(f"🔍 LISTENER: No templates selected for deletion")
+        # Check if deletion is already in progress
+        if TemplateCard._deletion_in_progress:
+            print(f"🔍 LISTENER: Deletion already in progress, ignoring duplicate request")
             return
-        
-        # Create a fresh set of templates to delete (using set for deduplication)
-        templates_to_delete_set = set()
-        templates_to_delete = []
-        
-        # ALWAYS include the primary selected template FIRST if it exists
-        if has_primary:
-            primary_name = gallery.selected_template.get('name', 'Unknown')
-            templates_to_delete.append(gallery.selected_template)
-            templates_to_delete_set.add(id(gallery.selected_template))  # Add object id to set for tracking
-            print(f"🔍 LISTENER: Including primary selected template in delete operation: {primary_name}")
-        
-        # Then add the multi-selected templates
-        if has_multi:
-            for template in gallery.multi_selected_templates:
-                template_id = id(template)
-                if template_id not in templates_to_delete_set:
-                    templates_to_delete.append(template)
-                    templates_to_delete_set.add(template_id)
-                    print(f"🔍 LISTENER: Adding multi-selected template to delete operation: {template.get('name', 'Unknown')}")
-        
-        # Verify total count matches expectations
-        expected_count = (1 if has_primary else 0) + (len(gallery.multi_selected_templates) if has_multi else 0)
-        actual_count = len(templates_to_delete)
-        print(f"🔍 LISTENER: Expected {expected_count} templates, found {actual_count} templates after deduplication")
-        
-        # If no templates to delete, exit
-        if not templates_to_delete:
-            print(f"🔍 LISTENER: No templates to delete after processing")
-            return
-        
-        # Get template names for display and deletion
-        template_names = []
-        for template in templates_to_delete:
-            if isinstance(template, dict) and 'name' in template:
-                name = template['name']
-            elif hasattr(template, 'get'):
-                name = template.get('name', 'Unknown')
-            elif isinstance(template, str):
-                name = template
+            
+        # Set deletion in progress flag
+        TemplateCard._deletion_in_progress = True
+            
+        try:
+            # Print current selection states
+            if hasattr(gallery, 'selected_template') and gallery.selected_template:
+                print(f"🔍 LISTENER: Current primary selection: {gallery.selected_template.get('name', 'Unknown')}")
             else:
-                name = str(template)
+                print(f"🔍 LISTENER: No primary selection")
                 
-            if name and name not in template_names:
-                template_names.append(name)
-                print(f"🔍 LISTENER: Template to delete: '{name}'")
-        
-        # If no valid template names, exit
-        if not template_names:
-            print(f"🔍 LISTENER: No valid template names found for deletion")
-            return
-            
-        print(f"🔍 LISTENER: Final delete list ({len(template_names)} templates): {template_names}")
-        
-        # Create confirmation message
-        if len(template_names) == 1:
-            message = f"Are you sure you want to delete template '{template_names[0]}'?"
-        else:
-            message = f"Are you sure you want to delete {len(template_names)} templates?"
-        
-        # Single confirmation for all templates
-        confirm = QMessageBox.question(
-            self,
-            "Confirm Delete",
-            message,
-            QMessageBox.Yes | QMessageBox.No
-        )
-        
-        if confirm == QMessageBox.Yes:
-            # Delete all templates in one operation
-            if hasattr(self.app, 'template_manager'):
-                for name in template_names:
-                    print(f"🔍 LISTENER: Deleting template '{name}'")
-                    self.app.template_manager.delete_template(name)
-            
-            # Show success message
-            if hasattr(self.app, 'show_status_message'):
-                if len(template_names) == 1:
-                    self.app.show_status_message(f"Deleted template '{template_names[0]}'", "success")
-                else:
-                    self.app.show_status_message(f"Deleted {len(template_names)} templates", "success")
-            
-            # Reset selections
-            if hasattr(gallery, 'selected_template'):
-                gallery.selected_template = None
-                
-            # Clear multi-selection
             if hasattr(gallery, 'multi_selected_templates'):
-                gallery.multi_selected_templates.clear()
+                print(f"🔍 LISTENER: Current multi-selection: {[t.get('name', 'Unknown') for t in gallery.multi_selected_templates]}")
+            
+            # First, detect what we're deleting
+            has_primary = hasattr(gallery, 'selected_template') and gallery.selected_template is not None
+            has_multi = (hasattr(gallery, 'multi_selected_templates') and 
+                        gallery.multi_selected_templates and 
+                        len(gallery.multi_selected_templates) > 0)
+            
+            # If nothing to delete, exit
+            if not has_primary and not has_multi:
+                print(f"🔍 LISTENER: No templates selected for deletion")
+                return
+            
+            # Create a fresh set of templates to delete (using set for deduplication)
+            templates_to_delete_set = set()
+            templates_to_delete = []
+            
+            # ALWAYS include the primary selected template FIRST if it exists
+            if has_primary:
+                primary_name = gallery.selected_template.get('name', 'Unknown')
+                templates_to_delete.append(gallery.selected_template)
+                templates_to_delete_set.add(id(gallery.selected_template))  # Add object id to set for tracking
+                print(f"🔍 LISTENER: Including primary selected template in delete operation: {primary_name}")
+            
+            # Then add the multi-selected templates
+            if has_multi:
+                for template in gallery.multi_selected_templates:
+                    template_id = id(template)
+                    if template_id not in templates_to_delete_set:
+                        templates_to_delete.append(template)
+                        templates_to_delete_set.add(template_id)
+                        print(f"🔍 LISTENER: Adding multi-selected template to delete operation: {template.get('name', 'Unknown')}")
+            
+            # Verify total count matches expectations
+            expected_count = (1 if has_primary else 0) + (len(gallery.multi_selected_templates) if has_multi else 0)
+            actual_count = len(templates_to_delete)
+            print(f"🔍 LISTENER: Expected {expected_count} templates, found {actual_count} templates after deduplication")
+            
+            # If no templates to delete, exit
+            if not templates_to_delete:
+                print(f"🔍 LISTENER: No templates to delete after processing")
+                return
+            
+            # Get template names for display and deletion
+            template_names = []
+            for template in templates_to_delete:
+                if isinstance(template, dict) and 'name' in template:
+                    name = template['name']
+                elif hasattr(template, 'get'):
+                    name = template.get('name', 'Unknown')
+                elif isinstance(template, str):
+                    name = template
+                else:
+                    name = str(template)
+                    
+                if name and name not in template_names:
+                    template_names.append(name)
+                    print(f"🔍 LISTENER: Template to delete: '{name}'")
+            
+            # If no valid template names, exit
+            if not template_names:
+                print(f"🔍 LISTENER: No valid template names found for deletion")
+                return
                 
-            # Refresh gallery
-            if hasattr(gallery, 'populate_gallery'):
-                gallery.populate_gallery(force_refresh=True)
+            print(f"🔍 LISTENER: Final delete list ({len(template_names)} templates): {template_names}")
+            
+            # Create confirmation message
+            if len(template_names) == 1:
+                message = f"Are you sure you want to delete template '{template_names[0]}'?"
+            else:
+                message = f"Are you sure you want to delete these {len(template_names)} templates?"
+            
+            # Single confirmation for all templates
+            confirm = QMessageBox.question(
+                self,
+                "Confirm Delete",
+                message,
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if confirm == QMessageBox.Yes:
+                # Delete all templates in one operation
+                if hasattr(self.app, 'template_manager'):
+                    for name in template_names:
+                        print(f"🔍 LISTENER: Deleting template '{name}'")
+                        self.app.template_manager.delete_template(name)
+                
+                # Show success message
+                if hasattr(self.app, 'show_status_message'):
+                    if len(template_names) == 1:
+                        self.app.show_status_message(f"Deleted template '{template_names[0]}'", "success")
+                    else:
+                        self.app.show_status_message(f"Deleted {len(template_names)} templates", "success")
+                
+                # Refresh gallery to update the view
+                self._refresh_gallery(gallery)
+        finally:
+            # Reset deletion in progress flag
+            TemplateCard._deletion_in_progress = False
 
     def set_multi_selected(self, multi_selected):
         """Set the multi-selection state of the card"""
@@ -1015,115 +1077,179 @@ class TemplateListItem(QFrame):
     moveToFolderRequested = pyqtSignal(str, str)  # template_name, folder_name
 
     def __init__(self, parent=None, template=None, app=None):
+        """Initialize the list item with template data"""
         super().__init__(parent)
-        self.template = template or {}  # Use empty dict if template is None
         self.app = app
-        self.hover = False
+        self.template = template
         self.selected = False
-        self.setAcceptDrops(False)
+        self.multi_selected = False
+        self.clicking_multi_selected = False
+        
+        # Set up styling for the list item
+        self.setFixedHeight(40)  # Fixed height for list view
         self.setCursor(Qt.PointingHandCursor)
-        self.setFixedHeight(36)  # Match folder list item height exactly
         
-        # Size policy - make sure the item stretches to the full width of its container
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # Configure styling
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: transparent;
+                border: none;
+                border-radius: 4px;
+            }}
+            QFrame:hover {{
+                background-color: {colors['hover_bg']};
+            }}
+        """)
         
-        # Set alternating row color property (will be set by parent)
-        self.setProperty("row_type", "even")  # Default to even
-        
-        # Main layout - horizontal for list view with same margins as folders
+        # Main layout
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 8, 10, 8)  # Match folder list item margins
-        layout.setSpacing(8)
+        layout.setContentsMargins(10, 5, 10, 5)
+        layout.setSpacing(10)
         
-        # Template icon (smaller for list view)
-        self.icon_label = QLabel()
-        try:
-            icon_path = template_icon_path(template_name=self.template_name())
-            if icon_path.endswith('.svg'):
-                # Handle SVG files using QPixmap and QSvgRenderer
-                from PyQt5.QtSvg import QSvgRenderer
-                from PyQt5.QtCore import QByteArray, QSize
-                
-                # Create a renderer for the SVG
-                with open(icon_path, 'r') as f:
-                    svg_content = f.read()
-                
-                renderer = QSvgRenderer(QByteArray(svg_content.encode()))
-                if renderer.isValid():
-                    # Create a pixmap to render to
-                    pixmap = QPixmap(22, 22)  # Slightly larger icon to match folders
-                    pixmap.fill(Qt.transparent)  # Make the background transparent
-                    
-                    # Paint the SVG on the pixmap
-                    painter = QPainter(pixmap)
-                    renderer.render(painter)
-                    painter.end()
-                    
-                    self.icon_label.setPixmap(pixmap)
-                else:
-                    # Fallback to text
-                    self.icon_label.setText("📄")
-                    font = QFont(SYSTEM_FONT)
-                    font.setPointSize(14)  # Match folder font size
-                    self.icon_label.setFont(font)
-            else:
-                # Handle PNG or fallback
-                pixmap = QPixmap(icon_path)
-                if not pixmap.isNull():
-                    pixmap = pixmap.scaled(22, 22, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    self.icon_label.setPixmap(pixmap)
-                else:
-                    # If pixmap is null, use text as a fallback
-                    self.icon_label.setText("📄")
-                    font = QFont(SYSTEM_FONT)
-                    font.setPointSize(14)  # Match folder font size
-                    self.icon_label.setFont(font)
-        except Exception as e:
-            print(f"ERROR: Failed to load template icon: {e}")
-            # Use text as a fallback
-            self.icon_label.setText("📄")
-            font = QFont(SYSTEM_FONT)
-            font.setPointSize(14)  # Match folder font size
-            self.icon_label.setFont(font)
+        # Template icon
+        icon = template.get("icon", "📄") if isinstance(template, dict) else "📄"
+        self.icon_label = QLabel(icon)
+        self.icon_label.setAlignment(Qt.AlignCenter)
         
-        self.icon_label.setFixedSize(22, 22)  # Match folder icon size
+        # Use system font for icon with smaller size for list view
+        font = QFont(SYSTEM_FONT)
+        font.setPointSize(14)
+        self.icon_label.setFont(font)
+        
+        # Set fixed size and styling
+        self.icon_label.setFixedSize(30, 30)
+        self.icon_label.setStyleSheet(f"color: {colors['accent']}; background-color: transparent;")
+        
         layout.addWidget(self.icon_label)
         
-        # Template name label
-        self.name_label = QLabel(self.template_name())
-        font = QFont(SYSTEM_FONT)
-        font.setPointSize(12)  # Match folder font size
-        self.name_label.setFont(font)
-        # Make name expand to fill available space
-        self.name_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        layout.addWidget(self.name_label, 1)  # Stretch factor 1 to expand
-        
-        # Template category label
-        category = self.template.get("category", self.template.get("type", "Custom"))
-        self.category_label = QLabel(str(category))
-        font = QFont(SYSTEM_FONT)
-        font.setPointSize(10)  # Match folder font size for secondary text
-        self.category_label.setFont(font)
-        self.category_label.setFixedWidth(120)  # Fixed width for consistent layout
-        self.category_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)  # Right-aligned
-        layout.addWidget(self.category_label)
-        
-        # Initial styling
-        self._update_styling()
-    
-    def template_name(self):
-        """Get the template name, handling different formats of template data."""
-        if not self.template:
-            return "Unnamed Template"
+        # Template name
+        name = "Unnamed Template"
+        if isinstance(template, dict):
+            name = template.get("name", "Unnamed Template")
+        elif isinstance(template, str):
+            name = template
             
-        # Handle different ways the name might be stored
-        if isinstance(self.template, dict):
-            return self.template.get("name", "Unnamed Template")
-        elif isinstance(self.template, str):
-            return self.template
-        else:
-            return str(self.template)
+        self.name_label = QLabel(name)
+        
+        # Use system font for name with normal size
+        font = QFont(SYSTEM_FONT)
+        font.setPointSize(11)
+        font.setBold(True)
+        self.name_label.setFont(font)
+        
+        # Stretch to fill available space
+        self.name_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.name_label.setStyleSheet("color: white; background-color: transparent;")
+        
+        layout.addWidget(self.name_label, 1)  # 1 = stretch factor
+        
+        # Format creation date
+        created_timestamp = template.get('created', 0) if isinstance(template, dict) else 0
+        date_str = "Unknown"
+        if created_timestamp:
+            try:
+                # Check if it's ISO format or timestamp
+                if isinstance(created_timestamp, str):
+                    # Try to parse ISO format datetime string
+                    import datetime
+                    created_date = datetime.datetime.fromisoformat(created_timestamp.replace('Z', '+00:00'))
+                    date_str = created_date.strftime("%Y-%m-%d %H:%M")
+                else:
+                    # Assume it's a timestamp (either seconds or milliseconds)
+                    import datetime
+                    # If timestamp appears to be in milliseconds (length > 11), convert to seconds
+                    if created_timestamp > 10000000000:  # More than 11 digits
+                        created_timestamp = created_timestamp / 1000
+                    created_date = datetime.datetime.fromtimestamp(created_timestamp)
+                    date_str = created_date.strftime("%Y-%m-%d %H:%M")
+            except Exception as e:
+                print(f"Error formatting date: {e}")
+                date_str = str(created_timestamp)
+        
+        # Add date label instead of category
+        self.date_label = QLabel(date_str)
+        
+        # Use system font for date with smaller size
+        font = QFont(SYSTEM_FONT)
+        font.setPointSize(9)
+        self.date_label.setFont(font)
+        self.date_label.setFixedWidth(120)  # Fixed width for consistent layout
+        self.date_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)  # Right-aligned
+        layout.addWidget(self.date_label)
+        
+        # Important: Update the initial styling
+        self._update_styling()
+        
+        # Install event filter
+        self.installEventFilter(self)
     
+    def _update_styling(self):
+        """Update the styling based on selection and hover states"""
+        try:
+            # Get template name for debugging
+            template_name = "Unknown"
+            if isinstance(self.template, dict):
+                template_name = self.template.get("name", "Unknown")
+            elif isinstance(self.template, str):
+                template_name = self.template
+                
+            print(f"⭐ TemplateListItem._update_styling() for {template_name}, selected={self.selected}, multi_selected={self.multi_selected}")
+            
+            if self.selected:
+                # Selected state (primary selection)
+                self.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: {colors['highlight_bg']};
+                        border: none;
+                        border-radius: 4px;
+                    }}
+                """)
+                print(f"⭐ Applied SELECTED style to {template_name}")
+                self.icon_label.setStyleSheet(f"color: white; background: transparent;")
+                self.name_label.setStyleSheet(f"color: white; background: transparent; font-weight: bold;")
+                self.date_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
+            elif self.multi_selected:
+                # Multi-selected state (part of multi-selection but not primary)
+                self.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: {colors['highlight_bg_transparent']};
+                        border: 1px solid {colors['highlight_border']};
+                        border-radius: 4px;
+                    }}
+                """)
+                print(f"⭐ Applied MULTI-SELECTED style to '{template_name}'")
+                self.icon_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
+                self.name_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
+                self.date_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
+            elif self.hover:
+                # Hover state
+                self.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: {colors['hover_bg']};
+                        border: none;
+                        border-radius: 4px;
+                    }}
+                """)
+                self.icon_label.setStyleSheet(f"color: {colors['accent']}; background: transparent;")
+                self.name_label.setStyleSheet(f"color: white; background: transparent;")
+                self.date_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
+            else:
+                # Normal state
+                self.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: transparent;
+                        border: none;
+                        border-radius: 4px;
+                    }}
+                """)
+                self.icon_label.setStyleSheet(f"color: {colors['accent']}; background: transparent;")
+                self.name_label.setStyleSheet(f"color: white; background: transparent;")
+                self.date_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
+        except Exception as e:
+            print(f"Error updating list item styling: {e}")
+        
+        self.repaint()
+
     def mousePressEvent(self, event):
         """Handle mouse press events for list items"""
         if event.button() == Qt.LeftButton:
@@ -1201,7 +1327,7 @@ class TemplateListItem(QFrame):
                         gallery.is_multi_selecting = True
                     else:
                         gallery.is_multi_selecting = True
-                        
+                            
                     # Update all cards via gallery
                     if hasattr(gallery, '_update_template_card_selection'):
                         gallery._update_template_card_selection()
@@ -1448,16 +1574,13 @@ class TemplateListItem(QFrame):
                 QFrame {{
                     background-color: {colors["highlight_bg"]};
                     border: none;
-                    border-radius: 0px;
-                }}
-                QLabel {{
-                    color: white !important;
+                    border-radius: 4px;
                 }}
             """)
             
             # Ensure label colors are set explicitly
             self.name_label.setStyleSheet(f"color: white; font-weight: bold; background: transparent;")
-            self.category_label.setStyleSheet(f"color: white; background: transparent;")
+            self.date_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
             self.icon_label.setStyleSheet(f"color: white; background: transparent;")
             
             print(f"🔍 LISTENER: Applied selected style to list item '{self.template_name()}'")
@@ -1473,58 +1596,89 @@ class TemplateListItem(QFrame):
         return self.selected
     
     def _update_styling(self):
-        """Update the styling based on current state - exactly match folder list item styling"""
-        # First get the base background color based on row type
-        if self.property("row_type") == "odd":
-            bg_color = colors.get("alternate_row", "#2A2A2A")  # Darker for odd rows
-        else:
-            bg_color = colors.get("bg", "#333333")  # Lighter for even rows
+        """Update the styling based on selection and hover states"""
+        try:
+            # Get template name for debugging
+            template_name = "Unknown"
+            if isinstance(self.template, dict):
+                template_name = self.template.get("name", "Unknown")
+            elif isinstance(self.template, str):
+                template_name = self.template
                 
-        if self.selected:
-            # Selected style - match folder list item selected style exactly
-            self.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {colors["highlight_bg"]};
-                    border: none;
-                    border-radius: 0px;
-                }}
-            """)
-            self.name_label.setStyleSheet(f"color: {colors['highlight_text']}; font-weight: bold; background: transparent;")
-            self.category_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
-            self.icon_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
-        elif self.hover:
-            # Hover style - match folder list item hover style exactly
-            self.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {colors["hover_bg"]};
-                    border: none;
-                    border-radius: 0px;
-                }}
-            """)
-            self.name_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
-            self.category_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
-            self.icon_label.setStyleSheet("background: transparent;")
-        else:
-            # Normal style - match folder list item normal style exactly
-            self.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {bg_color};
-                    border: none;
-                    border-radius: 0px;
-                }}
-            """)
-            self.name_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
-            self.category_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
-            self.icon_label.setStyleSheet("background: transparent;")
+            print(f"⭐ TemplateListItem._update_styling() for {template_name}, selected={self.selected}, multi_selected={self.multi_selected}")
+            
+            if self.selected:
+                # Selected state (primary selection)
+                self.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: {colors['highlight_bg']};
+                        border: none;
+                        border-radius: 4px;
+                    }}
+                """)
+                print(f"⭐ Applied SELECTED style to {template_name}")
+                self.icon_label.setStyleSheet(f"color: white; background: transparent;")
+                self.name_label.setStyleSheet(f"color: white; background: transparent; font-weight: bold;")
+                self.date_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
+            elif self.multi_selected:
+                # Multi-selected state (part of multi-selection but not primary)
+                self.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: {colors['highlight_bg_transparent']};
+                        border: 1px solid {colors['highlight_border']};
+                        border-radius: 4px;
+                    }}
+                """)
+                print(f"⭐ Applied MULTI-SELECTED style to '{template_name}'")
+                self.icon_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
+                self.name_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
+                self.date_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
+            elif self.hover:
+                # Hover state
+                self.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: {colors['hover_bg']};
+                        border: none;
+                        border-radius: 4px;
+                    }}
+                """)
+                self.icon_label.setStyleSheet(f"color: {colors['accent']}; background: transparent;")
+                self.name_label.setStyleSheet(f"color: white; background: transparent;")
+                self.date_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
+            else:
+                # Normal state
+                self.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: transparent;
+                        border: none;
+                        border-radius: 4px;
+                    }}
+                """)
+                self.icon_label.setStyleSheet(f"color: {colors['accent']}; background: transparent;")
+                self.name_label.setStyleSheet(f"color: white; background: transparent;")
+                self.date_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
+        except Exception as e:
+            print(f"Error updating list item styling: {e}")
         
-        # Force immediate update
-        self.update()
+        self.repaint()
 
     def keyPressEvent(self, event):
         """Handle key press events for template operations"""
         # Handle both Delete and Backspace (for Mac) for template deletion when selected
         if (event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace) and self.selected:
-            self.deleteRequested.emit(self.template_name())
+            # Find the parent gallery for multi-selection handling
+            gallery = None
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, 'multi_selected_templates'):
+                    gallery = parent
+                    break
+                parent = parent.parent()
+            
+            # Always use _delete_multi_selected which handles both single and multi-selections properly
+            if gallery:
+                self._delete_multi_selected(gallery)
+            
         super().keyPressEvent(event)
     
     def contextMenuEvent(self, event):
@@ -1540,10 +1694,32 @@ class TemplateListItem(QFrame):
         edit_action.triggered.connect(lambda: self.editRequested.emit(self.template_name()))
         context_menu.addAction(edit_action)
         
-        # Add "Delete" action using our helper method for red styling
+        # Find the parent gallery for multi-selection handling
+        gallery = None
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'multi_selected_templates'):
+                gallery = parent
+                break
+            parent = parent.parent()
+        
+        # Check if we're in a multi-selection state
+        has_multi = (gallery and hasattr(gallery, 'multi_selected_templates') and 
+                    gallery.multi_selected_templates and 
+                    len(gallery.multi_selected_templates) > 0)
+                    
+        # Add "Delete" action with appropriate callback based on selection state
+        if has_multi:
+            delete_text = "Delete Selected Templates"
+            delete_callback = lambda: self._delete_multi_selected(gallery)
+        else:
+            delete_text = "Delete"
+            delete_callback = lambda: self.deleteRequested.emit(self.template_name())
+            
         context_menu.addRedDeleteAction(
             parent=self,
-            callback=lambda: self.deleteRequested.emit(self.template_name())
+            callback=delete_callback,
+            text=delete_text
         )
         
         # Add separator
@@ -1622,13 +1798,13 @@ class TemplateListItem(QFrame):
                 if hasattr(gallery, 'selected_template') and gallery.selected_template:
                     primary_template = gallery.selected_template
                     templates_to_move.append(primary_template)
-                    print(f"🔍 LISTENER: List item - Adding primary selection to templates to move out of folder")
+                    print(f"🔍 LISTENER: Adding primary selection to templates to move out of folder")
                 
                 # Then add all multi-selected templates (avoiding duplicates)
                 for template in gallery.multi_selected_templates:
                     if template not in templates_to_move:
                         templates_to_move.append(template)
-                        print(f"🔍 LISTENER: List item - Adding multi-selected template to templates to move out of folder")
+                        print(f"🔍 LISTENER: Adding multi-selected template to templates to move out of folder")
         
         # If not a multi-selection, just use this template
         if not is_multi_selection:
@@ -1636,13 +1812,12 @@ class TemplateListItem(QFrame):
             
         # Count for message
         count = len(templates_to_move)
-        print(f"🔍 LISTENER: List item - Moving {count} templates out of folder '{current_folder}'")
+        print(f"🔍 LISTENER: Moving {count} templates out of folder '{current_folder}'")
         
-        # Get template names for each template object
-        template_names = []
         template_manager = self.app.template_manager
         
         # Process each template
+        template_names = []
         for template in templates_to_move:
             if isinstance(template, dict):
                 template_name = template.get('name', 'Unknown')
@@ -1666,100 +1841,6 @@ class TemplateListItem(QFrame):
                 self.app.show_status_message(f"Moved {count} templates to root", "info")
             else:
                 self.app.show_status_message(f"Template '{template_names[0]}' moved to root", "info")
-        
-        # IMPORTANT: Refresh gallery after ALL templates are moved
-        # Wait to refresh gallery until the end to ensure all templates are accounted for
-        QTimer.singleShot(50, lambda: self._refresh_gallery(gallery))
-    
-    def _refresh_gallery(self, gallery=None):
-        """Helper method to refresh gallery properly after all operations"""
-        # If gallery was provided, use it directly
-        if gallery and hasattr(gallery, 'populate_gallery'):
-            print(f"🔍 LISTENER: List item - Refreshing gallery using provided gallery reference")
-            gallery.populate_gallery(force_refresh=True)
-            return
-            
-        # Otherwise find parent gallery through hierarchy
-        parent = self.parent()
-        
-        # First try list items parent chain
-        if hasattr(parent, 'parent') and hasattr(parent.parent(), 'populate_gallery'):
-            print(f"🔍 LISTENER: List item - Refreshing gallery through list item parent chain")
-            parent.parent().populate_gallery(force_refresh=True)
-        # Then try direct parent
-        elif hasattr(parent, 'populate_gallery'):
-            print(f"🔍 LISTENER: List item - Refreshing gallery through direct parent")
-            parent.populate_gallery(force_refresh=True)
-
-    def _move_to_folder_and_hide(self, folder_name):
-        """Move template to folder and hide for immediate feedback"""
-        if not self.app or not hasattr(self.app, 'template_manager'):
-            return
-            
-        # Get gallery reference to check multi-selection
-        gallery = None
-        parent = self.parent()
-        while parent:
-            if hasattr(parent, 'multi_selected_templates'):
-                gallery = parent
-                break
-            parent = parent.parent()
-            
-        # Check if we should be handling multiple templates
-        is_multi_selection = False
-        templates_to_move = []
-        
-        # Check if we're part of a multi-selection
-        if gallery and hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
-            # Check if this template is either the primary selection or in multi-selection
-            is_primary = hasattr(gallery, 'selected_template') and gallery.selected_template == self.template
-            is_in_multi = self.template in gallery.multi_selected_templates
-            
-            if is_primary or is_in_multi or getattr(self, 'clicking_multi_selected', False):
-                # This is a multi-selection operation - include all selected templates
-                is_multi_selection = True
-                
-                # Always include primary selection first if it exists
-                if hasattr(gallery, 'selected_template') and gallery.selected_template:
-                    primary_template = gallery.selected_template
-                    templates_to_move.append(primary_template)
-                    print(f"🔍 LISTENER: List item - Adding primary selection to templates to move to folder '{folder_name}'")
-                
-                # Then add all multi-selected templates (avoiding duplicates)
-                for template in gallery.multi_selected_templates:
-                    if template not in templates_to_move:
-                        templates_to_move.append(template)
-                        print(f"🔍 LISTENER: List item - Adding multi-selected template to templates to move to folder '{folder_name}'")
-        
-        # If not a multi-selection, just use this template
-        if not is_multi_selection:
-            templates_to_move = [self.template]
-            
-        # Count for message
-        count = len(templates_to_move)
-        print(f"🔍 LISTENER: List item - Moving {count} templates to folder '{folder_name}'")
-        
-        template_manager = self.app.template_manager
-        
-        # Process each template
-        template_names = []
-        for template in templates_to_move:
-            if isinstance(template, dict):
-                template_name = template.get('name', 'Unknown')
-            else:
-                template_name = str(template)
-                
-            template_names.append(template_name)
-            
-            # Move template to folder
-            template_manager.move_template_to_folder(template_name, folder_name)
-        
-        # Show status message - BEFORE refreshing gallery to avoid visual jumping
-        if hasattr(self.app, 'show_status_message'):
-            if count > 1:
-                self.app.show_status_message(f"Moved {count} templates to folder '{folder_name}'", "info")
-            else:
-                self.app.show_status_message(f"Template '{template_names[0]}' moved to folder '{folder_name}'", "info")
         
         # IMPORTANT: Refresh gallery after ALL templates are moved
         # Wait to refresh gallery until the end to ensure all templates are accounted for

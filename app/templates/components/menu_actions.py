@@ -67,16 +67,21 @@ class CustomMenu(QMenu):
             }
         """)
     
-    def addRedDeleteAction(self, parent=None, callback=None):
+    def addRedDeleteAction(self, parent=None, callback=None, text="Delete"):
         """
         Add a Delete action with red text using QWidgetAction for maximum control.
         This bypasses stylesheet limitations on macOS.
+        
+        Parameters:
+        - parent: The parent widget for the action
+        - callback: Function to call when clicked
+        - text: Custom text for the delete action (default is "Delete")
         """
         # Create a custom widget action
         widget_action = QWidgetAction(parent or self)
         
         # Use our custom DeleteLabel that handles hover and click events
-        label = DeleteLabel("Delete")
+        label = DeleteLabel(text)
         
         # Connect the label's clicked signal to the callback
         if callback:

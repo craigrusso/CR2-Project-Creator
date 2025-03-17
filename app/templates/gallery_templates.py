@@ -3,7 +3,7 @@
 
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                             QFrame, QScrollArea, QGridLayout, QButtonGroup, 
-                            QToolButton, QSizePolicy, QPushButton)
+                            QToolButton, QSizePolicy, QPushButton, QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
@@ -13,6 +13,43 @@ from app.ui.app_theme_pyqt import ACCENT_BUTTON_STYLE, BUTTON_STYLE
 from .components.utils import SYSTEM_FONT
 from .components.template_card import TemplateCard, TemplateListItem
 from .gallery_events import GalleryEvents
+from app.templates.components.template_list_item import TemplateListItem
+
+def sort_templates(templates, sort_field='name', sort_order='asc'):
+    """Sort templates by the given field and order"""
+    # If templates is a dictionary, convert to list of tuples or dicts
+    if isinstance(templates, dict):
+        template_list = []
+        for name, data in templates.items():
+            if isinstance(data, dict):
+                # Make sure 'name' is in the data
+                template_data = dict(data)
+                template_data['name'] = name
+                template_list.append(template_data)
+            else:
+                template_list.append({'name': name})
+    else:
+        template_list = templates
+
+    # Now sort based on field and order
+    reverse = sort_order.lower() != 'asc'
+    
+    # Make sure the sort is stable by using a tuple with name as secondary sort
+    def sort_key(template):
+        if isinstance(template, str):
+            return template.lower()
+        elif sort_field == 'date' or sort_field == 'created':
+            # Sort by date (created or modified)
+            date_value = template.get('date_modified', template.get('created', ''))
+            return (date_value, template.get('name', '').lower())
+        elif sort_field == 'category':
+            # Sort by category
+            return (template.get('category', '').lower(), template.get('name', '').lower())
+        else:
+            # Default sort by name
+            return template.get('name', '').lower()
+    
+    return sorted(template_list, key=sort_key, reverse=reverse)
 
 def handle_template_edit(gallery, template_name):
     """Handle template editing bypassing gallery._on_edit_template to avoid None issues"""
@@ -92,6 +129,17 @@ class GalleryTemplatesSetup:
         
         # Add the scroll area to the templates section layout
         gallery.templates_section_layout.addWidget(gallery.templates_scroll)
+        
+        # List view widget - will be initialized when switching to list view
+        gallery.templates_list_widget = QScrollArea()
+        gallery.templates_list_widget.setWidgetResizable(True)
+        gallery.templates_list_widget.setFrameShape(QFrame.NoFrame)
+        gallery.templates_list_widget.setStyleSheet("background: transparent; border: none;")
+        gallery.templates_list_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        gallery.templates_section_layout.addWidget(gallery.templates_list_widget)
+        
+        # Initially hide the list widget (default to grid view)
+        gallery.templates_list_widget.setVisible(False)
     
     @staticmethod
     def setup_templates_header(gallery):
@@ -108,52 +156,33 @@ class GalleryTemplatesSetup:
         gallery.templates_header_layout.setContentsMargins(15, 10, 15, 10)  # Increase padding for better spacing
         gallery.templates_header_layout.setSpacing(10)
         
-        # Template title
+        # Template title - should stretch
         gallery.templates_header = QLabel("Templates")
         gallery.templates_header.setFont(QFont(SYSTEM_FONT, 14, QFont.Bold))
         gallery.templates_header.setStyleSheet(f"color: {colors['text']}; padding: 5px 0; background-color: transparent;")
         gallery.templates_header.setAlignment(Qt.AlignLeft)
-        gallery.templates_header.setFixedHeight(30)
-        gallery.templates_header.setFixedWidth(120)
-        gallery.templates_header.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        gallery.templates_header_layout.addWidget(gallery.templates_header)
+        gallery.templates_header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        gallery.templates_header_layout.addWidget(gallery.templates_header, 1)  # Give stretch factor of 1
         
-        # Add spacer to push buttons to the right
-        gallery.templates_header_layout.addStretch(1)
-        
-        # Add template button to the left of view controls for consistency with folder section
+        # Add template button - fixed size, right aligned
         gallery.add_button = QPushButton("Add Template")
-        # Use accent style to make it stand out
         gallery.add_button.setStyleSheet(ACCENT_BUTTON_STYLE)
         gallery.add_button.clicked.connect(gallery._on_add_template)
-        gallery.add_button.setFixedHeight(30)
-        gallery.add_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        gallery.add_button.setFixedSize(120, 30)
         gallery.templates_header_layout.addWidget(gallery.add_button)
         
-        # Add the structure editor button next to Add Template button
+        # Add structure editor button - fixed size, right aligned
         gallery.new_structure_button = QPushButton("Add | Edit Structures")
         gallery.new_structure_button.setStyleSheet(BUTTON_STYLE)
-        gallery.new_structure_button.setFixedHeight(30)
-        gallery.new_structure_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        # We need to connect this to the structure editor handler in the main gallery class
-        # The actual connection will be done in the main gallery init
+        gallery.new_structure_button.setFixedSize(180, 30)
         gallery.templates_header_layout.addWidget(gallery.new_structure_button)
         
-        # Template view controls - similar layout to folder view controls
+        # Template view toggle buttons - fixed size, right aligned
         gallery.template_view_controls = QWidget()
-        gallery.template_view_controls.setStyleSheet("background: transparent;")
+        gallery.template_view_controls.setFixedHeight(30)
         gallery.template_view_controls_layout = QHBoxLayout(gallery.template_view_controls)
         gallery.template_view_controls_layout.setContentsMargins(0, 0, 0, 0)
-        gallery.template_view_controls_layout.setSpacing(10)
-        
-        # Create a button group for view toggle
-        gallery.template_view_buttons = QWidget()
-        gallery.template_view_buttons.setStyleSheet("background: transparent;")
-        gallery.template_view_buttons_layout = QHBoxLayout(gallery.template_view_buttons)
-        gallery.template_view_buttons_layout.setContentsMargins(0, 0, 0, 0)
-        gallery.template_view_buttons_layout.setSpacing(0)  # No spacing between buttons
-        
-        gallery.template_view_toggle_group = QButtonGroup(gallery)
+        gallery.template_view_controls_layout.setSpacing(0)
         
         # Grid view button
         gallery.template_grid_view_btn = QToolButton()
@@ -164,7 +193,6 @@ class GalleryTemplatesSetup:
         gallery.template_grid_view_btn.clicked.connect(lambda: gallery._set_template_view_mode("grid"))
         gallery.template_grid_view_btn.setFixedSize(65, 24)
         
-        # Apply same styling as folder buttons
         gallery.template_grid_view_btn.setStyleSheet("""
             QToolButton {
                 background-color: #2A2A2A;
@@ -187,8 +215,6 @@ class GalleryTemplatesSetup:
                 border-color: #585858;
             }
         """)
-        gallery.template_view_toggle_group.addButton(gallery.template_grid_view_btn)
-        gallery.template_view_buttons_layout.addWidget(gallery.template_grid_view_btn)
         
         # List view button
         gallery.template_list_view_btn = QToolButton()
@@ -199,7 +225,6 @@ class GalleryTemplatesSetup:
         gallery.template_list_view_btn.clicked.connect(lambda: gallery._set_template_view_mode("list"))
         gallery.template_list_view_btn.setFixedSize(65, 24)
         
-        # Apply same styling as folder buttons
         gallery.template_list_view_btn.setStyleSheet("""
             QToolButton {
                 background-color: #2A2A2A;
@@ -223,17 +248,17 @@ class GalleryTemplatesSetup:
                 border-color: #585858;
             }
         """)
+        
+        # Create button group to manage toggle buttons
+        gallery.template_view_toggle_group = QButtonGroup(gallery)
+        gallery.template_view_toggle_group.addButton(gallery.template_grid_view_btn)
         gallery.template_view_toggle_group.addButton(gallery.template_list_view_btn)
-        gallery.template_view_buttons_layout.addWidget(gallery.template_list_view_btn)
         
-        # Add buttons widget to controls
-        gallery.template_view_controls_layout.addWidget(gallery.template_view_buttons)
+        # Add buttons to layout
+        gallery.template_view_controls_layout.addWidget(gallery.template_grid_view_btn)
+        gallery.template_view_controls_layout.addWidget(gallery.template_list_view_btn)
         
-        # Set fixed size for controls to prevent layout shifting
-        gallery.template_view_controls.setFixedHeight(30)
-        gallery.template_view_controls.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        
-        # Add template view controls to the header layout
+        # Add the view controls widget to the header layout
         gallery.templates_header_layout.addWidget(gallery.template_view_controls)
         
         # Add header container to section layout
@@ -241,158 +266,157 @@ class GalleryTemplatesSetup:
 
     @staticmethod
     def populate_templates_list(gallery, templates_to_show):
-        """Populate templates in list view"""
-        gallery.template_cards = []
+        """Populate the templates list with template items from the given templates list"""
+        print(f"[DEBUG] List View: Starting population")
         
-        # First, clear any existing widgets from the grid
-        if hasattr(gallery, 'templates_grid'):
-            try:
-                # Remove all items from grid
-                while gallery.templates_grid.count():
-                    item = gallery.templates_grid.takeAt(0)
-                    if item and item.widget():
-                        item.widget().deleteLater()
-            except Exception as e:
-                print(f"Error clearing grid: {e}")
-        
-        # Debug output to help diagnose issues
-        print(f"[DEBUG] Gallery: Populating templates list with {len(templates_to_show)} templates")
-        print(f"[DEBUG] Gallery: Template keys: {list(templates_to_show.keys())}")
-        
-        # Sort templates for consistent display
-        sorted_templates = []
-        for name, data in templates_to_show.items():
-            sorted_templates.append((name, data))
-        sorted_templates.sort(key=lambda x: x[0].lower())  # Sort by name case-insensitive
-        
-        # Create a container for list view that spans the entire width
-        list_container = QFrame()
-        list_container.setFrameShape(QFrame.NoFrame)
-        list_container.setStyleSheet("background-color: transparent; border: none;")
-        
-        # Make the container expand to fill all available width immediately
-        list_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        list_container.setMinimumWidth(gallery.width() - 40)  # Force initial width
-        
-        # Create a layout that will hug the container to the edges
-        list_container_layout = QVBoxLayout(list_container)
-        list_container_layout.setContentsMargins(0, 0, 0, 0)
-        list_container_layout.setSpacing(0)
-        
-        # Create an inner scroll area to ensure consistent width
-        scroll_area = QScrollArea()
-        scroll_area.setFrameShape(QFrame.NoFrame)
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setStyleSheet("background-color: transparent; border: none;")
-        
-        # Make scroll area expand to fill container
-        scroll_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        
-        # Create the actual list widget that will contain the items
-        list_widget = QWidget()
-        list_widget.setStyleSheet("background-color: transparent; border: none;")
-        list_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        
-        list_layout = QVBoxLayout(list_widget)
-        list_layout.setContentsMargins(0, 0, 0, 0)
-        list_layout.setSpacing(0)  # No spacing between items
-        
-        # Important: Add vertical alignment to top to prevent centering
-        list_layout.setAlignment(Qt.AlignTop)
-        
-        # Add each template to the list
-        for i, (name, data) in enumerate(sorted_templates):
-            # Make sure we're passing the template data dictionary with the correct name
-            if isinstance(data, dict):
-                # Ensure the template data has the correct name
-                template_data = dict(data)  # Create a copy to avoid modifying the original
-                template_data['name'] = name  # Ensure name is set correctly
-                # Also verify we're not using Template-# as the name
-                if name.startswith("Template-") and 'name' in data and not data['name'].startswith("Template-"):
-                    template_data['name'] = data['name']  # Use the real name from the data
+        try:
+            # Create a new container widget and layout for the entire list view
+            container = QWidget()
+            main_layout = QVBoxLayout(container)
+            main_layout.setContentsMargins(0, 0, 0, 0)
+            main_layout.setSpacing(5)
+            
+            # Create a header row with sortable columns
+            header_container = QWidget()
+            header_container.setFixedHeight(30)
+            header_container.setStyleSheet(f"""
+                background-color: {colors['card_bg']};
+                border-bottom: 1px solid {colors['border']};
+            """)
+            header_layout = QHBoxLayout(header_container)
+            header_layout.setContentsMargins(10, 5, 10, 5)
+            header_layout.setSpacing(5)
+            
+            # Column headers with click-to-sort functionality
+            name_header = QPushButton("Name")
+            name_header.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: transparent;
+                    color: {colors['text']};
+                    font-weight: bold;
+                    border: none;
+                    text-align: left;
+                    padding-left: 5px;
+                }}
+                QPushButton:hover {{
+                    color: {colors['accent']};
+                }}
+            """)
+            name_header.clicked.connect(lambda: gallery._on_sort_column('name'))
+            
+            category_header = QPushButton("Category")
+            category_header.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: transparent;
+                    color: {colors['text']};
+                    font-weight: bold;
+                    border: none;
+                    text-align: left;
+                    padding-left: 5px;
+                }}
+                QPushButton:hover {{
+                    color: {colors['accent']};
+                }}
+            """)
+            category_header.clicked.connect(lambda: gallery._on_sort_column('category'))
+            
+            date_header = QPushButton("Date")
+            date_header.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: transparent;
+                    color: {colors['text']};
+                    font-weight: bold;
+                    border: none;
+                    text-align: left;
+                    padding-left: 5px;
+                }}
+                QPushButton:hover {{
+                    color: {colors['accent']};
+                }}
+            """)
+            date_header.clicked.connect(lambda: gallery._on_sort_column('date'))
+            
+            # Add sort indicators based on current sort field and order
+            sort_field = getattr(gallery, 'current_sort_field', 'name')
+            sort_order = getattr(gallery, 'current_sort_order', 'asc')
+            
+            if sort_field == 'name':
+                name_header.setText(f"Name {'↓' if sort_order == 'asc' else '↑'}")
+            elif sort_field == 'category':
+                category_header.setText(f"Category {'↓' if sort_order == 'asc' else '↑'}")
+            elif sort_field == 'date':
+                date_header.setText(f"Date {'↓' if sort_order == 'asc' else '↑'}")
+            
+            # Add headers to layout with correct proportions
+            header_layout.addWidget(name_header, 4)  # Name gets more space
+            header_layout.addWidget(category_header, 2)
+            header_layout.addWidget(date_header, 2)
+            
+            # Add headers to main layout
+            main_layout.addWidget(header_container)
+            
+            # Create a container for the list items
+            items_container = QWidget()
+            gallery.list_container_layout = QVBoxLayout(items_container)
+            gallery.list_container_layout.setContentsMargins(0, 0, 0, 0)
+            gallery.list_container_layout.setSpacing(0)
+            
+            # Get sorted templates based on current sort settings
+            templates = list(templates_to_show)
+            print(f"[DEBUG] List View: Working with {len(templates)} templates")
+            
+            # Default sort by name
+            if not hasattr(gallery, 'current_sort_field'):
+                gallery.current_sort_field = 'name'
+            if not hasattr(gallery, 'current_sort_order'):
+                gallery.current_sort_order = 'asc'
+            
+            print(f"[DEBUG] List View: Current sort - {gallery.current_sort_field} ({gallery.current_sort_order})")
+            
+            # Sort templates
+            sorted_templates = sort_templates(templates, gallery.current_sort_field, gallery.current_sort_order)
+            print(f"[DEBUG] List View: Sorted {len(sorted_templates)} templates")
+            
+            # Create a template list item for each template
+            for i, template in enumerate(sorted_templates):
+                # Handle both string templates and dictionary templates
+                if isinstance(template, str):
+                    template_name = template
+                    template_data = {"name": template_name}
+                    print(f"[DEBUG] List View: Creating item {i+1} - {template_name}")
+                else:
+                    template_name = template.get('name', 'Unknown')
+                    template_data = template
+                    print(f"[DEBUG] List View: Creating item {i+1} - {template_name}")
                 
-                print(f"[DEBUG] Gallery: Creating template list item for '{template_data['name']}'")
-            else:
-                # If data is not a dictionary, create one with the name
-                template_data = {"name": name, "category": "Custom", "description": ""}
-                print(f"[DEBUG] Gallery: Creating template list item from name only '{name}'")
-            
-            # Create a list item using our enhanced TemplateListItem class
-            template_item = TemplateListItem(parent=list_widget, template=template_data, app=gallery.app)
-            
-            # Ensure the item stretches to fill the full width
-            template_item.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            
-            # Set alternating row color property
-            template_item.setProperty("row_type", "odd" if i % 2 else "even")
-            
-            # Force style update to apply the alternate row colors
-            template_item.style().unpolish(template_item)
-            template_item.style().polish(template_item)
-            
-            # Update styling if the item has a method for it
-            if hasattr(template_item, '_update_styling'):
-                template_item._update_styling()
-            
-            # Connect click handlers
-            template_item.clicked.connect(lambda checked=False, t=template_data: gallery._on_template_select(t))
-            
-            # Connect double-click handler to edit template
-            template_item.doubleClicked.connect(lambda t=template_data: 
-                handle_template_edit(gallery, t.get('name', '')))
-            
-            # Connect context menu actions if the signals exist
-            if hasattr(template_item, 'editRequested'):
-                template_item.editRequested.connect(lambda t_name=template_data.get('name', ''): 
-                    handle_template_edit(gallery, t_name))
-            
-            if hasattr(template_item, 'deleteRequested'):
-                template_item.deleteRequested.connect(lambda t_name=template_data.get('name', ''): 
+                list_item = TemplateListItem(template_data, gallery=gallery, row_index=i)
+                
+                # Connect signals
+                list_item.clicked.connect(lambda checked=False, t=template_data: gallery._on_template_select(t))
+                list_item.doubleClicked.connect(lambda t=template_data: gallery._on_template_double_click(t))
+                
+                # Connect delete signal
+                list_item.deleteRequested.connect(lambda t_name=template_name: 
                     GalleryEvents.on_delete_template(gallery, t_name))
+                
+                # Add to layout
+                gallery.list_container_layout.addWidget(list_item)
             
-            # Connect move to folder signal if it exists
-            if hasattr(template_item, 'moveToFolderRequested'):
-                template_item.moveToFolderRequested.connect(lambda t_name, folder_name, 
-                    template_name=template_data.get('name', ''): 
-                    GalleryEvents.on_move_template_to_folder(gallery, template_name, folder_name))
+            # Set stretch factor to push items to the top
+            gallery.list_container_layout.addStretch()
             
-            # Connect multi-select handler if the gallery has the method
-            if hasattr(gallery, 'on_template_multi_select') and hasattr(template_item, 'multiSelectRequested'):
-                template_item.multiSelectRequested.connect(
-                    lambda template, add: gallery.on_template_multi_select(template, add))
+            # Add the items container to the main layout
+            main_layout.addWidget(items_container)
             
-            # Add item to the list layout
-            list_layout.addWidget(template_item)
-            gallery.template_cards.append(template_item)
-        
-        # Set up the scroll area with our list widget
-        scroll_area.setWidget(list_widget)
-        list_container_layout.addWidget(scroll_area)
-        
-        # Make the container fill the entire available grid space
-        # Use a span of 12 columns to make sure it's wider than needed
-        gallery.templates_grid.addWidget(list_container, 0, 0, 1, 12)
-        
-        # Force the container to take the full width of its parent
-        list_container.setMinimumWidth(gallery.templates_container.width())
-        
-        # If we have the currently selected template, highlight it
-        if hasattr(gallery, 'selected_template') and gallery.selected_template:
-            selected_name = gallery.selected_template.get('name', '')
-            for card in gallery.template_cards:
-                if hasattr(card, 'template') and isinstance(card.template, dict):
-                    card_name = card.template.get('name', '')
-                    if card_name == selected_name:
-                        if hasattr(card, 'set_selected'):
-                            card.set_selected(True)
-                    else:
-                        if hasattr(card, 'set_selected'):
-                            card.set_selected(False)
-                            
-        # Force immediate layout update to avoid the delay in resizing
-        from PyQt5.QtWidgets import QApplication
-        QApplication.processEvents()
-        
+            # Add the main container to the list widget area
+            gallery.templates_list_widget.setWidget(container)
+            print(f"[DEBUG] List View: Added main container to grid")
+            
+        except Exception as e:
+            import traceback
+            print(f"Error populating templates list: {e}")
+            print(traceback.format_exc())
+
     @staticmethod
     def populate_templates_grid(gallery, templates_to_show):
         """Populate templates in grid view"""
@@ -496,6 +520,12 @@ class GalleryTemplatesSetup:
         gallery.template_grid_view_btn.setChecked(mode == "grid")
         gallery.template_list_view_btn.setChecked(mode == "list")
         
+        # Toggle visibility of the view widgets
+        if hasattr(gallery, 'templates_scroll'):
+            gallery.templates_scroll.setVisible(mode == "grid")
+        if hasattr(gallery, 'templates_list_widget'):
+            gallery.templates_list_widget.setVisible(mode == "list")
+        
         # Always force refresh the view when toggle button is pressed
         gallery.populate_gallery(force_refresh=True)
         
@@ -586,42 +616,27 @@ class GalleryTemplatesSetup:
 
     @staticmethod
     def create_template_list_item(gallery, template_data):
-        """Create a template list item for list view"""
-        from app.templates.components import TemplateListItem
-        
-        # Create list item
-        template_item = TemplateListItem(gallery, template=template_data, app=gallery.app)
-        
-        # Connect click handler
-        template_item.clicked.connect(lambda checked=False, t=template_data: 
-            gallery._on_template_select(t))
+        """Create a template list item for the given template data"""
+        try:
+            # Import directly from the components folder
+            from app.templates.components.template_list_item import TemplateListItem
             
-        # Connect multi-select handler if the gallery has the method
-        if hasattr(gallery, 'on_template_multi_select') and hasattr(template_item, 'multiSelectRequested'):
-            template_item.multiSelectRequested.connect(
-                lambda template, add: gallery.on_template_multi_select(template, add))
-        
-        # Connect double-click handler to edit template
-        template_item.doubleClicked.connect(lambda t_name=template_data.get('name', ''): 
-            handle_template_edit(gallery, t_name))
-        
-        # Connect context menu actions 
-        template_item.editRequested.connect(lambda t_name=template_data.get('name', ''): 
-            handle_template_edit(gallery, t_name))
-        template_item.deleteRequested.connect(lambda t_name=template_data.get('name', ''): 
-            GalleryEvents.on_delete_template(gallery, t_name))
-        
-        # Connect move to folder signal
-        template_item.moveToFolderRequested.connect(lambda t_name, folder_name, 
-            template_name=template_data.get('name', ''): 
-            GalleryEvents.on_move_template_to_folder(gallery, template_name, folder_name))
-        
-        # Connect multi-select handler if the gallery has the method
-        if hasattr(gallery, 'on_template_multi_select') and hasattr(template_item, 'multiSelectRequested'):
-            template_item.multiSelectRequested.connect(
-                lambda template, add: gallery.on_template_multi_select(template, add))
-        
-        # Add item to the list layout
-        gallery.template_cards.append(template_item)
-        
-        return template_item 
+            # Create the list item
+            list_item = TemplateListItem(template_data, gallery)
+            
+            # Connect basic signals if gallery has the handlers
+            if hasattr(gallery, '_on_template_select'):
+                list_item.clicked.connect(lambda checked=False, t=template_data: 
+                    gallery._on_template_select(t))
+            
+            # Also connect double-click handler if available
+            if hasattr(gallery, '_on_template_double_click'):
+                list_item.doubleClicked.connect(lambda t=template_data: 
+                    gallery._on_template_double_click(t))
+            
+            return list_item
+        except Exception as e:
+            # Provide a fallback in case of import errors
+            print(f"Error creating template list item: {e}")
+            from PyQt5.QtWidgets import QLabel
+            return QLabel(f"Template: {template_data.get('name', 'Unknown')}") 

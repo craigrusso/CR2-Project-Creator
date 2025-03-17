@@ -142,6 +142,9 @@ class ProjectCreatorApp(QMainWindow):
             }
         """)
         
+        # Set minimum window size to ensure all elements are visible
+        self.setMinimumSize(1000, 600)
+        
         # Add main horizontal splitter
         self.main_splitter = QSplitter(Qt.Horizontal)
         self.main_layout.addWidget(self.main_splitter)
@@ -247,7 +250,18 @@ class ProjectCreatorApp(QMainWindow):
         # Add panels to splitter
         self.main_splitter.addWidget(self.left_panel)
         self.main_splitter.addWidget(self.right_panel)
-        self.main_splitter.setSizes([300, 500])  # Initial sizes
+        
+        # Set minimum widths for panels to ensure they're always usable
+        self.left_panel.setMinimumWidth(280)
+        self.right_panel.setMinimumWidth(450)  # Ensure right panel buttons remain visible
+        
+        # Initial sizes
+        self.main_splitter.setSizes([300, 700])  
+        self.main_splitter.setHandleWidth(6)  # Standard handle width
+        
+        # Allow panels to be collapsed to their minimum size but not further
+        self.main_splitter.setCollapsible(0, True)
+        self.main_splitter.setCollapsible(1, True)
         
         # Apply initial config
         self._update_ui_from_config()
