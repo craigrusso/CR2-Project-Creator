@@ -267,6 +267,17 @@ class TemplateGallery(QWidget):
         if not hasattr(self, 'selected_template'):
             self.selected_template = None
         
+        # Set multi-selecting mode flag
+        self.is_multi_selecting = True
+        
+        # If we have a previously selected template and multi-selection is empty,
+        # always add the previous selection to multi-selection list (just like grid view)
+        if add_to_selection and self.selected_template and len(self.multi_selected_templates) == 0:
+            # Add previous selection to multi-selection list 
+            if self.selected_template not in self.multi_selected_templates:
+                self.multi_selected_templates.append(self.selected_template)
+                print(f"🔍 LISTENER: Adding previous primary selection to multi-selection")
+        
         # Use add_to_selection parameter to determine action instead of always toggling
         if add_to_selection:
             # Add to selection if not already there
@@ -290,13 +301,26 @@ class TemplateGallery(QWidget):
                     if hasattr(card, 'template') and card.template == template and hasattr(card, 'set_selected'):
                         card.set_selected(is_primary)
         
-        # Ensure the primary selection is also counted properly
-        if hasattr(self, 'selected_template') and self.selected_template:
-            # Make sure primary is properly highlighted
-            for card in self.template_cards:
-                if hasattr(card, 'template') and card.template == self.selected_template and hasattr(card, 'set_selected'):
-                    card.set_selected(True)
-                    print(f"🔍 LISTENER: Ensuring primary selection '{self.selected_template.get('name', 'Unknown')}' stays highlighted")
+        # Set this template as the primary selection
+        self.selected_template = template
+        print(f"🔍 LISTENER: Setting '{template_name}' as primary selection")
+        
+        # Update template item map for list view
+        if hasattr(self, 'template_item_map') and self.template_item_map:
+            # Update all list items to ensure consistent UI state
+            for item_name, list_item in self.template_item_map.items():
+                if not list_item or not hasattr(list_item, 'template'):
+                    continue
+                    
+                is_selected = list_item.template == self.selected_template
+                is_multi_selected = list_item.template in self.multi_selected_templates
+                
+                # Update selection states
+                if hasattr(list_item, 'setSelected'):
+                    list_item.setSelected(is_selected)
+                
+                if hasattr(list_item, 'setMultiSelected'):
+                    list_item.setMultiSelected(is_multi_selected)
         
         # Update multi-selection styling for all cards
         for card in self.template_cards:
