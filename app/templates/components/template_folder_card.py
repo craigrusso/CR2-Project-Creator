@@ -138,24 +138,47 @@ class TemplateFolderCard(QFrame):
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasText() or event.mimeData().hasFormat("application/json"):
+            text_data = event.mimeData().text() if event.mimeData().hasText() else "[json data]"
+            print(f"🔍 LISTENER: Drag entered folder '{self.folder_name}' with data: {text_data}")
             event.acceptProposedAction()
             self.hover = True
             self._update_styling()
 
     def dragLeaveEvent(self, event):
+        print(f"🔍 LISTENER: Drag left folder '{self.folder_name}'")
         self.hover = False
         self._update_styling()
 
     def dropEvent(self, event):
         if event.mimeData().hasText():
-            template_name = event.mimeData().text()
-            self.app.template_manager.move_template_to_folder(template_name, self.folder_name)
+            text_data = event.mimeData().text()
+            # Check if this contains multiple templates (newline or comma separated)
+            if '\n' in text_data:
+                template_names = text_data.strip().split('\n')
+                print(f"🔍 LISTENER: Dropped {len(template_names)} templates onto folder '{self.folder_name}': {', '.join(template_names)}")
+                
+                # Move each template to this folder
+                for template_name in template_names:
+                    if template_name.strip():  # Skip empty names
+                        print(f"🔍 LISTENER: Moving template '{template_name}' to folder '{self.folder_name}'")
+                        self.app.template_manager.move_template_to_folder(template_name, self.folder_name)
+                
+                # Show success message if available
+                if hasattr(self.app, 'show_status_message'):
+                    self.app.show_status_message(f"Moved {len(template_names)} templates to {self.folder_name}", "success")
+            else:
+                # Single template drop
+                template_name = text_data
+                print(f"🔍 LISTENER: Dropped single template '{template_name}' onto folder '{self.folder_name}'")
+                self.app.template_manager.move_template_to_folder(template_name, self.folder_name)
+            
             event.acceptProposedAction()
             self.hover = False
             self._update_styling()
             
             # Refresh the gallery to show the updated contents
             if hasattr(self.app, 'template_gallery') and self.app.template_gallery:
+                print(f"🔍 LISTENER: Refreshing gallery after drop onto folder '{self.folder_name}'")
                 self.app.template_gallery.populate_gallery(force_refresh=True)
 
     def mousePressEvent(self, event):
@@ -235,8 +258,34 @@ class TemplateFolderCard(QFrame):
 
     def contextMenuEvent(self, event):
         """Show context menu on right click"""
+        print(f"🔍 LISTENER: Opening context menu for folder '{self.folder_name}'")
         # Create context menu using our custom class
         context_menu = ContextMenu(self)
+        
+        # Check if we're in a folder view by finding the gallery parent
+        gallery = None
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'current_folder'):
+                gallery = parent
+                break
+            parent = parent.parent()
+            
+        # Add navigation options if we're inside a folder
+        if gallery and gallery.current_folder:
+            print(f"🔍 LISTENER: Context menu includes navigation options for folder '{gallery.current_folder}'")
+            # Add "Up a Level" action if in a nested folder
+            up_level_action = QAction("Up a Level", self)
+            up_level_action.triggered.connect(lambda: gallery._on_back_to_all())
+            context_menu.addAction(up_level_action)
+            
+            # Add "Go to Root" action
+            root_action = QAction("Go to Root", self)
+            root_action.triggered.connect(lambda: gallery._on_back_to_all())
+            context_menu.addAction(root_action)
+            
+            # Add separator
+            context_menu.addSeparator()
         
         # Add rename action
         rename_action = QAction("Rename", self)
@@ -442,8 +491,25 @@ class TemplateFolderListItem(QFrame):
     def dropEvent(self, event):
         """Handle drop event"""
         if event.mimeData().hasText():
-            template_name = event.mimeData().text()
-            self.app.template_manager.move_template_to_folder(template_name, self.folder_name)
+            text_data = event.mimeData().text()
+            # Check if this contains multiple templates (newline or comma separated)
+            if '\n' in text_data:
+                template_names = text_data.strip().split('\n')
+                print(f"[DEBUG] FolderListItem: Handling multi-template drop of {len(template_names)} templates to {self.folder_name}")
+                
+                # Move each template to this folder
+                for template_name in template_names:
+                    if template_name.strip():  # Skip empty names
+                        self.app.template_manager.move_template_to_folder(template_name, self.folder_name)
+                
+                # Show success message if available
+                if hasattr(self.app, 'show_status_message'):
+                    self.app.show_status_message(f"Moved {len(template_names)} templates to {self.folder_name}", "success")
+            else:
+                # Single template drop
+                template_name = text_data
+                self.app.template_manager.move_template_to_folder(template_name, self.folder_name)
+            
             event.acceptProposedAction()
             self.hover = False
             self._update_styling()
@@ -525,8 +591,34 @@ class TemplateFolderListItem(QFrame):
     
     def contextMenuEvent(self, event):
         """Show context menu on right click"""
+        print(f"🔍 LISTENER: Opening context menu for folder '{self.folder_name}'")
         # Create context menu using our custom class
         context_menu = ContextMenu(self)
+        
+        # Check if we're in a folder view by finding the gallery parent
+        gallery = None
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'current_folder'):
+                gallery = parent
+                break
+            parent = parent.parent()
+            
+        # Add navigation options if we're inside a folder
+        if gallery and gallery.current_folder:
+            print(f"🔍 LISTENER: Context menu includes navigation options for folder '{gallery.current_folder}'")
+            # Add "Up a Level" action if in a nested folder
+            up_level_action = QAction("Up a Level", self)
+            up_level_action.triggered.connect(lambda: gallery._on_back_to_all())
+            context_menu.addAction(up_level_action)
+            
+            # Add "Go to Root" action
+            root_action = QAction("Go to Root", self)
+            root_action.triggered.connect(lambda: gallery._on_back_to_all())
+            context_menu.addAction(root_action)
+            
+            # Add separator
+            context_menu.addSeparator()
         
         # Add rename action
         rename_action = QAction("Rename", self)

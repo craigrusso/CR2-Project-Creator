@@ -739,8 +739,13 @@ class ProjectCreatorApp(QMainWindow):
         
         output_dir = self.get_current_output_dir()
         if not output_dir:
-            missing_requirements.append("No output directory selected")
+            # Instead of adding it to missing requirements, directly prompt for selection
+            output_dir = self.get_output_dir()
+            if not output_dir:  # User cancelled the directory selection
+                self.show_status_message("Project creation cancelled - no output location selected", message_type="warning")
+                return
         
+        # Check if there's still any missing requirements
         if missing_requirements:
             QMessageBox.critical(
                 self, 

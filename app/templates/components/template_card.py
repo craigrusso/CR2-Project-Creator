@@ -2,9 +2,9 @@
 
 from PyQt5.QtWidgets import (
     QFrame, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QMenu, QAction, QMessageBox, 
-    QListWidget, QListWidgetItem, QAbstractItemView, QScrollArea, QSizePolicy
+    QListWidget, QListWidgetItem, QAbstractItemView, QScrollArea, QSizePolicy, QApplication
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QMimeData, QSize, QPoint, QRect
+from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QMimeData, QSize, QPoint, QRect, QByteArray, QTimer
 from PyQt5.QtGui import QPixmap, QFont, QDrag, QPainter, QColor, QBrush, QPen, QIcon, QCursor
 import os
 from .utils import SYSTEM_FONT
@@ -171,8 +171,216 @@ class TemplateCard(QFrame):
             return str(self.template)
 
     def mousePressEvent(self, event):
+        """Handle mouse press events for template selection"""
         if event.button() == Qt.LeftButton:
-            self.clicked.emit(self.template)
+            # Save mouse press position for potential drag operation
+            self.mouse_press_pos = event.pos()
+            self.mouse_is_pressed = True
+            
+            # Get keyboard modifiers for multi-selection
+            modifiers = QApplication.keyboardModifiers()
+            is_ctrl_or_cmd = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier))
+            is_shift = bool(modifiers & Qt.ShiftModifier)
+            
+            # Get gallery reference for multi-selection
+            gallery = None
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, 'multi_selected_templates'):
+                    gallery = parent
+                    break
+                parent = parent.parent()
+            
+            template_name = self.template.get('name', 'Unknown')
+            print(f"🔍 LISTENER: Template card clicked for template: {template_name}")
+            print(f"🔍 LISTENER: Modifiers value: {int(modifiers)}, is_multi_select: {is_ctrl_or_cmd or is_shift}")
+            
+            # Check if this card is already multi-selected
+            was_multi_selected = False
+            if gallery and hasattr(gallery, 'multi_selected_templates'):
+                was_multi_selected = self.template in gallery.multi_selected_templates
+                
+            # CRITICAL: Track if we're clicking on an already selected item in multi-selection
+            # This is key for allowing drag operations on multiple selections
+            self.clicking_multi_selected = was_multi_selected and len(gallery.multi_selected_templates) > 1
+            if self.clicking_multi_selected:
+                print(f"🔍 LISTENER: Clicking on already multi-selected item for potential drag")
+            
+            # Always ensure the card's state is updated for immediate visual feedback
+            self.set_selected(True)
+            
+            if gallery:
+                if is_ctrl_or_cmd:
+                    # Control/Command click - toggle multi-selection
+                    if hasattr(gallery, 'multi_selected_templates'):
+                        was_multi_selected = self.template in gallery.multi_selected_templates
+                        
+                        if was_multi_selected:
+                            # Remove from multi-selection
+                            gallery.multi_selected_templates.remove(self.template)
+                            print(f"🔍 LISTENER: Removing '{template_name}' from multi-selection")
+                        else:
+                            # Add to multi-selection
+                            gallery.multi_selected_templates.append(self.template)
+                            print(f"🔍 LISTENER: Adding '{template_name}' to multi-selection")
+                    
+                    # Add to primary selection WITHOUT clearing previous selections
+                    if hasattr(gallery, 'selected_template'):
+                        # Remember previous selection to maintain it in multi-selection
+                        prev_selection = gallery.selected_template
+                        
+                        # Only add previous selection to multi-selection if it's valid and not already there
+                        if prev_selection and prev_selection != self.template:
+                            if hasattr(gallery, 'multi_selected_templates') and prev_selection not in gallery.multi_selected_templates:
+                                gallery.multi_selected_templates.append(prev_selection)
+                                print(f"🔍 LISTENER: Adding previous primary selection to multi-selection")
+                        
+                        # Set new primary selection
+                        gallery.selected_template = self.template
+                        print(f"🔍 LISTENER: Setting '{template_name}' as primary selection")
+                        
+                        # Update app-level selected template if available
+                        if hasattr(gallery, 'app') and hasattr(gallery.app, 'selected_template'):
+                            gallery.app.selected_template = self.template
+                    
+                    # Mark that we're in multi-selection mode for the update
+                    if not hasattr(gallery, 'is_multi_selecting'):
+                        gallery.is_multi_selecting = True
+                    else:
+                        gallery.is_multi_selecting = True
+                        
+                    # Update styling for all cards EXCEPT don't deselect anything
+                    if hasattr(gallery, '_update_template_card_selection'):
+                        gallery._update_template_card_selection()
+                elif is_shift:
+                    # Shift click - select range
+                    if hasattr(gallery, 'selected_template') and gallery.selected_template:
+                        # Find the index of the last selected template
+                        last_selected_index = -1
+                        this_index = -1
+                        
+                        # Traverse the template_cards in gallery to find indexes
+                        if hasattr(gallery, 'template_cards'):
+                            for i, card in enumerate(gallery.template_cards):
+                                if hasattr(card, 'template'):
+                                    if card.template == gallery.selected_template:
+                                        last_selected_index = i
+                                    if card.template == self.template:
+                                        this_index = i
+                        
+                        # If we found both templates, select the range
+                        if last_selected_index >= 0 and this_index >= 0:
+                            start = min(last_selected_index, this_index)
+                            end = max(last_selected_index, this_index)
+                            
+                            # Initialize multi-selection list if needed
+                            if not hasattr(gallery, 'multi_selected_templates'):
+                                gallery.multi_selected_templates = []
+                            
+                            # Clear existing multi-selection
+                            gallery.multi_selected_templates.clear()
+                            
+                            # Add all templates in range to multi-selection
+                            for i in range(start, end + 1):
+                                if i < len(gallery.template_cards):
+                                    card = gallery.template_cards[i]
+                                    if hasattr(card, 'template'):
+                                        # Skip the primary selection to avoid duplicates
+                                        if card.template != gallery.selected_template:
+                                            gallery.multi_selected_templates.append(card.template)
+                                            
+                    # Set this template as the primary selection
+                    if hasattr(gallery, 'selected_template'):
+                        gallery.selected_template = self.template
+                        
+                        # Update app-level selected template if available
+                        if hasattr(gallery, 'app') and hasattr(gallery.app, 'selected_template'):
+                            gallery.app.selected_template = self.template
+                    
+                    # Mark that we're in multi-selection mode for the update
+                    if not hasattr(gallery, 'is_multi_selecting'):
+                        gallery.is_multi_selecting = True
+                    else:
+                        gallery.is_multi_selecting = True
+                        
+                    # Update all cards' visual state
+                    if hasattr(gallery, '_update_template_card_selection'):
+                        gallery._update_template_card_selection()
+                else:
+                    # Standard click - DON'T clear multi-selection yet in case this is start of drag
+                    # We'll handle clearing multi-selection in mouseReleaseEvent if this wasn't a drag
+                    
+                    # If clicking on a multi-selected item, don't clear yet - allow for drag operations
+                    if not self.clicking_multi_selected:
+                        # Only clear if not clicking on a multi-selected item
+                        if hasattr(gallery, 'is_multi_selecting'):
+                            gallery.is_multi_selecting = False
+                            
+                        # Set primary selection without clearing multi-selection yet
+                        if hasattr(gallery, 'selected_template'):
+                            gallery.selected_template = self.template
+                            
+                            # Update app-level selected template if available
+                            if hasattr(gallery, 'app') and hasattr(gallery.app, 'selected_template'):
+                                gallery.app.selected_template = self.template
+                                print(f"🔍 LISTENER: Updated app-level selected template to '{template_name}'")
+                        
+                        # Just visually highlight this card but don't clear others yet
+                        self.set_selected(True)
+                
+                # Emit clicked signal with template data
+                self.clicked.emit(self.template)
+            else:
+                # No gallery found, just emit the clicked signal
+                print(f"🔍 LISTENER: No gallery parent found, emitting clicked signal directly")
+                self.clicked.emit(self.template)
+                
+        # Let parent handle other button events
+        super().mousePressEvent(event)
+        
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release after click or drag"""
+        if event.button() == Qt.LeftButton:
+            # Calculate the drag distance
+            drag_occurred = False
+            if self.mouse_press_pos:
+                drag_distance = (event.pos() - self.mouse_press_pos).manhattanLength()
+                drag_occurred = drag_distance >= 5  # Common threshold for drag detection
+            
+            if not drag_occurred and not self.clicking_multi_selected:
+                # Only clear other selections if this was a genuine click (not drag)
+                # and not clicking on an already multi-selected item
+                
+                # Get gallery reference
+                gallery = None
+                parent = self.parent()
+                while parent:
+                    if hasattr(parent, 'multi_selected_templates'):
+                        gallery = parent
+                        break
+                    parent = parent.parent()
+                
+                # Get keyboard modifiers - maintain multi-selection if modifier is still pressed
+                modifiers = QApplication.keyboardModifiers()
+                is_ctrl_or_cmd = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier))
+                is_shift = bool(modifiers & Qt.ShiftModifier)
+                
+                # Only clear multi-selection if no modifiers are pressed
+                if not is_ctrl_or_cmd and not is_shift and gallery:
+                    if hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
+                        # Now clear multi-selection since this is a regular click
+                        gallery.multi_selected_templates.clear()
+                        print(f"🔍 LISTENER: Cleared multi-selection on mouse release")
+                    
+                    # Update all card styling
+                    if hasattr(gallery, '_update_template_card_selection'):
+                        gallery._update_template_card_selection()
+            
+            # Reset state variables
+            self.mouse_press_pos = None
+            self.clicking_multi_selected = False
+        
+        super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):
         """Handle double click to open template editor"""
@@ -182,12 +390,89 @@ class TemplateCard(QFrame):
 
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.LeftButton:
+            # Get gallery reference to check multi-selection
+            gallery = None
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, 'multi_selected_templates'):
+                    gallery = parent
+                    break
+                parent = parent.parent()
+            
+            # Calculate drag distance to ensure this is a drag, not a click
+            if hasattr(self, 'mouse_press_pos'):
+                drag_distance = (event.pos() - self.mouse_press_pos).manhattanLength()
+                if drag_distance < 5:  # Common threshold for drag detection
+                    return  # Not a drag yet
+            
+            # Prepare mime data for the drag operation
             mime_data = QMimeData()
-            mime_data.setText(self.template_name())
-
+            
+            # Check if we're part of a multi-selection
+            is_multi_drag = False
+            template_names = []
+            
+            if gallery and hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
+                # Check if this template is either the primary selection or in multi-selection
+                is_primary = hasattr(gallery, 'selected_template') and gallery.selected_template == self.template
+                is_in_multi = self.template in gallery.multi_selected_templates
+                
+                if is_primary or is_in_multi or getattr(self, 'clicking_multi_selected', False):
+                    # This is a multi-selection drag - include all selected templates
+                    is_multi_drag = True
+                    
+                    # Always include primary selection first if it exists
+                    if hasattr(gallery, 'selected_template') and gallery.selected_template:
+                        primary_name = gallery.selected_template.get('name', 'Unknown')
+                        if primary_name not in template_names:
+                            template_names.append(primary_name)
+                    
+                    # Then add all multi-selected templates
+                    for template in gallery.multi_selected_templates:
+                        name = template.get('name', 'Unknown')
+                        if name not in template_names:
+                            template_names.append(name)
+                    
+                    print(f"🔍 LISTENER: Multi-selection drag with {len(template_names)} templates: {template_names}")
+            
+            # If not a multi-selection drag, just use this template
+            if not is_multi_drag:
+                template_names = [self.template_name()]
+                print(f"🔍 LISTENER: Single template drag: {template_names[0]}")
+            
+            # Store data in mime data
+            mime_data.setText("\n".join(template_names))
+            # Add a custom MIME type to identify multi-template drag
+            if is_multi_drag:
+                mime_data.setData("application/x-template-multi-drag", QByteArray(str(len(template_names)).encode()))
+            
+            # Create drag object
             drag = QDrag(self)
             drag.setMimeData(mime_data)
-            drag.setPixmap(QPixmap(self.grab()))
+            
+            # Set appropriate pixmap based on selection count
+            if len(template_names) > 1:
+                # Create a special pixmap for multi-template drag
+                pixmap = QPixmap(self.size())
+                pixmap.fill(Qt.transparent)
+                painter = QPainter(pixmap)
+                painter.setOpacity(0.8)
+                painter.drawPixmap(0, 0, self.grab())
+                painter.setOpacity(1.0)
+                painter.setPen(QPen(QColor(colors["highlight_bg"]), 2))
+                painter.setBrush(QBrush(QColor(colors["highlight_bg"]).darker(150)))
+                painter.drawRect(QRect(10, 10, 30, 20))
+                painter.setPen(QPen(Qt.white))
+                painter.setFont(QFont(SYSTEM_FONT, 10, QFont.Bold))
+                painter.drawText(QRect(10, 10, 30, 20), Qt.AlignCenter, str(len(template_names)))
+                painter.end()
+                drag.setPixmap(pixmap)
+                drag.setHotSpot(QPoint(pixmap.width() // 2, pixmap.height() // 2))
+            else:
+                # Single template drag
+                drag.setPixmap(self.grab())
+            
+            # Execute drag
             drag.exec_(Qt.MoveAction)
             event.accept()
 
@@ -200,33 +485,77 @@ class TemplateCard(QFrame):
         self._update_styling()
 
     def set_selected(self, selected):
-        """Set the selected state of this card"""
-        print(f"⭐ TemplateCard.set_selected({selected}) called for {self.template_name()}")
-        
-        # Store previous state for debugging
-        was_selected = self.selected
-        
-        # Update the state
+        """Set the selection state of the card with immediate visual feedback"""
+        # Track previous state for comparison
+        prev_state = self.selected
         self.selected = selected
         
-        # Set property for styling
+        # Set property for stylesheet access
         self.setProperty("is_selected", selected)
         
-        # Visual feedback
-        self._update_styling()
+        # Always explicitly apply styling based on selection state
+        if selected:
+            # Selected styling - direct application for immediate feedback
+            style = f"""
+                QFrame {{
+                    background-color: {colors['highlight_bg']};
+                    border: none;
+                    border-radius: 6px;
+                }}
+            """
+            self.setStyleSheet(style)
+            
+            # Text colors
+            self.name_label.setStyleSheet("color: white; font-weight: bold; background-color: transparent;")
+            self.category_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
+            self.icon_label.setStyleSheet("color: white; background-color: transparent;")
+            
+            print(f"⭐ Applied SELECTED style to {self.template_name()}")
+        else:
+            # Update based on hover or default state
+            self._update_styling()
         
-        # Debug feedback
-        print(f"⭐ TemplateCard selection changed: {was_selected} -> {self.selected} for {self.template_name()}")
+        # Force style application immediately
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
+        
+        # Debug output to track selection changes
+        if prev_state != selected:
+            print(f"⭐ TemplateCard selection changed: {prev_state} -> {selected} for {self.template_name()}")
+        
+        return self.selected
 
     def _update_styling(self):
         """Update card styling based on selection and hover states"""
+        # Initialize multi_selected attribute if it doesn't exist
+        if not hasattr(self, 'multi_selected'):
+            self.multi_selected = False
+            
         # Debug output
         print(f"⭐ TemplateCard._update_styling() for {self.template_name()}, selected={self.selected}, hover={self.hover}")
         
-        # Store current selected state as a property on the widget itself
+        # Store current states as properties on the widget
         self.setProperty("is_selected", self.selected)
+        self.setProperty("is_multi_selected", getattr(self, 'multi_selected', False))
         
-        if self.selected:
+        # Priority: multi-selected > selected > hover > normal
+        if getattr(self, 'multi_selected', False):
+            # Multi-selected styling
+            self.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {colors['highlight_darker']};
+                    border: none;
+                    border-radius: 6px;
+                }}
+            """)
+            
+            # Text colors
+            self.name_label.setStyleSheet("color: white; font-weight: bold; background-color: transparent;")
+            self.category_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
+            self.icon_label.setStyleSheet("color: white; background-color: transparent;")
+            
+        elif self.selected:
             # Simple, high-contrast selection style for maximum visibility
             print(f"⭐ Applying SELECTED style to {self.template_name()}")
             
@@ -355,46 +684,325 @@ class TemplateCard(QFrame):
         if not self.app or not hasattr(self.app, 'template_manager'):
             return
             
-        template_name = self.template_name()
+        # Get gallery reference to check multi-selection
+        gallery = None
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'multi_selected_templates'):
+                gallery = parent
+                break
+            parent = parent.parent()
+            
+        # Check if we should be handling multiple templates
+        is_multi_selection = False
+        templates_to_move = []
+        
+        # Check if we're part of a multi-selection
+        if gallery and hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
+            # Check if this template is either the primary selection or in multi-selection
+            is_primary = hasattr(gallery, 'selected_template') and gallery.selected_template == self.template
+            is_in_multi = self.template in gallery.multi_selected_templates
+            
+            if is_primary or is_in_multi or getattr(self, 'clicking_multi_selected', False):
+                # This is a multi-selection operation - include all selected templates
+                is_multi_selection = True
+                
+                # Always include primary selection first if it exists
+                if hasattr(gallery, 'selected_template') and gallery.selected_template:
+                    primary_template = gallery.selected_template
+                    templates_to_move.append(primary_template)
+                    print(f"🔍 LISTENER: Adding primary selection to templates to move out of folder")
+                
+                # Then add all multi-selected templates (avoiding duplicates)
+                for template in gallery.multi_selected_templates:
+                    if template not in templates_to_move:
+                        templates_to_move.append(template)
+                        print(f"🔍 LISTENER: Adding multi-selected template to templates to move out of folder")
+        
+        # If not a multi-selection, just use this template
+        if not is_multi_selection:
+            templates_to_move = [self.template]
+            
+        # Count for message
+        count = len(templates_to_move)
+        print(f"🔍 LISTENER: Moving {count} templates out of folder '{current_folder}'")
+        
+        # Get template names for each template object
+        template_names = []
         template_manager = self.app.template_manager
         
-        # Remove template from the current folder
-        if hasattr(template_manager, 'folders') and current_folder in template_manager.folders:
-            if template_name in template_manager.folders[current_folder]:
-                template_manager.folders[current_folder].remove(template_name)
+        # Process each template
+        for template in templates_to_move:
+            if isinstance(template, dict):
+                template_name = template.get('name', 'Unknown')
+            else:
+                template_name = str(template)
                 
-                # Save folders
-                if hasattr(template_manager, 'save_folders'):
-                    template_manager.save_folders()
-                    
-                    # Hide this card immediately for visual feedback
-                    self.hide()
-                    
-                    # Refresh gallery if possible
-                    parent = self.parent()
-                    # List items may be in a different hierarchy
-                    if hasattr(parent, 'parent') and hasattr(parent.parent(), 'populate_gallery'):
-                        parent.parent().populate_gallery(force_refresh=True)
-                    elif hasattr(parent, 'populate_gallery'):
-                        parent.populate_gallery(force_refresh=True)
-                    
-                    # Show status message
-                    if hasattr(self.app, 'show_status_message'):
-                        self.app.show_status_message(f"Template '{template_name}' moved to root", "info")
+            template_names.append(template_name)
+            
+            # Remove template from the current folder
+            if hasattr(template_manager, 'folders') and current_folder in template_manager.folders:
+                if template_name in template_manager.folders[current_folder]:
+                    template_manager.folders[current_folder].remove(template_name)
+        
+        # Save changes to folders
+        if hasattr(template_manager, 'save_folders'):
+            template_manager.save_folders()
+        
+        # Show status message - BEFORE refreshing gallery to avoid visual jumping
+        if hasattr(self.app, 'show_status_message'):
+            if count > 1:
+                self.app.show_status_message(f"Moved {count} templates to root", "info")
+            else:
+                self.app.show_status_message(f"Template '{template_names[0]}' moved to root", "info")
+        
+        # IMPORTANT: Refresh gallery after ALL templates are moved
+        # Wait to refresh gallery until the end to ensure all templates are accounted for
+        QTimer.singleShot(50, lambda: self._refresh_gallery(gallery))
+
+    def _refresh_gallery(self, gallery=None):
+        """Helper method to refresh gallery properly after all operations"""
+        # If gallery was provided, use it directly
+        if gallery and hasattr(gallery, 'populate_gallery'):
+            print(f"🔍 LISTENER: Refreshing gallery using provided gallery reference")
+            gallery.populate_gallery(force_refresh=True)
+            return
+            
+        # Otherwise find parent gallery through hierarchy
+        parent = self.parent()
+        
+        # First try list items parent chain
+        if hasattr(parent, 'parent') and hasattr(parent.parent(), 'populate_gallery'):
+            print(f"🔍 LISTENER: Refreshing gallery through list item parent chain")
+            parent.parent().populate_gallery(force_refresh=True)
+        # Then try direct parent
+        elif hasattr(parent, 'populate_gallery'):
+            print(f"🔍 LISTENER: Refreshing gallery through direct parent")
+            parent.populate_gallery(force_refresh=True)
 
     def _move_to_folder_and_hide(self, folder_name):
-        """Move template to folder and hide it immediately for better visual feedback"""
-        template_name = self.template_name()
+        """Move template to folder and hide for immediate feedback"""
+        if not self.app or not hasattr(self.app, 'template_manager'):
+            return
+            
+        # Get gallery reference to check multi-selection
+        gallery = None
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'multi_selected_templates'):
+                gallery = parent
+                break
+            parent = parent.parent()
+            
+        # Check if we should be handling multiple templates
+        is_multi_selection = False
+        templates_to_move = []
         
-        # Emit the signal to actually move the template
-        self.moveToFolderRequested.emit(template_name, folder_name)
+        # Check if we're part of a multi-selection
+        if gallery and hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
+            # Check if this template is either the primary selection or in multi-selection
+            is_primary = hasattr(gallery, 'selected_template') and gallery.selected_template == self.template
+            is_in_multi = self.template in gallery.multi_selected_templates
+            
+            if is_primary or is_in_multi or getattr(self, 'clicking_multi_selected', False):
+                # This is a multi-selection operation - include all selected templates
+                is_multi_selection = True
+                
+                # Always include primary selection first if it exists
+                if hasattr(gallery, 'selected_template') and gallery.selected_template:
+                    primary_template = gallery.selected_template
+                    templates_to_move.append(primary_template)
+                    print(f"🔍 LISTENER: Adding primary selection to templates to move to folder '{folder_name}'")
+                
+                # Then add all multi-selected templates (avoiding duplicates)
+                for template in gallery.multi_selected_templates:
+                    if template not in templates_to_move:
+                        templates_to_move.append(template)
+                        print(f"🔍 LISTENER: Adding multi-selected template to templates to move to folder '{folder_name}'")
         
-        # Hide this card immediately for visual feedback
-        self.hide()
+        # If not a multi-selection, just use this template
+        if not is_multi_selection:
+            templates_to_move = [self.template]
+            
+        # Count for message
+        count = len(templates_to_move)
+        print(f"🔍 LISTENER: Moving {count} templates to folder '{folder_name}'")
         
-        # Show status message if possible
+        template_manager = self.app.template_manager
+        
+        # Process each template
+        template_names = []
+        for template in templates_to_move:
+            if isinstance(template, dict):
+                template_name = template.get('name', 'Unknown')
+            else:
+                template_name = str(template)
+                
+            template_names.append(template_name)
+            
+            # Move template to folder
+            template_manager.move_template_to_folder(template_name, folder_name)
+        
+        # If we're in list view, we don't hide immediately since the gallery refresh will handle visibility
+        if not isinstance(self, TemplateListItem):
+            # In grid view, hide this card for immediate feedback
+            self.hide()
+        
+        # Show status message - BEFORE refreshing gallery to avoid visual jumping
         if hasattr(self.app, 'show_status_message'):
-            self.app.show_status_message(f"Template '{template_name}' moved to folder '{folder_name}'", "info")
+            if count > 1:
+                self.app.show_status_message(f"Moved {count} templates to folder '{folder_name}'", "info")
+            else:
+                self.app.show_status_message(f"Template '{template_names[0]}' moved to folder '{folder_name}'", "info")
+        
+        # IMPORTANT: Refresh gallery after ALL templates are moved
+        # Wait to refresh gallery until the end to ensure all templates are accounted for
+        QTimer.singleShot(50, lambda: self._refresh_gallery(gallery))
+
+    def _delete_multi_selected(self, gallery):
+        """Delete all selected templates"""
+        if not gallery:
+            return
+        
+        # Print current selection states
+        if hasattr(gallery, 'selected_template') and gallery.selected_template:
+            print(f"🔍 LISTENER: Current primary selection: {gallery.selected_template.get('name', 'Unknown')}")
+        else:
+            print(f"🔍 LISTENER: No primary selection")
+            
+        if hasattr(gallery, 'multi_selected_templates'):
+            print(f"🔍 LISTENER: Current multi-selection: {[t.get('name', 'Unknown') for t in gallery.multi_selected_templates]}")
+        
+        # First, detect what we're deleting
+        has_primary = hasattr(gallery, 'selected_template') and gallery.selected_template is not None
+        has_multi = (hasattr(gallery, 'multi_selected_templates') and 
+                    gallery.multi_selected_templates and 
+                    len(gallery.multi_selected_templates) > 0)
+        
+        # If nothing to delete, exit
+        if not has_primary and not has_multi:
+            print(f"🔍 LISTENER: No templates selected for deletion")
+            return
+        
+        # Create a fresh set of templates to delete (using set for deduplication)
+        templates_to_delete_set = set()
+        templates_to_delete = []
+        
+        # ALWAYS include the primary selected template FIRST if it exists
+        if has_primary:
+            primary_name = gallery.selected_template.get('name', 'Unknown')
+            templates_to_delete.append(gallery.selected_template)
+            templates_to_delete_set.add(id(gallery.selected_template))  # Add object id to set for tracking
+            print(f"🔍 LISTENER: Including primary selected template in delete operation: {primary_name}")
+        
+        # Then add the multi-selected templates
+        if has_multi:
+            for template in gallery.multi_selected_templates:
+                template_id = id(template)
+                if template_id not in templates_to_delete_set:
+                    templates_to_delete.append(template)
+                    templates_to_delete_set.add(template_id)
+                    print(f"🔍 LISTENER: Adding multi-selected template to delete operation: {template.get('name', 'Unknown')}")
+        
+        # Verify total count matches expectations
+        expected_count = (1 if has_primary else 0) + (len(gallery.multi_selected_templates) if has_multi else 0)
+        actual_count = len(templates_to_delete)
+        print(f"🔍 LISTENER: Expected {expected_count} templates, found {actual_count} templates after deduplication")
+        
+        # If no templates to delete, exit
+        if not templates_to_delete:
+            print(f"🔍 LISTENER: No templates to delete after processing")
+            return
+        
+        # Get template names for display and deletion
+        template_names = []
+        for template in templates_to_delete:
+            if isinstance(template, dict) and 'name' in template:
+                name = template['name']
+            elif hasattr(template, 'get'):
+                name = template.get('name', 'Unknown')
+            elif isinstance(template, str):
+                name = template
+            else:
+                name = str(template)
+                
+            if name and name not in template_names:
+                template_names.append(name)
+                print(f"🔍 LISTENER: Template to delete: '{name}'")
+        
+        # If no valid template names, exit
+        if not template_names:
+            print(f"🔍 LISTENER: No valid template names found for deletion")
+            return
+            
+        print(f"🔍 LISTENER: Final delete list ({len(template_names)} templates): {template_names}")
+        
+        # Create confirmation message
+        if len(template_names) == 1:
+            message = f"Are you sure you want to delete template '{template_names[0]}'?"
+        else:
+            message = f"Are you sure you want to delete {len(template_names)} templates?"
+        
+        # Single confirmation for all templates
+        confirm = QMessageBox.question(
+            self,
+            "Confirm Delete",
+            message,
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if confirm == QMessageBox.Yes:
+            # Delete all templates in one operation
+            if hasattr(self.app, 'template_manager'):
+                for name in template_names:
+                    print(f"🔍 LISTENER: Deleting template '{name}'")
+                    self.app.template_manager.delete_template(name)
+            
+            # Show success message
+            if hasattr(self.app, 'show_status_message'):
+                if len(template_names) == 1:
+                    self.app.show_status_message(f"Deleted template '{template_names[0]}'", "success")
+                else:
+                    self.app.show_status_message(f"Deleted {len(template_names)} templates", "success")
+            
+            # Reset selections
+            if hasattr(gallery, 'selected_template'):
+                gallery.selected_template = None
+                
+            # Clear multi-selection
+            if hasattr(gallery, 'multi_selected_templates'):
+                gallery.multi_selected_templates.clear()
+                
+            # Refresh gallery
+            if hasattr(gallery, 'populate_gallery'):
+                gallery.populate_gallery(force_refresh=True)
+
+    def set_multi_selected(self, multi_selected):
+        """Set the multi-selection state of the card"""
+        self.multi_selected = multi_selected
+        print(f"🔍 LISTENER: Setting multi-selection state of '{self.template_name()}' to {multi_selected}")
+        
+        # Update styling based on multi-selection state
+        self._update_styling()
+        
+        # Force immediate update
+        self.update()
+        
+        # Apply direct styling for multi-selection state
+        if multi_selected:
+            self.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {colors['highlight_darker']};
+                    border: none;
+                    border-radius: 6px;
+                }}
+                QLabel {{
+                    color: white !important;
+                }}
+            """)
+            print(f"🔍 LISTENER: Applied multi-selected style to '{self.template_name()}'")
+        
+        return self.multi_selected
 
 class TemplateListItem(QFrame):
     """Template list item widget for displaying a template in list view"""
@@ -517,8 +1125,215 @@ class TemplateListItem(QFrame):
             return str(self.template)
     
     def mousePressEvent(self, event):
+        """Handle mouse press events for list items"""
         if event.button() == Qt.LeftButton:
-            self.clicked.emit(self.template)
+            # Save mouse press position and state
+            self.mouse_press_pos = event.pos()
+            self.mouse_is_pressed = True
+            
+            # Get gallery reference for multi-selection
+            gallery = None
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, 'multi_selected_templates'):
+                    gallery = parent
+                    break
+                parent = parent.parent()
+            
+            # Get keyboard modifiers for multi-selection
+            modifiers = QApplication.keyboardModifiers()
+            is_ctrl_or_cmd = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier))
+            is_shift = bool(modifiers & Qt.ShiftModifier)
+            
+            template_name = self.template.get('name', 'Unknown')
+            print(f"🔍 LISTENER: List item clicked for template: {template_name}")
+            print(f"🔍 LISTENER: List item - Modifiers value: {int(modifiers)}, is_multi_select: {is_ctrl_or_cmd or is_shift}")
+            
+            # Check if this item is already multi-selected
+            was_multi_selected = False
+            if gallery and hasattr(gallery, 'multi_selected_templates'):
+                was_multi_selected = self.template in gallery.multi_selected_templates
+                
+            # Track if we're clicking on an already selected item in multi-selection
+            self.clicking_multi_selected = was_multi_selected and len(gallery.multi_selected_templates) > 1
+            if self.clicking_multi_selected:
+                print(f"🔍 LISTENER: List item - Clicking on already multi-selected item for potential drag")
+            
+            # CRITICAL: Always ensure immediate visual feedback
+            self.set_selected(True)
+            
+            if gallery:
+                if is_ctrl_or_cmd:
+                    # Control/Command click - toggle multi-selection
+                    if hasattr(gallery, 'multi_selected_templates'):
+                        if self.template in gallery.multi_selected_templates:
+                            # Remove from multi-selection
+                            gallery.multi_selected_templates.remove(self.template)
+                            self.set_selected(False)
+                            print(f"🔍 LISTENER: List item - Removing from multi-selection")
+                        else:
+                            # Add to multi-selection
+                            gallery.multi_selected_templates.append(self.template)
+                            self.set_selected(True)
+                            print(f"🔍 LISTENER: List item - Adding to multi-selection")
+                    
+                    # Add to primary selection WITHOUT clearing previous selections
+                    if hasattr(gallery, 'selected_template'):
+                        # Remember previous selection to maintain it in multi-selection
+                        prev_selection = gallery.selected_template
+                        
+                        # Only add previous selection to multi-selection if it's valid and not already there
+                        if prev_selection and prev_selection != self.template:
+                            if hasattr(gallery, 'multi_selected_templates') and prev_selection not in gallery.multi_selected_templates:
+                                gallery.multi_selected_templates.append(prev_selection)
+                                print(f"🔍 LISTENER: List item - Adding previous selection to multi-selection")
+                        
+                        # Set as new primary selection
+                        gallery.selected_template = self.template
+                        print(f"🔍 LISTENER: List item - Setting as primary selection")
+                        
+                        # Also update in app if available
+                        if hasattr(gallery, 'app'):
+                            gallery.app.selected_template = self.template
+                    
+                    # Mark that we're in multi-selection mode for the update
+                    if not hasattr(gallery, 'is_multi_selecting'):
+                        gallery.is_multi_selecting = True
+                    else:
+                        gallery.is_multi_selecting = True
+                        
+                    # Update all cards via gallery
+                    if hasattr(gallery, '_update_template_card_selection'):
+                        gallery._update_template_card_selection()
+                elif is_shift:
+                    # Shift click - select range
+                    if hasattr(gallery, 'selected_template') and gallery.selected_template:
+                        # Find the index of the last selected template
+                        last_selected_index = -1
+                        this_index = -1
+                        
+                        # Traverse the template_cards in gallery to find indexes
+                        if hasattr(gallery, 'template_cards'):
+                            for i, card in enumerate(gallery.template_cards):
+                                if hasattr(card, 'template'):
+                                    if card.template == gallery.selected_template:
+                                        last_selected_index = i
+                                    if card.template == self.template:
+                                        this_index = i
+                        
+                        # If we found both templates, select the range
+                        if last_selected_index >= 0 and this_index >= 0:
+                            start = min(last_selected_index, this_index)
+                            end = max(last_selected_index, this_index)
+                            
+                            # Initialize multi-selection list if needed
+                            if not hasattr(gallery, 'multi_selected_templates'):
+                                gallery.multi_selected_templates = []
+                            
+                            # Clear existing multi-selection
+                            gallery.multi_selected_templates.clear()
+                            
+                            # Add all templates in range to multi-selection
+                            for i in range(start, end + 1):
+                                if i < len(gallery.template_cards):
+                                    card = gallery.template_cards[i]
+                                    if hasattr(card, 'template'):
+                                        # Skip the primary selection
+                                        if card.template != gallery.selected_template:
+                                            gallery.multi_selected_templates.append(card.template)
+                                            print(f"🔍 LISTENER: List item - Adding template to shift-selection range")
+                    
+                    # Set this template as the primary selection
+                    if hasattr(gallery, 'selected_template'):
+                        gallery.selected_template = self.template
+                        print(f"🔍 LISTENER: List item - Setting primary selection to '{self.template_name()}'")
+                        
+                        # Also update in app if available
+                        if hasattr(gallery, 'app'):
+                            gallery.app.selected_template = self.template
+                            
+                    # Mark that we're in multi-selection mode for the update
+                    if not hasattr(gallery, 'is_multi_selecting'):
+                        gallery.is_multi_selecting = True
+                    else:
+                        gallery.is_multi_selecting = True
+                            
+                    # Update all cards via gallery
+                    if hasattr(gallery, '_update_template_card_selection'):
+                        gallery._update_template_card_selection()
+                else:
+                    # Standard click - DON'T clear multi-selection yet in case this is start of drag
+                    # If clicking on a multi-selected item, preserve multi-selection for drag operations
+                    if not self.clicking_multi_selected:
+                        # Turn off multi-selection mode only if not clicking on a multi-selected item
+                        if hasattr(gallery, 'is_multi_selecting'):
+                            gallery.is_multi_selecting = False
+                        
+                        # Set primary selection without clearing multi-selection yet
+                        if hasattr(gallery, 'selected_template'):
+                            gallery.selected_template = self.template
+                            print(f"🔍 LISTENER: List item - Setting primary selection to '{self.template_name()}'")
+                            
+                            # Also update in app if available
+                            if hasattr(gallery, 'app'):
+                                gallery.app.selected_template = self.template
+                        
+                        # Just visually highlight this card without clearing others yet
+                        self.set_selected(True)
+                
+                # Always emit clicked signal with template data
+                self.clicked.emit(self.template)
+            else:
+                # No gallery found, just emit the clicked signal
+                self.clicked.emit(self.template)
+        
+        # Let parent handle other button events
+        super().mousePressEvent(event)
+    
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release after click or drag"""
+        if event.button() == Qt.LeftButton:
+            # Calculate the drag distance
+            drag_occurred = False
+            if hasattr(self, 'mouse_press_pos') and self.mouse_press_pos:
+                drag_distance = (event.pos() - self.mouse_press_pos).manhattanLength()
+                drag_occurred = drag_distance >= 5  # Common threshold for drag detection
+            
+            if not drag_occurred and not getattr(self, 'clicking_multi_selected', False):
+                # Only clear other selections if this was a genuine click (not drag)
+                # and not clicking on an already multi-selected item
+                
+                # Get gallery reference
+                gallery = None
+                parent = self.parent()
+                while parent:
+                    if hasattr(parent, 'multi_selected_templates'):
+                        gallery = parent
+                        break
+                    parent = parent.parent()
+                
+                # Get keyboard modifiers - maintain multi-selection if modifier is still pressed
+                modifiers = QApplication.keyboardModifiers()
+                is_ctrl_or_cmd = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier))
+                is_shift = bool(modifiers & Qt.ShiftModifier)
+                
+                # Only clear multi-selection if no modifiers are pressed
+                if not is_ctrl_or_cmd and not is_shift and gallery:
+                    if hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
+                        # Now clear multi-selection since this is a regular click
+                        gallery.multi_selected_templates.clear()
+                        print(f"🔍 LISTENER: List item - Cleared multi-selection on mouse release")
+                    
+                    # Update all card styling
+                    if hasattr(gallery, '_update_template_card_selection'):
+                        gallery._update_template_card_selection()
+            
+            # Reset state variables
+            if hasattr(self, 'mouse_press_pos'):
+                self.mouse_press_pos = None
+            self.clicking_multi_selected = False
+        
+        super().mouseReleaseEvent(event)
     
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -526,12 +1341,83 @@ class TemplateListItem(QFrame):
     
     def mouseMoveEvent(self, event):
         if event.buttons() & Qt.LeftButton:
-            mime_data = QMimeData()
-            mime_data.setText(self.template_name())
+            # Get gallery reference to check multi-selection
+            gallery = None
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, 'multi_selected_templates'):
+                    gallery = parent
+                    break
+                parent = parent.parent()
             
+            # Calculate drag distance to ensure this is a drag, not a click
+            if hasattr(self, 'mouse_press_pos'):
+                drag_distance = (event.pos() - self.mouse_press_pos).manhattanLength()
+                if drag_distance < 5:  # Common threshold for drag detection
+                    return  # Not a drag yet
+            
+            # Prepare mime data for the drag operation
+            mime_data = QMimeData()
+            
+            # Check if we're part of a multi-selection
+            is_multi_drag = False
+            template_names = []
+            
+            if gallery and hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
+                # Check if this template is either the primary selection or in multi-selection
+                is_primary = hasattr(gallery, 'selected_template') and gallery.selected_template == self.template
+                is_in_multi = self.template in gallery.multi_selected_templates
+                
+                if is_primary or is_in_multi or getattr(self, 'clicking_multi_selected', False):
+                    # This is a multi-selection drag - include all selected templates
+                    is_multi_drag = True
+                    
+                    # Always include primary selection first if it exists
+                    if hasattr(gallery, 'selected_template') and gallery.selected_template:
+                        primary_name = gallery.selected_template.get('name', 'Unknown')
+                        if primary_name not in template_names:
+                            template_names.append(primary_name)
+                    
+                    # Then add all multi-selected templates
+                    for template in gallery.multi_selected_templates:
+                        name = template.get('name', 'Unknown')
+                        if name not in template_names:
+                            template_names.append(name)
+                    
+                    print(f"🔍 LISTENER: List item - Multi-selection drag with {len(template_names)} templates: {template_names}")
+            
+            # If not a multi-selection drag, just use this template
+            if not is_multi_drag:
+                template_names = [self.template_name()]
+                print(f"🔍 LISTENER: List item - Single template drag: {template_names[0]}")
+            
+            # Store data in mime data
+            mime_data.setText("\n".join(template_names))
+            # Add a custom MIME type to identify multi-template drag
+            if is_multi_drag:
+                mime_data.setData("application/x-template-multi-drag", QByteArray(str(len(template_names)).encode()))
+            
+            # Create drag object
             drag = QDrag(self)
             drag.setMimeData(mime_data)
-            drag.setPixmap(QPixmap(self.grab()))
+            
+            # Set appropriate pixmap based on selection count
+            if len(template_names) > 1:
+                # Create a special pixmap for multi-template drag
+                pixmap = QPixmap(self.size())
+                pixmap.fill(Qt.transparent)
+                painter = QPainter(pixmap)
+                painter.setOpacity(0.8)
+                painter.drawPixmap(0, 0, self.grab())
+                painter.setOpacity(1.0)
+                painter.setPen(QPen(QColor(colors["highlight_bg"]), 2))
+                painter.setBrush(QBrush(QColor(colors["highlight_bg"]).darker(150)))
+                painter.drawRect(QRect(10, 5, 30, 20))
+                painter.setPen(QPen(Qt.white))
+                painter.setFont(QFont(SYSTEM_FONT, 10, QFont.Bold))
+                painter.drawText(QRect(10, 5, 30, 20), Qt.AlignCenter, str(len(template_names)))
+            
+            # Execute drag
             drag.exec_(Qt.MoveAction)
             event.accept()
     
@@ -544,8 +1430,47 @@ class TemplateListItem(QFrame):
         self._update_styling()
     
     def set_selected(self, selected):
+        """Set the selection state of the list item with immediate visual feedback"""
+        # Track previous state for comparison
+        prev_state = self.selected
         self.selected = selected
-        self._update_styling()
+        
+        # Debug output
+        print(f"🔍 LISTENER: List item '{self.template_name()}' - Set selected to {selected} (was {prev_state})")
+        
+        # Set property for stylesheet access
+        self.setProperty("is_selected", selected)
+        
+        # Apply styling immediately for consistent visual feedback
+        if selected:
+            # Selected style - high contrast for visibility
+            self.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {colors["highlight_bg"]};
+                    border: none;
+                    border-radius: 0px;
+                }}
+                QLabel {{
+                    color: white !important;
+                }}
+            """)
+            
+            # Ensure label colors are set explicitly
+            self.name_label.setStyleSheet(f"color: white; font-weight: bold; background: transparent;")
+            self.category_label.setStyleSheet(f"color: white; background: transparent;")
+            self.icon_label.setStyleSheet(f"color: white; background: transparent;")
+            
+            print(f"🔍 LISTENER: Applied selected style to list item '{self.template_name()}'")
+        else:
+            # Unselected - use normal styling based on hover state
+            self._update_styling()
+        
+        # Force style application immediately
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.update()
+        
+        return self.selected
     
     def _update_styling(self):
         """Update the styling based on current state - exactly match folder list item styling"""
@@ -591,7 +1516,7 @@ class TemplateListItem(QFrame):
             self.name_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
             self.category_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
             self.icon_label.setStyleSheet("background: transparent;")
-            
+        
         # Force immediate update
         self.update()
 
@@ -670,43 +1595,172 @@ class TemplateListItem(QFrame):
         if not self.app or not hasattr(self.app, 'template_manager'):
             return
             
-        template_name = self.template_name()
+        # Get gallery reference to check multi-selection
+        gallery = None
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'multi_selected_templates'):
+                gallery = parent
+                break
+            parent = parent.parent()
+            
+        # Check if we should be handling multiple templates
+        is_multi_selection = False
+        templates_to_move = []
+        
+        # Check if we're part of a multi-selection
+        if gallery and hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
+            # Check if this template is either the primary selection or in multi-selection
+            is_primary = hasattr(gallery, 'selected_template') and gallery.selected_template == self.template
+            is_in_multi = self.template in gallery.multi_selected_templates
+            
+            if is_primary or is_in_multi or getattr(self, 'clicking_multi_selected', False):
+                # This is a multi-selection operation - include all selected templates
+                is_multi_selection = True
+                
+                # Always include primary selection first if it exists
+                if hasattr(gallery, 'selected_template') and gallery.selected_template:
+                    primary_template = gallery.selected_template
+                    templates_to_move.append(primary_template)
+                    print(f"🔍 LISTENER: List item - Adding primary selection to templates to move out of folder")
+                
+                # Then add all multi-selected templates (avoiding duplicates)
+                for template in gallery.multi_selected_templates:
+                    if template not in templates_to_move:
+                        templates_to_move.append(template)
+                        print(f"🔍 LISTENER: List item - Adding multi-selected template to templates to move out of folder")
+        
+        # If not a multi-selection, just use this template
+        if not is_multi_selection:
+            templates_to_move = [self.template]
+            
+        # Count for message
+        count = len(templates_to_move)
+        print(f"🔍 LISTENER: List item - Moving {count} templates out of folder '{current_folder}'")
+        
+        # Get template names for each template object
+        template_names = []
         template_manager = self.app.template_manager
         
-        # Remove template from the current folder
-        if hasattr(template_manager, 'folders') and current_folder in template_manager.folders:
-            if template_name in template_manager.folders[current_folder]:
-                template_manager.folders[current_folder].remove(template_name)
+        # Process each template
+        for template in templates_to_move:
+            if isinstance(template, dict):
+                template_name = template.get('name', 'Unknown')
+            else:
+                template_name = str(template)
                 
-                # Save folders
-                if hasattr(template_manager, 'save_folders'):
-                    template_manager.save_folders()
-                    
-                    # Hide this card immediately for visual feedback
-                    self.hide()
-                    
-                    # Refresh gallery if possible
-                    parent = self.parent()
-                    # List items may be in a different hierarchy
-                    if hasattr(parent, 'parent') and hasattr(parent.parent(), 'populate_gallery'):
-                        parent.parent().populate_gallery(force_refresh=True)
-                    elif hasattr(parent, 'populate_gallery'):
-                        parent.populate_gallery(force_refresh=True)
-                    
-                    # Show status message
-                    if hasattr(self.app, 'show_status_message'):
-                        self.app.show_status_message(f"Template '{template_name}' moved to root", "info")
+            template_names.append(template_name)
+            
+            # Remove template from the current folder
+            if hasattr(template_manager, 'folders') and current_folder in template_manager.folders:
+                if template_name in template_manager.folders[current_folder]:
+                    template_manager.folders[current_folder].remove(template_name)
+        
+        # Save changes to folders
+        if hasattr(template_manager, 'save_folders'):
+            template_manager.save_folders()
+        
+        # Show status message - BEFORE refreshing gallery to avoid visual jumping
+        if hasattr(self.app, 'show_status_message'):
+            if count > 1:
+                self.app.show_status_message(f"Moved {count} templates to root", "info")
+            else:
+                self.app.show_status_message(f"Template '{template_names[0]}' moved to root", "info")
+        
+        # IMPORTANT: Refresh gallery after ALL templates are moved
+        # Wait to refresh gallery until the end to ensure all templates are accounted for
+        QTimer.singleShot(50, lambda: self._refresh_gallery(gallery))
+    
+    def _refresh_gallery(self, gallery=None):
+        """Helper method to refresh gallery properly after all operations"""
+        # If gallery was provided, use it directly
+        if gallery and hasattr(gallery, 'populate_gallery'):
+            print(f"🔍 LISTENER: List item - Refreshing gallery using provided gallery reference")
+            gallery.populate_gallery(force_refresh=True)
+            return
+            
+        # Otherwise find parent gallery through hierarchy
+        parent = self.parent()
+        
+        # First try list items parent chain
+        if hasattr(parent, 'parent') and hasattr(parent.parent(), 'populate_gallery'):
+            print(f"🔍 LISTENER: List item - Refreshing gallery through list item parent chain")
+            parent.parent().populate_gallery(force_refresh=True)
+        # Then try direct parent
+        elif hasattr(parent, 'populate_gallery'):
+            print(f"🔍 LISTENER: List item - Refreshing gallery through direct parent")
+            parent.populate_gallery(force_refresh=True)
 
     def _move_to_folder_and_hide(self, folder_name):
-        """Move template to folder and hide it immediately for better visual feedback"""
-        template_name = self.template_name()
+        """Move template to folder and hide for immediate feedback"""
+        if not self.app or not hasattr(self.app, 'template_manager'):
+            return
+            
+        # Get gallery reference to check multi-selection
+        gallery = None
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'multi_selected_templates'):
+                gallery = parent
+                break
+            parent = parent.parent()
+            
+        # Check if we should be handling multiple templates
+        is_multi_selection = False
+        templates_to_move = []
         
-        # Emit the signal to actually move the template
-        self.moveToFolderRequested.emit(template_name, folder_name)
+        # Check if we're part of a multi-selection
+        if gallery and hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
+            # Check if this template is either the primary selection or in multi-selection
+            is_primary = hasattr(gallery, 'selected_template') and gallery.selected_template == self.template
+            is_in_multi = self.template in gallery.multi_selected_templates
+            
+            if is_primary or is_in_multi or getattr(self, 'clicking_multi_selected', False):
+                # This is a multi-selection operation - include all selected templates
+                is_multi_selection = True
+                
+                # Always include primary selection first if it exists
+                if hasattr(gallery, 'selected_template') and gallery.selected_template:
+                    primary_template = gallery.selected_template
+                    templates_to_move.append(primary_template)
+                    print(f"🔍 LISTENER: List item - Adding primary selection to templates to move to folder '{folder_name}'")
+                
+                # Then add all multi-selected templates (avoiding duplicates)
+                for template in gallery.multi_selected_templates:
+                    if template not in templates_to_move:
+                        templates_to_move.append(template)
+                        print(f"🔍 LISTENER: List item - Adding multi-selected template to templates to move to folder '{folder_name}'")
         
-        # Hide this card immediately for visual feedback
-        self.hide()
+        # If not a multi-selection, just use this template
+        if not is_multi_selection:
+            templates_to_move = [self.template]
+            
+        # Count for message
+        count = len(templates_to_move)
+        print(f"🔍 LISTENER: List item - Moving {count} templates to folder '{folder_name}'")
         
-        # Show status message if possible
+        template_manager = self.app.template_manager
+        
+        # Process each template
+        template_names = []
+        for template in templates_to_move:
+            if isinstance(template, dict):
+                template_name = template.get('name', 'Unknown')
+            else:
+                template_name = str(template)
+                
+            template_names.append(template_name)
+            
+            # Move template to folder
+            template_manager.move_template_to_folder(template_name, folder_name)
+        
+        # Show status message - BEFORE refreshing gallery to avoid visual jumping
         if hasattr(self.app, 'show_status_message'):
-            self.app.show_status_message(f"Template '{template_name}' moved to folder '{folder_name}'", "info")
+            if count > 1:
+                self.app.show_status_message(f"Moved {count} templates to folder '{folder_name}'", "info")
+            else:
+                self.app.show_status_message(f"Template '{template_names[0]}' moved to folder '{folder_name}'", "info")
+        
+        # IMPORTANT: Refresh gallery after ALL templates are moved
+        # Wait to refresh gallery until the end to ensure all templates are accounted for
+        QTimer.singleShot(50, lambda: self._refresh_gallery(gallery))

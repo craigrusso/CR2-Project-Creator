@@ -241,12 +241,6 @@ def select_template_from_gallery(app, template):
         config["structure_template"] = name
         save_config(config)
         
-        # Update status message
-        if is_directory:
-            app.show_status_message(f"Selected directory template: {name}")
-        else:
-            app.show_status_message(f"Selected template: {name}")
-        
         # Highlight the selected template in gallery
         highlight_selected_template_in_gallery(app, template)
     except Exception as e:

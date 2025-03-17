@@ -19,7 +19,7 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushBut
                            QSlider, QButtonGroup, QToolButton, QLineEdit, QSplitter, QRadioButton, QStyle,
                            QDialog, QStackedWidget, QListWidgetItem, QListWidget, QTextEdit)
 from PyQt5.QtCore import (Qt, pyqtSignal, QSize, QPoint, QEvent, QMimeData, 
-                        QByteArray, QTimer, QObject)
+                        QByteArray, QTimer, QObject, QRect)
 from PyQt5.QtGui import QIcon, QFont, QColor, QPalette, QCursor, QDrag, QPixmap, QPainter, QFontMetrics
 
 from app.ui.color_scheme_pyqt import colors, get_color, BUTTON_STYLE, ACCENT_BUTTON_STYLE, LABEL_STYLE, COMBOBOX_STYLE
@@ -164,114 +164,110 @@ class TemplateFolderCard(QFrame):
 
     def dropEvent(self, event):
         """Handle when a template is dropped on the folder"""
-        print(f"[DEBUG] DropEvent: Processing drop event on folder '{self.folder_name}'")
-        template_name = None
-        template_data = None
-        
-        # Always accept the event immediately to ensure it is processed
-        event.accept()
-        
-        # First try to get JSON data for complete template info
-        if event.mimeData().hasFormat("application/json"):
-            data = event.mimeData().data("application/json")
-            try:
-                print(f"[DEBUG] DropEvent: JSON data found in drop event")
-                template_data_str = bytes(data).decode()
-                template_data = json.loads(template_data_str)
-                template_name = template_data.get('name', '')
-                print(f"[DEBUG] DropEvent: Extracted template name from JSON: '{template_name}'")
-            except Exception as e:
-                print(f"[DEBUG] DropEvent: Error parsing template data: {e}")
-        
-        # Fallback to text data which should contain the template name
-        if not template_name and event.mimeData().hasText():
-            template_name = event.mimeData().text()
-            print(f"[DEBUG] DropEvent: Extracted template name from text: '{template_name}'")
-        
-        # Process the drop if we have a template name
-        if template_name:
-            # Use a direct approach that doesn't rely on multiple method calls
-            try:
-                # Get the template
-                print(f"[DEBUG] DropEvent: Working with template '{template_name}'")
-                template_manager = self.app.template_manager
-                template = template_manager.get_template_by_name(template_name)
+        try:
+            # Extract template name from the drag data
+            mime_data = event.mimeData()
+            if mime_data.hasText():
+                text_data = mime_data.text()
                 
-                if template:
-                    # Get the real template name
-                    actual_template_name = template.get('name', template_name)
-                    print(f"[DEBUG] DropEvent: Using real template name: '{actual_template_name}'")
+                # Check if this contains multiple templates (newline-separated)
+                has_multi_data = '\n' in text_data
+                is_multi_drag = has_multi_data or mime_data.hasFormat("application/x-template-multi-drag")
+                
+                if is_multi_drag and has_multi_data:
+                    # This is a drop of multiple templates
+                    template_names = text_data.strip().split('\n')
+                    template_count = len(template_names)
+                    print(f"[DEBUG] Card: Handling multi-template drop of {template_count} templates")
                     
-                    # Move the template directly
-                    result = template_manager.move_template_to_folder(actual_template_name, self.folder_name)
+                    # Move each template to this folder
+                    for template_name in template_names:
+                        if template_name.strip():  # Skip empty names
+                            self._add_template_to_folder(template_name)
+                    
+                    # Show success message
+                    if hasattr(self.app, 'show_status_message'):
+                        self.app.show_status_message(f"Added {template_count} templates to folder '{self.folder_name}'", "info")
+                    
+                    # Refresh the gallery
+                    if hasattr(self.parent(), 'populate_gallery'):
+                        self.parent().populate_gallery(force_refresh=True)
+                        
+                    event.acceptProposedAction()
+                    return True
+                else:
+                    # Single template drop
+                    template_name = text_data
+                    result = self._add_template_to_folder(template_name)
                     
                     if result:
-                        print(f"[DEBUG] DropEvent: Successfully moved template to folder")
-                        # Show success message
+                        print(f"[DEBUG] Card: Successfully moved template")
+                        # Show success message in status bar instead of popup
                         if hasattr(self.app, 'show_status_message'):
-                            self.app.show_status_message(f"Template '{actual_template_name}' added to folder '{self.folder_name}'", "info")
+                            print(f"[DEBUG] Card: Showing status message")
+                            self.app.show_status_message(f"Template '{template_name}' added to folder '{self.folder_name}'", "info")
+                        else:
+                            # Fallback if status bar method not available
+                            print(f"[DEBUG] Card: Status message method not available")
+                            print(f"Template '{template_name}' added to folder '{self.folder_name}'")
                         
-                        # Force refresh the gallery
+                        # Refresh the gallery to make the template disappear from the current view
+                        print(f"[DEBUG] Card: Refreshing gallery")
                         if hasattr(self.parent(), 'populate_gallery'):
+                            # Force a complete refresh when adding templates to folders
                             self.parent().populate_gallery(force_refresh=True)
                     else:
-                        print(f"[DEBUG] DropEvent: Failed to move template to folder")
-                else:
-                    print(f"[DEBUG] DropEvent: Template not found: '{template_name}'")
-            except Exception as e:
-                print(f"[DEBUG] DropEvent: Error processing drop: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            print(f"[DEBUG] DropEvent: No template name found in drop data")
+                        print(f"[DEBUG] Card: Failed to move template")
+                    
+                    event.acceptProposedAction()
+                    return result
+        except Exception as e:
+            print(f"[DEBUG] Card: Error in drop event: {e}")
+            import traceback
+            traceback.print_exc()
         
-        # Reset styling
-        self._update_styling()
-        # Always accept the event to prevent UI issues
-        event.acceptProposedAction()
-    
+        event.ignore()
+        return False
+        
     def _add_template_to_folder(self, template_name):
         """Add a template to this folder"""
-        if not template_name or not self.app:
-            print(f"[DEBUG] Card: Invalid template name or app: {template_name}")
-            return
-            
         try:
-            # Check if template exists
-            print(f"[DEBUG] Card: Trying to add template '{template_name}' to folder '{self.folder_name}'")
-            template = self.app.template_manager.get_template_by_name(template_name)
-            if not template:
-                print(f"[DEBUG] Card: Template not found: {template_name}")
+            # Determine actual template name (handle special prefix case)
+            actual_template_name = template_name
+            if ">" in template_name:
+                parts = template_name.split(">", 1)
+                if len(parts) > 1:
+                    # Get the actual template name part
+                    actual_template_name = parts[1].strip()
+            
+            print(f"[DEBUG] Card: Adding template '{actual_template_name}' to folder '{self.folder_name}'")
+            
+            # Find the template manager
+            if not hasattr(self.app, 'template_manager'):
+                print("[DEBUG] Card: No template manager available")
                 return False
                 
-            # Make sure we're using the exact template name from the template object
-            actual_template_name = template.get('name', template_name)
-            print(f"[DEBUG] Card: Using actual template name: {actual_template_name}")
-            
-            # Move template to folder (this will remove it from other folders)
-            print(f"[DEBUG] Card: Moving template to folder")
-            result = self.app.template_manager.move_template_to_folder(actual_template_name, self.folder_name)
-            
-            if result:
-                print(f"[DEBUG] Card: Successfully moved template")
-                # Show success message in status bar instead of popup
-                if hasattr(self.app, 'show_status_message'):
-                    print(f"[DEBUG] Card: Showing status message")
-                    self.app.show_status_message(f"Template '{actual_template_name}' added to folder '{self.folder_name}'", "info")
-                else:
-                    # Fallback if status bar method not available
-                    print(f"[DEBUG] Card: Status message method not available")
-                    print(f"Template '{actual_template_name}' added to folder '{self.folder_name}'")
+            # Get the folder dictionary
+            if not hasattr(self.app.template_manager, 'folders'):
+                print("[DEBUG] Card: No folders dictionary available")
+                return False
                 
-                # Refresh the gallery to make the template disappear from the current view
-                print(f"[DEBUG] Card: Refreshing gallery")
-                if hasattr(self.parent(), 'populate_gallery'):
-                    # Force a complete refresh when adding templates to folders
-                    self.parent().populate_gallery(force_refresh=True)
+            # Get or create the folder entry
+            if self.folder_name not in self.app.template_manager.folders:
+                self.app.template_manager.folders[self.folder_name] = []
+                
+            # Add the template to the folder if not already there
+            if actual_template_name not in self.app.template_manager.folders[self.folder_name]:
+                self.app.template_manager.folders[self.folder_name].append(actual_template_name)
+                
+                # Save the folders data
+                if hasattr(self.app.template_manager, 'save_folders'):
+                    self.app.template_manager.save_folders()
+                    
+                return True
             else:
-                print(f"[DEBUG] Card: Failed to move template")
-            
-            return result
+                print(f"[DEBUG] Card: Template '{actual_template_name}' already in folder '{self.folder_name}'")
+                return False
         except Exception as e:
             print(f"[DEBUG] Card: Error adding template to folder: {e}")
             return False
@@ -653,112 +649,114 @@ class TemplateFolderListItem(QFrame):
         event.accept()
 
     def dropEvent(self, event):
-        """Handle when a template is dropped on the folder"""
-        print(f"[DEBUG] DropEvent: Processing drop event on folder list item '{self.folder_name}'")
-        template_name = None
-        template_data = None
-        
-        # Always accept the event immediately to ensure it is processed
-        event.accept()
-        
-        # First try to get JSON data for complete template info
-        if event.mimeData().hasFormat("application/json"):
-            data = event.mimeData().data("application/json")
-            try:
-                print(f"[DEBUG] DropEvent: JSON data found in drop event")
-                template_data_str = bytes(data).decode()
-                template_data = json.loads(template_data_str)
-                template_name = template_data.get('name', '')
-                print(f"[DEBUG] DropEvent: Extracted template name from JSON: '{template_name}'")
-            except Exception as e:
-                print(f"[DEBUG] DropEvent: Error parsing template data: {e}")
-        
-        # Fallback to text data which should contain the template name
-        if not template_name and event.mimeData().hasText():
-            template_name = event.mimeData().text()
-            print(f"[DEBUG] DropEvent: Extracted template name from text: '{template_name}'")
-        
-        # Process the drop if we have a template name
-        if template_name:
-            # Use a direct approach that doesn't rely on multiple method calls
-            try:
-                # Get the template
-                print(f"[DEBUG] DropEvent: Working with template '{template_name}'")
-                template_manager = self.app.template_manager
-                template = template_manager.get_template_by_name(template_name)
+        """Handle when a template is dropped on the folder list item"""
+        try:
+            # Extract template name from the drag data
+            mime_data = event.mimeData()
+            if mime_data.hasText():
+                text_data = mime_data.text()
                 
-                if template:
-                    # Get the real template name
-                    actual_template_name = template.get('name', template_name)
-                    print(f"[DEBUG] DropEvent: Using real template name: '{actual_template_name}'")
+                # Check if this contains multiple templates (newline-separated)
+                has_multi_data = '\n' in text_data
+                is_multi_drag = has_multi_data or mime_data.hasFormat("application/x-template-multi-drag")
+                
+                if is_multi_drag and has_multi_data:
+                    # This is a drop of multiple templates
+                    template_names = text_data.strip().split('\n')
+                    template_count = len(template_names)
+                    print(f"[DEBUG] ListItem: Handling multi-template drop of {template_count} templates")
                     
-                    # Move the template directly
-                    result = template_manager.move_template_to_folder(actual_template_name, self.folder_name)
+                    # Move each template to this folder
+                    for template_name in template_names:
+                        if template_name.strip():  # Skip empty names
+                            self._add_template_to_folder(template_name)
+                    
+                    # Show success message
+                    if hasattr(self.app, 'show_status_message'):
+                        self.app.show_status_message(f"Added {template_count} templates to folder '{self.folder_name}'", "info")
+                    
+                    # Refresh the gallery
+                    if hasattr(self.parent().parent(), 'populate_gallery'):
+                        self.parent().parent().populate_gallery(force_refresh=True)
+                        
+                    event.acceptProposedAction()
+                    return True
+                else:
+                    # Single template drop
+                    template_name = text_data
+                    result = self._add_template_to_folder(template_name)
                     
                     if result:
-                        print(f"[DEBUG] DropEvent: Successfully moved template to folder")
-                        # Show success message
+                        print(f"[DEBUG] ListItem: Successfully moved template")
+                        # Show status message instead of popup
                         if hasattr(self.app, 'show_status_message'):
-                            self.app.show_status_message(f"Template '{actual_template_name}' added to folder '{self.folder_name}'", "info")
+                            print(f"[DEBUG] ListItem: Showing status message")
+                            self.app.show_status_message(f"Template '{template_name}' added to folder '{self.folder_name}'", "info")
+                        else:
+                            # Fallback if status bar method not available
+                            print(f"[DEBUG] ListItem: Status message method not available")
+                            print(f"Template '{template_name}' added to folder '{self.folder_name}'")
                         
-                        # Force refresh the gallery
-                        if hasattr(self.parent(), 'parent') and hasattr(self.parent().parent(), 'populate_gallery'):
+                        # Refresh the gallery to make the template disappear from current view
+                        print(f"[DEBUG] ListItem: Refreshing gallery")
+                        if hasattr(self.parent().parent(), 'populate_gallery'):
+                            # Force a complete refresh when adding templates to folders
                             self.parent().parent().populate_gallery(force_refresh=True)
                     else:
-                        print(f"[DEBUG] DropEvent: Failed to move template to folder")
-                else:
-                    print(f"[DEBUG] DropEvent: Template not found: '{template_name}'")
-            except Exception as e:
-                print(f"[DEBUG] DropEvent: Error processing drop: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            print(f"[DEBUG] DropEvent: No template name found in drop data")
+                        print(f"[DEBUG] ListItem: Failed to move template")
+                        
+                    event.acceptProposedAction()
+                    return result
+        except Exception as e:
+            print(f"[DEBUG] ListItem: Error in drop event: {e}")
+            import traceback
+            traceback.print_exc()
+            
+        event.ignore()
+        return False
         
-        # Reset styling
-        self._update_styling()
-        # Always accept the event to prevent UI issues
-        event.acceptProposedAction()
-    
     def _add_template_to_folder(self, template_name):
-        """Add the template to this folder"""
-        if not self.app or not hasattr(self.app, 'template_manager'):
-            print(f"[DEBUG] ListItem: Invalid app or template_manager")
-            return
+        """Add a template to this folder"""
+        try:
+            # Determine actual template name (handle special prefix case)
+            actual_template_name = template_name
+            if ">" in template_name:
+                parts = template_name.split(">", 1)
+                if len(parts) > 1:
+                    # Get the actual template name part
+                    actual_template_name = parts[1].strip()
             
-        # Get the template
-        print(f"[DEBUG] ListItem: Trying to add template '{template_name}' to folder '{self.folder_name}'")
-        template = self.app.template_manager.get_template_by_name(template_name)
-        if not template:
-            print(f"[DEBUG] ListItem: Template not found: {template_name}")
-            return
+            print(f"[DEBUG] ListItem: Adding template '{actual_template_name}' to folder '{self.folder_name}'")
             
-        # Make sure we're using the exact template name from the template object
-        actual_template_name = template.get('name', template_name)
-        print(f"[DEBUG] ListItem: Using actual template name: {actual_template_name}")
-        
-        # Move template to folder (this will remove it from other folders)
-        print(f"[DEBUG] ListItem: Moving template to folder")
-        result = self.app.template_manager.move_template_to_folder(actual_template_name, self.folder_name)
-        
-        if result:
-            print(f"[DEBUG] ListItem: Successfully moved template")
-            # Show status message instead of popup
-            if hasattr(self.app, 'show_status_message'):
-                print(f"[DEBUG] ListItem: Showing status message")
-                self.app.show_status_message(f"Template '{actual_template_name}' added to folder '{self.folder_name}'", "info")
+            # Find the template manager
+            if not hasattr(self.app, 'template_manager'):
+                print("[DEBUG] ListItem: No template manager available")
+                return False
+                
+            # Get the folder dictionary
+            if not hasattr(self.app.template_manager, 'folders'):
+                print("[DEBUG] ListItem: No folders dictionary available")
+                return False
+                
+            # Get or create the folder entry
+            if self.folder_name not in self.app.template_manager.folders:
+                self.app.template_manager.folders[self.folder_name] = []
+                
+            # Add the template to the folder if not already there
+            if actual_template_name not in self.app.template_manager.folders[self.folder_name]:
+                self.app.template_manager.folders[self.folder_name].append(actual_template_name)
+                
+                # Save the folders data
+                if hasattr(self.app.template_manager, 'save_folders'):
+                    self.app.template_manager.save_folders()
+                    
+                return True
             else:
-                # Fallback if status bar method not available
-                print(f"[DEBUG] ListItem: Status message method not available")
-                print(f"Template '{actual_template_name}' added to folder '{self.folder_name}'")
-            
-            # Refresh the gallery to make the template disappear from current view
-            print(f"[DEBUG] ListItem: Refreshing gallery")
-            if hasattr(self.parent(), 'parent') and hasattr(self.parent().parent(), 'populate_gallery'):
-                # Force a complete refresh when adding templates to folders
-                self.parent().parent().populate_gallery(force_refresh=True)
-        else:
-            print(f"[DEBUG] ListItem: Failed to move template")
+                print(f"[DEBUG] ListItem: Template '{actual_template_name}' already in folder '{self.folder_name}'")
+                return False
+        except Exception as e:
+            print(f"[DEBUG] ListItem: Error adding template to folder: {e}")
+            return False
     
     def eventFilter(self, obj, event):
         """Filter events for mouse hover only now"""
@@ -2176,7 +2174,7 @@ def select_template_from_gallery(app, template):
     add_to_recent_templates(app, template)
     
     # Show template details in the app UI
-    app.show_status_message(f"Template selected: {template.get('name', 'Unnamed')}")
+    # Status message removed - visual highlight is sufficient
 
 # Add unit test section at the end of the file
 if __name__ == "__main__":

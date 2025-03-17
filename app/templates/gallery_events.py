@@ -76,39 +76,64 @@ class GalleryEvents:
     def on_template_select(gallery, template):
         """Handle template selection"""
         # Debug output
-        print(f"on_template_select called with template: {template}")
+        template_name = template.get('name', 'Unknown')
+        print(f"🔍 LISTENER: Template selection event for '{template_name}'")
         
         # Check if this is the same template as already selected
         if hasattr(gallery, 'selected_template') and gallery.selected_template == template:
-            # If clicking the same template again, don't do anything
-            print("Same template selected, no change needed")
+            # If clicking the same template again, make sure its highlighted state is correct
+            print(f"🔍 LISTENER: Same template already selected, ensuring highlight is correct")
+            
+            # Update card styling for this template to ensure it's highlighted
+            if hasattr(gallery, 'template_cards') and gallery.template_cards:
+                for card in gallery.template_cards:
+                    if hasattr(card, 'template') and hasattr(card, 'set_selected'):
+                        if card.template == template:
+                            card.set_selected(True)
+                            print(f"🔍 LISTENER: Re-applied highlight to selected template '{template_name}'")
+                        else:
+                            # Ensure other items are not selected
+                            card.set_selected(False)
             return
             
-        # Set the selected template in multiple places to ensure consistency
+        # Set the selected template in gallery state
         gallery.selected_template = template
         
         # Also ensure it's set in the app object if available
         if hasattr(gallery, 'app'):
             gallery.app.selected_template = template
-            print("App-level selected_template has been updated")
+            print(f"🔍 LISTENER: Updated app-level selected template to '{template_name}'")
         
         gallery.selected_folder = None  # Reset folder selection
-        print(f"Selected template set to: {template}")
+        print(f"🔍 LISTENER: Template selection set to '{template_name}'")
         
-        # Update card styling for all cards
+        # Clear any multi-selection
+        if hasattr(gallery, 'multi_selected_templates'):
+            # Temporarily store multi-selection to deselect items
+            items_to_deselect = gallery.multi_selected_templates.copy()
+            gallery.multi_selected_templates.clear()
+            
+            # Manually update styling for previously multi-selected items
+            if hasattr(gallery, 'template_cards'):
+                for card in gallery.template_cards:
+                    if hasattr(card, 'template') and card.template in items_to_deselect:
+                        if hasattr(card, 'set_multi_selected'):
+                            card.set_multi_selected(False)
+        
+        # Update card styling for all cards - proper highlighting
         if hasattr(gallery, 'template_cards') and gallery.template_cards:
             card_count = len(gallery.template_cards)
-            print(f"Updating card styling for {card_count} cards")
+            print(f"🔍 LISTENER: Updating styling for {card_count} template cards")
+            
             for card in gallery.template_cards:
-                if hasattr(card, 'template') and card.template == template:
-                    print(f"Setting card selected for template: {template}")
-                    card.set_selected(True)
-                else:
-                    card.set_selected(False)
-        
-        # Also ensure the template selection state is reapplied after grid repopulation
-        # by forcing a gallery refresh
-        gallery.populate_gallery(force_refresh=False)  # No need to reload data, just refresh UI
+                if hasattr(card, 'template') and hasattr(card, 'set_selected'):
+                    # Highlight only the currently selected template
+                    is_selected = (card.template == template)
+                    card.set_selected(is_selected)
+                    if is_selected:
+                        print(f"🔍 LISTENER: Setting {card.template_name()} selection state to TRUE")
+                    else:
+                        print(f"🔍 LISTENER: Setting {card.template_name()} selection state to FALSE")
         
         # Emit template selected event if using PyQt
         if hasattr(gallery, 'template_selected'):
@@ -117,22 +142,19 @@ class GalleryEvents:
     @staticmethod
     def on_folder_select(gallery, folder_name):
         """Handle folder selection"""
-        if hasattr(gallery, 'selected_folder') and gallery.selected_folder == folder_name:
-            # If clicking the same folder again, don't do anything
-            return
-            
+        print(f"🔍 LISTENER: Folder selection event for '{folder_name}'")
+        
+        # Update gallery state
         gallery.selected_folder = folder_name
         gallery.selected_template = None  # Reset template selection
         
-        # Update button states (removal of delete folder button)
-        
-        # Update card styling for folders
+        # Update folder card styling
         for card in gallery.folder_cards:
-            if hasattr(card, 'folder_name') and card.folder_name == folder_name:
-                card.set_selected(True)
-            else:
-                card.set_selected(False)
+            if hasattr(card, 'folder_name') and hasattr(card, 'set_selected'):
+                card.set_selected(card.folder_name == folder_name)
                 
+        print(f"🔍 LISTENER: Folder selection set to '{folder_name}'")
+        
         # Update card styling for templates - none selected
         for card in gallery.template_cards:
             card.set_selected(False)
@@ -142,36 +164,51 @@ class GalleryEvents:
     
     @staticmethod
     def on_folder_enter(gallery, folder_name):
-        """Handle folder double-click/enter"""
-        # Set the current folder and refresh the view
+        """Handle entering a folder"""
+        print(f"🔍 LISTENER: Entering folder '{folder_name}'")
+        
+        # Update gallery state
         gallery.current_folder = folder_name
+        gallery.selected_template = None
+        gallery.selected_folder = None
         
-        # Update the folder label
-        gallery.folder_label.setText(f"Current Folder: {folder_name}")
+        # Update UI and populate templates in this folder
+        gallery.populate_gallery(force_refresh=True)
         
-        # Show the folder navigation bar
-        gallery.folder_nav.setVisible(True)
-        
-        # Hide the folders section
-        gallery.folders_section.setVisible(False)
-        
-        # Refresh to show only templates in this folder
-        gallery.populate_gallery()
+        # Update breadcrumb
+        if hasattr(gallery, 'breadcrumb_label'):
+            gallery.breadcrumb_label.setText(f"Folder: {folder_name}")
+            gallery.breadcrumb_label.show()
+            
+        # Show back button
+        if hasattr(gallery, 'back_button'):
+            gallery.back_button.setVisible(True)
+            
+        print(f"🔍 LISTENER: Successfully entered folder '{folder_name}'")
     
     @staticmethod
     def on_back_to_all(gallery):
-        """Handle back to all folders button"""
-        # Reset the current folder
+        """Handle navigation back to root view"""
+        current_folder = gallery.current_folder
+        print(f"🔍 LISTENER: Navigating back from folder '{current_folder}' to root view")
+        
+        # Reset state
         gallery.current_folder = None
+        gallery.selected_template = None
+        gallery.selected_folder = None
         
-        # Hide the folder navigation bar
-        gallery.folder_nav.setVisible(False)
+        # Update UI
+        gallery.populate_gallery(force_refresh=True)
         
-        # Show the folders section
-        gallery.folders_section.setVisible(True)
-        
-        # Refresh to show all folders and templates
-        gallery.populate_gallery()
+        # Hide breadcrumb
+        if hasattr(gallery, 'breadcrumb_label'):
+            gallery.breadcrumb_label.hide()
+            
+        # Hide back button
+        if hasattr(gallery, 'back_button'):
+            gallery.back_button.setVisible(False)
+            
+        print(f"🔍 LISTENER: Successfully returned to root view from folder '{current_folder}'")
     
     @staticmethod
     def on_add_template(gallery):
@@ -463,7 +500,27 @@ class GalleryEvents:
                 pass
             
             # Refresh the gallery to show the new template
-            gallery.populate_gallery()
+            
+            # Force reload templates from the template manager first
+            if hasattr(gallery.app, 'template_manager'):
+                # Reload templates from disk to ensure we have the latest data
+                if hasattr(gallery.app.template_manager, 'load_templates'):
+                    print("🔍 LISTENER: Reloading templates from template manager")
+                    gallery.app.template_manager.load_templates()
+                
+                # Also reload folders if method exists
+                if hasattr(gallery.app.template_manager, 'load_folders'):
+                    print("🔍 LISTENER: Reloading folders from template manager")
+                    gallery.app.template_manager.load_folders()
+            
+            # Now refresh the gallery with force_refresh=True
+            print("🔍 LISTENER: Forcing gallery refresh to show new template")
+            gallery.populate_gallery(force_refresh=True)
+            
+            # Select the newly created template if it exists
+            if new_template and hasattr(gallery, '_on_template_select'):
+                print(f"🔍 LISTENER: Selecting newly created template: {template_name}")
+                gallery._on_template_select(new_template)
             
         except Exception as e:
             import traceback
@@ -684,96 +741,224 @@ class GalleryEvents:
     
     @staticmethod
     def key_press_event(gallery, event):
-        """Handle keyboard shortcuts"""
-        # Delete key handling
-        if event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
-            # Handle folder deletion
-            if gallery.selected_folder:
-                # Don't allow deleting default folders
-                if gallery.selected_folder in ["General", "Development", "Business"]:
-                    QMessageBox.warning(gallery, "Error", f"'{gallery.selected_folder}' is a default folder and cannot be deleted.")
-                    return
-                    
-                # Show confirmation dialog
-                confirm = QMessageBox.question(
-                    gallery,
-                    "Confirm Delete",
-                    f"Are you sure you want to delete folder '{gallery.selected_folder}'?\n"
-                    "Templates in this folder will remain available but will be moved to the root.",
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                
-                if confirm == QMessageBox.Yes:
-                    # Delete folder
-                    if hasattr(gallery.app, 'template_manager') and hasattr(gallery.app.template_manager, 'delete_folder'):
-                        gallery.app.template_manager.delete_folder(gallery.selected_folder)
-                        gallery.selected_folder = None
-                        gallery.populate_gallery(force_refresh=True)
+        """Handle keyboard events for the template gallery."""
+        # Ignore keyboard events when in folder tree view
+        if hasattr(gallery, 'folder_tree') and gallery.folder_tree and gallery.folder_tree.hasFocus():
+            return
             
-            # Handle template deletion
-            elif gallery.selected_template:
-                template_name = None
-                if isinstance(gallery.selected_template, dict):
-                    template_name = gallery.selected_template.get('name')
-                else:
-                    template_name = gallery.selected_template
+        key = event.key()
+        
+        # Get keyboard modifiers
+        modifiers = QApplication.keyboardModifiers()
+        alt_modifier = bool(modifiers & Qt.AltModifier)
+        ctrl_modifier = bool(modifiers & Qt.ControlModifier) or bool(modifiers & Qt.MetaModifier)
+        shift_modifier = bool(modifiers & Qt.ShiftModifier)
+        
+        # Multi-select with arrow keys while holding Shift
+        if shift_modifier and key in (Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right):
+            print(f"🔍 LISTENER: Multi-select with arrow keys (key: {key})")
+            gallery._handle_shift_arrow_selection(key)
+            return True
+                
+        # Handle template deletion with backspace and delete keys
+        if key in (Qt.Key_Delete, Qt.Key_Backspace):
+            print(f"🔍 LISTENER: Delete key pressed")
+
+            # First, determine what we'll be deleting
+            has_primary = hasattr(gallery, 'selected_template') and gallery.selected_template is not None
+            has_multi = (hasattr(gallery, 'multi_selected_templates') and 
+                       gallery.multi_selected_templates and 
+                       len(gallery.multi_selected_templates) > 0)
+            
+            # If nothing to delete, do nothing
+            if not has_primary and not has_multi:
+                print(f"🔍 LISTENER: No templates selected for deletion")
+                return True
+            
+            # Create a fresh set of templates to delete (using set for deduplication)
+            templates_to_delete_set = set()
+            templates_to_delete = []
+            
+            # ALWAYS include the primary selected template FIRST if it exists
+            if has_primary:
+                primary_name = gallery.selected_template.get('name', 'Unknown')
+                templates_to_delete.append(gallery.selected_template)
+                templates_to_delete_set.add(id(gallery.selected_template))  # Add object id to set for tracking
+                print(f"🔍 LISTENER: Gallery - Including primary selected template in delete operation: {primary_name}")
+            
+            # Then add the multi-selected templates
+            if has_multi:
+                for template in gallery.multi_selected_templates:
+                    template_id = id(template)
+                    if template_id not in templates_to_delete_set:
+                        templates_to_delete.append(template)
+                        templates_to_delete_set.add(template_id)
+                        print(f"🔍 LISTENER: Gallery - Adding multi-selected template to delete operation: {template.get('name', 'Unknown')}")
+            
+            # Verify total count matches expectations
+            expected_count = (1 if has_primary else 0) + (len(gallery.multi_selected_templates) if has_multi else 0)
+            actual_count = len(templates_to_delete)
+            print(f"🔍 LISTENER: Gallery - Expected {expected_count} templates, found {actual_count} templates after deduplication")
+            
+            # If no templates to delete, do nothing
+            if not templates_to_delete:
+                print(f"🔍 LISTENER: Gallery - No templates to delete after processing")
+                return True
+            
+            # Get template names for display and deletion
+            template_names = []
+            for template in templates_to_delete:
+                name = template.get('name', 'Unknown')
+                if name and name not in template_names:
+                    template_names.append(name)
+                    print(f"🔍 LISTENER: Gallery - Template to delete: '{name}'")
+            
+            # If no valid template names, do nothing
+            if not template_names:
+                print(f"🔍 LISTENER: Gallery - No valid template names found for deletion")
+                return True
+                
+            print(f"🔍 LISTENER: Gallery - Final delete list ({len(template_names)} templates): {template_names}")
+            
+            # Create confirmation message
+            if len(template_names) == 1:
+                message = f"Are you sure you want to delete template '{template_names[0]}'?"
+            else:
+                message = f"Are you sure you want to delete {len(template_names)} templates?"
+            
+            # Single confirmation for all templates
+            confirm = QMessageBox.question(
+                gallery,
+                "Confirm Delete",
+                message,
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if confirm == QMessageBox.Yes:
+                # Delete all templates in one operation
+                if hasattr(gallery.app, 'template_manager'):
+                    for name in template_names:
+                        print(f"🔍 LISTENER: Gallery - Deleting template '{name}'")
+                        gallery.app.template_manager.delete_template(name)
+                
+                # Show success message
+                if hasattr(gallery.app, 'show_status_message'):
+                    if len(template_names) == 1:
+                        gallery.app.show_status_message(f"Deleted template '{template_names[0]}'", "success")
+                    else:
+                        gallery.app.show_status_message(f"Deleted {len(template_names)} templates", "success")
+                
+                # Reset selections
+                gallery.selected_template = None
                     
-                if template_name:
-                    # Show confirmation dialog
-                    confirm = QMessageBox.question(
-                        gallery,
-                        "Confirm Delete",
-                        f"Are you sure you want to delete template '{template_name}'?",
-                        QMessageBox.Yes | QMessageBox.No
-                    )
+                # Clear multi-selection
+                if hasattr(gallery, 'multi_selected_templates'):
+                    gallery.multi_selected_templates.clear()
                     
-                    if confirm == QMessageBox.Yes:
-                        # Delete template
-                        if hasattr(gallery.app, 'template_manager') and hasattr(gallery.app.template_manager, 'delete_template'):
-                            gallery.app.template_manager.delete_template(template_name)
-                            gallery.selected_template = None
-                            gallery.populate_gallery()
+                # Refresh gallery
+                gallery.populate_gallery(force_refresh=True)
+            
+            return True
         else:
             # Call the parent's keyPressEvent
-            pass  # This will be handled in the refactored main class 
+            pass  # This will be handled in the refactored main class
 
     @staticmethod
     def on_move_template_to_folder(gallery, template_name, folder_name):
         """Handle moving a template to a folder"""
-        print(f"[DEBUG] Gallery: Moving template '{template_name}' to folder '{folder_name}'")
+        print(f"🔍 LISTENER: Moving template '{template_name}' to folder '{folder_name}'")
         
         # Validate inputs
-        if not template_name or not folder_name:
-            print(f"[DEBUG] Gallery: Invalid template or folder name: '{template_name}', '{folder_name}'")
+        if not template_name:
+            print(f"🔍 LISTENER: Invalid template name: '{template_name}'")
             return False
         
         # Get template manager
         if not hasattr(gallery.app, 'template_manager'):
-            print(f"[DEBUG] Gallery: Template manager not available")
+            print(f"🔍 LISTENER: Template manager not available")
             return False
         
         template_manager = gallery.app.template_manager
         
-        # Move template to folder
-        try:
-            result = template_manager.move_template_to_folder(template_name, folder_name)
+        # Check if this is a multi-template operation (comma-separated list)
+        if ',' in template_name:
+            # Multi-template case
+            template_names = [name.strip() for name in template_name.split(',') if name.strip()]
             
-            if result:
-                print(f"[DEBUG] Gallery: Successfully moved template '{template_name}' to folder '{folder_name}'")
-                # Show success message
-                if hasattr(gallery.app, 'show_status_message'):
-                    gallery.app.show_status_message(f"Template '{template_name}' moved to folder '{folder_name}'", "info")
+            # If the gallery has a selected template that's not in this list, also include it
+            if hasattr(gallery, 'selected_template') and gallery.selected_template:
+                selected_name = gallery.selected_template.get('name', None)
+                if selected_name and selected_name not in template_names:
+                    template_names.insert(0, selected_name)
+                    print(f"🔍 LISTENER: Added main selected template '{selected_name}' to move operation")
+        else:
+            # Single template case
+            template_names = [template_name]
+        
+        # Process all template names
+        success_count = 0
+        
+        for single_template_name in template_names:
+            # Skip empty names
+            if not single_template_name:
+                continue
                 
-                # Force refresh the gallery
-                gallery.populate_gallery(force_refresh=True)
-                return True
+            # Check for special folder names
+            if folder_name == "Root" or folder_name == "Up a Level":
+                print(f"🔍 LISTENER: Moving template '{single_template_name}' to root (removing from folders)")
+                
+                # For Root, remove from all folders
+                has_changes = False
+                
+                # If we're in a folder, remove from current folder
+                if hasattr(gallery, 'current_folder') and gallery.current_folder:
+                    print(f"🔍 LISTENER: Removing template '{single_template_name}' from folder '{gallery.current_folder}'")
+                    result = template_manager.remove_from_folder(gallery.current_folder, single_template_name)
+                    has_changes = has_changes or result
+                else:
+                    # If not in a folder, find and remove from any folder it's in
+                    if hasattr(template_manager, 'folders'):
+                        for folder, templates in template_manager.folders.items():
+                            if single_template_name in templates:
+                                print(f"🔍 LISTENER: Removing template '{single_template_name}' from folder '{folder}'")
+                                result = template_manager.remove_from_folder(folder, single_template_name)
+                                has_changes = has_changes or result
+                
+                # Count successful operations
+                if has_changes:
+                    success_count += 1
             else:
-                print(f"[DEBUG] Gallery: Failed to move template '{template_name}' to folder '{folder_name}'")
-                if hasattr(gallery.app, 'show_status_message'):
-                    gallery.app.show_status_message(f"Failed to move template '{template_name}' to folder '{folder_name}'", "error")
-                return False
-        except Exception as e:
-            import traceback
-            print(f"[DEBUG] Gallery: Error moving template to folder: {e}")
-            traceback.print_exc()
+                # Normal folder move
+                # Move template to folder
+                try:
+                    result = template_manager.move_template_to_folder(single_template_name, folder_name)
+                    if result:
+                        success_count += 1
+                except Exception as e:
+                    print(f"🔍 LISTENER: Error moving template to folder: {e}")
+        
+        # Update UI based on the results
+        if success_count > 0:
+            message = f"Template moved to {folder_name if folder_name not in ['Root', 'Up a Level'] else 'root'}"
+            if success_count > 1:
+                message = f"{success_count} templates moved to {folder_name if folder_name not in ['Root', 'Up a Level'] else 'root'}"
+                
+            print(f"🔍 LISTENER: {message}")
+            
+            # Show success message
+            if hasattr(gallery.app, 'show_status_message'):
+                gallery.app.show_status_message(message, "info")
+            
+            # Make sure the back button is visible if we're in a folder
+            if hasattr(gallery, 'current_folder') and gallery.current_folder:
+                if hasattr(gallery, 'back_button'):
+                    gallery.back_button.setVisible(True)
+                if hasattr(gallery, 'breadcrumb_label'):
+                    gallery.breadcrumb_label.show()
+            
+            # Force refresh the gallery
+            gallery.populate_gallery(force_refresh=True)
+            return True
+        else:
+            print(f"🔍 LISTENER: No templates were moved successfully")
             return False 

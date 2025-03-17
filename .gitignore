@@ -43,3 +43,6 @@ ehthumbs.db
 # Build artifacts
 *.spec
 *.dmg 
+# Large files
+ICONS/Echelon.psd
+Echelon.zip

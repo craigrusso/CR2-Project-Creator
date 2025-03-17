@@ -912,7 +912,7 @@ def show_manage_templates(parent, template_manager, callback=None):
     
     # Template list
     template_list = QListWidget()
-    template_list.setSelectionMode(QListWidget.SingleSelection)
+    template_list.setSelectionMode(QListWidget.ExtendedSelection)
     templates_layout.addWidget(template_list)
     
     # Populate template list
@@ -950,7 +950,7 @@ def show_manage_templates(parent, template_manager, callback=None):
     
     # Folder list
     folder_list = QListWidget()
-    folder_list.setSelectionMode(QListWidget.SingleSelection)
+    folder_list.setSelectionMode(QListWidget.ExtendedSelection)
     folders_layout.addWidget(folder_list)
     
     # Populate folder list
@@ -993,7 +993,7 @@ def show_manage_templates(parent, template_manager, callback=None):
     
     # Structure list
     structure_list = QListWidget()
-    structure_list.setSelectionMode(QListWidget.SingleSelection)
+    structure_list.setSelectionMode(QListWidget.ExtendedSelection)
     structures_layout.addWidget(structure_list)
     
     # Populate structure list
@@ -1049,44 +1049,65 @@ def view_structure(parent, template_manager, structure_list):
     preview_structure(parent, structure)
 
 def delete_structure(parent, template_manager, structure_list, dialog):
-    """Delete the selected structure"""
+    """Delete the selected structure(s)"""
     selected_items = structure_list.selectedItems()
     if not selected_items:
-        QMessageBox.warning(parent, "Error", "Please select a structure to delete.")
+        QMessageBox.warning(parent, "Error", "Please select at least one structure to delete.")
         return
     
-    structure_name = selected_items[0].text()
+    # Check if any selected structures are in use
+    structures_in_use = {}
+    for item in selected_items:
+        structure_name = item.text()
+        # Check if structure is in use by any templates
+        templates_using = []
+        for template in template_manager.get_all_templates():
+            if template.get('structure_name') == structure_name:
+                templates_using.append(template.get('name', 'Unnamed'))
+        
+        if templates_using:
+            structures_in_use[structure_name] = templates_using
     
-    # Check if structure is in use by any templates
-    templates_using = []
-    for template in template_manager.get_all_templates():
-        if template.get('structure_name') == structure_name:
-            templates_using.append(template.get('name', 'Unnamed'))
-    
-    if templates_using:
-        QMessageBox.warning(parent, "Cannot Delete", 
-                          f"Structure '{structure_name}' is in use by the following templates:\n\n" + 
-                          "\n".join(templates_using))
+    # If any structures are in use, show warning and abort
+    if structures_in_use:
+        error_msg = "The following structures cannot be deleted because they are in use:\n\n"
+        for structure_name, templates in structures_in_use.items():
+            error_msg += f"• {structure_name} - used by: {', '.join(templates)}\n"
+        
+        QMessageBox.warning(parent, "Cannot Delete", error_msg)
         return
     
     # Confirm deletion
-    confirm = QMessageBox.question(
-        parent,
-        "Confirm Delete",
-        f"Are you sure you want to delete structure '{structure_name}'?",
-        QMessageBox.Yes | QMessageBox.No
-    )
+    if len(selected_items) > 1:
+        confirm = QMessageBox.question(
+            parent,
+            "Confirm Delete",
+            f"Are you sure you want to delete {len(selected_items)} structures?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+    else:
+        structure_name = selected_items[0].text()
+        confirm = QMessageBox.question(
+            parent,
+            "Confirm Delete",
+            f"Are you sure you want to delete structure '{structure_name}'?",
+            QMessageBox.Yes | QMessageBox.No
+        )
     
     if confirm == QMessageBox.Yes:
-        success = template_manager.delete_structure(structure_name) if hasattr(template_manager, 'delete_structure') else False
-        
-        if success:
-            # Remove from the list
-            row = structure_list.row(selected_items[0])
-            structure_list.takeItem(row)
-            QMessageBox.information(parent, "Success", f"Structure '{structure_name}' deleted successfully.")
-        else:
-            QMessageBox.warning(parent, "Error", f"Failed to delete structure '{structure_name}'.")
+        # Process deletions in reverse order to maintain valid indices
+        for i in range(len(selected_items) - 1, -1, -1):
+            item = selected_items[i]
+            structure_name = item.text()
+            
+            success = template_manager.delete_structure(structure_name) if hasattr(template_manager, 'delete_structure') else False
+            
+            if success:
+                # Remove from the list
+                row = structure_list.row(item)
+                structure_list.takeItem(row)
+            else:
+                QMessageBox.warning(parent, "Error", f"Failed to delete structure '{structure_name}'.")
 
 def edit_template(parent, template_manager, template_list, dialog):
     """Edit the selected template"""
@@ -1113,34 +1134,48 @@ def edit_template(parent, template_manager, template_list, dialog):
     show_edit_template(parent, template, lambda t: template_manager.update_template(t))
 
 def delete_template(parent, template_manager, template_list, dialog):
-    """Delete the selected template"""
+    """Delete the selected template(s)"""
     selected_items = template_list.selectedItems()
     if not selected_items:
-        QMessageBox.warning(parent, "Warning", "Please select a template to delete.")
+        QMessageBox.warning(parent, "Warning", "Please select at least one template to delete.")
         return
     
-    item_text = selected_items[0].text()
-    template_name = item_text.split(" (")[0]
-    
-    # Confirm deletion
-    confirm = QMessageBox.question(
-        parent,
-        "Confirm Delete",
-        f"Are you sure you want to delete template '{template_name}'?",
-        QMessageBox.Yes | QMessageBox.No
-    )
+    # If multiple templates selected, confirm with count
+    if len(selected_items) > 1:
+        confirm = QMessageBox.question(
+            parent,
+            "Confirm Delete",
+            f"Are you sure you want to delete {len(selected_items)} templates?",
+            QMessageBox.Yes | QMessageBox.No
+        )
+    else:
+        # Single template selected
+        item_text = selected_items[0].text()
+        template_name = item_text.split(" (")[0]
+        
+        confirm = QMessageBox.question(
+            parent,
+            "Confirm Delete",
+            f"Are you sure you want to delete template '{template_name}'?",
+            QMessageBox.Yes | QMessageBox.No
+        )
     
     if confirm == QMessageBox.Yes:
-        # Delete the template
-        success = template_manager.delete_template(template_name)
-        
-        if success:
-            # Remove from list
-            row = template_list.currentRow()
-            template_list.takeItem(row)
-            QMessageBox.information(parent, "Success", f"Template '{template_name}' deleted successfully.")
-        else:
-            QMessageBox.warning(parent, "Error", f"Failed to delete template '{template_name}'.")
+        # Process deletions in reverse order to maintain valid indices
+        for i in range(len(selected_items) - 1, -1, -1):
+            item = selected_items[i]
+            item_text = item.text()
+            template_name = item_text.split(" (")[0]
+            
+            # Delete the template
+            success = template_manager.delete_template(template_name)
+            
+            if success:
+                # Remove from list
+                row = template_list.row(item)
+                template_list.takeItem(row)
+            else:
+                QMessageBox.warning(parent, "Error", f"Failed to delete template '{template_name}'.")
 
 def import_template(parent, template_manager, dialog):
     """Import a template file"""
@@ -1270,38 +1305,57 @@ def rename_folder(parent, template_manager, folder_list, dialog):
             QMessageBox.warning(parent, "Error", f"Failed to rename folder '{old_name}'.")
 
 def delete_folder(parent, template_manager, folder_list, dialog):
-    """Delete a template folder"""
+    """Delete selected template folder(s)"""
     selected_items = folder_list.selectedItems()
     if not selected_items:
-        QMessageBox.warning(parent, "Warning", "Please select a folder to delete.")
+        QMessageBox.warning(parent, "Warning", "Please select at least one folder to delete.")
         return
     
-    folder_name = selected_items[0].text()
+    # Check if any default folders are selected
+    default_folders = ["General", "Development", "Business"]
+    selected_default_folders = [item.text() for item in selected_items if item.text() in default_folders]
     
-    # Check if this is a default folder that cannot be deleted
-    if folder_name in ["General", "Development", "Business"]:
-        QMessageBox.warning(parent, "Error", f"'{folder_name}' is a default folder and cannot be deleted.")
+    if selected_default_folders:
+        if len(selected_default_folders) == 1:
+            QMessageBox.warning(parent, "Error", f"'{selected_default_folders[0]}' is a default folder and cannot be deleted.")
+        else:
+            QMessageBox.warning(parent, "Error", f"The following are default folders and cannot be deleted:\n• {', '.join(selected_default_folders)}")
         return
     
     # Confirm deletion
-    confirm = QMessageBox.question(
-        parent,
-        "Confirm Delete",
-        f"Are you sure you want to delete folder '{folder_name}'?\n"
-        "Templates in this folder will remain available but will be moved to the root.",
-        QMessageBox.Yes | QMessageBox.No
-    )
+    if len(selected_items) > 1:
+        confirm = QMessageBox.question(
+            parent,
+            "Confirm Delete",
+            f"Are you sure you want to delete {len(selected_items)} folders?\n"
+            "Templates in these folders will remain available but will be moved to the root.",
+            QMessageBox.Yes | QMessageBox.No
+        )
+    else:
+        folder_name = selected_items[0].text()
+        confirm = QMessageBox.question(
+            parent,
+            "Confirm Delete",
+            f"Are you sure you want to delete folder '{folder_name}'?\n"
+            "Templates in this folder will remain available but will be moved to the root.",
+            QMessageBox.Yes | QMessageBox.No
+        )
     
     if confirm == QMessageBox.Yes:
-        # Delete the folder
-        success = template_manager.delete_folder(folder_name)
-        
-        if success:
-            # Remove from list
-            row = folder_list.currentRow()
-            folder_list.takeItem(row)
-        else:
-            QMessageBox.warning(parent, "Error", f"Failed to delete folder '{folder_name}'.")
+        # Process deletions in reverse order to maintain valid indices
+        for i in range(len(selected_items) - 1, -1, -1):
+            item = selected_items[i]
+            folder_name = item.text()
+            
+            # Delete the folder
+            success = template_manager.delete_folder(folder_name)
+            
+            if success:
+                # Remove from list
+                row = folder_list.row(item)
+                folder_list.takeItem(row)
+            else:
+                QMessageBox.warning(parent, "Error", f"Failed to delete folder '{folder_name}'.")
 
 def show_structure_editor(parent, structure_type=None, callback=None, is_new=False, project_type=None, suggested_name=None):
     """Show structure editor dialog"""
@@ -1355,9 +1409,16 @@ def show_enhanced_structure_editor(parent, structure_name=None, structure=None, 
     )
     
     # Show the dialog modally
-    if structure_editor.exec_():
-        return True
-    return False
+    result = structure_editor.exec_()
+    
+    # If successful, retrieve both the structure and name
+    if result:
+        updated_structure = structure_editor.get_result()
+        updated_name = getattr(structure_editor, 'result_name', structure_name)
+        return True, updated_structure, updated_name
+    
+    # If canceled, return False and None values
+    return False, None, None
 
 def process_dropped_file(file_path, parent_item):
     """Process a file dropped onto the tree"""

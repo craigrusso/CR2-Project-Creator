@@ -356,6 +356,11 @@ class GalleryTemplatesSetup:
                     template_name=template_data.get('name', ''): 
                     GalleryEvents.on_move_template_to_folder(gallery, template_name, folder_name))
             
+            # Connect multi-select handler if the gallery has the method
+            if hasattr(gallery, 'on_template_multi_select') and hasattr(template_item, 'multiSelectRequested'):
+                template_item.multiSelectRequested.connect(
+                    lambda template, add: gallery.on_template_multi_select(template, add))
+            
             # Add item to the list layout
             list_layout.addWidget(template_item)
             gallery.template_cards.append(template_item)
@@ -455,6 +460,11 @@ class GalleryTemplatesSetup:
                 template_name=template_data.get('name', ''): 
                 GalleryEvents.on_move_template_to_folder(gallery, template_name, folder_name))
             
+            # Connect multi-select handler if the gallery has the method
+            if hasattr(gallery, 'on_template_multi_select') and hasattr(template_card, 'multiSelectRequested'):
+                template_card.multiSelectRequested.connect(
+                    lambda template, add: gallery.on_template_multi_select(template, add))
+            
             gallery.templates_grid.addWidget(template_card, row, col)
             gallery.template_cards.append(template_card)
             
@@ -486,10 +496,8 @@ class GalleryTemplatesSetup:
         gallery.template_grid_view_btn.setChecked(mode == "grid")
         gallery.template_list_view_btn.setChecked(mode == "list")
         
-        # Only repopulate if the mode actually changed
-        if old_mode != mode:
-            # Update the gallery
-            gallery.populate_gallery()
+        # Always force refresh the view when toggle button is pressed
+        gallery.populate_gallery(force_refresh=True)
         
     @staticmethod
     def get_templates_in_folder(gallery, folder_name):
@@ -558,3 +566,62 @@ class GalleryTemplatesSetup:
             print(f"[DEBUG] Gallery: Template names: {template_names}")
         
         return templates_dict 
+
+    @staticmethod
+    def create_template_card(gallery, template_data):
+        """Create a template card widget based on the current view mode"""
+        from app.templates.components import TemplateCard
+        
+        # Create card for grid view
+        template_card = TemplateCard(gallery, template=template_data, app=gallery.app)
+        
+        # Connect click handler
+        template_card.clicked.connect(lambda checked=False, t=template_data: 
+            gallery._on_template_select(t))
+            
+        # Connect multi-select handler if the gallery has the method
+        if hasattr(gallery, 'on_template_multi_select') and hasattr(template_card, 'multiSelectRequested'):
+            template_card.multiSelectRequested.connect(
+                lambda template, add: gallery.on_template_multi_select(template, add))
+
+    @staticmethod
+    def create_template_list_item(gallery, template_data):
+        """Create a template list item for list view"""
+        from app.templates.components import TemplateListItem
+        
+        # Create list item
+        template_item = TemplateListItem(gallery, template=template_data, app=gallery.app)
+        
+        # Connect click handler
+        template_item.clicked.connect(lambda checked=False, t=template_data: 
+            gallery._on_template_select(t))
+            
+        # Connect multi-select handler if the gallery has the method
+        if hasattr(gallery, 'on_template_multi_select') and hasattr(template_item, 'multiSelectRequested'):
+            template_item.multiSelectRequested.connect(
+                lambda template, add: gallery.on_template_multi_select(template, add))
+        
+        # Connect double-click handler to edit template
+        template_item.doubleClicked.connect(lambda t_name=template_data.get('name', ''): 
+            handle_template_edit(gallery, t_name))
+        
+        # Connect context menu actions 
+        template_item.editRequested.connect(lambda t_name=template_data.get('name', ''): 
+            handle_template_edit(gallery, t_name))
+        template_item.deleteRequested.connect(lambda t_name=template_data.get('name', ''): 
+            GalleryEvents.on_delete_template(gallery, t_name))
+        
+        # Connect move to folder signal
+        template_item.moveToFolderRequested.connect(lambda t_name, folder_name, 
+            template_name=template_data.get('name', ''): 
+            GalleryEvents.on_move_template_to_folder(gallery, template_name, folder_name))
+        
+        # Connect multi-select handler if the gallery has the method
+        if hasattr(gallery, 'on_template_multi_select') and hasattr(template_item, 'multiSelectRequested'):
+            template_item.multiSelectRequested.connect(
+                lambda template, add: gallery.on_template_multi_select(template, add))
+        
+        # Add item to the list layout
+        gallery.template_cards.append(template_item)
+        
+        return template_item 

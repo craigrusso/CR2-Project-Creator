@@ -160,6 +160,9 @@ class GalleryUISetup:
         gallery.folder_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold; background: transparent;")
         gallery.folder_nav_layout.addWidget(gallery.folder_label)
         
+        # Also assign to breadcrumb_label for code consistency
+        gallery.breadcrumb_label = gallery.folder_label
+        
         gallery.folder_nav_layout.addStretch()
         gallery.folder_nav.setVisible(False)  # Hidden by default
         

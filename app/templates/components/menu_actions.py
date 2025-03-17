@@ -21,7 +21,7 @@ class DeleteLabel(QLabel):
         super().__init__(text, parent)
         self.setMouseTracking(True)
         self.normalStyle = "color: #FF5555; font-weight: bold; padding: 5px 15px;"
-        self.hoverStyle = "color: white; font-weight: bold; background-color: #AA3333; padding: 5px 15px; border-radius: 3px;"
+        self.hoverStyle = "color: white; font-weight: bold; background-color: #FF3333; padding: 5px 15px; border-radius: 3px;"
         self.setStyleSheet(self.normalStyle)
         
     def enterEvent(self, event):
