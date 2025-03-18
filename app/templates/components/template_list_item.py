@@ -165,6 +165,14 @@ class TemplateListItem(QFrame):
             # Add separator
             menu.addSeparator()
             
+            # Add export template option
+            export_action = QAction("Export Template...", self)
+            export_action.triggered.connect(lambda: self._export_template(template_name))
+            menu.addAction(export_action)
+            
+            # Add separator
+            menu.addSeparator()
+            
             # Add move actions if gallery has template_manager 
             if gallery and hasattr(gallery, 'app') and hasattr(gallery.app, 'template_manager'):
                 template_manager = gallery.app.template_manager
@@ -246,17 +254,18 @@ class TemplateListItem(QFrame):
     def _move_template_out_of_folder(self, current_folder):
         """Move the template out of its current folder to root"""
         template_name = self.template.get('name', '') if isinstance(self.template, dict) else str(self.template)
-        
+          
         # Find the gallery to get multi-selection info
         gallery = self.gallery
         if not gallery:
+            # Try to find gallery by traversing parent hierarchy
             parent = self.parent()
             while parent:
                 if hasattr(parent, 'multi_selected_templates'):
                     gallery = parent
                     break
                 parent = parent.parent()
-                
+        
         # Check if we need to move multiple templates
         if gallery and hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
             # Check if this template is part of the multi-selection or if we're in multi-select mode
@@ -290,6 +299,43 @@ class TemplateListItem(QFrame):
         # Single template move
         print(f"🔍 LISTENER: Moving template '{template_name}' to root (no folder)")
         self.moveToFolderRequested.emit(template_name, "")
+    
+    def _export_template(self, template_name):
+        """Export the template to a package file"""
+        if not template_name:
+            return
+            
+        # Find gallery to get app reference
+        gallery = self.gallery
+        if not gallery:
+            # Try to find gallery by traversing parent hierarchy
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, 'multi_selected_templates'):
+                    gallery = parent
+                    break
+                parent = parent.parent()
+        
+        if not gallery or not hasattr(gallery, 'app'):
+            return
+            
+        # Use the export_template function from import_export_manager
+        from app.core.import_export_manager import export_template
+        
+        # Show dialog to ask if files should be included
+        from PyQt5.QtWidgets import QMessageBox
+        
+        include_files = QMessageBox.question(
+            self,
+            "Export Template",
+            f"Would you like to include files with this template?\n\n"
+            f"Including files will allow others to import the template with all its attached assets.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes
+        ) == QMessageBox.Yes
+        
+        # Export the template
+        export_template(gallery.app, template_name, include_files)
     
     def _delete_multi_selected(self, gallery):
         """Handle deletion of multiple selected templates"""

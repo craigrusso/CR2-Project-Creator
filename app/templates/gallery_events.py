@@ -308,7 +308,16 @@ class GalleryEvents:
                     
                     # Add custom structures
                     if hasattr(gallery.app.template_manager, 'custom_structures'):
-                        custom_structures = list(gallery.app.template_manager.custom_structures.keys())
+                        custom_structures = []
+                        # Handle custom_structures as a list of dictionaries
+                        if isinstance(gallery.app.template_manager.custom_structures, list):
+                            for struct in gallery.app.template_manager.custom_structures:
+                                if isinstance(struct, dict) and 'name' in struct:
+                                    custom_structures.append(struct['name'])
+                        # Or handle it as a dictionary for backward compatibility
+                        elif isinstance(gallery.app.template_manager.custom_structures, dict):
+                            custom_structures = list(gallery.app.template_manager.custom_structures.keys())
+                        
                         # Filter out duplicates
                         for struct in custom_structures:
                             if struct not in available_structures:
@@ -424,8 +433,20 @@ class GalleryEvents:
                                 elif isinstance(item, str):
                                     # It's a file or legacy empty directory
                                     if item.endswith('/'):
+                                        # Legacy format folder
                                         result.append(f"{indent}📁 {item.rstrip('/')}/")
+                                    # Check for folder-like patterns in string items
+                                    elif '.' not in item or (item.startswith(tuple("0123456789")) and '_' in item[:4]):
+                                        # Probably a folder if no extension or has numeric prefix
+                                        result.append(f"{indent}📁 {item}/")
+                                    # Check for common folder names
+                                    elif any(keyword in item.lower() for keyword in [
+                                        'folder', 'dir', 'footage', 'audio', 'video', 'gfx', 'exports',
+                                        'assets', 'renders', 'project', 'images', 'documents'
+                                    ]):
+                                        result.append(f"{indent}📁 {item}/")
                                     else:
+                                        # Regular file
                                         result.append(f"{indent}📄 {item}")
                             
                             return "\n".join(result)

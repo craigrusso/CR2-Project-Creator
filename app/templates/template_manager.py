@@ -5,6 +5,7 @@ import os
 import importlib
 import json
 import datetime
+import time
 
 from app.templates.template_manager_core import TemplateManagerCore
 from app.templates.template_operations import TemplateOperations
@@ -133,54 +134,73 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
             traceback.print_exc()
             return False
 
-    def save_custom_structure(self, name, directories):
-        """Save a custom folder structure.
+    def save_custom_structure(self, name, structure):
+        """
+        Save a custom folder structure.
         
         Args:
             name (str): Name of the structure
-            directories (list): List of directory objects to save
+            structure (list): List of structure items (folders and files)
             
         Returns:
             bool: True if successful, False otherwise
         """
-        print(f"[DEBUG] StructureOps: Saving custom structure '{name}'")
-        
-        if not name or not directories:
-            print(f"[DEBUG] StructureOps: Invalid name or directories")
+        if not name:
+            print(f"[DEBUG] StructureOps: Cannot save structure with empty name")
             return False
+            
+        # Ensure we have a custom_structures dictionary
+        if not hasattr(self, 'custom_structures'):
+            self.custom_structures = {}  # Initialize as a dictionary
         
-        # Ensure directories are properly formatted
-        directories = self._normalize_structure_format(directories) if hasattr(self, '_normalize_structure_format') else directories
-        
-        structure = {
-            "name": name,
-            "directories": directories,
-            "created": datetime.datetime.now().isoformat()
-        }
-        
-        # Create a clean filename - always replace spaces with underscores
-        filename = name.replace(" ", "_").replace("/", "-").replace("\\", "-")
-        
-        # Save the structure to the custom_structures directory
-        structure_path = os.path.join(self.paths["custom_structures_dir"], f"{filename}.json")
-        
+        # The structure object should be stored directly with the name as the key
         try:
-            with open(structure_path, 'w') as f:
-                json.dump(structure, f, indent=2)
+            # Ensure structure is a list, not a dict
+            if isinstance(structure, dict):
+                # If we somehow got a dict with structure data instead of the actual structure list
+                if 'directories' in structure:
+                    structure = structure.get('directories', [])
+                    print(f"[DEBUG] StructureOps: Extracted directories from structure dict")
+                else:
+                    # Otherwise wrap it in a list as a folder
+                    structure = [structure]
+                    print(f"[DEBUG] StructureOps: Wrapped dict in list to make valid structure")
+                    
+            # Normalize the structure format to ensure consistent handling of folders and template variables
+            normalized_structure = self._normalize_structure_format(structure) if structure else []
             
-            # Update the in-memory custom structures
-            self.custom_structures[name] = structure
+            # Create the structure data to store
+            structure_data = {
+                "name": name,
+                "directories": normalized_structure,
+                "created": datetime.datetime.now().isoformat()
+            }
             
-            print(f"[DEBUG] StructureOps: Successfully saved structure '{name}'")
+            # Store in memory - important to store the whole structure_data object
+            self.custom_structures[name] = structure_data
+            
+            # Create a clean filename
+            filename = name.replace(" ", "_").replace("/", "-").replace("\\", "-")
+            file_path = os.path.join(self.paths["custom_structures_dir"], f"{filename}.json")
+            
+            # Make sure the directory exists
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            
+            # Save to file
+            with open(file_path, 'w') as f:
+                json.dump(structure_data, f, indent=2)
+                
+            print(f"[DEBUG] StructureOps: Successfully saved custom structure '{name}'")
             return True
         except Exception as e:
-            import traceback
             print(f"[DEBUG] StructureOps: Error saving structure: {e}")
-            traceback.print_exc()
             return False
 
     def _normalize_structure_format(self, structure_items):
         """Normalize the structure format to ensure consistency.
+        
+        This method ensures folders are represented as dictionaries with empty arrays 
+        for consistency with the rest of the application: {"folder_name": []}
         
         Args:
             structure_items (list): List of structure items to normalize
@@ -188,23 +208,42 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
         Returns:
             list: Normalized structure items
         """
+        if not structure_items:
+            return []
+            
         normalized = []
         
         for item in structure_items:
-            if isinstance(item, str):
-                # Convert simple string to object format
-                normalized.append({"name": item, "type": "folder"})
-            elif isinstance(item, dict):
-                # Ensure required fields exist
-                normalized_item = {
-                    "name": item.get("name", "Untitled"),
-                    "type": item.get("type", "folder")
-                }
-                
-                # Include children if they exist
-                if "children" in item and isinstance(item["children"], list):
-                    normalized_item["children"] = self._normalize_structure_format(item["children"])
-                
-                normalized.append(normalized_item)
-        
+            # Handle dictionaries (folders with possible children)
+            if isinstance(item, dict):
+                # Handle the {"name": "folder_name", "type": "folder"} format
+                if "name" in item and "type" in item and item["type"] == "folder":
+                    folder_name = item["name"]
+                    children = []
+                    if "children" in item and isinstance(item["children"], list):
+                        children = self._normalize_structure_format(item["children"])
+                    normalized.append({folder_name: children})
+                # Handle the {"folder_name": []} format
+                else:
+                    processed_dict = {}
+                    for folder_name, children in item.items():
+                        if isinstance(children, list):
+                            processed_dict[folder_name] = self._normalize_structure_format(children)
+                        else:
+                            # Ensure empty folders are represented as empty lists
+                            processed_dict[folder_name] = []
+                    normalized.append(processed_dict)
+            # Handle string items (files or folders without format)
+            elif isinstance(item, str):
+                # If it ends with a slash, it's a folder
+                if item.endswith('/'):
+                    folder_name = item[:-1]  # Remove trailing slash
+                    normalized.append({folder_name: []})
+                else:
+                    # It's a file, keep as is
+                    normalized.append(item)
+            else:
+                # Unknown type, add as is
+                normalized.append(item)
+            
         return normalized

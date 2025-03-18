@@ -219,6 +219,38 @@ class TemplateCreationForm(QDialog):
         layout.addRow("Description:", self.desc_edit)
         layout.addRow("Source File/Folder:", self.path_layout)
         
+    def browse_for_path(self):
+        """Open file dialog to browse for source file or folder"""
+        print("DEBUG: browse_for_path called")
+        
+        # Create file dialog
+        dialog = QFileDialog(self)
+        dialog.setFileMode(QFileDialog.AnyFile)  # Allow selection of any file or folder
+        dialog.setOptions(QFileDialog.DontUseNativeDialog | QFileDialog.ReadOnly)
+        
+        # Add button to select a directory
+        dialog.setOption(QFileDialog.ShowDirsOnly, False)  # Show both files and directories
+        
+        # Show the dialog
+        if dialog.exec_():
+            selected_files = dialog.selectedFiles()
+            if selected_files:
+                path = selected_files[0]
+                print(f"DEBUG: Selected path: {path}")
+                self.path_edit.setText(path)
+                
+                # Auto-populate name field if empty
+                if not self.name_edit.text():
+                    import os
+                    name = os.path.basename(path)
+                    if os.path.isfile(path):
+                        # Remove extension for files
+                        name = os.path.splitext(name)[0]
+                    # Convert underscores to spaces and capitalize words
+                    name = name.replace("_", " ").title()
+                    self.name_edit.setText(name)
+                    print(f"DEBUG: Auto-populated name: {name}")
+        
     def setup_files_tab(self):
         """Set up the files tab with tree view of template files"""
         layout = QVBoxLayout(self.files_tab)
@@ -358,6 +390,8 @@ class TemplateCreationForm(QDialog):
         project_type = self.type_combo.currentText()
         description = self.desc_edit.toPlainText().strip()
         path = self.path_edit.text()
+        
+        print(f"DEBUG: Template create - name='{name}', project_type='{project_type}', path='{path}'")
         
         if not path and not self.is_editing:
             QMessageBox.warning(self, "Input Error", "Please select a source file or folder.")

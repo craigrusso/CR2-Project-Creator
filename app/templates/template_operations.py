@@ -150,42 +150,46 @@ class TemplateOperations:
         return True
     
     def _validate_template(self, template):
-        """Validate that a template has all required fields
+        """Validate template data"""
+        # Check for required fields
+        required_fields = ["name", "path", "type"]
         
-        Args:
-            template (dict): Template to validate
-            
-        Returns:
-            bool: True if template is valid, False otherwise
-        """
-        try:
-            # Check if template is a dictionary
-            if not isinstance(template, dict):
-                print(f"[DEBUG] Template: Invalid template - not a dictionary")
+        for field in required_fields:
+            if field not in template:
+                print(f"Error: Missing required field '{field}' in template")
                 return False
-            
-            # Check for required fields
-            required_fields = ['name', 'created']
-            for field in required_fields:
-                if field not in template:
-                    print(f"[DEBUG] Template: Invalid template - missing required field '{field}'")
-                    return False
                 
-            # Check that name is a string
-            if not isinstance(template['name'], str):
-                print(f"[DEBUG] Template: Invalid template - name is not a string")
-                return False
-            
-            # Check that name is not empty
-            if not template['name'].strip():
-                print(f"[DEBUG] Template: Invalid template - name is empty")
-                return False
-            
-            return True
-        except Exception as e:
-            print(f"[DEBUG] Template: Error validating template: {e}")
+        # Check that name and path are not empty
+        if not template.get("name") or not template.get("path"):
+            print("Error: Template name or path cannot be empty")
             return False
-
+            
+        # Check if structure is present and log its status
+        if "structure" in template:
+            print(f"INFO: Template '{template['name']}' has a folder structure attached")
+            structure_count = self._count_structure_items(template["structure"])
+            print(f"INFO: Structure contains {structure_count} items")
+        else:
+            print(f"INFO: Template '{template['name']}' has no folder structure attached")
+            
+        return True
+        
+    def _count_structure_items(self, structure):
+        """Count items in a structure to help with debugging"""
+        if not structure or not isinstance(structure, list):
+            return 0
+            
+        count = 0
+        for item in structure:
+            if isinstance(item, dict):
+                count += len(item)
+                # Count nested items
+                for key, value in item.items():
+                    if isinstance(value, list):
+                        count += self._count_structure_items(value)
+        
+        return count
+        
     def save_template(self, name, file_path, structure_type, description=None):
         """Save a template to the database"""
         # Validate name
@@ -193,6 +197,14 @@ class TemplateOperations:
             print(f"Error: Invalid template name: {name}")
             return False
             
+        # Print debug info about file_path
+        print(f"DEBUG: save_template called with path='{file_path}', type={type(file_path).__name__}")
+        
+        # Check if file path is empty or None
+        if not file_path:
+            print("WARNING: Template file_path is empty, using current directory as fallback")
+            file_path = os.getcwd()
+        
         # Get current timestamp
         current_time = time.time()
         
@@ -203,39 +215,59 @@ class TemplateOperations:
                 existing_template = template
                 break
                 
+        # Generate a safe filename from the name
+        filename = name.replace(" ", "_").replace("/", "-").replace("\\", "-")
+        
+        # Prepare directory for template files
+        template_cache_dir = os.path.join(self.paths["templates_dir"], "cache", filename)
+        os.makedirs(template_cache_dir, exist_ok=True)
+        
         # Prepare template data
         template = {
             "name": name,
-            "path": file_path,
+            "path": file_path,  # Store original path for reference
+            "cached_path": template_cache_dir,  # Add cached path
             "type": structure_type,
             "description": description or f"Template for {structure_type}",
             "modified": current_time  # Always update modified time
         }
         
-        # If it's a new template, set created time
-        if not existing_template:
+        # Copy creation timestamp from existing template if available, otherwise use current time
+        if existing_template and "created" in existing_template:
+            template["created"] = existing_template["created"]
+        else:
             template["created"] = current_time
-        else:
-            # Preserve the original creation time
-            template["created"] = existing_template.get("created", current_time)
-        
-        # Determine icon based on structure_type
-        if structure_type == "Folder":
-            template["icon"] = "📁"
-        else:
-            template["icon"] = "📄"
             
-        # Validate template before saving
-        if not self._validate_template(template):
-            print(f"Error: Template validation failed for {name}")
-            return False
+        # Copy other fields from existing template
+        if existing_template:
+            for key, value in existing_template.items():
+                if key not in template and key not in ["path", "cached_path", "type", "description", "modified"]:
+                    template[key] = value
+            
+        # Get folder structure
+        folder_structure = None
+        if hasattr(self, 'get_folder_structure'):
+            folder_structure = self.get_folder_structure(file_path)
         
+        # Check if this template has been saved before
+        is_update = existing_template is not None
+            
+        # Copy the file(s) to the cache directory - ONLY if explicitly flagged for caching
+        # We won't cache files by default anymore when saving templates
+        if existing_template and existing_template.get("should_cache_files", False):
+            print(f"DEBUG: Template is explicitly flagged for file caching")
+            try:
+                self._cache_template_files(file_path, template_cache_dir)
+            except Exception as e:
+                print(f"Warning: Failed to cache template files: {e}")
+        else:
+            print(f"DEBUG: Skipping automatic file caching for template '{name}'")
+            
         # Save the template to file
-        filename = name.replace(" ", "_").replace("/", "-").replace("\\", "-")
-        file_path = os.path.join(self.paths["templates_dir"], f"{filename}.json")
+        template_file = os.path.join(self.paths["templates_dir"], f"{filename}.json")
         
         try:
-            with open(file_path, 'w') as f:
+            with open(template_file, 'w') as f:
                 json.dump(template, f, indent=2)
             
             # Update or add to in-memory list
@@ -248,10 +280,174 @@ class TemplateOperations:
             else:
                 # Add new template
                 self.templates.append(template)
+            
+            # Save the structure as a custom structure if needed
+            if folder_structure and hasattr(self, 'save_custom_structure'):
+                structure_file_name = f"Template_{filename}"
+                self.save_custom_structure(structure_file_name, folder_structure)
+                print(f"Saved folder structure to custom structure: {structure_file_name}")
+                
             return True
         except Exception as e:
             print(f"Error saving template: {e}")
             return False
+    
+    def _cache_template_files(self, source_path, cache_dir):
+        """
+        Cache template files in the application's storage location
+        
+        Args:
+            source_path: Original path to the file or directory
+            cache_dir: Cache directory where files should be copied
+        """
+        print(f"DEBUG: _cache_template_files called with source_path={source_path}, cache_dir={cache_dir}")
+        
+        if not os.path.exists(source_path):
+            print(f"WARNING: Source path does not exist: {source_path}")
+            return
+            
+        # Clean the cache directory first
+        try:
+            if os.path.exists(cache_dir):
+                print(f"DEBUG: Cleaning cache directory: {cache_dir}")
+                for item in os.listdir(cache_dir):
+                    item_path = os.path.join(cache_dir, item)
+                    if os.path.isfile(item_path):
+                        print(f"DEBUG: Removing file from cache: {item_path}")
+                        os.remove(item_path)
+                    elif os.path.isdir(item_path):
+                        print(f"DEBUG: Removing directory from cache: {item_path}")
+                        shutil.rmtree(item_path)
+            else:
+                print(f"DEBUG: Cache directory does not exist, will be created: {cache_dir}")
+                os.makedirs(cache_dir, exist_ok=True)
+        except Exception as e:
+            print(f"WARNING: Failed to clean cache directory: {e}")
+        
+        # Copy all files to cache directory, not just those with template variables
+        try:
+            if os.path.isfile(source_path):
+                # Cache all files, not just those with template variables
+                filename = os.path.basename(source_path)
+                print(f"DEBUG: Caching file: {filename}")
+                cached_file_path = os.path.join(cache_dir, filename)
+                shutil.copy2(source_path, cached_file_path)
+                print(f"DEBUG: Copied file to cache: {cached_file_path}")
+                
+                # Verify file was copied correctly
+                if os.path.exists(cached_file_path):
+                    source_size = os.path.getsize(source_path)
+                    cached_size = os.path.getsize(cached_file_path)
+                    print(f"DEBUG: Cached file verified: {cached_file_path} (Size: {source_size} -> {cached_size})")
+                else:
+                    print(f"ERROR: Failed to cache file: {cached_file_path} does not exist after copy")
+            elif os.path.isdir(source_path):
+                print(f"DEBUG: Source is a directory: {source_path}")
+                # For directories, process all files
+                for root, dirs, files in os.walk(source_path):
+                    # Create corresponding directories in cache
+                    rel_path = os.path.relpath(root, source_path)
+                    if rel_path != '.':
+                        cache_subdir = os.path.join(cache_dir, rel_path)
+                        print(f"DEBUG: Creating cache subdirectory: {cache_subdir}")
+                        os.makedirs(cache_subdir, exist_ok=True)
+                    
+                    # Copy all files, not just those with template variables
+                    for file in files:
+                        src_file = os.path.join(root, file)
+                        dst_dir = cache_dir if rel_path == '.' else os.path.join(cache_dir, rel_path)
+                        cached_file_path = os.path.join(dst_dir, file)
+                        
+                        print(f"DEBUG: Caching file: {src_file} to {cached_file_path}")
+                        shutil.copy2(src_file, cached_file_path)
+                        
+                        # Verify file was copied correctly
+                        if os.path.exists(cached_file_path):
+                            print(f"DEBUG: Successfully cached file: {cached_file_path}")
+                        else:
+                            print(f"ERROR: Failed to cache file: {cached_file_path}")
+        except Exception as e:
+            print(f"ERROR: Failed to cache template files: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _contains_template_variables(self, file_path, filename):
+        """
+        Check if a file contains template variables like {{PROJECT_NAME}}
+        
+        Args:
+            file_path: Path to the file
+            filename: Name of the file
+            
+        Returns:
+            bool: True if file contains template variables, False otherwise
+        """
+        print(f"DEBUG: Checking for template variables in file: {filename}")
+        
+        # Check if filename contains template variables
+        if "{{" in filename and "}}" in filename:
+            print(f"DEBUG: Filename contains template variables: {filename}")
+            return True
+            
+        # Check if it's a text file that might contain template variables
+        if self._is_text_file(file_path):
+            print(f"DEBUG: File appears to be a text file, checking content: {filename}")
+            try:
+                # Only check the first portion of the file (for large files)
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read(10240)  # Read first 10KB
+                    has_variables = "{{" in content and "}}" in content
+                    
+                    if has_variables:
+                        print(f"DEBUG: File content contains template variables: {filename}")
+                        
+                        # Find and log the template variables for debugging
+                        import re
+                        template_vars = re.findall(r"{{(.*?)}}", content)
+                        if template_vars:
+                            print(f"DEBUG: Found template variables: {', '.join(template_vars)}")
+                    else:
+                        print(f"DEBUG: File content does not contain template variables: {filename}")
+                        
+                    return has_variables
+            except Exception as e:
+                print(f"ERROR: Failed to check file content for template variables: {e}")
+                
+        print(f"DEBUG: File is not a text file or doesn't contain template variables: {filename}")
+        return False
+        
+    def _is_text_file(self, file_path):
+        """Check if a file is a text file"""
+        text_extensions = ['.txt', '.html', '.css', '.js', '.json', '.xml', '.md', '.csv', '.yml', '.yaml', 
+                          '.ini', '.cfg', '.conf', '.py', '.sh', '.bat', '.ps1', '.php', '.rb', '.java', 
+                          '.c', '.cpp', '.h', '.cs', '.swift', '.go', '.ts', '.jsx', '.tsx']
+        
+        # Get the file extension                  
+        _, ext = os.path.splitext(file_path.lower())
+        
+        print(f"DEBUG: Checking if file is text file: {file_path}, extension: {ext}")
+        
+        # Known text extensions
+        if ext in text_extensions:
+            print(f"DEBUG: File has a known text extension: {ext}")
+            return True
+            
+        # Try to detect text files without extensions
+        if os.path.exists(file_path):
+            print(f"DEBUG: File doesn't have a known text extension, testing content...")
+            try:
+                # Try to open and read a few bytes
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    sample = f.read(1024)
+                    # If we can read it as text, it's likely a text file
+                    is_text = '\0' not in sample  # Binary files often contain null bytes
+                    print(f"DEBUG: Content-based detection result: {'text file' if is_text else 'binary file'}")
+                    return is_text
+            except Exception as e:
+                print(f"DEBUG: Failed to read file for text detection: {e}")
+                
+        print(f"DEBUG: File is not a text file: {file_path}")
+        return False
     
     def import_template_file(self, file_path, name=None, structure_type=None):
         """Import a template from a file"""
@@ -517,4 +713,142 @@ class TemplateOperations:
             return True
         except Exception as e:
             print(f"Error updating directory template {template_name}: {e}")
+            return False
+    
+    def save_custom_structure(self, name, structure):
+        """Save a custom folder structure"""
+        if not name or not structure:
+            print(f"ERROR: Cannot save custom structure. Invalid name or structure.")
+            return False
+            
+        print(f"INFO: Saving custom structure '{name}'")
+        
+        # Initialize custom structures if needed
+        if not hasattr(self, 'custom_structures'):
+            self.custom_structures = []
+            
+        # Check if structure exists
+        existing_structure = None
+        for s in self.custom_structures:
+            if s.get("name") == name:
+                existing_structure = s
+                break
+                
+        # Create or update structure
+        structure_data = {
+            "name": name,
+            "structure": structure,
+            "modified": time.time()
+        }
+        
+        if not existing_structure:
+            structure_data["created"] = time.time()
+            self.custom_structures.append(structure_data)
+            print(f"INFO: Added new custom structure '{name}'")
+        else:
+            # Update existing structure
+            structure_data["created"] = existing_structure.get("created", time.time())
+            for i, s in enumerate(self.custom_structures):
+                if s.get("name") == name:
+                    self.custom_structures[i] = structure_data
+                    print(f"INFO: Updated existing custom structure '{name}'")
+                    break
+        
+        # Save to disk
+        try:
+            os.makedirs(self.paths["custom_structures_dir"], exist_ok=True)
+            file_path = os.path.join(self.paths["custom_structures_dir"], f"{name.replace(' ', '_')}.json")
+            
+            with open(file_path, 'w') as f:
+                json.dump(structure_data, f, indent=2)
+                
+            print(f"INFO: Successfully saved custom structure '{name}' to {file_path}")
+            return True
+        except Exception as e:
+            print(f"ERROR: Failed to save custom structure '{name}': {e}")
+            return False
+    
+    def get_custom_structure(self, name):
+        """
+        Get a custom structure by name
+        
+        Args:
+            name (str): Name of the custom structure
+            
+        Returns:
+            dict: The structure data, or None if not found
+        """
+        if not hasattr(self, 'custom_structures') or not self.custom_structures:
+            self.load_custom_structures()
+            
+        # Find the structure in the custom structures list
+        for structure in self.custom_structures:
+            if structure.get("name") == name:
+                print(f"INFO: Found custom structure '{name}'")
+                return structure.get("structure")
+                
+        print(f"INFO: Custom structure '{name}' not found")
+        return None
+        
+    def load_custom_structures(self):
+        """Load custom structures from disk"""
+        if not hasattr(self, 'custom_structures'):
+            self.custom_structures = []
+            
+        if not os.path.exists(self.paths["custom_structures_dir"]):
+            os.makedirs(self.paths["custom_structures_dir"], exist_ok=True)
+            return
+            
+        # Load all structure files
+        for filename in os.listdir(self.paths["custom_structures_dir"]):
+            if filename.endswith(".json"):
+                filepath = os.path.join(self.paths["custom_structures_dir"], filename)
+                try:
+                    with open(filepath, 'r') as f:
+                        structure_data = json.load(f)
+                        
+                    # Check if this structure already exists
+                    exists = False
+                    for i, s in enumerate(self.custom_structures):
+                        if s.get("name") == structure_data.get("name"):
+                            self.custom_structures[i] = structure_data
+                            exists = True
+                            break
+                            
+                    if not exists:
+                        self.custom_structures.append(structure_data)
+                        
+                    print(f"INFO: Loaded custom structure '{structure_data.get('name')}' from {filename}")
+                except Exception as e:
+                    print(f"ERROR: Failed to load custom structure from {filename}: {e}")
+                    
+        print(f"INFO: Loaded {len(self.custom_structures)} custom structures")
+        return self.custom_structures
+    
+    def delete_custom_structure(self, name):
+        """Delete a custom folder structure"""
+        if name not in self.custom_structures:
+            return False
+        
+        # Create a clean filename
+        filename = name.replace(" ", "_").replace("/", "-").replace("\\", "-")
+        file_path = os.path.join(self.paths["custom_structures_dir"], f"{filename}.json")
+        
+        try:
+            # Delete the structure JSON file
+            os.remove(file_path)
+            
+            # Delete all cached files associated with this structure
+            cache_dir = os.path.join(self.paths["templates_dir"], "cache", filename)
+            if os.path.exists(cache_dir):
+                print(f"DEBUG: Deleting cache directory for structure '{name}': {cache_dir}")
+                shutil.rmtree(cache_dir)
+                print(f"DEBUG: Successfully deleted cache directory for structure '{name}'")
+            
+            # Remove from in-memory cache
+            del self.custom_structures[name]
+            
+            return True
+        except Exception as e:
+            print(f"Error deleting structure {name}: {e}")
             return False 

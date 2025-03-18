@@ -41,6 +41,11 @@ def preview_structure(app, structure):
     # Create a tree widget to display the structure
     tree = QTreeWidget(dialog)
     tree.setHeaderHidden(True)
+    tree.setAlternatingRowColors(True)  # Improves readability
+    tree.setExpandsOnDoubleClick(True)  # Enable expand/collapse on double-click
+    tree.setAnimated(True)  # Smoother folder expansion
+    tree.setVerticalScrollMode(QTreeWidget.ScrollPerPixel)  # Ensures smooth scrolling
+    tree.setHorizontalScrollMode(QTreeWidget.ScrollPerPixel)
     tree.setStyleSheet(f"""
         QTreeWidget {{
             background-color: {colors['card_bg']};
@@ -59,7 +64,103 @@ def preview_structure(app, structure):
     # Add root project item
     root_item = QTreeWidgetItem(tree)
     root_item.setText(0, "Project Root")
+    root_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
     root_item.setExpanded(True)
+    
+    # Import needed for file icons
+    from PyQt5.QtWidgets import QFileIconProvider
+    from PyQt5.QtCore import QFileInfo
+    icon_provider = QFileIconProvider()
+    
+    # Helper function to get file icon by extension
+    def get_file_icon(file_name):
+        """Get proper system icon for a file based on its extension"""
+        from PyQt5.QtGui import QIcon
+        import os
+        
+        # Get file extension
+        _, file_ext = os.path.splitext(file_name.lower())
+        
+        # Try to use custom icons which are more visually distinctive
+        try:
+            # Import directly for better icons
+            from PyQt5.QtWidgets import QStyle
+            
+            # File type constants - these provide more distinct icons than QFileIconProvider
+            VIDEO_ICON = QApplication.style().standardIcon(QStyle.SP_MediaPlay)
+            AUDIO_ICON = QApplication.style().standardIcon(QStyle.SP_MediaVolume)
+            IMAGE_ICON = QApplication.style().standardIcon(QStyle.SP_DesktopIcon)
+            DOC_ICON = QApplication.style().standardIcon(QStyle.SP_FileDialogDetailedView)
+            CODE_ICON = QApplication.style().standardIcon(QStyle.SP_FileDialogContentsView)
+            ADOBE_ICON = QApplication.style().standardIcon(QStyle.SP_FileLinkIcon)
+            
+            # More specific file type mapping
+            # Video files
+            if file_ext in ['.mp4', '.mov', '.avi', '.mkv', '.mxf', '.webm', '.wmv', '.flv']:
+                return VIDEO_ICON
+                
+            # Audio files    
+            elif file_ext in ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a', '.aif', '.aiff']:
+                return AUDIO_ICON
+                
+            # Image files
+            elif file_ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.svg', '.psd']:
+                return IMAGE_ICON
+                
+            # Document files
+            elif file_ext in ['.pdf', '.doc', '.docx', '.txt', '.rtf', '.xls', '.xlsx', '.ppt', '.pptx']:
+                return DOC_ICON
+                
+            # Code files
+            elif file_ext in ['.py', '.js', '.html', '.css', '.json', '.xml', '.cpp', '.c', '.h', '.java']:
+                return CODE_ICON
+                
+            # Adobe project files - use different icon than normal files
+            elif file_ext in ['.prproj', '.aep', '.aepx', '.psd', '.ai', '.indd']:
+                return ADOBE_ICON
+                
+            # Now try the system icon provider as a fallback
+            from PyQt5.QtCore import QFileInfo
+            from PyQt5.QtWidgets import QFileIconProvider
+            icon_provider = QFileIconProvider()
+            
+            # For project name placeholders with extension
+            if '{PROJECT_NAME}' in file_name and '.' in file_name:
+                ext = '.' + file_name.split('.')[-1].split()[0]  # Get extension before any emoji
+                
+                # Re-use our custom mapping first
+                if ext in ['.mp4', '.mov', '.avi', '.mkv', '.mxf', '.webm', '.wmv', '.flv']:
+                    return VIDEO_ICON
+                elif ext in ['.mp3', '.wav', '.aac', '.flac', '.ogg', '.m4a', '.aif', '.aiff']:
+                    return AUDIO_ICON
+                elif ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.svg', '.psd']:
+                    return IMAGE_ICON
+                elif ext in ['.pdf', '.doc', '.docx', '.txt', '.rtf', '.xls', '.xlsx', '.ppt', '.pptx']:
+                    return DOC_ICON
+                elif ext in ['.py', '.js', '.html', '.css', '.json', '.xml', '.cpp', '.c', '.h', '.java']:
+                    return CODE_ICON
+                elif ext in ['.prproj', '.aep', '.aepx', '.psd', '.ai', '.indd']:
+                    return ADOBE_ICON
+                    
+                # If our mapping failed, try system icon
+                temp_file = f"temp{ext}"
+                file_info = QFileInfo(temp_file)
+                system_icon = icon_provider.icon(file_info)
+                if not system_icon.isNull():
+                    return system_icon
+            
+            # For regular files without special handling above
+            if not '{PROJECT_NAME}' in file_name:
+                file_info = QFileInfo(file_name)
+                system_icon = icon_provider.icon(file_info)
+                if not system_icon.isNull():
+                    return system_icon
+                
+        except Exception as e:
+            print(f"Error getting file icon: {e}")
+        
+        # Last resort - use generic file icon
+        return QApplication.style().standardIcon(QStyle.SP_FileIcon)
     
     # Helper function to add items recursively
     def add_items(parent_item, items):
@@ -69,7 +170,8 @@ def preview_structure(app, structure):
                 # It's a directory (either with children or empty)
                 for dir_name, children in item.items():
                     dir_item = QTreeWidgetItem(parent_item)
-                    dir_item.setText(0, f"📁 {dir_name}")
+                    dir_item.setText(0, dir_name)
+                    dir_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
                     dir_item.setExpanded(True)
                     # Mark as folder in data
                     dir_item.setData(0, Qt.UserRole, "folder")
@@ -82,16 +184,62 @@ def preview_structure(app, structure):
             elif isinstance(item, str):
                 # It's a file or legacy empty directory format
                 child_item = QTreeWidgetItem(parent_item)
-                # For backward compatibility, check if it has a trailing slash
-                if item.endswith('/'):
-                    child_item.setText(0, f"📁 {item.rstrip('/')}")
+                
+                # Check if it's a folder first
+                is_folder = False
+                
+                # Common file extensions that should ALWAYS be files
+                file_extensions = ['.prproj', '.aep', '.aepx', '.psd', '.ai', '.mp4', '.mov', '.jpg', '.jpeg', 
+                                  '.png', '.txt', '.html', '.css', '.js', '.json', '.xml', '.pdf', '.doc', 
+                                  '.docx', '.xls', '.xlsx', '.mp3', '.wav']
+                
+                # Check for project name placeholder with icon indicator
+                is_project_file = '{PROJECT_NAME}' in item and '.' in item
+                has_file_emoji = '🔄' in item
+                
+                # Special check for Adobe project files to ensure they're always files
+                is_adobe_file = any(item.lower().endswith(ext) for ext in ['.prproj', '.aep', '.aepx', '.psd', '.ai', '.indd'])
+                
+                # Check if it has a known file extension - always treat as a file
+                has_known_extension = any(item.lower().endswith(ext) for ext in file_extensions)
+                
+                # If it has a known file extension or is a project name file, it's definitely a file
+                if has_known_extension or is_project_file or has_file_emoji or is_adobe_file:
+                    is_folder = False
+                # Legacy format check  
+                elif item.endswith('/'):
+                    is_folder = True
+                # No file extension (likely a folder)
+                elif '.' not in item:
+                    is_folder = True
+                # Common numeric prefix pattern for folders (01_Footage)
+                elif item.startswith(tuple("0123456789")) and '_' in item[:4]:
+                    is_folder = True
+                # Common folder keywords
+                elif any(keyword in item.lower() for keyword in [
+                    'folder', 'dir', 'footage', 'audio', 'video', 'gfx', 'exports',
+                    'assets', 'renders', 'project', 'images', 'documents'
+                ]):
+                    is_folder = True
+                
+                if is_folder:
+                    # It's a folder
+                    folder_name = item.rstrip('/') if item.endswith('/') else item
+                    child_item.setText(0, folder_name)
+                    child_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
                     # Mark as folder in data
                     child_item.setData(0, Qt.UserRole, "folder")
                 else:
                     # It's a file
-                    child_item.setText(0, f"📄 {item}")
+                    child_item.setText(0, item)
+                    # Get proper icon for this file type
+                    child_item.setIcon(0, get_file_icon(item))
                     # Mark as file in data
                     child_item.setData(0, Qt.UserRole, "file")
+                    
+                    # Set special data for project name placeholder files
+                    if is_project_file or has_file_emoji:
+                        child_item.setData(0, Qt.UserRole + 3, True)  # Mark as using project name
     
     # Add structure items
     add_items(root_item, structure)
@@ -826,6 +974,26 @@ def edit_template_structure(parent, template, structure_tab):
             structure_tab.structure_name = structure_name
             template['structure_name'] = structure_name
         
+        # Check if updated_structure is a dictionary instead of a list
+        if isinstance(updated_structure, dict) and ('structure' in updated_structure or 'structure_name' in updated_structure):
+            print(f"DEBUG: Unwrapping structure from dictionary: {updated_structure.keys()}")
+            # Extract the actual structure array
+            if 'structure' in updated_structure and isinstance(updated_structure['structure'], list):
+                updated_structure = updated_structure['structure']
+            else:
+                # Create an empty structure if we can't find the real one
+                updated_structure = []
+            print(f"DEBUG: Unwrapped structure has {len(updated_structure)} items")
+        
+        # Verify updated_structure is a list
+        if not isinstance(updated_structure, list):
+            print(f"DEBUG: ERROR - updated_structure is not a list but {type(updated_structure)}")
+            # Try to convert to list or create empty list
+            try:
+                updated_structure = list(updated_structure)
+            except:
+                updated_structure = []
+        
         # Update the structure preview with the directly returned structure
         try:
             print(f"DEBUG: Updating structure tree with {len(updated_structure) if updated_structure else 0} items")
@@ -884,10 +1052,50 @@ def populate_structure_tree(parent_item, structure_items):
                 # Recursively add subitems
                 populate_structure_tree(folder_item, sub_items)
         elif isinstance(item, str):
-            # This is a file
-            file_item = QTreeWidgetItem(parent_item)
-            file_item.setText(0, item)
-            file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+            # Determine if this is a folder or file
+            is_folder = False
+            
+            # Common file extensions that should ALWAYS be files
+            file_extensions = ['.prproj', '.aep', '.aepx', '.psd', '.ai', '.mp4', '.mov', '.jpg', '.jpeg', 
+                              '.png', '.txt', '.html', '.css', '.js', '.json', '.xml', '.pdf', '.doc', 
+                              '.docx', '.xls', '.xlsx', '.mp3', '.wav']
+            
+            # Check if it has a known file extension - always treat as a file
+            has_known_extension = any(item.lower().endswith(ext) for ext in file_extensions)
+            
+            # If it has a known file extension, it's definitely a file
+            if has_known_extension:
+                is_folder = False
+            # Check common folder patterns
+            elif item.endswith('/'):
+                # Legacy format folder
+                is_folder = True
+                item = item.rstrip('/')
+            elif '.' not in item:
+                # No extension - likely a folder
+                is_folder = True
+            elif item.startswith(tuple("0123456789")) and '_' in item[:4]:
+                # Common folder pattern with numeric prefix (01_Footage)
+                is_folder = True
+            elif any(keyword in item.lower() for keyword in [
+                'folder', 'dir', 'footage', 'audio', 'video', 'gfx', 'exports',
+                'assets', 'renders', 'project', 'images', 'documents'
+            ]):
+                # Contains folder keywords
+                is_folder = True
+            
+            # Create the item with appropriate icon
+            tree_item = QTreeWidgetItem(parent_item)
+            tree_item.setText(0, item)
+            
+            if is_folder:
+                tree_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+                # Store that this is a folder in the data
+                tree_item.setData(0, Qt.UserRole, "folder")
+            else:
+                tree_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+                # Store that this is a file in the data
+                tree_item.setData(0, Qt.UserRole, "file")
 
 def show_manage_templates(parent, template_manager, callback=None):
     """Show the template management dialog"""
@@ -1413,8 +1621,20 @@ def show_enhanced_structure_editor(parent, structure_name=None, structure=None, 
     
     # If successful, retrieve both the structure and name
     if result:
-        updated_structure = structure_editor.get_result()
+        result_data = structure_editor.get_result()
         updated_name = getattr(structure_editor, 'result_name', structure_name)
+        
+        # Unwrap the structure data if it's in dictionary format
+        if isinstance(result_data, dict) and 'structure' in result_data:
+            updated_structure = result_data['structure']
+        else:
+            # Use whatever was returned directly
+            updated_structure = result_data
+        
+        # Fallback to the result_structure attribute if available
+        if not updated_structure and hasattr(structure_editor, 'result_structure'):
+            updated_structure = structure_editor.result_structure
+            
         return True, updated_structure, updated_name
     
     # If canceled, return False and None values

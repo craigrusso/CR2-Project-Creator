@@ -93,6 +93,9 @@ class ProjectCreatorApp(QMainWindow):
         self.recent_projects = load_recent_projects()
         self.recent_templates = load_recent_templates()
         
+        # Store the app version
+        self.app_version = APP_VERSION
+        
         # Setup UI components
         self._setup_ui()
         self._update_ui_from_config()
@@ -314,6 +317,51 @@ class ProjectCreatorApp(QMainWindow):
         import_template_action = QAction("Import Template...", self)
         import_template_action.triggered.connect(lambda: self.template_manager.import_template_ui(self))
         file_menu.addAction(import_template_action)
+        
+        # Export/Import Settings section
+        file_menu.addSeparator()
+        
+        # Export submenu
+        export_menu = QMenu("Export", self)
+        
+        # Export all settings and templates
+        export_all_action = QAction("All Settings and Templates...", self)
+        export_all_action.triggered.connect(self._export_all)
+        export_menu.addAction(export_all_action)
+        
+        # Export templates only
+        export_templates_action = QAction("Templates Only...", self)
+        export_templates_action.triggered.connect(self._export_templates)
+        export_menu.addAction(export_templates_action)
+        
+        # Export settings only
+        export_settings_action = QAction("Settings Only...", self)
+        export_settings_action.triggered.connect(self._export_settings)
+        export_menu.addAction(export_settings_action)
+        
+        # Add export menu to file menu
+        file_menu.addMenu(export_menu)
+        
+        # Import submenu
+        import_menu = QMenu("Import", self)
+        
+        # Import all settings and templates
+        import_all_action = QAction("All Settings and Templates...", self)
+        import_all_action.triggered.connect(self._import_all)
+        import_menu.addAction(import_all_action)
+        
+        # Import templates only
+        import_templates_action = QAction("Templates Only...", self)
+        import_templates_action.triggered.connect(self._import_templates)
+        import_menu.addAction(import_templates_action)
+        
+        # Import settings only
+        import_settings_action = QAction("Settings Only...", self)
+        import_settings_action.triggered.connect(self._import_settings)
+        import_menu.addAction(import_settings_action)
+        
+        # Add import menu to file menu
+        file_menu.addMenu(import_menu)
         
         file_menu.addSeparator()
         
@@ -782,4 +830,34 @@ class ProjectCreatorApp(QMainWindow):
         
         # Display the results if it's not just a boolean success indicator
         if results and not isinstance(results, bool):
-            show_batch_results(self, results) 
+            show_batch_results(self, results)
+
+    def _export_all(self):
+        """Export all settings and templates"""
+        from app.core.import_export_manager import export_package
+        export_package(self, include_settings=True, include_templates=True)
+    
+    def _export_templates(self):
+        """Export templates only"""
+        from app.core.import_export_manager import export_package
+        export_package(self, include_settings=False, include_templates=True)
+    
+    def _export_settings(self):
+        """Export settings only"""
+        from app.core.import_export_manager import export_package
+        export_package(self, include_settings=True, include_templates=False)
+    
+    def _import_all(self):
+        """Import all settings and templates"""
+        from app.core.import_export_manager import import_package
+        import_package(self, import_settings=True, import_templates=True)
+    
+    def _import_templates(self):
+        """Import templates only"""
+        from app.core.import_export_manager import import_package
+        import_package(self, import_settings=False, import_templates=True)
+    
+    def _import_settings(self):
+        """Import settings only"""
+        from app.core.import_export_manager import import_package
+        import_package(self, import_settings=True, import_templates=False) 

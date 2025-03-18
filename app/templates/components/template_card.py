@@ -698,6 +698,14 @@ class TemplateCard(QFrame):
         # Add separator
         context_menu.addSeparator()
         
+        # Add export template option
+        export_action = QAction("Export Template...", self)
+        export_action.triggered.connect(lambda: self._export_template())
+        context_menu.addAction(export_action)
+        
+        # Add separator
+        context_menu.addSeparator()
+        
         # Add move actions
         move_to_menu = ContextMenu(context_menu)
         move_to_menu.setTitle("Move to...")
@@ -1065,6 +1073,30 @@ class TemplateCard(QFrame):
             print(f"🔍 LISTENER: Applied multi-selected style to '{self.template_name()}'")
         
         return self.multi_selected
+
+    def _export_template(self):
+        """Export the template to a package file"""
+        template_name = self.template_name()
+        if not template_name or not self.app:
+            return
+            
+        # Use the export_template function from import_export_manager
+        from app.core.import_export_manager import export_template
+        
+        # Show dialog to ask if files should be included
+        from PyQt5.QtWidgets import QMessageBox
+        
+        include_files = QMessageBox.question(
+            self,
+            "Export Template",
+            f"Would you like to include files with this template?\n\n"
+            f"Including files will allow others to import the template with all its attached assets.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes
+        ) == QMessageBox.Yes
+        
+        # Export the template
+        export_template(self.app, template_name, include_files)
 
 class TemplateListItem(QFrame):
     """Template list item widget for displaying a template in list view"""
@@ -1725,6 +1757,14 @@ class TemplateListItem(QFrame):
         # Add separator
         context_menu.addSeparator()
         
+        # Add export template option
+        export_action = QAction("Export Template...", self)
+        export_action.triggered.connect(lambda: self._export_template())
+        context_menu.addAction(export_action)
+        
+        # Add separator
+        context_menu.addSeparator()
+        
         # Add move actions
         move_to_menu = ContextMenu(context_menu)
         move_to_menu.setTitle("Move to...")
@@ -1845,3 +1885,27 @@ class TemplateListItem(QFrame):
         # IMPORTANT: Refresh gallery after ALL templates are moved
         # Wait to refresh gallery until the end to ensure all templates are accounted for
         QTimer.singleShot(50, lambda: self._refresh_gallery(gallery))
+
+    def _export_template(self):
+        """Export the template to a package file"""
+        template_name = self.template_name()
+        if not template_name or not self.app:
+            return
+            
+        # Use the export_template function from import_export_manager
+        from app.core.import_export_manager import export_template
+        
+        # Show dialog to ask if files should be included
+        from PyQt5.QtWidgets import QMessageBox
+        
+        include_files = QMessageBox.question(
+            self,
+            "Export Template",
+            f"Would you like to include files with this template?\n\n"
+            f"Including files will allow others to import the template with all its attached assets.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes
+        ) == QMessageBox.Yes
+        
+        # Export the template
+        export_template(self.app, template_name, include_files)

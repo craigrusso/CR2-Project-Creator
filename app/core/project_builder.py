@@ -86,6 +86,10 @@ class ProjectBuilder:
         if not project_name or not output_dir:
             return False, "Project name and output directory are required"
         
+        # Debug information
+        print(f"DEBUG: Creating project '{project_name}' in '{output_dir}'")
+        print(f"DEBUG: template_file={template_file}, structure_name={structure_name}")
+        
         # Base project path
         project_path = os.path.join(output_dir, project_name)
         version = 1
@@ -99,19 +103,42 @@ class ProjectBuilder:
             # Create base directory
             os.makedirs(project_path)
             
+            # Make sure template_file is actually a valid path before processing it
             # Process template first (if provided and it's not our dummy gallery template)
             if template_file and template_file != "gallery_template":
-                if os.path.isdir(template_file):
-                    # Directory-based template
-                    self._copy_template_directory(template_file, project_path, project_name)
-                elif os.path.isfile(template_file):
-                    # File-based template
-                    self._copy_template_file(template_file, project_path, project_name, project_type)
+                print(f"DEBUG: Processing template file: {template_file}")
+                # Only process the template if it's a valid directory or file that exists
+                # This prevents copying from the application root directory unintentionally
+                if os.path.exists(template_file):
+                    if os.path.isdir(template_file):
+                        # Make sure we're not copying from the app's root directory
+                        app_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                        print(f"DEBUG: App root directory: {app_root}")
+                        print(f"DEBUG: Template directory: {os.path.abspath(template_file)}")
+                        
+                        if os.path.abspath(template_file) == app_root:
+                            print(f"Warning: Attempting to copy from application root directory, skipping template copy")
+                        else:
+                            # Directory-based template
+                            self._copy_template_directory(template_file, project_path, project_name)
+                    elif os.path.isfile(template_file):
+                        # File-based template
+                        self._copy_template_file(template_file, project_path, project_name, project_type)
+                    else:
+                        print(f"Warning: Template file does not exist: {template_file}")
                 else:
-                    print(f"Warning: Template file does not exist: {template_file}")
+                    print(f"Warning: Template path does not exist: {template_file}")
             
             # Create directory structure - get structure from name if provided
             if structure_name:
+                # Store the current structure name for use in file copying
+                if hasattr(self.template_manager, 'current_structure_name'):
+                    print(f"DEBUG: Setting current_structure_name to {structure_name}")
+                    self.template_manager.current_structure_name = structure_name
+                else:
+                    print(f"DEBUG: Adding current_structure_name attribute with value {structure_name}")
+                    setattr(self.template_manager, 'current_structure_name', structure_name)
+                
                 # Get the structure by name
                 directories = self.template_manager.get_structure(structure_name)
                 # Create the structure - pass the original project name
@@ -143,6 +170,10 @@ class ProjectBuilder:
             
         print(f"Creating folder structure at {project_path} with project name: {project_name}")
             
+        # Cache project name placeholder formats for faster replacement
+        project_name_placeholder_double = "{{PROJECT_NAME}}"
+        project_name_placeholder_single = "{PROJECT_NAME}"
+        
         # Handle different types of directories input
         if isinstance(directories, list):
             for item in directories:
@@ -150,11 +181,16 @@ class ProjectBuilder:
                 if isinstance(item, dict):
                     for folder_name, sub_items in item.items():
                         # Replace placeholders in folder_name if needed
-                        if isinstance(folder_name, str) and "{{PROJECT_NAME}}" in folder_name:
-                            new_folder_name = folder_name.replace("{{PROJECT_NAME}}", project_name)
-                            print(f"Renamed folder in structure: {folder_name} -> {new_folder_name}")
-                            folder_name = new_folder_name
-                            
+                        if isinstance(folder_name, str):
+                            if project_name_placeholder_double in folder_name:
+                                new_folder_name = folder_name.replace(project_name_placeholder_double, project_name)
+                                print(f"Renamed folder in structure: {folder_name} -> {new_folder_name}")
+                                folder_name = new_folder_name
+                            elif project_name_placeholder_single in folder_name:
+                                new_folder_name = folder_name.replace(project_name_placeholder_single, project_name)
+                                print(f"Renamed folder in structure: {folder_name} -> {new_folder_name}")
+                                folder_name = new_folder_name
+                        
                         # Create the parent folder
                         folder_path = os.path.join(project_path, folder_name)
                         os.makedirs(folder_path, exist_ok=True)
@@ -166,10 +202,15 @@ class ProjectBuilder:
                 # Handle string items (files or legacy format with trailing slash)
                 elif isinstance(item, str):
                     name = item
+                    original_name = item  # Keep the original name for cache lookup
                     
                     # FIXED: Better detection of folder vs file
                     # Check if this is a folder (using various signals)
                     is_folder = False
+                    
+                    # Check if this item has a project name placeholder - these are always files when they have extensions
+                    has_project_name_placeholder = (project_name_placeholder_double in name) or (project_name_placeholder_single in name)
+                    has_file_emoji = '🔄' in name
                     
                     # Legacy format - folder ending with slash
                     if name.endswith('/'):
@@ -183,18 +224,33 @@ class ProjectBuilder:
                     
                     # Check for folder naming conventions 
                     # e.g., folders typically don't have extensions, or have specific numeric prefixes
-                    elif ('.' not in name or name.startswith('_')) and not name.startswith('{{PROJECT_NAME}}'):
+                    elif ('.' not in name or name.startswith('_')) and not has_project_name_placeholder:
                         # Folders often have numeric prefixes like "1_Footage" or other folder-like naming
                         if (name.startswith(tuple("0123456789")) and '_' in name) or \
                            any(folder_keyword in name.lower() for folder_keyword in ['folder', 'dir', 'footage', 'audio', 'video', 'gfx', 'exports']):
                             is_folder = True
                             print(f"Detected '{name}' as a folder based on naming convention")
                     
-                    # Handle placeholder replacement in the name
-                    if "{{PROJECT_NAME}}" in name:
+                    # Handle placeholder replacement in the name - do this efficiently
+                    # First check double braces format
+                    if project_name_placeholder_double in name:
                         # Replace the placeholder with the project name
-                        name = name.replace("{{PROJECT_NAME}}", project_name)
+                        name = name.replace(project_name_placeholder_double, project_name)
                         print(f"Renamed item in structure: {item} -> {name}")
+                        is_folder = False  # If it has a project name placeholder, it's a file
+                    # Then check single braces format
+                    elif project_name_placeholder_single in name:
+                        # Replace the placeholder with the project name
+                        name = name.replace(project_name_placeholder_single, project_name)
+                        print(f"Renamed item in structure: {item} -> {name}")
+                        is_folder = False  # If it has a project name placeholder, it's a file
+                    
+                    # Special case - if it has the file emoji, it's definitely a file
+                    if has_file_emoji:
+                        is_folder = False
+                        # Remove the emoji from the name
+                        name = name.replace('🔄', '').strip()
+                        print(f"Removed emoji indicator from file name: {name}")
                     
                     if is_folder:
                         # It's a folder - create directory
@@ -212,18 +268,82 @@ class ProjectBuilder:
                         else:
                             file_path = os.path.join(project_path, name)
                         
-                        # Create an empty file
-                        print(f"Creating file: {file_path}")
-                        open(file_path, 'a').close()
+                        # Check if this is a file that should be copied from the cache
+                        source_file = None
+                        
+                        # For files with project name placeholders and emoji, try to find them in the cache
+                        if has_project_name_placeholder or has_file_emoji:
+                            # Get the original file name (without emoji) for cache lookup
+                            lookup_name = original_name.replace('🔄', '').strip()
+                            
+                            # Extract just the filename part if it has a path
+                            if '/' in lookup_name:
+                                _, lookup_filename = os.path.split(lookup_name)
+                            else:
+                                lookup_filename = lookup_name
+                                
+                            # 1. First try finding the file in the structure cache directory
+                            # The cache should be in templates/cache/structure_name
+                            structure_name = None
+                            if hasattr(self.template_manager, 'current_structure_name'):
+                                structure_name = self.template_manager.current_structure_name
+                            elif hasattr(self.template_manager, 'last_structure_name'):
+                                structure_name = self.template_manager.last_structure_name
+                            
+                            if structure_name:
+                                # Clean up structure name for file system
+                                safe_name = structure_name.replace(" ", "_").replace("/", "-").replace("\\", "-").replace("'", "")
+                                cache_dir = os.path.join(self.template_manager.paths["templates_dir"], "cache", safe_name)
+                                
+                                # Try to find the file in the cache (both with the placeholder and without)
+                                # Check with the exact filename first
+                                if os.path.exists(os.path.join(cache_dir, lookup_filename)):
+                                    source_file = os.path.join(cache_dir, lookup_filename)
+                                    print(f"Found source file in cache: {source_file}")
+                                else:
+                                    # For files with placeholders, we need to look for the original file
+                                    # Extract the base name and extension
+                                    filename_parts = os.path.splitext(lookup_filename)
+                                    if len(filename_parts) > 1:
+                                        base_name, ext = filename_parts
+                                        
+                                        # Go through all files in the cache directory
+                                        if os.path.exists(cache_dir):
+                                            for cached_file in os.listdir(cache_dir):
+                                                # Check if it has the same extension
+                                                if cached_file.endswith(ext):
+                                                    source_file = os.path.join(cache_dir, cached_file)
+                                                    print(f"Found source file with matching extension in cache: {source_file}")
+                                                    break
+                    
+                        # Create the file
+                        if source_file and os.path.exists(source_file):
+                            # Copy the source file to the destination
+                            print(f"Copying file from cache: {source_file} -> {file_path}")
+                            shutil.copy2(source_file, file_path)
+                            
+                            # If it's a text file, replace any placeholders in the content
+                            if self._is_text_file(source_file):
+                                self._replace_template_placeholders(file_path, project_name)
+                        else:
+                            # Create an empty file if no source file was found
+                            print(f"Creating empty file (no source found in cache): {file_path}")
+                            open(file_path, 'a').close()
+        
         # Handle case where directories is a dict (may happen in recursive calls)
         elif isinstance(directories, dict):
             for folder_name, sub_items in directories.items():
                 # Replace placeholders in folder_name if needed
-                if isinstance(folder_name, str) and "{{PROJECT_NAME}}" in folder_name:
-                    new_folder_name = folder_name.replace("{{PROJECT_NAME}}", project_name)
-                    print(f"Renamed folder in structure: {folder_name} -> {new_folder_name}")
-                    folder_name = new_folder_name
-                    
+                if isinstance(folder_name, str):
+                    if project_name_placeholder_double in folder_name:
+                        new_folder_name = folder_name.replace(project_name_placeholder_double, project_name)
+                        print(f"Renamed folder in structure: {folder_name} -> {new_folder_name}")
+                        folder_name = new_folder_name
+                    elif project_name_placeholder_single in folder_name:
+                        new_folder_name = folder_name.replace(project_name_placeholder_single, project_name)
+                        print(f"Renamed folder in structure: {folder_name} -> {new_folder_name}")
+                        folder_name = new_folder_name
+                
                 # Create the parent folder
                 folder_path = os.path.join(project_path, folder_name)
                 os.makedirs(folder_path, exist_ok=True)
@@ -245,6 +365,25 @@ class ProjectBuilder:
         """Copy a directory template, renaming files that match specific patterns"""
         print(f"Copying template directory: {template_dir} to {project_path}")
         
+        # Safety check: make sure we're not copying from system directories
+        template_abs_path = os.path.abspath(template_dir)
+        app_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        system_dirs = ["/", "/usr", "/etc", "/var", "/bin", "/sbin", "/lib", app_root]
+        
+        if any(template_abs_path == os.path.abspath(d) or template_abs_path.startswith(os.path.abspath(d) + os.sep) for d in system_dirs):
+            print(f"WARNING: Refusing to copy from system directory or app root: {template_abs_path}")
+            print(f"This is likely unintentional and could copy unwanted files.")
+            return
+        
+        # Skip if the directory doesn't exist
+        if not os.path.exists(template_dir) or not os.path.isdir(template_dir):
+            print(f"WARNING: Template directory does not exist: {template_dir}")
+            return
+        
+        # Define placeholder formats we need to replace
+        double_brace_placeholder = "{{PROJECT_NAME}}"
+        single_brace_placeholder = "{PROJECT_NAME}"
+        
         for root, dirs, files in os.walk(template_dir):
             # Skip template.json file
             if "template.json" in files:
@@ -258,8 +397,12 @@ class ProjectBuilder:
                 # Replace PROJECT_NAME in directory names if needed
                 rel_path_parts = []
                 for part in rel_path.split(os.sep):
-                    if "{{PROJECT_NAME}}" in part:
-                        new_part = part.replace("{{PROJECT_NAME}}", project_name)
+                    if double_brace_placeholder in part:
+                        new_part = part.replace(double_brace_placeholder, project_name)
+                        print(f"Renamed directory: {part} -> {new_part}")
+                        part = new_part
+                    elif single_brace_placeholder in part:
+                        new_part = part.replace(single_brace_placeholder, project_name)
                         print(f"Renamed directory: {part} -> {new_part}")
                         part = new_part
                     rel_path_parts.append(part)
@@ -269,15 +412,23 @@ class ProjectBuilder:
             # Create target directory
             os.makedirs(target_dir, exist_ok=True)
             
-            # Copy files, renaming any with {{PROJECT_NAME}} in them
+            # Copy files, renaming any with placeholder in them
             for file in files:
                 source_file = os.path.join(root, file)
                 
                 # Handle file renaming if needed
                 target_file_name = file
-                if "{{PROJECT_NAME}}" in file:
-                    target_file_name = file.replace("{{PROJECT_NAME}}", project_name)
+                if double_brace_placeholder in file:
+                    target_file_name = file.replace(double_brace_placeholder, project_name)
                     print(f"Renamed file: {file} -> {target_file_name}")
+                elif single_brace_placeholder in file:
+                    target_file_name = file.replace(single_brace_placeholder, project_name)
+                    print(f"Renamed file: {file} -> {target_file_name}")
+                
+                # Remove the emoji indicator if present
+                if '🔄' in target_file_name:
+                    target_file_name = target_file_name.replace('🔄', '').strip()
+                    print(f"Removed emoji from file name: {target_file_name}")
                 
                 target_file = os.path.join(target_dir, target_file_name)
                 
@@ -333,12 +484,19 @@ class ProjectBuilder:
             
             replacements = {
                 "{{PROJECT_NAME}}": project_name,
+                "{PROJECT_NAME}": project_name,
                 "{{PROJECT NAME}}": project_name,
+                "{PROJECT NAME}": project_name,
                 "{{PROJECTNAME}}": project_name,
+                "{PROJECTNAME}": project_name,
                 "{{project_name}}": project_name.lower(),
+                "{project_name}": project_name.lower(),
                 "{{Project_Name}}": project_name.title(),
+                "{Project_Name}": project_name.title(),
                 "{{DATE}}": current_date,
-                "{{YEAR}}": current_year
+                "{DATE}": current_date,
+                "{{YEAR}}": current_year,
+                "{YEAR}": current_year
             }
             
             # Apply all replacements
@@ -365,12 +523,22 @@ class ProjectBuilder:
         filename = os.path.basename(template_file)
         _, ext = os.path.splitext(filename)
         
-        # Check if filename contains placeholders
+        # Check if filename contains placeholders (both formats)
         if "{{PROJECT_NAME}}" in filename:
             print(f"Template filename contains placeholder: {filename}")
             # Replace placeholder but keep the extension
             filename = filename.replace("{{PROJECT_NAME}}", project_name)
             print(f"Renamed template file to: {filename}")
+        elif "{PROJECT_NAME}" in filename:
+            print(f"Template filename contains placeholder: {filename}")
+            # Replace placeholder but keep the extension
+            filename = filename.replace("{PROJECT_NAME}", project_name)
+            print(f"Renamed template file to: {filename}")
+        
+        # Remove emoji indicator if present
+        if '🔄' in filename:
+            filename = filename.replace('🔄', '').strip()
+            print(f"Removed emoji from file name: {filename}")
         
         # Determine destination subfolder based on file type
         if ext.lower() in ['.prproj']:

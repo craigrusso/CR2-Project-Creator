@@ -2,16 +2,22 @@
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
 import os
+import shutil
+import sys
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-    QPushButton, QLineEdit, QTreeWidget, QTreeWidgetItem,
-    QMessageBox, QGroupBox, QComboBox, QCheckBox,
-    QMenu, QAction, QStyle, QApplication, QInputDialog,
-    QSplitter, QWidget
+    QLineEdit, QPushButton, QTreeWidget, QTreeWidgetItem,
+    QHeaderView, QMenu, QMessageBox, QComboBox,
+    QFileDialog, QToolBar, QAction, QStyle, QApplication, 
+    QSplitter, QWidget, QSizePolicy, QGroupBox, QCheckBox,
+    QTabWidget, QListWidget, QFrame, QAbstractItemView, QInputDialog,
+    QFileIconProvider
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QUrl, QMimeData
-from PyQt5.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent, QFont, QIcon
+from PyQt5.QtCore import Qt, pyqtSignal, QUrl, QMimeData, QSize, QPoint, QTimer, QFileInfo
+from PyQt5.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent, QFont, QIcon, QDrag, QCursor, QPixmap, QGuiApplication
 
+# Import app modules
+from app.templates.template_manager import TemplateManager
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, LINEEDIT_STYLE, LABEL_STYLE, COMBOBOX_STYLE, CONTEXT_MENU_STYLE
 from app.templates.components.menu_actions import CustomMenu
 
@@ -174,8 +180,19 @@ class EnhancedStructureEditor(QDialog):
         # Enable multi-selection
         self.tree.setSelectionMode(QTreeWidget.ExtendedSelection)
         
+        # Enable scroll wheel and improve scrolling behavior
+        self.tree.setVerticalScrollMode(QTreeWidget.ScrollPerPixel)
+        self.tree.setHorizontalScrollMode(QTreeWidget.ScrollPerPixel)
+        # Ensure mouse wheel events are processed
+        self.tree.setFocusPolicy(Qt.StrongFocus)
+        # Connect the wheel event handler - replace the widget's wheelEvent method
+        self.tree.viewport().wheelEvent = self._tree_wheelEvent
+        
         # Connect double-click event to rename
         self.tree.itemDoubleClicked.connect(self.on_item_double_clicked)
+        
+        # Connect single-click event to expand/collapse folders
+        self.tree.itemClicked.connect(self.on_item_clicked)
         
         # Enable drag and drop for the tree widget
         self.tree.setDragEnabled(True)
@@ -319,13 +336,14 @@ class EnhancedStructureEditor(QDialog):
             categorized_structures = {category: [] for category in categories.keys()}
             
             # Add all structures to appropriate categories
-            for name in sorted(self.template_manager.custom_structures.keys()):
-                category = structure_assignments.get(name, default_category_name)
-                if category in categorized_structures:
-                    categorized_structures[category].append(name)
-                else:
-                    # If assigned category doesn't exist, use default
-                    categorized_structures[default_category_name].append(name)
+            if hasattr(self.template_manager, 'custom_structures'):
+                for name, structure_data in sorted(self.template_manager.custom_structures.items()):
+                    category = structure_assignments.get(name, default_category_name)
+                    if category in categorized_structures:
+                        categorized_structures[category].append(name)
+                    else:
+                        # If assigned category doesn't exist, use default
+                        categorized_structures[default_category_name].append(name)
             
             # Now add items by category
             for category in sorted(categories.keys()):
@@ -339,9 +357,10 @@ class EnhancedStructureEditor(QDialog):
             
             # Add any uncategorized structures
             uncategorized = []
-            for name in sorted(self.template_manager.custom_structures.keys()):
-                if all(name not in category_list for category_list in categorized_structures.values()):
-                    uncategorized.append(name)
+            if hasattr(self.template_manager, 'custom_structures'):
+                for name in self.template_manager.custom_structures.keys():
+                    if all(name not in category_list for category_list in categorized_structures.values()):
+                        uncategorized.append(name)
                     
             if uncategorized:
                 for name in sorted(uncategorized):
@@ -460,6 +479,16 @@ class EnhancedStructureEditor(QDialog):
         if self.structure is None:
             self.structure = []
         
+        print("\n[DEBUG] STRUCTURE EDITOR: Populating structure")
+        print(f"[DEBUG] STRUCTURE FORMAT: {self.structure}")
+        
+        # Debug: Print the format of each item to understand what's happening
+        for item in self.structure:
+            if isinstance(item, dict):
+                print(f"[DEBUG] DICT ITEM: {item}")
+            else:
+                print(f"[DEBUG] STRING ITEM: '{item}'")
+        
         self.tree.clear()
         
         # Add root item
@@ -474,44 +503,126 @@ class EnhancedStructureEditor(QDialog):
     
     def add_structure_items(self, parent_item, items):
         """Add structure items recursively"""
+        print(f"[DEBUG] Adding {len(items)} items to parent: {parent_item.text(0)}")
+        
         for item in items:
             if isinstance(item, dict):
                 # Handle dictionary item (folder with subitems)
+                print(f"[DEBUG] Processing dict item: {item}")
                 for folder_name, sub_items in item.items():
+                    print(f"[DEBUG] Adding folder: {folder_name} with {len(sub_items) if isinstance(sub_items, list) else 'unknown'} subitems")
                     folder_item = QTreeWidgetItem(parent_item)
                     folder_item.setText(0, folder_name)
                     folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-                    # Store that this is a folder in the data
+                    # Store that this is a folder in the data - CRITICAL for proper folder rendering
                     folder_item.setData(0, Qt.UserRole, "folder")
                     # Make folder items editable
                     folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
-                    self.add_structure_items(folder_item, sub_items)
+                    # Always show the expand/collapse indicator for folders
+                    folder_item.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
+                    # Only add subitems if they exist and are a list
+                    if isinstance(sub_items, list):
+                        self.add_structure_items(folder_item, sub_items)
             else:
-                # Handle string item
+                # Handle string item (file or legacy folder format)
                 name = item
+                
+                # Detect if this is a template variable - they should ALWAYS be files
+                is_template_var = ('{{' in name and '}}' in name) or name.startswith('$') or name.endswith('$')
+                
+                # Project name placeholder - should be a file if it has an extension or the 🔄 emoji
+                is_project_name = '{PROJECT_NAME}' in name
+                
+                # Check if this is intended to be a folder (ends with slash)
                 is_folder = name.endswith('/')
                 
-                if is_folder:
-                    name = name[:-1]  # Remove trailing slash
+                # Common file extensions that should ALWAYS be files
+                file_extensions = ['.prproj', '.aep', '.aepx', '.psd', '.ai', '.mp4', '.mov', '.jpg', '.jpeg', 
+                                  '.png', '.txt', '.html', '.css', '.js', '.json', '.xml', '.pdf', '.doc', 
+                                  '.docx', '.xls', '.xlsx', '.mp3', '.wav']
+                
+                # Check if it has a known file extension - always treat as a file
+                has_known_extension = any(name.lower().endswith(ext) for ext in file_extensions)
+                
+                # Check for special indicators that this is a file with name inheritance
+                has_file_emoji = '🔄' in name
+                
+                # If it's a project name placeholder with an extension or the emoji, it's definitely a file
+                is_definitely_file = is_template_var or has_known_extension or has_file_emoji or (is_project_name and '.' in name)
+                
+                # More aggressive folder detection, but ONLY if it's not definitely a file
+                if not is_folder and not is_definitely_file:
+                    # Consider it a folder if:
+                    # 1. No file extension (no dot)
+                    # 2. Has numeric prefix with underscore (common for folders like "01_Footage")
+                    # 3. Contains folder-like keywords
+                    has_extension = '.' in name and not name.startswith('.')
+                    has_numeric_prefix = any(c.isdigit() for c in name[:2]) and '_' in name[:4]
+                    folder_keywords = ['folder', 'dir', 'footage', 'audio', 'video', 'gfx', 'exports',
+                                      'assets', 'renders', 'project', 'images', 'documents']
+                    has_folder_keyword = any(keyword in name.lower() for keyword in folder_keywords)
+                    
+                    # If it looks like a folder, mark it as such
+                    is_folder = (not has_extension) or has_numeric_prefix or has_folder_keyword
+                
+                print(f"[DEBUG] Processing string item: '{name}', is_folder={is_folder}, is_template_var={is_template_var}, has_known_extension={has_known_extension}")
+                
+                if is_folder and name.endswith('/'):
+                    name = name[:-1]  # Remove trailing slash if present
                 
                 item_widget = QTreeWidgetItem(parent_item)
                 item_widget.setText(0, name)
                 
-                if is_folder:
-                    # Empty folder - set folder icon
+                # Files take precedence over folder detection if any file indicators are present
+                if is_definitely_file:
+                    item_widget.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+                    item_widget.setData(0, Qt.UserRole, "file")
+                    
+                    # Check if this is a file with project name inheritance
+                    if is_project_name or has_file_emoji:
+                        item_widget.setData(0, Qt.UserRole + 3, True)  # Mark as using project name
+                    
+                    print(f"[DEBUG] Marked '{name}' as a file")
+                    
+                    # Try to get a better icon for this file type if we can
+                    if self._get_file_icon_for_type:
+                        try:
+                            extension = name.split('.')[-1] if '.' in name else ''
+                            icon = self._get_file_icon_for_type(extension)
+                            if icon:
+                                item_widget.setIcon(0, icon)
+                        except Exception as e:
+                            print(f"Error getting file icon: {e}")
+                elif is_folder:
+                    # It's a folder - set folder icon
                     item_widget.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-                    # Store that this is a folder in the data
+                    # Store that this is a folder in the data - CRITICAL for proper folder rendering
                     item_widget.setData(0, Qt.UserRole, "folder")
-                    # Make folder items editable
-                    item_widget.setFlags(item_widget.flags() | Qt.ItemIsEditable)
+                    print(f"[DEBUG] Marked '{name}' as a folder")
+                    
+                    # If this is a folder represented as a string, initialize it with an empty list
+                    # so it can properly contain child items
+                    item_widget.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
                 else:
-                    # File
+                    # It's a file
                     item_widget.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
                     # Store that this is a file in the data
                     item_widget.setData(0, Qt.UserRole, "file")
-                    # Make file items editable
-                    item_widget.setFlags(item_widget.flags() | Qt.ItemIsEditable)
+                    print(f"[DEBUG] Marked '{name}' as a file")
                     
+                    # Try to get a better icon for this file type if we can
+                    if self._get_file_icon_for_type:
+                        try:
+                            extension = name.split('.')[-1] if '.' in name else ''
+                            icon = self._get_file_icon_for_type(extension)
+                            if icon:
+                                item_widget.setIcon(0, icon)
+                        except Exception as e:
+                            print(f"Error getting file icon: {e}")
+                
+                # Make item editable
+                item_widget.setFlags(item_widget.flags() | Qt.ItemIsEditable)
+    
     def show_context_menu(self, position):
         """Show context menu for tree items"""
         selected_items = self.tree.selectedItems()
@@ -597,6 +708,26 @@ class EnhancedStructureEditor(QDialog):
                 rename_action = QAction("Rename...", self)
                 rename_action.triggered.connect(lambda: self.rename_item(item))
                 menu.addAction(rename_action)
+                
+                # For files, add option to toggle project name inheritance
+                if item_data == "file":
+                    menu.addSeparator()
+                    
+                    # Check if using project name
+                    using_project_name = item.data(0, Qt.UserRole + 3) == True
+                    
+                    if using_project_name:
+                        project_name_action = QAction("Stop Using Project Name", self)
+                        project_name_action.triggered.connect(lambda: self.toggle_project_name_inheritance(item, False))
+                    else:
+                        # Get file extension to show in menu
+                        filename = item.text(0)
+                        _, ext = os.path.splitext(filename.lower())
+                        project_name_action = QAction(f"Use Project Name ({{PROJECT_NAME}}{ext})", self)
+                        project_name_action.triggered.connect(lambda: self.toggle_project_name_inheritance(item, True))
+                    
+                    menu.addAction(project_name_action)
+                    menu.addSeparator()
                 
                 # Add red styling for delete action
                 menu.addRedDeleteAction(
@@ -713,55 +844,51 @@ class EnhancedStructureEditor(QDialog):
 
     def add_folder(self, parent=None):
         """Add a folder to the structure"""
-        print("DEBUG: EnhancedStructureEditor.add_folder called")
-        
-        # Handle boolean (from signal) same as None
+        # Handle boolean from signal
         if isinstance(parent, bool):
-            print("DEBUG: Received boolean instead of parent item, using None")
+            print("DEBUG: Received boolean instead of parent item in add_folder, using None")
             parent = None
-        
-        # If no parent specified, use selected item or root
+            
+        # Get the current item if parent is None
         if parent is None:
             parent = self.tree.currentItem()
-            
-        # If still no parent, use root
+        
+        # If no item is selected, use the root item
         if parent is None:
+            parent = self.tree.invisibleRootItem().child(0)  # Get the Project Root item
+        
+        # Verify parent is valid
+        if not parent or not isinstance(parent, QTreeWidgetItem):
+            print("DEBUG: Invalid parent for add_folder, using root")
             parent = self.tree.invisibleRootItem().child(0)
         
-        # Ensure parent is a QTreeWidgetItem
-        if not hasattr(parent, 'text') or not hasattr(parent, 'childCount'):
-            print("DEBUG: Invalid parent for add_folder")
-            parent = self.tree.invisibleRootItem().child(0)
-            
         # If parent is a file, use its parent
         if parent and parent.data(0, Qt.UserRole) == "file":
             parent = parent.parent() or self.tree.invisibleRootItem().child(0)
         
-        folder_name, ok = QInputDialog.getText(self, "Add Folder", "Folder name:")
-        if ok and folder_name:
-            print(f"DEBUG: Creating folder '{folder_name}'")
-            
-            # Create folder item
-            folder_item = QTreeWidgetItem(parent)
-            folder_item.setText(0, folder_name)
-            folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-            # Mark this item as a folder in user data
-            folder_item.setData(0, Qt.UserRole, "folder")
-            # Make folder editable
-            folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
-            
-            # Expand parent if it's a valid QTreeWidgetItem
-            if hasattr(parent, 'setExpanded'):
-                parent.setExpanded(True)
-                
-            # Force the tree to update
-            self.tree.update()
-            
-            # Make the new folder visible by selecting it
-            self.tree.setCurrentItem(folder_item)
-            
-            print(f"DEBUG: Added folder '{folder_name}' successfully")
-            
+        # Add a new item
+        folder_item = QTreeWidgetItem(parent)
+        folder_item.setText(0, "New Folder")
+        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+        
+        # Store that this is a folder in the data
+        folder_item.setData(0, Qt.UserRole, "folder")
+        
+        # Make item editable
+        folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+        
+        # Ensure the folder shows the expand/collapse indicator
+        folder_item.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
+        
+        # Expand the parent item to show the new folder
+        parent.setExpanded(True)
+        
+        # Start editing the item to rename it
+        self.tree.editItem(folder_item, 0)
+        
+        print(f"DEBUG: Added folder successfully under '{parent.text(0)}'")
+        return folder_item
+
     def add_file(self, parent=None):
         """Add a file to the structure"""
         print("DEBUG: EnhancedStructureEditor.add_file called")
@@ -779,15 +906,15 @@ class EnhancedStructureEditor(QDialog):
         if parent is None:
             parent = self.tree.invisibleRootItem().child(0)
             
-        # Ensure parent is a QTreeWidgetItem
-        if not hasattr(parent, 'text') or not hasattr(parent, 'childCount'):
-            print("DEBUG: Invalid parent for add_file")
+        # Verify parent is valid
+        if not parent or not isinstance(parent, QTreeWidgetItem):
+            print("DEBUG: Invalid parent for add_file, using root")
             parent = self.tree.invisibleRootItem().child(0)
             
         # If parent is a file, use its parent
         if parent and parent.data(0, Qt.UserRole) == "file":
             parent = parent.parent() or self.tree.invisibleRootItem().child(0)
-        
+            
         # First try to browse for an existing file
         from PyQt5.QtWidgets import QFileDialog
         file_path, _ = QFileDialog.getOpenFileName(
@@ -797,33 +924,105 @@ class EnhancedStructureEditor(QDialog):
             "All Files (*)"
         )
         
-        if file_path and os.path.exists(file_path):
-            # Get file name and suggest a placeholder version
-            original_filename = os.path.basename(file_path)
-            filename_base, filename_ext = os.path.splitext(original_filename)
-            suggested_name = f"{{{{PROJECT_NAME}}}}{filename_ext}"
+        # If file was selected, add it to the structure
+        if file_path:
+            file_name = os.path.basename(file_path)
+            file_item = QTreeWidgetItem(parent)
+            file_item.setText(0, file_name)
             
-            # Ask user to confirm or modify the filename
-            file_name, ok = QInputDialog.getText(
-                self, 
-                "File Name", 
-                "Enter file name (use {{PROJECT_NAME}} as placeholder):",
-                text=suggested_name
+            # Determine if this is a binary file by checking for null bytes
+            is_binary = False
+            try:
+                with open(file_path, 'rb') as f:
+                    sample = f.read(1024)
+                    is_binary = b'\0' in sample
+                    print(f"DEBUG: File detection - {file_path} is {'binary' if is_binary else 'text'}")
+            except Exception as e:
+                print(f"DEBUG: Error checking file type: {e}")
+            
+            # Get the appropriate file icon using our specialized method
+            file_icon = self._get_file_icon_for_type(file_path)
+            file_item.setIcon(0, file_icon)
+            
+            # Store that this is a file in the data
+            file_item.setData(0, Qt.UserRole, "file")
+            
+            # Store the original file path in the data field
+            file_item.setData(0, Qt.UserRole + 1, file_path)
+            
+            # Check if this is a Premiere Pro file or other project file type that might benefit 
+            # from using the project name
+            _, ext = os.path.splitext(file_path.lower())
+            is_project_file = ext in ['.prproj', '.aep', '.aepx', '.psd', '.ai']
+            
+            # For Premiere and similar project files, offer to use project name placeholder
+            if is_project_file:
+                from PyQt5.QtWidgets import QMessageBox
+                reply = QMessageBox.question(
+                    self,
+                    "Use Project Name",
+                    f"Would you like this file to inherit the project name when created?\n\n"
+                    f"If yes, '{file_name}' will be renamed to '{{PROJECT_NAME}}{ext}' in new projects.\n\n"
+                    f"You can change this setting later via right-click menu.",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+                
+                use_project_name = (reply == QMessageBox.Yes)
+                if use_project_name:
+                    # Store original filename for reference
+                    file_item.setData(0, Qt.UserRole + 2, file_name)
+                    # Mark as using project name 
+                    file_item.setData(0, Qt.UserRole + 3, True)
+                    # Update display name with visual indicator
+                    file_item.setText(0, f"{{PROJECT_NAME}}{ext} 🔄")
+                    # Add tooltip explaining the placeholder
+                    file_item.setToolTip(0, f"This file will be named with the project name.\nOriginal: {file_name}")
+            
+            print(f"DEBUG: Added file from path: {file_path}")
+            
+            # Add all files to the cache list, not just those with template variables
+            if hasattr(self.template_manager, '_cache_template_files'):
+                # When we save the structure, we'll need to cache these files
+                # Here we store the file path so we can access it later when saving
+                if not hasattr(self, 'files_to_cache'):
+                    self.files_to_cache = []
+                self.files_to_cache.append(file_path)
+                print(f"DEBUG: Added {file_path} to cache list. Cache list now has {len(self.files_to_cache)} files")
+            else:
+                print(f"DEBUG: Template manager doesn't have required methods for caching")
+            
+            # Make file item editable
+            file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+            
+            # Expand the parent for visibility
+            parent.setExpanded(True)
+            
+            # Set as current item
+            self.tree.setCurrentItem(file_item)
+            
+            return file_item
+        else:
+            # If the user cancelled, try to create an empty file
+            name, ok = QInputDialog.getText(
+                self,
+                "Create File",
+                "Enter file name:",
+                text="newfile.txt"
             )
             
-            if ok and file_name:
+            if ok and name:
                 # Create file item
                 file_item = QTreeWidgetItem(parent)
-                file_item.setText(0, file_name)
+                file_item.setText(0, name)
                 file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
                 # Mark this item as a file in user data
                 file_item.setData(0, Qt.UserRole, "file")
                 # Make file editable
                 file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
                 
-                # Expand parent if it's a valid QTreeWidgetItem
-                if hasattr(parent, 'setExpanded'):
-                    parent.setExpanded(True)
+                # Expand parent
+                parent.setExpanded(True)
                 
                 # Force the tree to update
                 self.tree.update()
@@ -831,33 +1030,15 @@ class EnhancedStructureEditor(QDialog):
                 # Make the new file visible by selecting it
                 self.tree.setCurrentItem(file_item)
                 
-                print(f"DEBUG: Added file '{file_name}' successfully")
-                return
+                print(f"DEBUG: Added file '{name}' successfully")
+                return file_item
+            else:
+                print("DEBUG: User cancelled file creation")
+                return None
                 
-        # If no file selected, fall back to just entering a name
-        file_name, ok = QInputDialog.getText(self, "Add File", "File name:")
-        if ok and file_name:
-            # Create file item
-            file_item = QTreeWidgetItem(parent)
-            file_item.setText(0, file_name)
-            file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-            # Mark this item as a file in user data
-            file_item.setData(0, Qt.UserRole, "file")
-            # Make file editable
-            file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
-            
-            # Expand parent if it's a valid QTreeWidgetItem
-            if hasattr(parent, 'setExpanded'):
-                parent.setExpanded(True)
-            
-            # Force the tree to update
-            self.tree.update()
-            
-            # Make the new file visible by selecting it
-            self.tree.setCurrentItem(file_item)
-            
-            print(f"DEBUG: Added file '{file_name}' successfully")
-            
+        # This code should not be reached, but just in case
+        return None
+
     def delete_item(self, item=None):
         """Delete an item from the tree"""
         print("DEBUG: EnhancedStructureEditor.delete_item called")
@@ -906,11 +1087,65 @@ class EnhancedStructureEditor(QDialog):
         # Now delete items
         for _, item in items_to_delete:
             print(f"DEBUG: Attempting to delete item: '{item.text(0)}'")
+            
+            # Check if it's a file and if we need to track it for cache removal
+            if item.data(0, Qt.UserRole) == "file":
+                # Get the file path if it was stored
+                file_path = item.data(0, Qt.UserRole + 1)
+                file_name = item.text(0)
+                
+                print(f"DEBUG: Deleting file: {file_name}")
+                
+                # Track this file for cache removal
+                if not hasattr(self, 'files_to_remove_from_cache'):
+                    self.files_to_remove_from_cache = []
+                
+                # Add the file name to our list of files to remove from cache
+                self.files_to_remove_from_cache.append(file_name)
+                
+                # If this file was previously marked for caching, remove it from that list
+                if hasattr(self, 'files_to_cache') and file_path in self.files_to_cache:
+                    self.files_to_cache.remove(file_path)
+                    print(f"DEBUG: Removed {file_path} from files_to_cache list")
+            
+            # If it's a folder, we need to check for files inside it
+            elif item.data(0, Qt.UserRole) == "folder":
+                print(f"DEBUG: Deleting folder: {item.text(0)}")
+                # Process all children to find files for cache removal
+                self._collect_files_for_cache_removal(item)
+            
             parent = item.parent()
             if parent:
                 index = parent.indexOfChild(item)
                 parent.takeChild(index)
                 print(f"DEBUG: Deleted item '{item.text(0)}' successfully")
+    
+    def _collect_files_for_cache_removal(self, folder_item):
+        """Recursively collect files to remove from cache when deleting a folder"""
+        # Initialize the list if it doesn't exist
+        if not hasattr(self, 'files_to_remove_from_cache'):
+            self.files_to_remove_from_cache = []
+        
+        # Process all children
+        for i in range(folder_item.childCount()):
+            child = folder_item.child(i)
+            
+            # If it's a file, add it to the removal list
+            if child.data(0, Qt.UserRole) == "file":
+                file_name = child.text(0)
+                file_path = child.data(0, Qt.UserRole + 1)
+                
+                print(f"DEBUG: Marking file for cache removal: {file_name}")
+                self.files_to_remove_from_cache.append(file_name)
+                
+                # If this file was previously marked for caching, remove it from that list
+                if hasattr(self, 'files_to_cache') and file_path in self.files_to_cache:
+                    self.files_to_cache.remove(file_path)
+                    print(f"DEBUG: Removed {file_path} from files_to_cache list")
+            
+            # If it's a folder, recurse
+            elif child.data(0, Qt.UserRole) == "folder":
+                self._collect_files_for_cache_removal(child)
     
     def rename_item(self, item=None):
         """Rename an item in the structure"""
@@ -941,80 +1176,164 @@ class EnhancedStructureEditor(QDialog):
         """Recursively convert tree item to structure format"""
         result = []
         
+        print(f"[DEBUG] Getting structure from item: {item.text(0)} with {item.childCount()} children")
+        
         for i in range(item.childCount()):
             child = item.child(i)
             child_name = child.text(0)
+            item_type = child.data(0, Qt.UserRole)
             
-            if child.childCount() > 0:
-                # Directory with children
-                children = self._get_structure_from_item(child)
-                result.append({child_name: children})
-            else:
-                # Check if it's an empty folder or a file
-                item_type = child.data(0, Qt.UserRole)
-                if item_type == "folder":
-                    # It's an empty folder - represent as a dict with empty list
-                    # This makes the format consistent with non-empty folders
-                    result.append({child_name: []})
+            # Check if this file is set to use project name
+            use_project_name = child.data(0, Qt.UserRole + 3)
+            
+            # If this file is marked to use project name, convert its representation
+            if item_type == "file" and use_project_name:
+                # Get the extension from the current name
+                _, ext = os.path.splitext(child_name.lower())
+                
+                # Use {{PROJECT_NAME}} placeholder for the file name - simple direct replacement
+                # Replace any existing indicator (🔄) in the name
+                clean_name = f"{{PROJECT_NAME}}{ext}"
+                print(f"[DEBUG] Converting file to use project name: {clean_name}")
+                child_name = clean_name
+            
+            # Detect if this is a template variable - they should ALWAYS be files
+            is_template_var = ('{{' in child_name and '}}' in child_name) or child_name.startswith('$') or child_name.endswith('$')
+            
+            # Critical: Always check for template variables first, then the item_type
+            if is_template_var:
+                # Template variables are always files
+                print(f"[DEBUG] Adding template variable: {child_name}")
+                result.append(child_name)
+            elif item_type == "folder":
+                # This is a folder - regardless of whether it has children
+                if child.childCount() > 0:
+                    # Directory with children
+                    children = self._get_structure_from_item(child)
+                    print(f"[DEBUG] Adding folder with children: {child_name} -> {children}")
+                    result.append({child_name: children})
                 else:
-                    # It's a file
-                    result.append(child_name)
+                    # Empty folder - represent as a dict with empty list
+                    # This makes the format consistent with non-empty folders
+                    print(f"[DEBUG] Adding empty folder: {child_name}")
+                    result.append({child_name: []})
+            else:
+                # It's a file
+                print(f"[DEBUG] Adding file: {child_name}")
+                result.append(child_name)
                 
         return result
         
     def save_structure(self):
-        """Save the current structure with the given name"""
-        print("DEBUG: save_structure method called")
-        
-        # Get the current structure from the tree
-        structure = self.get_structure_from_tree()
-        print(f"DEBUG: Got structure with {len(structure)} items")
-        
-        # Ensure we have a valid structure name
-        if not self.name_input.text():
-            print("DEBUG: No structure name provided")
-            QMessageBox.warning(self, "Error", "Please enter a structure name.")
-            self.name_input.setFocus()
+        """Save the current structure"""
+        # Get the name
+        structure_name = self.name_input.text()
+        if not structure_name:
+            QMessageBox.warning(self, "Warning", "Please enter a structure name.")
             return False
             
-        structure_name = self.name_input.text()
-        print(f"DEBUG: Saving structure with name: '{structure_name}'")
+        # Remove any unwanted characters from name - quotes cause issues with command line
+        structure_name = structure_name.replace('"', '').replace("'", "")
         
-        # Check if we're trying to overwrite a built-in structure
-        from app.constants import DEFAULT_STRUCTURES
-        if structure_name in DEFAULT_STRUCTURES and not self.is_built_in:
-            print("DEBUG: Creating custom version of built-in structure")
+        # Clean up the tree view to ensure everything is valid
+        # Force tree items to reflect their actual state
+        if hasattr(self, 'tree') and self.tree:
+            self.tree.viewport().update()
         
-        # Store the result for returning, regardless of template manager
+        # Get the structure from the tree
+        structure = self.get_structure_from_tree()
+        if not structure:
+            QMessageBox.warning(self, "Warning", "The structure is empty. Please add at least one item.")
+            return False
+            
+        print(f"DEBUG: Got structure with {len(structure)} items")
+        
+        # Store the result for later access
         self.result_structure = structure
         self.result_name = structure_name
-        print(f"DEBUG: Stored result structure with {len(structure)} items and name '{structure_name}'")
+        print(f"DEBUG: Storing result structure with {len(structure)} items and name '{structure_name}'")
         
-        # Save the structure to the template manager
-        if hasattr(self, 'template_manager') and self.template_manager:
-            print(f"DEBUG: Saving to template manager: {structure_name}")
-            success = self.template_manager.save_custom_structure(structure_name, structure)
-            print(f"DEBUG: Saved structure '{structure_name}' to template manager")
-            
-            # Call the save callback if provided
-            if self.save_callback:
-                print("DEBUG: Calling save callback")
-                self.save_callback(structure_name, structure)
-            
-            # Return success
-            return success
+        # Get the template manager instance
+        if hasattr(self, 'template_manager'):
+            template_manager = self.template_manager
         else:
-            # If we don't have a template manager, just call the callback
-            print("DEBUG: No template manager, calling callback directly")
-            if self.save_callback:
-                self.save_callback(structure_name, structure)
-                
-            # Return success
-            return True
-            
-        print("DEBUG: Failed to save structure")
-        return False
+            from app.templates.template_manager import TemplateManager
+            template_manager = TemplateManager()
         
+        # Save to the template manager
+        print(f"DEBUG: Saving to template manager: {structure_name}")
+        success = template_manager.save_custom_structure(structure_name, structure)
+        print(f"DEBUG: Saved structure '{structure_name}' to template manager: {success}")
+        
+        # If there are cached files, copy them to the template cache
+        if success and hasattr(self, 'files_to_cache') and self.files_to_cache:
+            # Create safe filename for cache directory
+            safe_name = structure_name.replace(" ", "_").replace("/", "-").replace("\\", "-")
+            
+            # Create cache directory for the structure using the correct path
+            cache_dir = os.path.join(template_manager.paths["templates_dir"], "cache", safe_name)
+            print(f"DEBUG: Cache directory: {cache_dir}")
+            
+            # Debug info
+            print(f"DEBUG: Caching {len(self.files_to_cache)} files for structure '{structure_name}'")
+            print(f"DEBUG: Files to cache: {self.files_to_cache}")
+            
+            # Cache each file
+            os.makedirs(cache_dir, exist_ok=True)
+            
+            # Process all files in one go to improve performance
+            self._cache_files_efficiently(self.files_to_cache, cache_dir, structure_name)
+        
+        return success
+        
+    def _cache_files_efficiently(self, files_to_cache, cache_dir, structure_name):
+        """Cache multiple files more efficiently"""
+        # Clean the cache directory first to remove any stale files
+        print(f"DEBUG: Cleaning cache directory: {cache_dir}")
+        if os.path.exists(cache_dir):
+            for existing_file in os.listdir(cache_dir):
+                try:
+                    os.remove(os.path.join(cache_dir, existing_file))
+                    print(f"DEBUG: Removing file from cache: {existing_file}")
+                except Exception as e:
+                    print(f"DEBUG: Error removing file from cache: {e}")
+        
+        # Process each file for caching
+        for file_path in files_to_cache:
+            if os.path.exists(file_path) and os.path.isfile(file_path):
+                print(f"DEBUG: Caching file: {file_path}")
+                
+                # Get just the filename without path
+                filename = os.path.basename(file_path)
+                
+                # Copy the file to the cache
+                cache_file_path = os.path.join(cache_dir, filename)
+                try:
+                    # Copy the file directly without redundant processing
+                    shutil.copy2(file_path, cache_file_path)
+                    print(f"DEBUG: Copied file to cache: {cache_file_path}")
+                    
+                    # Verify file was copied correctly by checking size
+                    if os.path.exists(cache_file_path):
+                        source_size = os.path.getsize(file_path)
+                        cache_size = os.path.getsize(cache_file_path)
+                        print(f"DEBUG: Cached file verified: {cache_file_path} (Size: {source_size} -> {cache_size})")
+                        
+                        if source_size == cache_size:
+                            print(f"DEBUG: Successfully cached file: {file_path}")
+                            print(f"DEBUG: Confirmed file exists in cache: {cache_file_path}")
+                        else:
+                            print(f"WARNING: Cached file size mismatch: {file_path}")
+                    else:
+                        print(f"WARNING: Failed to cache file: {file_path}")
+                except Exception as e:
+                    print(f"ERROR: Failed to cache file {file_path}: {e}")
+            else:
+                print(f"WARNING: Cannot cache file - doesn't exist or not a file: {file_path}")
+        
+        # Reset the cache list after processing
+        self.files_to_cache = []
+    
     def accept(self):
         """Override accept to save the structure before closing"""
         print("DEBUG: accept method called")
@@ -1052,8 +1371,11 @@ class EnhancedStructureEditor(QDialog):
         
     def get_result(self):
         """Get the edited structure if the dialog was accepted"""
-        if hasattr(self, 'result_structure'):
-            return self.result_structure
+        if hasattr(self, 'result_structure') and hasattr(self, 'result_name'):
+            return {
+                'structure_name': self.result_name,
+                'structure': self.result_structure
+            }
         return None
 
     def _tree_dragEnterEvent(self, event):
@@ -1111,13 +1433,50 @@ class EnhancedStructureEditor(QDialog):
                     file_name = os.path.basename(file_path)
                     file_item = QTreeWidgetItem(target_item)
                     file_item.setText(0, file_name)
-                    file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+                    
+                    # Get the appropriate file icon using our specialized method
+                    file_icon = self._get_file_icon_for_type(file_path)
+                    file_item.setIcon(0, file_icon)
+                    
                     file_item.setData(0, Qt.UserRole, "file")
+                    # Store the original file path in the data field
+                    file_item.setData(0, Qt.UserRole + 1, file_path)
                     # Make file editable
                     file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+                    
+                    # Check if this is a Premiere Pro file or other project file type
+                    _, ext = os.path.splitext(file_path.lower())
+                    is_project_file = ext in ['.prproj', '.aep', '.aepx', '.psd', '.ai']
+                    
+                    # Note: We don't prompt for each file during drag-and-drop to avoid spamming the user
+                    # with dialogs, especially if they drop multiple files. Instead we'll add a dialog
+                    # at the end to let them know they can set this option via context menu.
+                    # Track project files to show notification at the end
+                    self.dropped_project_files = getattr(self, 'dropped_project_files', 0) + (1 if is_project_file else 0)
+                    
+                    # Add all files to cache
+                    if not hasattr(self, 'files_to_cache'):
+                        self.files_to_cache = []
+                    self.files_to_cache.append(file_path)
+                    print(f"DEBUG: Added directory file to cache list: {file_path}")
             
             # Expand the target item
             target_item.setExpanded(True)
+            
+            # If any project files were dropped, show a notification about project name inheritance
+            if getattr(self, 'dropped_project_files', 0) > 0:
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.information(
+                    self,
+                    "Project Files Detected",
+                    f"{self.dropped_project_files} project file(s) were detected in your drop.\n\n"
+                    f"If you want these files to inherit the project name when created, you can:\n"
+                    f"1. Right-click on each file\n"
+                    f"2. Select 'Use Project Name'\n\n"
+                    f"This will replace the filename with {{PROJECT_NAME}} when creating projects."
+                )
+                # Reset the counter
+                self.dropped_project_files = 0
             
             return
         
@@ -1338,10 +1697,22 @@ class EnhancedStructureEditor(QDialog):
                 file_name = os.path.basename(file_path)
                 file_item = QTreeWidgetItem(folder_item)
                 file_item.setText(0, file_name)
-                file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+                
+                # Get the appropriate file icon using our specialized method
+                file_icon = self._get_file_icon_for_type(file_path)
+                file_item.setIcon(0, file_icon)
+                
                 file_item.setData(0, Qt.UserRole, "file")
+                # Store the original file path in the data field
+                file_item.setData(0, Qt.UserRole + 1, file_path)
                 # Make file editable
                 file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+                
+                # Add all files to cache
+                if not hasattr(self, 'files_to_cache'):
+                    self.files_to_cache = []
+                self.files_to_cache.append(file_path)
+                print(f"DEBUG: Added directory file to cache list: {file_path}")
                 
             # If this folder has no children but had a name extracted from the path, keep it
             if folder_item.childCount() == 0 and not os.path.basename(dir_path):
@@ -1400,8 +1771,182 @@ class EnhancedStructureEditor(QDialog):
 
     def on_item_double_clicked(self, item, column):
         """Handle double-click event to rename items in the tree widget"""
-        if column == 0:
-            self.rename_item(item)
+        try:
+            if column == 0 and item:
+                # Skip root item
+                root_item = self.tree.invisibleRootItem().child(0)
+                if item == root_item:
+                    return
+                    
+                # Make sure the item is editable
+                if not (item.flags() & Qt.ItemIsEditable):
+                    print("DEBUG: Item is not editable")
+                    return
+                    
+                # Start renaming the item
+                self.tree.editItem(item, column)
+                print(f"DEBUG: Double-clicked to edit item: {item.text(0)}")
+        except Exception as e:
+            print(f"DEBUG: Error in double-click handler: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _get_file_icon_for_type(self, file_path):
+        """Get the appropriate icon for a file based on its type/extension"""
+        
+        # First try to get the system icon
+        from PyQt5.QtCore import QFileInfo
+        from PyQt5.QtWidgets import QFileIconProvider
+        from PyQt5.QtGui import QIcon
+        import os
+        
+        # Get file extension
+        _, file_ext = os.path.splitext(file_path.lower())
+        
+        # Map of known file extensions to specialized icon providers
+        # This helps when system icons aren't properly retrieved
+        custom_icons = {
+            # Adobe products
+            '.prproj': QApplication.style().standardIcon(QStyle.SP_FileIcon),
+            '.aep': QApplication.style().standardIcon(QStyle.SP_FileIcon),
+            '.psd': QApplication.style().standardIcon(QStyle.SP_FileIcon),
+            '.ai': QApplication.style().standardIcon(QStyle.SP_FileIcon),
+            
+            # Video formats
+            '.mp4': QApplication.style().standardIcon(QStyle.SP_MediaPlay),
+            '.mov': QApplication.style().standardIcon(QStyle.SP_MediaPlay),
+            '.avi': QApplication.style().standardIcon(QStyle.SP_MediaPlay),
+            
+            # Audio formats
+            '.mp3': QApplication.style().standardIcon(QStyle.SP_MediaVolume),
+            '.wav': QApplication.style().standardIcon(QStyle.SP_MediaVolume),
+            
+            # Image formats
+            '.jpg': QApplication.style().standardIcon(QStyle.SP_FileIcon),
+            '.jpeg': QApplication.style().standardIcon(QStyle.SP_FileIcon),
+            '.png': QApplication.style().standardIcon(QStyle.SP_FileIcon),
+            
+            # Document formats
+            '.pdf': QApplication.style().standardIcon(QStyle.SP_FileIcon),
+            '.doc': QApplication.style().standardIcon(QStyle.SP_FileIcon),
+            '.docx': QApplication.style().standardIcon(QStyle.SP_FileIcon),
+        }
+        
+        # Try to get the system icon first
+        try:
+            file_info = QFileInfo(file_path)
+            icon_provider = QFileIconProvider()
+            system_icon = icon_provider.icon(file_info)
+            
+            # Check if we got a valid icon
+            if not system_icon.isNull():
+                # On some systems, we might get a generic icon even though we asked for a specific one
+                # We'll use it only if it seems to be a proper icon (not empty or generic)
+                print(f"DEBUG: Successfully retrieved system icon for {file_path}")
+                return system_icon
+            else:
+                print(f"DEBUG: System icon provider returned null icon for {file_path}")
+        except Exception as e:
+            print(f"DEBUG: Error getting system icon: {e}")
+        
+        # If we get here, system icon failed or was generic
+        # Use our custom icon mapping if available
+        if file_ext in custom_icons:
+            print(f"DEBUG: Using mapped icon for file type {file_ext}")
+            return custom_icons[file_ext]
+            
+        # Last resort - use generic file icon
+        print(f"DEBUG: Using generic file icon for {file_path}")
+        return QApplication.style().standardIcon(QStyle.SP_FileIcon)
+
+    def _tree_wheelEvent(self, event):
+        """Handle wheel events on the tree for smoother scrolling"""
+        # Get the current vertical scrollbar
+        scrollbar = self.tree.verticalScrollBar()
+        
+        # Calculate scroll amount - adjust the divisor for sensitivity
+        delta = event.angleDelta().y()
+        
+        # Use a smoother scrolling speed that feels natural
+        scroll_amount = delta // 3 if abs(delta) > 120 else delta // 2
+        
+        # Scroll the proper amount
+        scrollbar.setValue(scrollbar.value() - scroll_amount)
+        
+        # Accept the event to prevent further processing
+        event.accept()
+
+    def on_item_clicked(self, item, column):
+        """Handle item click to toggle folder expansion"""
+        # Check if this is a folder
+        if item.data(0, Qt.UserRole) == "folder":
+            # Toggle the expanded state
+            item.setExpanded(not item.isExpanded())
+            
+            # If expanding for the first time and it's empty, add a placeholder child
+            if item.isExpanded() and item.childCount() == 0:
+                # Make sure empty folders have their expansion indicator visible
+                item.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
+
+    def toggle_project_name_inheritance(self, item, use_project_name):
+        """Toggle project name inheritance for a file"""
+        if not item:
+            return
+            
+        # Make sure this is a file
+        if item.data(0, Qt.UserRole) != "file":
+            return
+            
+        # Get the current filename
+        current_name = item.text(0)
+        file_path = item.data(0, Qt.UserRole + 1)
+        
+        if use_project_name:
+            # Get the extension from the filename
+            _, ext = os.path.splitext(current_name.lower())
+            
+            # Store original filename for reference if not already stored
+            if not item.data(0, Qt.UserRole + 2):
+                item.setData(0, Qt.UserRole + 2, current_name)
+                
+            # Mark as using project name - this is the key flag
+            item.setData(0, Qt.UserRole + 3, True)
+            
+            # Update display name with PROJECT_NAME placeholder and indicator
+            # The 🔄 indicator is only for UI display and isn't part of the actual format
+            item.setText(0, f"{{PROJECT_NAME}}{ext} 🔄")
+            
+            # Add tooltip explaining the placeholder
+            item.setToolTip(0, f"This file will use the project name when created")
+            
+            print(f"DEBUG: Set file '{current_name}' to use project name")
+        else:
+            # Get original filename if available
+            original_name = item.data(0, Qt.UserRole + 2)
+            
+            # If no original is stored, extract from current name
+            if not original_name:
+                if "{{PROJECT_NAME}}" in current_name:
+                    # Extract extension and create a default name
+                    _, ext = os.path.splitext(current_name.lower())
+                    original_name = f"file{ext}"
+                else:
+                    # Remove indicator symbol if present
+                    original_name = current_name.replace(" 🔄", "")
+            
+            # Clear the project name flag - this is the key operation
+            item.setData(0, Qt.UserRole + 3, False)
+            
+            # Update display name to original
+            item.setText(0, original_name)
+            
+            # Clear tooltip
+            item.setToolTip(0, "")
+            
+            print(f"DEBUG: Removed project name inheritance from file '{original_name}'")
+        
+        # Update the tree view to reflect changes
+        self.tree.update()
 
 # Add this new dialog class at the bottom of the file, before the utility functions
 class StructureManagerDialog(QDialog):
@@ -1646,7 +2191,16 @@ class StructureManagerDialog(QDialog):
                 structure_assignments = self.template_manager.preferences.get('structure_assignments', {})
             
             # Process all custom structures
-            for name in sorted(self.template_manager.custom_structures.keys()):
+            custom_structure_names = []
+            if hasattr(self.template_manager, 'custom_structures'):
+                for name in sorted(self.template_manager.custom_structures.keys()):
+                    custom_structure_names.append(name)
+            else:
+                # Handle as dictionary for backward compatibility
+                custom_structure_names = list(self.template_manager.custom_structures.keys())
+            
+            # For each custom structure
+            for name in sorted(custom_structure_names):
                 # Determine which category this structure belongs to
                 category_name = structure_assignments.get(name, default_category_name)
                 
