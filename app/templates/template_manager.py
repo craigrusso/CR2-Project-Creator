@@ -127,6 +127,22 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
             print(f"[DEBUG] FolderOps: Saving folders after creation")
             self.save_folders()
             
+            # Update UI if we have a template gallery
+            if hasattr(self, 'app') and hasattr(self.app, 'template_gallery'):
+                # Schedule a UI update on the main thread
+                from PyQt5.QtCore import QTimer
+                from PyQt5.QtWidgets import QApplication
+                
+                def update_ui():
+                    self.app.template_gallery.populate_gallery(force_refresh=True)
+                    self.app.template_gallery.update()
+                    
+                    # Process events to ensure UI updates
+                    QApplication.processEvents()
+                
+                # Use a very short timer to ensure this happens after current event processing
+                QTimer.singleShot(10, update_ui)
+            
             return True
         except Exception as e:
             import traceback

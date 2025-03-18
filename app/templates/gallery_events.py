@@ -805,7 +805,16 @@ class GalleryEvents:
             if ok and folder_name:
                 # Create the folder without asking for a category
                 gallery.app.template_manager.create_folder(folder_name)
-                gallery.populate_gallery()
+                
+                # Populate gallery and force immediate UI update
+                gallery.populate_gallery(force_refresh=True)
+                
+                # Force immediate UI refresh for both view containers
+                gallery.folders_section.update()
+                gallery.folders_section.repaint()
+                
+                # Process pending events to ensure UI is updated
+                QApplication.processEvents()
     
     @staticmethod
     def on_rename_folder(gallery):

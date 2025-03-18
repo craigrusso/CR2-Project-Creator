@@ -46,9 +46,13 @@ def main():
     # This ensures a consistent UI appearance across all platforms
     force_app_palette(app)
     
-    # On macOS, ensure native menu bar is used
+    # On macOS, ensure we use our custom styling while maintaining native menu bar
     if platform.system() == "Darwin":  # macOS
+        # Use native menu bar for better macOS integration
         app.setAttribute(Qt.AA_DontUseNativeMenuBar, False)
+        
+        # Apply an additional attribute to help prevent macOS from overriding our theme
+        app.setAttribute(Qt.AA_DontShowIconsInMenus, True)
     
     # Create and show the main window
     main_window = ProjectCreatorApp()

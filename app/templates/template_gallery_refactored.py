@@ -207,6 +207,18 @@ class TemplateGallery(QWidget):
             
             # Mark as loaded
             self.templates_loaded = True
+            
+            # Force immediate UI refresh for both containers
+            if hasattr(self, 'folders_section'):
+                self.folders_section.update()
+                self.folders_section.repaint()
+                
+            if hasattr(self, 'templates_section'):
+                self.templates_section.update()
+                self.templates_section.repaint()
+                
+            # Process events to make UI updates visible immediately
+            QApplication.processEvents()
     
     def clear_gallery(self):
         """Clear the gallery view"""

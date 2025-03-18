@@ -243,6 +243,15 @@ class GalleryFoldersSetup:
             gallery.folders_grid.addWidget(folder_item, row, 0)
             gallery.folder_cards.append(folder_item)
             row += 1
+        
+        # Force the folders section to update and repaint
+        # QGridLayout doesn't have update/repaint methods
+        gallery.folders_section.update()
+        gallery.folders_section.repaint()
+        
+        # Process events to make UI changes immediately visible
+        from PyQt5.QtWidgets import QApplication
+        QApplication.processEvents()
     
     @staticmethod
     def set_folder_view_mode(gallery, mode):

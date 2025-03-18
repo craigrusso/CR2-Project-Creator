@@ -79,8 +79,36 @@ class EnhancedStructureEditor(QDialog):
             self.populate_structure_dropdown()
         
     def init_ui(self):
-        """Initialize the UI"""
+        """Initialize the user interface"""
         main_layout = QVBoxLayout(self)
+        
+        # Apply standard colors to dialog with proper tab styling
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {colors['bg']};
+                color: {colors['text']};
+            }}
+            QMenu {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+            }}
+            QTabWidget::pane {{
+                border: 1px solid #444;
+                background-color: #333;
+            }}
+            QTabBar::tab {{
+                background-color: #444;
+                color: #ddd;
+                padding: 8px 12px;
+                border: 1px solid #555;
+                border-bottom: none;
+            }}
+            QTabBar::tab:selected {{
+                background-color: #555;
+                color: white;
+                border-top: 2px solid {colors['accent']};
+            }}
+        """)
         
         # Top info section
         info_group = QGroupBox("Structure Information")

@@ -7,6 +7,68 @@ from PyQt5.QtGui import QPalette, QColor, QPainter, QBrush, QPen, QFont
 import sys, time
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE, LINEEDIT_STYLE, LABEL_STYLE, LISTVIEW_POPUP_STYLE
 
+# Add the force_app_palette function
+def force_app_palette(app):
+    """Force the application to use our dark theme palette regardless of system settings"""
+    dark_palette = QPalette()
+    
+    # Set up the dark palette
+    dark_palette.setColor(QPalette.Window, QColor(colors['bg']))
+    dark_palette.setColor(QPalette.WindowText, QColor(colors['text']))
+    dark_palette.setColor(QPalette.Base, QColor(colors['card_bg']))
+    dark_palette.setColor(QPalette.AlternateBase, QColor(colors['bg']))
+    dark_palette.setColor(QPalette.ToolTipBase, QColor(colors['card_bg']))
+    dark_palette.setColor(QPalette.ToolTipText, QColor(colors['text']))
+    dark_palette.setColor(QPalette.Text, QColor(colors['text']))
+    dark_palette.setColor(QPalette.Button, QColor(colors['card_bg']))
+    dark_palette.setColor(QPalette.ButtonText, QColor(colors['text']))
+    dark_palette.setColor(QPalette.BrightText, QColor(colors['highlight_text']))
+    dark_palette.setColor(QPalette.Link, QColor(colors['accent']))
+    dark_palette.setColor(QPalette.Highlight, QColor(colors['highlight_bg']))
+    dark_palette.setColor(QPalette.HighlightedText, QColor(colors['highlight_text']))
+    
+    # Add additional macOS specific palette settings
+    dark_palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor(colors['secondary_text']))
+    dark_palette.setColor(QPalette.Disabled, QPalette.Text, QColor(colors['secondary_text']))
+    dark_palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(colors['secondary_text']))
+    dark_palette.setColor(QPalette.Inactive, QPalette.Highlight, QColor(colors['highlight_bg']))
+    dark_palette.setColor(QPalette.Inactive, QPalette.HighlightedText, QColor(colors['highlight_text']))
+    
+    # Apply the palette
+    app.setPalette(dark_palette)
+    
+    # Force the application to use this palette with more comprehensive styling
+    app.setStyleSheet(f"""
+        QToolTip {{ 
+            color: {colors['text']}; 
+            background-color: {colors['card_bg']}; 
+            border: 1px solid {colors['border']}; 
+        }}
+        
+        /* Force all basic widgets to use our palette colors */
+        QWidget {{ 
+            background-color: {colors['bg']};
+            color: {colors['text']};
+        }}
+        
+        /* Ensure dialog backgrounds are correct */
+        QDialog, QMessageBox, QInputDialog {{ 
+            background-color: {colors['bg']}; 
+            color: {colors['text']}; 
+        }}
+        
+        /* Force macOS menu bar and menu items to use dark theme */
+        QMenuBar, QMenuBar::item {{ 
+            background-color: {colors['card_bg']}; 
+            color: {colors['text']}; 
+        }}
+        
+        QMenu {{ 
+            background-color: {colors['card_bg']}; 
+            color: {colors['text']}; 
+        }}
+    """)
+
 # Remove the problematic global patch and classes
 
 class ComboBoxItemDelegate(QStyledItemDelegate):
@@ -124,13 +186,22 @@ class ComboBoxPopupFilter(QObject):
 
 def configure_styles(app):
     """Configure the application styles"""
-    # Set application stylesheet
+    # Set application stylesheet with comprehensive style rules
     app.setStyleSheet(f"""
+        /* Base application styling */
         QMainWindow, QDialog, QWidget {{
             background-color: {colors['bg']};
+            color: {colors['text']};
         }}
         
+        /* Force macOS menu bar to use dark theme */
         QMenuBar {{
+            background-color: {colors['card_bg']};
+            color: {colors['text']};
+            border-bottom: 1px solid {colors['border']};
+        }}
+        
+        QMenuBar::item {{
             background-color: {colors['card_bg']};
             color: {colors['text']};
         }}
@@ -156,8 +227,10 @@ def configure_styles(app):
         QStatusBar {{
             background-color: {colors['card_bg']};
             color: {colors['text']};
+            border-top: 1px solid {colors['border']};
         }}
         
+        /* Scroll bars - critical for macOS */
         QScrollArea, QScrollBar {{
             background-color: {colors['bg']};
             color: {colors['text']};
@@ -197,6 +270,34 @@ def configure_styles(app):
             width: 0px;
         }}
         
+        /* Tab widget styling */
+        QTabWidget::pane {{
+            border: 1px solid {colors['border']};
+            background-color: {colors['bg']};
+        }}
+        
+        QTabBar::tab {{
+            background-color: {colors['card_bg']};
+            color: {colors['text']};
+            border: 1px solid {colors['border']};
+            border-bottom: none;
+            padding: 5px 10px;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
+        }}
+        
+        QTabBar::tab:selected {{
+            background-color: {colors['bg']};
+            border-bottom: none;
+            border-left: 1px solid {colors['border']};
+            border-top: 2px solid {colors['accent']};
+            border-right: 1px solid {colors['border']};
+        }}
+        
+        QTabBar::tab:!selected {{
+            margin-top: 2px;
+        }}
+        
         /* Direct and focused styling for combo box popup items */
         QComboBox QAbstractItemView::item:hover {{
             background-color: {colors['accent']};
@@ -211,6 +312,42 @@ def configure_styles(app):
             background-color: {colors['highlight_bg']};
             color: {colors['highlight_text']};
             border-left: 3px solid {colors['accent']};
+        }}
+        
+        /* Add specific macOS overrides */
+        QToolButton {{
+            background-color: {colors['card_bg']};
+            color: {colors['text']};
+            border: 1px solid {colors['border']};
+            border-radius: 3px;
+        }}
+        
+        QToolButton:hover {{
+            background-color: {colors['hover_bg']};
+            border: 1px solid {colors['accent']};
+        }}
+        
+        QToolButton:pressed {{
+            background-color: {colors['accent']};
+            color: white;
+        }}
+        
+        /* Group box styling */
+        QGroupBox {{
+            border: 1px solid {colors['border']};
+            margin-top: 6px;
+            padding-top: 10px;
+            background-color: {colors['bg']};
+            color: {colors['text']};
+        }}
+        
+        QGroupBox::title {{
+            subcontrol-origin: margin;
+            subcontrol-position: top left;
+            left: 10px;
+            padding: 0 3px;
+            background-color: {colors['bg']};
+            color: {colors['text']};
         }}
     """)
     
@@ -403,23 +540,46 @@ def apply_dark_theme_to_template_section(app):
         template_frame.setStyleSheet(f"""
             background-color: #282828;
             color: {colors['text']};
+            border: none;
+            border-radius: 0px;
         """)
         
         # Update all child widgets
         for child in template_frame.findChildren(QWidget):
             if isinstance(child, QLabel) or isinstance(child, QFrame):
                 child.setStyleSheet(f"background-color: #282828; color: {colors['text']};")
+            elif isinstance(child, QPushButton):
+                child.setStyleSheet(BUTTON_STYLE)
+            elif isinstance(child, QComboBox):
+                child.setStyleSheet(COMBOBOX_STYLE)
+            elif isinstance(child, QLineEdit):
+                child.setStyleSheet(LINEEDIT_STYLE)
     
     # Update other template container elements if they exist
     for widget_name in ['template_file_container', 'recent_templates_frame']:
         if hasattr(app, widget_name):
             widget = getattr(app, widget_name)
-            widget.setStyleSheet(f"background-color: #282828; color: {colors['text']};")
+            widget.setStyleSheet(f"""
+                background-color: #282828; 
+                color: {colors['text']};
+                border: none;
+                border-radius: 0px;
+            """)
             
             # Also update all child widgets
             for child in widget.findChildren(QWidget):
                 if isinstance(child, QLabel) or isinstance(child, QFrame):
                     child.setStyleSheet(f"background-color: #282828; color: {colors['text']};")
+                elif isinstance(child, QPushButton):
+                    child.setStyleSheet(BUTTON_STYLE)
+                elif isinstance(child, QComboBox):
+                    child.setStyleSheet(COMBOBOX_STYLE)
+                elif isinstance(child, QLineEdit):
+                    child.setStyleSheet(LINEEDIT_STYLE)
+    
+    # Force a repaint to ensure changes take effect
+    if template_frame:
+        template_frame.update()
 
 def apply_theme_recursively(widget):
     """Apply theme to widget and its children recursively"""

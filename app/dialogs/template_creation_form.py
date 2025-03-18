@@ -71,6 +71,7 @@ class TemplateCreationForm(QDialog):
             QTabBar::tab:selected {
                 background-color: #555;
                 color: white;
+                border-top: 2px solid #2C4F76;
             }
             QTabBar::tab:hover:!selected {
                 background-color: #505050;

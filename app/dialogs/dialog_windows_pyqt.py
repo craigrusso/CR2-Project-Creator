@@ -451,6 +451,7 @@ def show_tutorial(app):
         QTabBar::tab:selected {{
             background-color: {colors['card_bg']};
             border-bottom: none;
+            border-top: 2px solid {colors['accent']};
         }}
     """)
     
@@ -646,6 +647,26 @@ def show_edit_template(parent, template, callback=None):
     
     # Create tab widget
     tabs = QTabWidget()
+    
+    # Apply simple but consistent tab styling
+    tabs.setStyleSheet(f"""
+        QTabWidget::pane {{
+            border: 1px solid #444;
+            background-color: #333;
+        }}
+        QTabBar::tab {{
+            background-color: #444;
+            color: #ddd;
+            padding: 8px 12px;
+            border: 1px solid #555;
+            border-bottom: none;
+        }}
+        QTabBar::tab:selected {{
+            background-color: #555;
+            color: white;
+            border-top: 2px solid {colors['accent']};
+        }}
+    """)
     
     # Create the tabs
     create_basic_info_tab(tabs, template)
@@ -1095,7 +1116,7 @@ def populate_structure_tree(parent_item, structure_items):
             else:
                 tree_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
                 # Store that this is a file in the data
-                tree_item.setData(0, Qt.UserRole, "file")
+                tree_item.setData(0, Qt.UserRole, file_path)  # Store the original path
 
 def show_manage_templates(parent, template_manager, callback=None):
     """Show the template management dialog"""
