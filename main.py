@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt, QCoreApplication
 from app.core.app_module_pyqt import ProjectCreatorApp
 from app.core.app_config import APP_NAME, APP_VERSION, setup_dpi_awareness
-from app.ui.app_theme_pyqt import apply_dark_theme_to_template_section
+from app.ui.app_theme_pyqt import apply_dark_theme_to_template_section, force_app_palette
 from app.templates.template_manager_migration import TemplateManagerMigration
 
 # This is the PyQt version of the application
@@ -28,7 +28,7 @@ def main():
     if platform.system() == "Windows":
         try:
             import ctypes
-            myappid = 'cr2creative.echelon.2.1'
+            myappid = 'cr2creative.echelon.0.081'
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         except Exception as e:
             print(f"Warning: Could not set app ID: {e}")
@@ -41,6 +41,10 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
+    
+    # Force application to use our custom palette regardless of system settings
+    # This ensures a consistent UI appearance across all platforms
+    force_app_palette(app)
     
     # On macOS, ensure native menu bar is used
     if platform.system() == "Darwin":  # macOS

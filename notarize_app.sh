@@ -6,8 +6,8 @@ set -e
 
 # Configuration
 APP_NAME="Echelon"
-APP_VERSION="0.08"
-DMG_NAME="Echelon_0.08_AppleSilicon.dmg"
+APP_VERSION="0.081"
+DMG_NAME="Echelon_0.081_AppleSilicon.dmg"
 BUNDLE_ID="com.cr2creative.echelon"
 TEAM_ID="5926DW86QY"
 

@@ -18,7 +18,7 @@ fi
 
 # Set variables
 APP_NAME="Echelon"
-APP_VERSION="2.1.0"
+APP_VERSION="0.081"
 DMG_NAME="${APP_NAME}_${APP_VERSION}_AppleSilicon.dmg"
 
 # Clean up previous builds
