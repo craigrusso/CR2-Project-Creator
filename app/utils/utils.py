@@ -19,7 +19,7 @@ from app.constants import RECENT_PROJECTS_MAX
 def get_config_paths():
     """Get paths for configuration files and directories"""
     # Default config directory
-    default_config_dir = os.path.join(os.path.expanduser("~"), ".cr2creator")
+    default_config_dir = os.path.join(os.path.expanduser("~"), ".echelon")
     
     # Create the default config dir if it doesn't exist
     if not os.path.exists(default_config_dir):

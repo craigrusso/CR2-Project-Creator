@@ -16,7 +16,7 @@ from app.constants import (
 # Config file locations
 def get_config_paths():
     """Get paths for configuration files and directories"""
-    config_dir = os.path.join(os.path.expanduser("~"), ".cr2creator")
+    config_dir = os.path.join(os.path.expanduser("~"), ".echelon")
     
     paths = {
         "config_dir": config_dir,
