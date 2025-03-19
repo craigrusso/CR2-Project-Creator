@@ -160,7 +160,6 @@ class TemplateManagerCore(TemplateOperations):
         else:
             # Create default folders configuration
             self.folders = {
-                "Recent": [],
                 "Favorites": []
             }
             self.save_folders()
