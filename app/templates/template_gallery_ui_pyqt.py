@@ -23,9 +23,9 @@ from PyQt5.QtCore import (Qt, pyqtSignal, QSize, QPoint, QEvent, QMimeData,
 from PyQt5.QtGui import QIcon, QFont, QColor, QPalette, QCursor, QDrag, QPixmap, QPainter, QFontMetrics
 
 from app.ui.color_scheme_pyqt import colors, get_color, BUTTON_STYLE, ACCENT_BUTTON_STYLE, LABEL_STYLE, COMBOBOX_STYLE
-from app.ui.ui_components_pyqt import ScrollableFrame, CardFrame, ToolTip, SearchBox
+from app.ui.ui_components_pyqt import ScrollableFrame, CardFrame, ToolTip, SearchBox, UI_FONT
 from app.templates.template_manager import TemplateManager
-from app.templates.components import TemplateCard, CARD_NORMAL, CARD_HOVER, CARD_SELECTED, get_system_font, SYSTEM_FONT
+from app.templates.components import TemplateCard, CARD_NORMAL, CARD_HOVER, CARD_SELECTED
 from app.dialogs.dialog_windows_pyqt import show_edit_template, show_manage_templates
 from app.templates.template_gallery_refactored import TemplateGallery
 from app.templates.gallery_events import GalleryEvents, StyledItemDialog
@@ -36,19 +36,8 @@ CARD_NORMAL = colors["card_bg"]
 CARD_HOVER = colors["hover_bg"]
 CARD_SELECTED = colors["highlight_bg"]
 
-# Get suitable system font for different platforms
-def get_system_font():
-    """Return an appropriate system font based on platform"""
-    system = platform.system()
-    if system == "Windows":
-        return "Segoe UI"
-    elif system == "Darwin":  # macOS
-        return "Helvetica Neue"  # Just use Helvetica which is guaranteed to exist
-    else:  # Linux and others
-        return "Ubuntu,DejaVu Sans,Liberation Sans,Arial"
-
 # System font to use throughout the app
-SYSTEM_FONT = get_system_font()
+GALLERY_FONT = UI_FONT
 
 class TemplateFolderCard(QFrame):
     """Template folder card widget for displaying a folder in the gallery"""
@@ -91,14 +80,14 @@ class TemplateFolderCard(QFrame):
         
         # Folder icon - more obvious folder appearance
         self.icon_label = QLabel("📁")  # Using a folder emoji
-        self.icon_label.setFont(QFont(SYSTEM_FONT, 40))  # Smaller font to match smaller card
+        self.icon_label.setFont(QFont(GALLERY_FONT, 40))  # Smaller font to match smaller card
         self.icon_label.setStyleSheet("color: goldenrod; background: transparent; padding-bottom: 0;")
         self.icon_layout.addWidget(self.icon_label)
         self.layout.addLayout(self.icon_layout)
         
         # Folder name - simpler display directly under the icon
         self.title = QLabel(folder_name)
-        self.title.setFont(QFont(SYSTEM_FONT, 12))
+        self.title.setFont(QFont(GALLERY_FONT, 12))
         self.title.setAlignment(Qt.AlignCenter)
         self.title.setStyleSheet("color: white; background: transparent; margin-top: -8px;")  # Force white color
         self.title.setWordWrap(True)
@@ -109,7 +98,7 @@ class TemplateFolderCard(QFrame):
         
         # Create the edit widget but don't add it to layout yet
         self.name_edit = QLineEdit(folder_name)
-        self.name_edit.setFont(QFont(SYSTEM_FONT, 12))
+        self.name_edit.setFont(QFont(GALLERY_FONT, 12))
         self.name_edit.setAlignment(Qt.AlignCenter)
         self.name_edit.setStyleSheet("color: white; background: rgba(60, 60, 60, 0.8); border: 1px solid gray; border-radius: 3px;")
         self.name_edit.editingFinished.connect(self._finish_rename)
@@ -574,13 +563,13 @@ class TemplateFolderListItem(QFrame):
         
         # Folder icon
         self.icon_label = QLabel("📁")  # Using a folder emoji
-        self.icon_label.setFont(QFont(SYSTEM_FONT, 18))
+        self.icon_label.setFont(QFont(GALLERY_FONT, 18))
         self.icon_label.setStyleSheet("color: goldenrod; background: transparent;")
         self.layout.addWidget(self.icon_label)
         
         # Folder name
         self.title = QLabel(folder_name)
-        self.title.setFont(QFont(SYSTEM_FONT, 12))
+        self.title.setFont(QFont(GALLERY_FONT, 12))
         self.title.setStyleSheet("color: white; background: transparent;")
         self.title.setCursor(Qt.IBeamCursor)  # Change cursor to indicate text editability
         self.title.setToolTip("Click the name to rename")
@@ -589,7 +578,7 @@ class TemplateFolderListItem(QFrame):
         
         # Create the edit widget but don't add it to layout yet
         self.name_edit = QLineEdit(folder_name)
-        self.name_edit.setFont(QFont(SYSTEM_FONT, 12))
+        self.name_edit.setFont(QFont(GALLERY_FONT, 12))
         self.name_edit.setStyleSheet("color: white; background: rgba(60, 60, 60, 0.8); border: 1px solid gray; border-radius: 3px;")
         self.name_edit.editingFinished.connect(self._finish_rename)
         self.name_edit.hide()  # Hide by default
@@ -1926,7 +1915,7 @@ class TemplateListItem(QFrame):
                     card.setFixedSize(new_folder_width, new_folder_height)
                     # Adjust font size of icon - use 40 to match the default in TemplateFolderCard
                     icon_font_size = int(40 * scale_factor)
-                    card.icon_label.setFont(QFont(SYSTEM_FONT, icon_font_size))
+                    card.icon_label.setFont(QFont(GALLERY_FONT, icon_font_size))
                     resized_count += 1
             print(f"[DEBUG] Resized {resized_count} folder cards")
         else:

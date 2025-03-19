@@ -6,11 +6,11 @@ def get_system_font():
     """Return an appropriate system font based on platform."""
     system = platform.system()
     if system == "Windows":
-        return "Segoe UI"
+        return "Segoe UI, Arial, sans-serif"
     elif system == "Darwin":  # macOS
-        return "Helvetica Neue"
-    else:
-        return "Ubuntu, DejaVu Sans, Liberation Sans, Arial"
+        return "Helvetica"
+    else:  # Linux and others
+        return "Ubuntu, DejaVu Sans, Liberation Sans, Arial, sans-serif"
 
 SYSTEM_FONT = get_system_font()
 

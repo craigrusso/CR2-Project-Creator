@@ -826,12 +826,13 @@ def _open_template_location(path):
     
     # Open in file explorer based on platform
     try:
+        path = os.path.normpath(path)
         if platform.system() == "Windows":
             os.startfile(path)
         elif platform.system() == "Darwin":  # macOS
-            subprocess.Popen(["open", path])
+            subprocess.run(["open", path], check=True)
         else:  # Linux
-            subprocess.Popen(["xdg-open", path])
+            subprocess.run(["xdg-open", path], check=True)
     except Exception as e:
         print(f"Error opening location: {e}")
 

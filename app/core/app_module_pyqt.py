@@ -9,12 +9,12 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QStatusBar, QFrame, QSplitter, QScrollArea, QSizePolicy,
                            QApplication, QGroupBox, QListView, QTextEdit)
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex
-from PyQt5.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush
+from PyQt5.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, QPixmap, QDesktopServices
 
 from app.core.app_config import APP_NAME, APP_VERSION, RECENT_TEMPLATES_MAX
-from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE, LISTVIEW_POPUP_STYLE
+from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE, LISTVIEW_POPUP_STYLE, APP_COLORS
 from app.utils.utils import load_config, save_config, truncate_path
-from app.ui.ui_components_pyqt import ToolTip, CardFrame, SearchBox, TemplateFileCard
+from app.ui.ui_components_pyqt import ToolTip, CardFrame, SearchBox, TemplateFileCard, ScrollableFrame, UI_FONT
 from app.templates.template_manager import TemplateManager
 from app.core.project_builder import ProjectBuilder
 from app.dialogs.dialog_windows_pyqt import (preview_structure, show_about, 
@@ -36,6 +36,7 @@ from app.utils.utils import (load_recent_projects, save_recent_projects,
                  save_recent_templates)
 from app.templates.template_gallery_ui_pyqt import create_template_gallery
 from app.dialogs.template_creation_form import show_template_creation_form
+from app.templates.components.utils import get_system_font, SYSTEM_FONT
 
 class ProjectCreatorApp(QMainWindow):
     """Main application class for CR2 Creative Pro using PyQt"""
@@ -194,7 +195,7 @@ class ProjectCreatorApp(QMainWindow):
                 color: {colors['text']};
                 border: 1px solid {colors['border']};
                 padding: 8px;
-                font-family: 'Segoe UI';
+                font-family: '{UI_FONT}';
                 font-size: 13px;
             }}
         """)

@@ -206,30 +206,34 @@ def add_to_recent_projects(project_path):
 def open_folder(path):
     """Open a folder in the system file explorer"""
     try:
+        # Handle paths with spaces or special characters
         if platform.system() == "Windows":
-            os.startfile(path)
+            os.startfile(os.path.normpath(path))
         elif platform.system() == "Darwin":
-            os.system(f'open "{path}"')
+            # Use subprocess instead of os.system to avoid shell escaping issues
+            subprocess.run(['open', path], check=True)
         else:
-            os.system(f'xdg-open "{path}"')
+            # Use subprocess for Linux as well
+            subprocess.run(['xdg-open', path], check=True)
         return True
     except Exception as e:
-        messagebox.showerror("Error", f"Failed to open folder: {str(e)}")
+        print(f"Failed to open folder: {str(e)}")
         return False
 
 def open_in_explorer(path):
     """Open folder in file explorer and select the folder"""
     try:
+        path = os.path.normpath(path)
         if platform.system() == "Windows":
-            subprocess.run(['explorer', '/select,', path])
+            subprocess.run(['explorer', '/select,', path], check=True)
         elif platform.system() == "Darwin":
-            subprocess.run(['open', '-R', path])
+            subprocess.run(['open', '-R', path], check=True)
         else:
             # Fallback to regular open on Linux
             open_folder(path)
         return True
     except Exception as e:
-        messagebox.showerror("Error", f"Failed to open in explorer: {str(e)}")
+        print(f"Failed to open in explorer: {str(e)}")
         return False
 
 def create_readme_file(project_path, project_name, project_type, directories=None):
@@ -302,11 +306,23 @@ def truncate_path(path, max_length=40):
         # No room for basename, just truncate middle
         return path[:max_length//2-2] + "..." + path[-max_length//2+1:]
 
+def safe_path_join(*paths):
+    """
+    Join paths in a safe, cross-platform way.
+    Normalizes the result to ensure consistent directory separators.
+    """
+    joined_path = os.path.join(*paths)
+    return os.path.normpath(joined_path)
+
 def ensure_directory_exists(directory):
-    """Make sure a directory exists, creating it if necessary"""
+    """
+    Ensure a directory exists, creating it if necessary.
+    Uses normalized paths for cross-platform compatibility.
+    """
+    directory = os.path.normpath(directory)
     if not os.path.exists(directory):
         try:
-            os.makedirs(directory)
+            os.makedirs(directory, exist_ok=True)
             return True
         except Exception as e:
             print(f"Error creating directory {directory}: {e}")

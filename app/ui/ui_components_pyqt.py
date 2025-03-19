@@ -19,23 +19,27 @@ from PyQt5.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout,
                             QRadioButton, QComboBox, QProgressBar, QSplitter,
                             QMenu, QAction)
 from PyQt5.QtCore import Qt, QTimer, QPoint, QSize, pyqtSignal, QEvent, QUrl, QMimeData
-from PyQt5.QtGui import QFont, QCursor, QIcon, QColor, QPalette, QDragEnterEvent, QDropEvent
+from PyQt5.QtGui import QFont, QCursor, QIcon, QColor, QPalette, QDragEnterEvent, QDropEvent, QPixmap, QPainter, QPen, QFontMetrics
 
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, LINEEDIT_STYLE, LABEL_STYLE
+
+# Constants for styling
+BLUE_HIGHLIGHT = "#3066BE"
+GRAY_BG = "#2F2F2F"
 
 # Get suitable system font for different platforms
 def get_system_font():
     """Return an appropriate system font based on platform"""
     system = platform.system()
     if system == "Windows":
-        return "Segoe UI"
+        return "Segoe UI, Arial, sans-serif"
     elif system == "Darwin":  # macOS
-        return "Helvetica Neue"  # Just use Helvetica which is guaranteed to exist
+        return "Helvetica"
     else:  # Linux and others
-        return "Ubuntu,DejaVu Sans,Liberation Sans,Arial"
+        return "Ubuntu, DejaVu Sans, Liberation Sans, Arial, sans-serif"
 
 # System font to use throughout the app
-SYSTEM_FONT = get_system_font()
+UI_FONT = get_system_font()
 
 class ToolTip:
     """
@@ -113,7 +117,7 @@ class CardFrame(QFrame):
         # Add title if provided
         if title:
             title_label = QLabel(title)
-            title_label.setFont(QFont(SYSTEM_FONT, 12, QFont.Bold))
+            title_label.setFont(QFont(UI_FONT, 12, QFont.Bold))
             title_label.setStyleSheet(f"color: {colors['text']};")
             self.main_layout.addWidget(title_label)
         
@@ -142,7 +146,7 @@ class SearchBox(QWidget):
         # Label
         if label_text:
             self.label = QLabel(label_text)
-            self.label.setFont(QFont(SYSTEM_FONT, 10))
+            self.label.setFont(QFont(UI_FONT, 10))
             self.label.setStyleSheet(LABEL_STYLE)
             self.layout.addWidget(self.label)
         
@@ -210,17 +214,17 @@ class TemplateFileCard(QFrame):
             
             # Create template icon and title
             self.icon_label = QLabel("📄") # Document icon
-            self.icon_label.setFont(QFont(SYSTEM_FONT, 24))
+            self.icon_label.setFont(QFont(UI_FONT, 24))
             self.icon_label.setAlignment(Qt.AlignCenter)
             
             self.title_label = QLabel(self.template_name)
-            self.title_label.setFont(QFont(SYSTEM_FONT, 10, QFont.Bold))
+            self.title_label.setFont(QFont(UI_FONT, 10, QFont.Bold))
             self.title_label.setAlignment(Qt.AlignCenter)
             self.title_label.setWordWrap(True)
             
             # Simple template label 
             self.template_label = QLabel("Template")
-            self.template_label.setFont(QFont(SYSTEM_FONT, 9))
+            self.template_label.setFont(QFont(UI_FONT, 9))
             self.template_label.setAlignment(Qt.AlignCenter)
             self.template_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
             
@@ -230,7 +234,7 @@ class TemplateFileCard(QFrame):
                 display_path = "..." + display_path[-40:]
             
             self.path_label = QLabel(display_path)
-            self.path_label.setFont(QFont(SYSTEM_FONT, 8))
+            self.path_label.setFont(QFont(UI_FONT, 8))
             self.path_label.setAlignment(Qt.AlignCenter)
             self.path_label.setWordWrap(True)
             
@@ -1454,7 +1458,7 @@ class ProjectNameInput(QDialog):
         
         # Header
         header = QLabel("Enter Project Names")
-        header.setFont(QFont("Segoe UI", 16, QFont.Bold))
+        header.setFont(QFont(UI_FONT, 16, QFont.Bold))
         header.setStyleSheet(f"color: {colors['text']};")
         layout.addWidget(header)
         
@@ -1609,19 +1613,19 @@ class TemplateFolderCard(QFrame):
         
         # Folder icon
         self.icon_label = QLabel("📁")  # Using a folder emoji
-        self.icon_label.setFont(QFont("Segoe UI", 48))
+        self.icon_label.setFont(QFont(UI_FONT, 48))
         self.icon_label.setStyleSheet(f"color: {colors['secondary_text']};")
         self.icon_label.setAlignment(Qt.AlignCenter)
         
         # Folder name
         self.title = QLabel(folder_name)
-        self.title.setFont(QFont("Segoe UI", 12, QFont.Bold))
+        self.title.setFont(QFont(UI_FONT, 12, QFont.Bold))
         self.title.setAlignment(Qt.AlignCenter)
         self.title.setStyleSheet("color: white;")
         
         # Folder label
         self.folder_label = QLabel("Folder")
-        self.folder_label.setFont(QFont("Segoe UI", 9))
+        self.folder_label.setFont(QFont(UI_FONT, 9))
         self.folder_label.setAlignment(Qt.AlignCenter)
         self.folder_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
         

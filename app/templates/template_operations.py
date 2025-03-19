@@ -116,10 +116,32 @@ class TemplateOperations:
             
         return filtered_templates
         
+    def sanitize_filename(self, filename):
+        """
+        Sanitize a filename for cross-platform compatibility.
+        Replaces unsafe characters with safe ones.
+        """
+        # Replace characters not allowed in filenames across platforms
+        unsafe_chars = [":", "/", "\\", "?", "*", "\"", "<", ">", "|", "'"]
+        safe_filename = filename
+        for char in unsafe_chars:
+            safe_filename = safe_filename.replace(char, "-")
+        
+        # Replace spaces with underscores
+        safe_filename = safe_filename.replace(" ", "_")
+        
+        # Trim to a reasonable length
+        if len(safe_filename) > 180:
+            # Keep extension if any
+            name, ext = os.path.splitext(safe_filename)
+            safe_filename = name[:175] + ext
+        
+        return safe_filename
+
     def create_template_directory(self, name, source_dir, description=""):
         """Create a template directory structure from a source directory"""
         # Create readable directory name from template name
-        dirname = name.replace(" ", "_").replace("/", "-").replace("\\", "-")
+        dirname = self.sanitize_filename(name)
         
         # Generate the template directory path
         template_dir = os.path.join(self.paths["templates_dir"], dirname)
@@ -216,7 +238,7 @@ class TemplateOperations:
                 break
                 
         # Generate a safe filename from the name
-        filename = name.replace(" ", "_").replace("/", "-").replace("\\", "-")
+        filename = self.sanitize_filename(name)
         
         # Prepare directory for template files
         template_cache_dir = os.path.join(self.paths["templates_dir"], "cache", filename)
@@ -478,56 +500,29 @@ class TemplateOperations:
     
     def delete_template(self, template_name):
         """Delete a template by name"""
-        if not template_name:
-            print(f"[DEBUG] Template: Cannot delete empty template name")
-            return False
+        # Find the template by name
+        real_template_name = template_name
+        template = None
         
-        # Special handling for "Unnamed" templates that may be stuck in the system
-        if template_name == "Unnamed" or template_name == "Unnamed Template":
-            print(f"[DEBUG] Template: Removing unnamed template: {template_name}")
-            # Force removal from in-memory list without trying to delete files
-            self.templates = [t for t in self.templates if t.get('name') != template_name]
-            
-            # Remove from any folders
-            for folder_name in self.folders:
-                if template_name in self.folders[folder_name]:
-                    self.folders[folder_name].remove(template_name)
-            
-            # Save updated folders
-            self.save_folders()
-            return True
+        # First check normal templates
+        for t in self.templates:
+            if t.get('name') == template_name:
+                template = t
+                break
         
-        # Find the template - need to handle both the original name and potentially renamed versions (Template-#)
-        template = self.get_template_by_name(template_name)
-        
-        # If template not found with the exact name, check if it's a renamed version (Template-#)
-        if not template and template_name.startswith("Template-"):
-            print(f"[DEBUG] Template: Looking for original template for renamed version: {template_name}")
-            # Try to find the actual template in memory
-            for t in self.templates:
-                if t.get('name') == template_name or t.get('display_name') == template_name:
+        # If not found, check directory templates
+        if not template:
+            for t in self.template_directories:
+                if t.get('name') == template_name:
                     template = t
                     break
                 
-            # Also check directory templates
-            if not template:
-                for t in self.template_directories:
-                    if t.get('name') == template_name or t.get('display_name') == template_name:
-                        template = t
-                        break
-            
-            if template:
-                print(f"[DEBUG] Template: Found original template: {template.get('name')} for renamed version: {template_name}")
-            else:
-                print(f"[DEBUG] Template: Original template not found for renamed version: {template_name}")
-        
+        # If we still don't have a template, try the raw template name
         if not template:
-            print(f"[DEBUG] Template: Template not found for deletion: {template_name}")
+            print(f"[DEBUG] Template: Could not find template with name {template_name}")
             return False
         
-        # Store the real template name for later use
-        real_template_name = template.get('name', template_name)
-        print(f"[DEBUG] Template: Deleting template: {real_template_name} (requested as: {template_name})")
+        print(f"[DEBUG] Template: Deleting template {real_template_name}")
         
         try:
             # Handle different template types
@@ -542,7 +537,7 @@ class TemplateOperations:
                 self.template_directories = [t for t in self.template_directories if t.get('name') != real_template_name]
             else:
                 # For file templates, delete the JSON file
-                template_filename = real_template_name.replace(" ", "_").replace("/", "-").replace("\\", "-")
+                template_filename = self.sanitize_filename(real_template_name)
                 template_path = os.path.join(self.paths["templates_dir"], f"{template_filename}.json")
                 
                 if os.path.exists(template_path):
@@ -554,7 +549,7 @@ class TemplateOperations:
             
             # Also delete the associated structure file if it exists
             structure_name = f"Template_{real_template_name}"
-            structure_filename = structure_name.replace(" ", "_").replace("/", "-").replace("\\", "-")
+            structure_filename = self.sanitize_filename(structure_name)
             structure_path = os.path.join(self.paths["custom_structures_dir"], f"{structure_filename}.json")
             
             if os.path.exists(structure_path):
@@ -627,8 +622,8 @@ class TemplateOperations:
         for template in self.templates:
             if template["name"] == old_name:
                 # Create a clean filename for both old and new
-                old_filename = old_name.replace(" ", "_").replace("/", "-").replace("\\", "-")
-                new_filename = new_name.replace(" ", "_").replace("/", "-").replace("\\", "-")
+                old_filename = self.sanitize_filename(old_name)
+                new_filename = self.sanitize_filename(new_name)
                 
                 old_path = os.path.join(self.paths["templates_dir"], f"{old_filename}.json")
                 new_path = os.path.join(self.paths["templates_dir"], f"{new_filename}.json")
@@ -659,7 +654,7 @@ class TemplateOperations:
         template_name = template.get('name')
         
         # Create a clean filename
-        filename = template_name.replace(" ", "_").replace("/", "-").replace("\\", "-")
+        filename = self.sanitize_filename(template_name)
         
         # Different handling based on template type
         if template.get('type') == 'directory':

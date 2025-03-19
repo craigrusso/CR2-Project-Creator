@@ -7,6 +7,7 @@ import datetime
 import shutil
 import sys
 import json
+import platform
 
 # Using PyQt for the UI framework
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar, QPushButton
@@ -368,9 +369,28 @@ class ProjectBuilder:
         # Safety check: make sure we're not copying from system directories
         template_abs_path = os.path.abspath(template_dir)
         app_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        system_dirs = ["/", "/usr", "/etc", "/var", "/bin", "/sbin", "/lib", app_root]
         
-        if any(template_abs_path == os.path.abspath(d) or template_abs_path.startswith(os.path.abspath(d) + os.sep) for d in system_dirs):
+        # Define system directories based on platform
+        system_dirs = [app_root]
+        if platform.system() == "Windows":
+            # Add Windows system directories
+            system_roots = [os.path.splitdrive(sys.executable)[0] + '\\']
+            system_dirs.extend([
+                os.path.join(root, folder) 
+                for root in system_roots
+                for folder in ['Windows', 'Program Files', 'Program Files (x86)']
+            ])
+        else:
+            # Unix-like system directories (Linux and macOS)
+            system_dirs.extend(["/", "/usr", "/etc", "/var", "/bin", "/sbin", "/lib"])
+            
+            # Add macOS specific system directories
+            if platform.system() == "Darwin":
+                system_dirs.extend(["/System", "/Library", "/Applications"])
+        
+        if any(template_abs_path == os.path.abspath(d) or 
+               template_abs_path.startswith(os.path.abspath(d) + os.sep) 
+               for d in system_dirs):
             print(f"WARNING: Refusing to copy from system directory or app root: {template_abs_path}")
             print(f"This is likely unintentional and could copy unwanted files.")
             return
@@ -466,14 +486,26 @@ class ProjectBuilder:
     
     def _replace_template_placeholders(self, file_path, project_name):
         """Replace placeholder content in a file with project-specific values"""
+        file_path = os.path.normpath(file_path)  # Normalize path for cross-platform compatibility
+        
         try:
             # Skip very large files to avoid performance issues
             if os.path.getsize(file_path) > 10 * 1024 * 1024:  # 10 MB
                 print(f"Skipping placeholder replacement in large file: {file_path}")
                 return
-                
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                content = f.read()
+            
+            # Use a safe reading approach with explicit encoding
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+            except UnicodeDecodeError:
+                # Try with a different encoding
+                try:
+                    with open(file_path, 'r', encoding='latin-1') as f:
+                        content = f.read()
+                except:
+                    print(f"Skipping placeholder replacement in non-text file: {file_path}")
+                    return
             
             # Check if there are any placeholders to replace
             original_content = content
@@ -508,13 +540,26 @@ class ProjectBuilder:
             
             if placeholders_found:
                 print(f"Replaced placeholders in file: {file_path}")
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    f.write(content)
-                
+                # Use a safe writing approach
+                temp_file = file_path + ".tmp"
+                try:
+                    with open(temp_file, 'w', encoding='utf-8') as f:
+                        f.write(content)
+                    # On Windows, we need to remove the destination file first
+                    if platform.system() == "Windows" and os.path.exists(file_path):
+                        os.remove(file_path)
+                    os.rename(temp_file, file_path)
+                except Exception as e:
+                    print(f"Error writing to temp file, trying direct write: {e}")
+                    # Fall back to direct write
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.write(content)
+                    if os.path.exists(temp_file):
+                        os.remove(temp_file)
+            
         except UnicodeDecodeError:
             # Not a text file or uses a different encoding
             print(f"Skipping placeholder replacement in non-text file: {file_path}")
-            pass
         except Exception as e:
             print(f"Error replacing placeholders in {file_path}: {e}")
     

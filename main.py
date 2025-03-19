@@ -3,6 +3,7 @@
 
 import platform
 import sys
+import os
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt, QCoreApplication
 from app.core.app_module_pyqt import ProjectCreatorApp
@@ -12,6 +13,32 @@ from app.templates.template_manager_migration import TemplateManagerMigration
 
 # This is the PyQt version of the application
 UI_FRAMEWORK = 'pyqt'
+
+def get_user_home_directory():
+    """Get the user's home directory in a cross-platform way"""
+    # Default approach for most platforms
+    home_dir = os.path.expanduser("~")
+    
+    # Check if the path is valid/exists
+    if not os.path.exists(home_dir):
+        # Fallback methods for different platforms
+        if platform.system() == "Windows":
+            # Windows fallback methods
+            home_drive = os.environ.get('HOMEDRIVE')
+            home_path = os.environ.get('HOMEPATH')
+            if home_drive and home_path:
+                home_dir = os.path.join(home_drive, home_path)
+            else:
+                # Last resort - use current directory
+                home_dir = os.getcwd()
+        elif platform.system() == "Darwin":  # macOS
+            # macOS fallbacks
+            home_dir = os.environ.get('HOME', os.getcwd())
+        else:  # Linux and others
+            # Use environment variables
+            home_dir = os.environ.get('HOME', os.getcwd())
+    
+    return home_dir
 
 def main():
     """Main entry point for the Echelon application"""
