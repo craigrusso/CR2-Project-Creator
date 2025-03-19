@@ -219,6 +219,25 @@ class ProjectCreatorApp(QMainWindow):
         self.output_dir_input.setReadOnly(True)
         self.output_dir_btn = QPushButton("Browse...")
         self.output_dir_btn.clicked.connect(self.get_output_dir)
+        # Custom style for the browse button - lighter grey with distinct hover state
+        self.output_dir_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #383838;  /* Lighter grey than default */
+                color: #CCCCCC;
+                border: 1px solid #3C3C3C;
+                padding: 5px 10px;
+                border-radius: 3px;
+            }
+            QPushButton:hover {
+                background-color: #454545;
+                border: 1px solid #2C4F76;
+                color: white;
+            }
+            QPushButton:pressed {
+                background-color: #2C4F76;
+                color: white;
+            }
+        """)
         self.output_dir_layout.addWidget(self.output_dir_label)
         self.output_dir_layout.addWidget(self.output_dir_input)
         self.output_dir_layout.addWidget(self.output_dir_btn)
