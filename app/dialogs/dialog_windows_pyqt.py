@@ -16,7 +16,7 @@ from PyQt5.QtCore import Qt, QSize, QByteArray, QUrl, QRegExp, QCoreApplication,
 from PyQt5.QtGui import QFont, QPixmap, QMovie, QIcon, QRegExpValidator, QDragEnterEvent, QDragMoveEvent, QDropEvent
 
 from app.core.app_config import APP_NAME, APP_VERSION
-from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
+from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, LINEEDIT_STYLE
 from app.utils.utils import get_config_paths, load_config, save_config
 from app.ui.structure_editor_enhanced import show_enhanced_structure_editor
 
@@ -439,19 +439,26 @@ def show_tutorial(app):
     tab_widget.setStyleSheet(f"""
         QTabWidget::pane {{
             border: 1px solid {colors['border']};
-            background-color: {colors['card_bg']};
+            background-color: {colors['bg']};
         }}
         QTabBar::tab {{
-            background-color: {colors['bg']};
+            background-color: {colors['card_bg']};
             color: {colors['text']};
-            padding: 8px 12px;
             border: 1px solid {colors['border']};
             border-bottom: none;
+            padding: 5px 10px;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
         }}
         QTabBar::tab:selected {{
-            background-color: {colors['card_bg']};
+            background-color: {colors['bg']};
             border-bottom: none;
+            border-left: 1px solid {colors['border']};
             border-top: 2px solid {colors['accent']};
+            border-right: 1px solid {colors['border']};
+        }}
+        QTabBar::tab:!selected {{
+            margin-top: 2px;
         }}
     """)
     
@@ -494,6 +501,33 @@ def show_preferences(app):
     # Create tab widget for different preference categories
     tabs = QTabWidget()
     
+    # Apply consistent tab styling that matches the rest of the app
+    tabs.setStyleSheet(f"""
+        QTabWidget::pane {{
+            border: 1px solid {colors['border']};
+            background-color: {colors['bg']};
+        }}
+        QTabBar::tab {{
+            background-color: {colors['card_bg']};
+            color: {colors['text']};
+            border: 1px solid {colors['border']};
+            border-bottom: none;
+            padding: 5px 10px;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
+        }}
+        QTabBar::tab:selected {{
+            background-color: {colors['bg']};
+            border-bottom: none;
+            border-left: 1px solid {colors['border']};
+            border-top: 2px solid {colors['accent']};
+            border-right: 1px solid {colors['border']};
+        }}
+        QTabBar::tab:!selected {{
+            margin-top: 2px;
+        }}
+    """)
+    
     # Get current configuration and paths
     config = load_config()
     paths = get_config_paths()
@@ -510,6 +544,23 @@ def show_preferences(app):
     dark_mode_check = QCheckBox("Use Dark Mode")
     dark_mode_check.setChecked(True)  # Default to checked
     dark_mode_check.setEnabled(False)  # Disabled for now
+    dark_mode_check.setStyleSheet(f"""
+        QCheckBox {{
+            color: {colors['text']};
+        }}
+        QCheckBox::indicator {{
+            width: 18px;
+            height: 18px;
+            border: 1px solid {colors['border']};
+            border-radius: 2px;
+            background-color: {colors['card_bg']};
+        }}
+        QCheckBox::indicator:checked {{
+            background-color: {colors['accent']};
+            border: 1px solid {colors['accent']};
+            image: url(app/assets/css/check.svg);
+        }}
+    """)
     ui_layout.addWidget(dark_mode_check)
     
     general_layout.addWidget(ui_group)
@@ -530,10 +581,12 @@ def show_preferences(app):
         path_field = QLineEdit()
         path_field.setText(path_value)
         path_field.setReadOnly(True)
+        path_field.setStyleSheet(LINEEDIT_STYLE)
         storage_layout.addWidget(path_field, row, 1)
         
         # Browse button
         browse_btn = QPushButton("Change...")
+        browse_btn.setStyleSheet(BUTTON_STYLE)
         
         def browse_for_directory():
             dir_path = QFileDialog.getExistingDirectory(
@@ -549,6 +602,7 @@ def show_preferences(app):
         
         # Open button
         open_btn = QPushButton("Open")
+        open_btn.setStyleSheet(BUTTON_STYLE)
         
         def open_directory():
             from app.utils.utils import open_folder
@@ -594,10 +648,12 @@ def show_preferences(app):
     
     # Cancel button
     cancel_button = QPushButton("Cancel")
+    cancel_button.setStyleSheet(BUTTON_STYLE)
     cancel_button.clicked.connect(dialog.reject)
     
     # Save button
     save_button = QPushButton("Save")
+    save_button.setStyleSheet(ACCENT_BUTTON_STYLE)
     save_button.setDefault(True)
     
     def save_preferences():
@@ -651,20 +707,27 @@ def show_edit_template(parent, template, callback=None):
     # Apply simple but consistent tab styling
     tabs.setStyleSheet(f"""
         QTabWidget::pane {{
-            border: 1px solid #444;
-            background-color: #333;
+            border: 1px solid {colors['border']};
+            background-color: {colors['bg']};
         }}
         QTabBar::tab {{
-            background-color: #444;
-            color: #ddd;
-            padding: 8px 12px;
-            border: 1px solid #555;
+            background-color: {colors['card_bg']};
+            color: {colors['text']};
+            border: 1px solid {colors['border']};
             border-bottom: none;
+            padding: 5px 10px;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
         }}
         QTabBar::tab:selected {{
-            background-color: #555;
-            color: white;
+            background-color: {colors['bg']};
+            border-bottom: none;
+            border-left: 1px solid {colors['border']};
             border-top: 2px solid {colors['accent']};
+            border-right: 1px solid {colors['border']};
+        }}
+        QTabBar::tab:!selected {{
+            margin-top: 2px;
         }}
     """)
     

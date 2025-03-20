@@ -1,5 +1,5 @@
 # CR2 Creative Pro - PyQt Version Requirements
-PyQt5>=5.15.0
+PyQt5==5.15.10
 # Removed strict version requirements to allow py2app to resolve compatible versions
 # PyQt5-Qt5==5.15.2
 # PyQt5-sip==12.12.2 
