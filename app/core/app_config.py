@@ -72,8 +72,11 @@ def setup_dpi_awareness():
     if platform.system() == "Windows":
         try:
             from ctypes import windll
-            windll.shcore.SetProcessDpiAwareness(2)
-        except ImportError:
+            # Use a more compatible DPI awareness setting
+            # Process system DPI aware - better for backward compatibility
+            windll.user32.SetProcessDPIAware()
+        except Exception as e:
+            print(f"Warning: Could not set DPI awareness: {e}")
             pass
 
 # Sample templates for the gallery

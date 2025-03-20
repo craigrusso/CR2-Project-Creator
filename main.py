@@ -60,9 +60,11 @@ def main():
         except Exception as e:
             print(f"Warning: Could not set app ID: {e}")
 
-    # Enable High DPI scaling
+    # Enable High DPI scaling with better font scaling
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    if hasattr(Qt, 'AA_UseHighDpiPixmaps'):  # Check if attribute exists
+        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
     
     # Initialize the PyQt application
     app = QApplication(sys.argv)

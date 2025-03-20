@@ -38,6 +38,14 @@ from app.templates.template_gallery_ui_pyqt import create_template_gallery
 from app.dialogs.template_creation_form import show_template_creation_form
 from app.templates.components.utils import get_system_font, SYSTEM_FONT
 
+def get_screen_scale_factor():
+    """Get the screen's scale factor for DPI awareness"""
+    app = QApplication.instance()
+    if app is None:
+        return 1.0
+    screen = app.primaryScreen()
+    return screen.logicalDotsPerInch() / 96.0
+
 class ProjectCreatorApp(QMainWindow):
     """Main application class for CR2 Creative Pro using PyQt"""
     
@@ -146,8 +154,15 @@ class ProjectCreatorApp(QMainWindow):
             }
         """)
         
-        # Set minimum window size to ensure all elements are visible
-        self.setMinimumSize(1000, 600)
+        # Get the screen's scale factor
+        scale_factor = get_screen_scale_factor()
+        
+        # Set minimum window size to ensure all elements are visible, adjusted for DPI
+        base_width = 1000
+        base_height = 600
+        scaled_width = int(base_width * scale_factor)
+        scaled_height = int(base_height * scale_factor)
+        self.setMinimumSize(scaled_width, scaled_height)
         
         # Add main horizontal splitter
         self.main_splitter = QSplitter(Qt.Horizontal)
