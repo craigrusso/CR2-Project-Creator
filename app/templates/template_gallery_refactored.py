@@ -262,7 +262,14 @@ class TemplateGallery(QWidget):
     
     def _on_template_select(self, template):
         """Handle template selection by delegating to GalleryEvents"""
+        # First call the GalleryEvents handler to handle selection
         GalleryEvents.on_template_select(self, template)
+        
+        # Double check that app-level selection is consistent
+        if hasattr(self, 'app'):
+            # Make sure the app object has the selected template 
+            if hasattr(self, 'selected_template') and self.selected_template:
+                self.app.selected_template = self.selected_template
         
     def on_template_multi_select(self, template, add_to_selection):
         """Handle multi-selection of templates"""
@@ -663,75 +670,18 @@ class TemplateGallery(QWidget):
         QWidget.mousePressEvent(self, event)
         
     def _update_template_card_selection(self):
-        """Update all template card selection states based on current selection"""
-        # Make sure we have cards
-        if not hasattr(self, 'template_cards') or not self.template_cards:
-            return
-            
-        print(f"🔍 LISTENER: Updating selection state for {len(self.template_cards)} template cards")
+        """Update the selection state of all template cards"""
+        # Implementation code here
+        pass
         
-        # Check if we're in multi-selection mode
-        in_multi_select = getattr(self, 'is_multi_selecting', False)
-        print(f"🔍 LISTENER: In multi-selection mode: {in_multi_select}")
-        
-        # Track the primary selection for debugging
-        primary_selection = None
+    def get_selected_template(self):
+        """Return the currently selected template"""
         if hasattr(self, 'selected_template') and self.selected_template:
-            primary_selection = self.selected_template.get('name', 'Unknown') if hasattr(self.selected_template, 'get') else str(self.selected_template)
-        
-        print(f"🔍 LISTENER: Primary selection: {primary_selection}")
-        print(f"🔍 LISTENER: Multi-selection count: {len(self.multi_selected_templates) if hasattr(self, 'multi_selected_templates') else 0}")
-            
-        # Update each card's selection state
-        for card in self.template_cards:
-            # Must have template property and set_selected method
-            if hasattr(card, 'template') and hasattr(card, 'set_selected'):
-                # Get card's template name for debugging
-                card_name = card.template.get('name', 'Unknown') if hasattr(card.template, 'get') else str(card.template)
-                
-                # Determine selection state
-                is_primary_selected = False
-                is_multi_selected = False
-                
-                # Check if this card's template is the selected one (primary selection)
-                if hasattr(self, 'selected_template') and self.selected_template:
-                    is_primary_selected = (card.template == self.selected_template)
-                
-                # Check for multi-selection
-                if hasattr(self, 'multi_selected_templates') and self.multi_selected_templates:
-                    is_multi_selected = (card.template in self.multi_selected_templates)
-                
-                # First update multi-selection state if supported
-                if hasattr(card, 'set_multi_selected'):
-                    card.set_multi_selected(is_multi_selected)
-                    if is_multi_selected:
-                        print(f"🔍 LISTENER: Setting '{card_name}' as multi-selected")
-                        
-                # Set the primary selection state:
-                # 1. If it's the primary selected template, select it
-                # 2. If it's in multi-selection list, select it 
-                # 3. Otherwise deselect only if not in multi-selection mode
-                should_be_selected = is_primary_selected or is_multi_selected
-                current_selected = getattr(card, 'selected', False)
-                
-                # In multi-selection mode, we only change selection state from false→true, never true→false
-                if in_multi_select:
-                    if should_be_selected:
-                        # Only set if it should be selected
-                        card.set_selected(True)
-                        print(f"🔍 LISTENER: Setting '{card_name}' as selected in multi-select mode")
-                    # Skip deselection in multi-select mode
-                else:
-                    # Standard mode - set selection state directly
-                    if should_be_selected:
-                        print(f"🔍 LISTENER: Setting '{card_name}' as selected")
-                        card.set_selected(True)
-                    else:
-                        print(f"🔍 LISTENER: Setting '{card_name}' as NOT selected")
-                        card.set_selected(False)
+            return self.selected_template
+        return None
     
     def mouseReleaseEvent(self, event):
-        """Handle mouse release in the gallery without interfering with card selections"""
+        """Handle mouse release event"""
         if event.button() == Qt.LeftButton:
             # Check if we clicked on a template or folder card
             widget_at_pos = self.childAt(event.pos())

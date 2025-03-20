@@ -11,10 +11,10 @@ import re
 import copy
 from datetime import datetime
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QGridLayout, 
+    QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QGridLayout, QLineEdit, 
     QLabel, QPushButton, QComboBox, QSizePolicy, QApplication,
     QFrame, QMenu, QMessageBox, QAction, QButtonGroup, QToolButton, QTableWidget, 
-    QTableWidgetItem, QAbstractItemView, QHeaderView
+    QTableWidgetItem, QAbstractItemView, QHeaderView, QStackedWidget
 )
 from PyQt5.QtGui import QIcon, QColor, QFont, QPixmap, QCursor, QPainter, QPalette
 from PyQt5.QtCore import Qt, pyqtSignal, QSize, QPoint, QRect, QBuffer, QTimer
@@ -146,13 +146,28 @@ class GalleryTemplatesSetup:
         spacer.setStyleSheet("background: transparent;")
         gallery.templates_section_layout.addWidget(spacer)
         
-        # Scrollable area for templates
+        # Scrollable area for templates (grid view)
         gallery.templates_scroll = QScrollArea()
         gallery.templates_scroll.setWidgetResizable(True)
         gallery.templates_scroll.setFrameShape(QFrame.NoFrame)
         gallery.templates_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         gallery.templates_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        gallery.templates_scroll.setStyleSheet("background: transparent; border: none;")
+        gallery.templates_scroll.setStyleSheet("""
+            background: transparent; 
+            border: none;
+            QScrollBar {
+                background: rgba(30, 30, 30, 100);
+                width: 12px;
+            }
+            QScrollBar::handle {
+                background: rgba(80, 80, 80, 150);
+                border-radius: 4px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:hover {
+                background: rgba(100, 100, 100, 200);
+            }
+        """)
         
         # Configure scroll area to expand horizontally and vertically
         gallery.templates_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -181,7 +196,22 @@ class GalleryTemplatesSetup:
         gallery.templates_list_widget = QScrollArea()
         gallery.templates_list_widget.setWidgetResizable(True)
         gallery.templates_list_widget.setFrameShape(QFrame.NoFrame)
-        gallery.templates_list_widget.setStyleSheet("background: transparent; border: none;")
+        gallery.templates_list_widget.setStyleSheet("""
+            background: transparent; 
+            border: none;
+            QScrollBar {
+                background: rgba(30, 30, 30, 100);
+                width: 12px;
+            }
+            QScrollBar::handle {
+                background: rgba(80, 80, 80, 150);
+                border-radius: 4px;
+                min-height: 20px;
+            }
+            QScrollBar::handle:hover {
+                background: rgba(100, 100, 100, 200);
+            }
+        """)
         gallery.templates_list_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         gallery.templates_section_layout.addWidget(gallery.templates_list_widget)
         
@@ -393,12 +423,25 @@ class GalleryTemplatesSetup:
             # Create items container
             items_container = QWidget()
             items_container.setObjectName("ItemsContainer")
+            items_container.setStyleSheet("QWidget#ItemsContainer { background: transparent; border: none; }")
             gallery.list_container_layout = QVBoxLayout(items_container)
             gallery.list_container_layout.setContentsMargins(0, 0, 0, 0)
             gallery.list_container_layout.setSpacing(1)  # Minimal spacing between items
+            gallery.list_container_layout.setAlignment(Qt.AlignTop)  # Align items to the top
             
-            # Get templates to show
-            templates = templates_to_show if templates_to_show else []
+            # Get templates to show - handle both dictionary and list inputs
+            templates = []
+            if isinstance(templates_to_show, dict):
+                # Convert dictionary to list of dicts with name
+                for name, data in templates_to_show.items():
+                    template_data = data.copy() if isinstance(data, dict) else {"name": name}
+                    if isinstance(template_data, dict) and 'name' not in template_data:
+                        template_data['name'] = name
+                    templates.append(template_data)
+            else:
+                # It's already a list
+                templates = templates_to_show
+            
             print(f"[DEBUG] List View: Working with {len(templates)} templates")
             
             # Initialize/clear template item map
@@ -467,6 +510,9 @@ class GalleryTemplatesSetup:
             # Add the items container to the main layout
             main_layout.addWidget(items_container)
             
+            # Ensure the container takes the full width and pushes items to the top
+            container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            
             # Set the container as the widget for the templates list
             gallery.templates_list_widget.setWidget(container)
             
@@ -506,13 +552,28 @@ class GalleryTemplatesSetup:
         
         # Debug output to help diagnose issues
         print(f"[DEBUG] Gallery: Populating templates grid with {len(templates_to_show)} templates")
-        print(f"[DEBUG] Gallery: Template keys: {list(templates_to_show.keys())}")
         
-        # Sort templates by name for consistent display
+        # Handle both dictionary and list inputs
         sorted_templates = []
-        for name, data in templates_to_show.items():
-            sorted_templates.append((name, data))
-        sorted_templates.sort(key=lambda x: x[0].lower())  # Sort by name case-insensitive
+        if isinstance(templates_to_show, dict):
+            print(f"[DEBUG] Gallery: Template keys: {list(templates_to_show.keys())}")
+            # Convert dictionary to list of tuples
+            for name, data in templates_to_show.items():
+                sorted_templates.append((name, data))
+            sorted_templates.sort(key=lambda x: x[0].lower())  # Sort by name case-insensitive
+        else:
+            # Already a list, prepare it in the right format
+            print(f"[DEBUG] Gallery: Template list with {len(templates_to_show)} items")
+            for template in templates_to_show:
+                if isinstance(template, dict) and 'name' in template:
+                    sorted_templates.append((template['name'], template))
+                elif isinstance(template, str):
+                    sorted_templates.append((template, {"name": template}))
+                else:
+                    # Skip invalid templates
+                    continue
+            # Sort the list
+            sorted_templates.sort(key=lambda x: x[0].lower())  # Sort by name case-insensitive
         
         for name, data in sorted_templates:
             # Make sure we're passing the template data dictionary with the correct name
@@ -558,14 +619,39 @@ class GalleryTemplatesSetup:
 
     @staticmethod
     def set_template_view_mode(gallery, mode):
-        """Set the template view mode (grid or list)"""
-        if mode != gallery.template_view_mode:
+        """Set the view mode for templates (grid or list)"""
+        if not hasattr(gallery, 'template_view_mode') or gallery.template_view_mode != mode:
             # Update button states
             gallery.template_grid_view_btn.setChecked(mode == "grid")
             gallery.template_list_view_btn.setChecked(mode == "list")
             
-            # Store the new mode
+            # Store the current selected template to preserve it across view changes
+            preserved_template = None
+            if hasattr(gallery, 'selected_template') and gallery.selected_template:
+                preserved_template = gallery.selected_template
+                print(f"🔍 LISTENER: Preserved primary selection: {preserved_template}")
+            
+            # Also preserve multi-selection
+            preserved_multi_selection = []
+            if hasattr(gallery, 'multi_selected_templates'):
+                preserved_multi_selection = gallery.multi_selected_templates.copy()
+                print(f"🔍 LISTENER: Preserved multi-selection count: {len(preserved_multi_selection)}")
+            
+            # Set the view mode
             gallery.template_view_mode = mode
+            
+            # Get templates to show based on current folder
+            templates_to_show = {}
+            current_folder = getattr(gallery, 'current_folder', None)
+            
+            if hasattr(gallery, 'app') and hasattr(gallery.app, 'template_manager'):
+                if current_folder:
+                    # Get templates in this folder
+                    templates_to_show = GalleryTemplatesSetup.get_templates_in_folder(gallery, current_folder)
+                else:
+                    # Get all templates
+                    if hasattr(gallery.app.template_manager, 'templates'):
+                        templates_to_show = gallery.app.template_manager.templates
             
             # Show the appropriate view
             if mode == "grid":
@@ -573,16 +659,32 @@ class GalleryTemplatesSetup:
                 gallery.templates_scroll.setVisible(True)
                 gallery.templates_list_widget.setVisible(False)
                 
-                # Force refresh if the grid is empty
-                if not hasattr(gallery, 'template_cards') or not gallery.template_cards:
-                    gallery.populate_gallery()
+                # Force refresh of the grid
+                # Re-create the templates container for grid view
+                if hasattr(gallery, 'templates_container'):
+                    gallery.templates_scroll.takeWidget()
+                
+                gallery.templates_container = QWidget()
+                gallery.templates_container.setStyleSheet("background: transparent;")
+                gallery.templates_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                
+                # Create a new grid layout
+                gallery.templates_grid = QGridLayout(gallery.templates_container)
+                gallery.templates_grid.setContentsMargins(0, 0, 0, 0)
+                gallery.templates_grid.setHorizontalSpacing(6)
+                gallery.templates_grid.setVerticalSpacing(12)
+                gallery.templates_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+                
+                # Set the templates container as the widget for the scroll area
+                gallery.templates_scroll.setWidget(gallery.templates_container)
+                
+                # Populate the grid with templates
+                gallery.template_cards = []
+                GalleryTemplatesSetup.populate_templates_grid(gallery, templates_to_show)
             else:
                 # Show list view
                 gallery.templates_scroll.setVisible(False)
                 gallery.templates_list_widget.setVisible(True)
-                
-                # Show loading indicator
-                # TODO: Add loading indicator
                 
                 # Safely clear the list widget
                 if hasattr(gallery, 'templates_list_widget') and gallery.templates_list_widget:
@@ -595,153 +697,164 @@ class GalleryTemplatesSetup:
                 if hasattr(gallery, 'template_item_map'):
                     gallery.template_item_map.clear()
                 
-                # Block signals during populate to prevent recursive updates
+                # Temporarily block signals during populate to prevent recursive updates
                 gallery.templates_list_widget.blockSignals(True)
                 
-                # Create and schedule a delayed population function
-                def delayed_populate():
-                    try:
-                        # Get templates to show based on current folder
-                        templates_to_show = {}
-                        current_folder = gallery.current_folder if hasattr(gallery, 'current_folder') else None
-                        
-                        if current_folder:
-                            # Get templates in this folder
-                            templates_to_show = GalleryTemplatesSetup.get_templates_in_folder(gallery, current_folder)
-                        else:
-                            # Show all templates
-                            templates_to_show = gallery.template_manager.templates if hasattr(gallery, 'template_manager') and hasattr(gallery.template_manager, 'templates') else {}
-                        
-                        # Populate the list view with current templates
-                        GalleryTemplatesSetup.populate_templates_list(gallery, templates_to_show)
-                        
-                        # Unblock signals after population is complete
-                        gallery.templates_list_widget.blockSignals(False)
-                        
-                        # Update selection state after population
-                        GalleryTemplatesSetup.update_template_selection_state(gallery)
-                        
-                    except Exception as e:
-                        import traceback
-                        print(f"Error in delayed list population: {e}")
-                        traceback.print_exc()
-                        
-                        # Make sure signals are unblocked even on error
-                        if hasattr(gallery, 'templates_list_widget'):
-                            gallery.templates_list_widget.blockSignals(False)
+                # Populate the list view
+                GalleryTemplatesSetup.populate_templates_list(gallery, templates_to_show)
                 
-                # Schedule the delayed population
-                QTimer.singleShot(50, delayed_populate)
+                # Unblock signals after populating
+                gallery.templates_list_widget.blockSignals(False)
             
-            # Save preference
+            # Restore saved selections
+            if preserved_template:
+                gallery.selected_template = preserved_template
+                
+                # Also ensure it's set in the app object if available
+                if hasattr(gallery, 'app'):
+                    gallery.app.selected_template = preserved_template
+            
+            # Restore multi-selection
+            if preserved_multi_selection:
+                gallery.multi_selected_templates = preserved_multi_selection
+                
+            # Force complete UI refresh
+            if gallery.template_view_mode == "grid":
+                gallery.templates_scroll.update()
+                gallery.templates_scroll.repaint()
+            else:
+                gallery.templates_list_widget.update()
+                gallery.templates_list_widget.repaint()
+            
+            # Process events to ensure UI is updated
+            QApplication.processEvents()
+            
+            # Update selection state in the UI
+            GalleryTemplatesSetup.update_template_selection_state(gallery)
+            
+            # Save preference if available
             if hasattr(gallery, 'app') and hasattr(gallery.app, 'preferences'):
                 gallery.app.preferences.set('template_view_mode', mode)
             
-            # Update the UI to reflect selection state
-            GalleryTemplatesSetup.update_template_selection_state(gallery)
-            
             print(f"🔍 LISTENER: Switched to {mode} view, preserved selection state")
-            if gallery.selected_template:
-                print(f"🔍 LISTENER: Preserved primary selection: {gallery.selected_template}")
-            if gallery.multi_selected_templates:
-                print(f"🔍 LISTENER: Preserved multi-selection count: {len(gallery.multi_selected_templates)}")
 
     @staticmethod
     def update_template_selection_state(gallery):
-        """Update the selection state of all templates in the gallery"""
+        """Update the selection state of all templates in the gallery
+        
+        This function ensures the selected template is properly reflected in 
+        both grid and list views.
+        """
+        # Ensure we have the gallery's selected_template - sanity check
+        if not hasattr(gallery, 'selected_template'):
+            return
+            
+        # Make sure the app also has the selected template if the gallery does
+        if hasattr(gallery, 'app') and hasattr(gallery, 'selected_template') and gallery.selected_template:
+            # Update app's selected_template property
+            gallery.app.selected_template = gallery.selected_template
+            print(f"🔍 LISTENER: Updating app-level selected_template from gallery")
+            
+        # Get the selected template name
+        selected_template = gallery.selected_template
+        selected_name = ""
+        
+        if selected_template:
+            if isinstance(selected_template, dict):
+                selected_name = selected_template.get('name', '')
+            else:
+                selected_name = str(selected_template)
+                
         print(f"🔍 LISTENER: Updating template selection UI")
+        print(f"🔍 LISTENER: In multi-selection mode: {getattr(gallery, 'is_multi_selecting', False)}")
         
-        # Debug output
-        print(f"🔍 LISTENER: In multi-selection mode: {hasattr(gallery, 'is_multi_selecting') and gallery.is_multi_selecting}")
-        print(f"🔍 LISTENER: Primary selection: {gallery.selected_template if hasattr(gallery, 'selected_template') else None}")
-        print(f"🔍 LISTENER: Multi-selection count: {len(gallery.multi_selected_templates) if hasattr(gallery, 'multi_selected_templates') else 0}")
-        
-        # Helper function to determine if a template is selected
+        # Log the primary selection
+        if selected_template:
+            print(f"🔍 LISTENER: Primary selection: {selected_template}")
+            
+        # Log multi-selection count
+        if hasattr(gallery, 'multi_selected_templates'):
+            print(f"🔍 LISTENER: Multi-selection count: {len(gallery.multi_selected_templates)}")
+                
+        # Helper function to check if a template is selected
         def is_template_selected(template_name, selected_template):
+            """Check if a template is the selected template"""
             if not selected_template:
                 return False
                 
             if isinstance(selected_template, dict):
                 return selected_template.get('name', '') == template_name
-            return selected_template == template_name
-            
-        # Helper function to determine if a template is multi-selected
+            return str(selected_template) == template_name
+        
+        # Helper function to check if a template is multi-selected
         def is_template_multi_selected(template_name, multi_selected_templates):
+            """Check if a template is in the multi-selected templates list"""
             if not multi_selected_templates:
                 return False
                 
-            for t in multi_selected_templates:
-                if isinstance(t, dict) and t.get('name', '') == template_name:
-                    return True
-                elif t == template_name:
+            for template in multi_selected_templates:
+                if isinstance(template, dict):
+                    if template.get('name', '') == template_name:
+                        return True
+                elif str(template) == template_name:
                     return True
             return False
-            
-        # Helper function to set template item selection state and update UI
+        
+        # Helper function to update a template card or list item
         def update_item_selection(item, is_selected, is_multi_selected):
             # Store current state to see if we actually need to update
-            current_selected = item.selected if hasattr(item, 'selected') else False
-            current_multi_selected = item.multi_selected if hasattr(item, 'multi_selected') else False
+            current_selected = getattr(item, 'selected', False)
+            current_multi = getattr(item, 'multi_selected', False)
             
-            # Skip update if no change is needed
-            if current_selected == is_selected and current_multi_selected == is_multi_selected:
+            # If state hasn't changed, don't update
+            if current_selected == is_selected and current_multi == is_multi_selected:
                 return
                 
-            # Temporarily block signals during update
-            item.blockSignals(True)
-            
-            # Set primary selection
+            # Get template name for logging
+            template_name = ""
+            if hasattr(item, 'template'):
+                if isinstance(item.template, dict):
+                    template_name = item.template.get('name', '')
+                else:
+                    template_name = str(item.template)
+                    
+            # Update selection state - check which method is available
             if hasattr(item, 'set_selected'):
                 item.set_selected(is_selected)
             elif hasattr(item, 'setSelected'):
                 item.setSelected(is_selected)
                 
-            # Set multi-selection
+            # Update multi-selection state - check which method is available
             if hasattr(item, 'set_multi_selected'):
                 item.set_multi_selected(is_multi_selected)
             elif hasattr(item, 'setMultiSelected'):
                 item.setMultiSelected(is_multi_selected)
-                
-            # Unblock signals
-            item.blockSignals(False)
-            
-            # Update visual appearance
-            if hasattr(item, '_update_styling'):
-                item._update_styling()
         
-        # For grid view - update template cards
-        if gallery.template_view_mode == "grid" and hasattr(gallery, 'template_cards'):
-            for card in gallery.template_cards:
-                if not card or not hasattr(card, 'template'):
-                    continue
+        # Update Grid View
+        for card in gallery.template_cards:
+            if hasattr(card, 'template'):
+                template_name = ""
+                if isinstance(card.template, dict):
+                    template_name = card.template.get('name', '')
+                else:
+                    template_name = str(card.template)
                     
-                template_name = card.template.get('name', '') if isinstance(card.template, dict) else str(card.template)
+                is_selected = is_template_selected(template_name, selected_template)
+                is_multi = is_template_multi_selected(template_name, getattr(gallery, 'multi_selected_templates', []))
                 
-                # Determine selection state
-                is_selected = is_template_selected(template_name, gallery.selected_template if hasattr(gallery, 'selected_template') else None)
-                is_multi = is_template_multi_selected(template_name, gallery.multi_selected_templates if hasattr(gallery, 'multi_selected_templates') else [])
-                
-                # Update card state
                 update_item_selection(card, is_selected, is_multi)
         
-        # For list view - update list items
-        if gallery.template_view_mode == "list" and hasattr(gallery, 'template_item_map'):
-            for template_name, list_item in list(gallery.template_item_map.items()):
-                try:
-                    # Check if item is still valid
-                    _ = list_item.size()
+        # Update List View
+        if hasattr(gallery, 'template_item_map'):
+            for template_name, list_item in gallery.template_item_map.items():
+                # Check if item is valid
+                if not list_item:
+                    continue
                     
-                    # Determine selection state
-                    is_selected = is_template_selected(template_name, gallery.selected_template if hasattr(gallery, 'selected_template') else None)
-                    is_multi = is_template_multi_selected(template_name, gallery.multi_selected_templates if hasattr(gallery, 'multi_selected_templates') else [])
-                    
-                    # Update list item state
-                    update_item_selection(list_item, is_selected, is_multi)
-                    
-                except RuntimeError as e:
-                    print(f"Skipping deleted list item for {template_name}: {e}")
-                except Exception as e:
-                    print(f"Error updating item {template_name}: {e}")
+                is_selected = is_template_selected(template_name, selected_template)
+                is_multi = is_template_multi_selected(template_name, getattr(gallery, 'multi_selected_templates', []))
+                
+                update_item_selection(list_item, is_selected, is_multi)
         
         # Force immediate UI refresh for the active view container
         if gallery.template_view_mode == "list" and hasattr(gallery, 'templates_list_widget'):
@@ -1009,8 +1122,20 @@ class ListViewContainer(QWidget):
         self.setMouseTracking(True)
         self.setObjectName("ListViewContainer")
         
-        # Force visual styling update
-        self.setStyleSheet("QWidget#ListViewContainer { background-color: transparent; }")
+        # Force visual styling update - ensure no borders or outlines
+        self.setStyleSheet("""
+            QWidget#ListViewContainer { 
+                background-color: transparent; 
+                border: none; 
+            }
+            QScrollArea { 
+                border: none; 
+                background: transparent;
+            }
+        """)
+        
+        # Ensure this container fills its parent and aligns content to the top
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
     def mousePressEvent(self, event):
         """Handle mouse press events on blank areas of the list view"""

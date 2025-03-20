@@ -93,7 +93,9 @@ class GalleryEvents:
                             print(f"🔍 LISTENER: Re-applied highlight to selected template '{template_name}'")
                         else:
                             # Ensure other items are not selected
-                            card.set_selected(False)
+                            # Only if they're not in multi_selected_templates
+                            if not hasattr(gallery, 'multi_selected_templates') or card.template not in gallery.multi_selected_templates:
+                                card.set_selected(False)
             return
             
         # Set the selected template in gallery state
@@ -103,33 +105,44 @@ class GalleryEvents:
         if hasattr(gallery, 'app'):
             gallery.app.selected_template = template
             print(f"🔍 LISTENER: Updated app-level selected template to '{template_name}'")
+            
+            # Ensure the template is set in template_gallery attribute of app too
+            if hasattr(gallery.app, 'template_gallery') and gallery.app.template_gallery != gallery:
+                try:
+                    gallery.app.template_gallery.selected_template = template
+                    print(f"🔍 LISTENER: Also updated template_gallery.selected_template to ensure consistency")
+                except Exception as e:
+                    print(f"Error syncing template selection to app.template_gallery: {e}")
         
         gallery.selected_folder = None  # Reset folder selection
         print(f"🔍 LISTENER: Template selection set to '{template_name}'")
         
-        # Clear any multi-selection
-        if hasattr(gallery, 'multi_selected_templates'):
-            # Temporarily store multi-selection to deselect items
-            items_to_deselect = gallery.multi_selected_templates.copy()
-            gallery.multi_selected_templates.clear()
-            
-            # Manually update styling for previously multi-selected items
-            if hasattr(gallery, 'template_cards'):
-                for card in gallery.template_cards:
-                    if hasattr(card, 'template') and card.template in items_to_deselect:
-                        if hasattr(card, 'set_multi_selected'):
-                            card.set_multi_selected(False)
+        # Handle multi-selection differently - DON'T clear multi-selection automatically
+        # Check if we're in multi-select mode
+        modifiers = QApplication.keyboardModifiers()
+        is_multi_select = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.ShiftModifier))
         
-        # Update card styling for all cards - proper highlighting
+        if not is_multi_select and hasattr(gallery, 'multi_selected_templates'):
+            # Only clear multi-selection if we're not in multi-select mode
+            if not hasattr(gallery, 'is_multi_selecting') or not gallery.is_multi_selecting:
+                # Don't affect multi_selected_templates here - let the card handle it
+                pass
+        
+        # Update card styling for all cards - proper highlighting - preserve multi-selection
         if hasattr(gallery, 'template_cards') and gallery.template_cards:
             card_count = len(gallery.template_cards)
             print(f"🔍 LISTENER: Updating styling for {card_count} template cards")
             
             for card in gallery.template_cards:
                 if hasattr(card, 'template') and hasattr(card, 'set_selected'):
-                    # Highlight only the currently selected template
-                    is_selected = (card.template == template)
+                    # Check if this card is in multi-selection
+                    is_multi_selected = (hasattr(gallery, 'multi_selected_templates') and 
+                                        card.template in gallery.multi_selected_templates)
+                    
+                    # Highlight the currently selected template AND any multi-selected templates
+                    is_selected = (card.template == template) or is_multi_selected
                     card.set_selected(is_selected)
+                    
                     if is_selected:
                         print(f"🔍 LISTENER: Setting {card.template_name()} selection state to TRUE")
                     else:

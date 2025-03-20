@@ -1144,8 +1144,29 @@ class TemplateListItem(QFrame):
     
     def mousePressEvent(self, event):
         """Handle mouse press events - emit clicked signal with template data"""
+        # Get keyboard modifiers for multi-selection
+        modifiers = QApplication.keyboardModifiers()
+        is_ctrl_or_cmd = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier))
+        is_shift = bool(modifiers & Qt.ShiftModifier)
+        is_multi_select = is_ctrl_or_cmd or is_shift
+        
         # Print debug statement
-        print(f"⭐ List item clicked for template: {self.template.get('name', 'Unknown')}")
+        print(f"🔍 LISTENER: Template list item clicked for template: {self.template.get('name', 'Unknown')}")
+        print(f"🔍 LISTENER: Modifiers value: {int(modifiers)}, is_multi_select: {is_multi_select}")
+        
+        # Ensure selection state is properly updated
+        parent = self.gallery
+        if parent and hasattr(parent, '_on_template_select'):
+            # If this is a multi-select operation, handle differently
+            if is_multi_select and hasattr(parent, 'on_template_multi_select'):
+                # Use proper multi-select handling in parent
+                parent.on_template_multi_select(self.template, is_ctrl_or_cmd)
+            else:
+                # Standard single selection
+                parent._on_template_select(self.template)
+                
+        # Make sure the selection state is updated visually
+        self.set_selected(True)
         
         # Emit the clicked signal with the template data
         self.clicked.emit(self.template)
@@ -1180,8 +1201,28 @@ class TemplateListItem(QFrame):
         # Update styling
         self._update_styling()
         
+        # Ensure this template is set as the selected template in gallery and app
+        if selected and self.gallery:
+            # Update gallery's selected_template directly (if not already set)
+            if not hasattr(self.gallery, 'selected_template') or self.gallery.selected_template != self.template:
+                self.gallery.selected_template = self.template
+                
+            # Also ensure it's set in the app object if available
+            if hasattr(self.gallery, 'app'):
+                self.gallery.app.selected_template = self.template
+                
         # Debug output
         print(f"⭐ TemplateListItem selection changed: {old_state} -> {selected} for {self.template.get('name', 'Unknown')}")
+    
+    def setSelected(self, selected):
+        """Alias for set_selected to handle both naming conventions"""
+        self.set_selected(selected)
+        
+    def setMultiSelected(self, selected):
+        """Set the multi-selection state of the list item"""
+        self.multi_selected = selected
+        # Update styling as needed
+        self._update_styling()
     
     def _update_styling(self):
         """Update styling based on selection and hover state"""
@@ -1211,70 +1252,62 @@ class TemplateListItem(QFrame):
         self.update()
     
     def _on_template_select(self, template):
-        """Handle template selection with enhanced debugging"""
+        """Handle template selection event from a card"""
         try:
-            # Handle case where same template is clicked
+            # Get keyboard modifiers to check if in multi-select mode
+            modifiers = QApplication.keyboardModifiers()
+            is_multi_select = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.ShiftModifier))
+            
+            # Check if this is the same template as already selected
             if hasattr(self, 'selected_template') and self.selected_template == template:
                 print("Same template selected, no change needed")
                 return
                 
-            # Visual debug indicator for clicks
-            print("\n\n")
-            print(f"🔵 TEMPLATE CLICK DETECTED: {template.get('name', 'Unnamed')}")
-            
-            # Store the template first
+            # Set the selected template
             self.selected_template = template
-            selected_name = template.get('name', 'Unnamed')
-            print(f"App-level selected_template has been updated")
-            print(f"Selected template set to: {template}")
+            selected_name = template.get('name', 'Unknown')
+            print(f"Selected template set to: {selected_name}")
             
-            # Update the app-level selected template
-            if hasattr(self.app, 'set_selected_template'):
-                self.app.set_selected_template(template)
+            # Also ensure it's set in the app object if available
+            if hasattr(self, 'app'):
+                self.app.selected_template = template
+                print(f"Updated app-level selected template to {selected_name}")
+                
+                # Ensure the template is set in template_gallery attribute of app too
+                if hasattr(self.app, 'template_gallery') and self.app.template_gallery != self:
+                    try:
+                        self.app.template_gallery.selected_template = template
+                        print(f"Also updated app.template_gallery.selected_template to ensure consistency")
+                    except Exception as e:
+                        print(f"Error syncing template selection to app.template_gallery: {e}")
             
             # Update UI buttons state
-            self._update_button_state()
+            if hasattr(self, '_update_button_state'):
+                self._update_button_state()
             
-            # Apply template highlighting to all cards
-            print(f"Updating card styling for {len(self.template_cards)} cards")
+            # Create a list to track multi-selected templates if it doesn't exist
+            if not hasattr(self, 'multi_selected_templates'):
+                self.multi_selected_templates = []
             
-            # First, unselect all cards
+            # Update all card styling - respect multi-selection
             for card in self.template_cards:
-                if hasattr(card, 'set_selected'):
-                    card.set_selected(False)
-            
-            # Then select only the matching card
-            for card in self.template_cards:
-                try:
-                    # Get card template name
-                    card_template = None
-                    card_name = "Unknown"
+                if hasattr(card, 'template'):
+                    # Check if this card should be selected
+                    is_primary_selected = (card.template == template)
                     
-                    if hasattr(card, 'template'):
-                        card_template = card.template
-                        if isinstance(card_template, dict):
-                            card_name = card_template.get('name', 'Unknown')
-                        else:
-                            card_name = str(card_template)
+                    # We need to manage multi-selection state separately
+                    is_multi_selected = card.template in self.multi_selected_templates
                     
-                    # Check if this card matches our selected template
-                    is_match = False
+                    # Template is selected if it's primary OR multi-selected
+                    is_selected = is_primary_selected or is_multi_selected
                     
-                    # Check if the card template matches our selected template
-                    if card_template == template:
-                        is_match = True
-                    # Or if the card name matches our selected template name
-                    elif card_name == selected_name:
-                        is_match = True
+                    # Update card styling
+                    if hasattr(card, 'set_selected'):
+                        card.set_selected(is_selected)
                     
-                    # Apply selection state - should work for both card and list items
-                    if is_match:
-                        print(f"Setting card selected for template: {template}")
-                        if hasattr(card, 'set_selected'):
-                            card.set_selected(True)
-                        
-                except Exception as e:
-                    print(f"Error updating card styling: {e}")
+                    # Also update multi-selection styling if available
+                    if hasattr(card, 'set_multi_selected'):
+                        card.set_multi_selected(is_multi_selected)
             
             # Force UI updates
             from PyQt5.QtWidgets import QApplication
@@ -1284,7 +1317,7 @@ class TemplateListItem(QFrame):
             self.template_selected.emit(template)
             
         except Exception as e:
-            print(f"🔴 CRITICAL ERROR in template selection: {str(e)}")
+            print(f"Error in template selection: {str(e)}")
             import traceback
             traceback.print_exc()
     

@@ -815,22 +815,37 @@ class ProjectCreatorApp(QMainWindow):
         
         # Check for a template
         has_template = False
+        selected_template = None
         
         # Check for selected template from gallery first
-        if hasattr(self, 'selected_template') and self.selected_template:
-            has_template = True
-        # Then check for template file path as fallback
-        elif hasattr(self, 'template_file_path') and self.template_file_path:
-            has_template = True
-        # Finally check if there's a template gallery with selected template
-        elif hasattr(self, 'template_gallery') and hasattr(self.template_gallery, 'get_selected_template'):
+        if hasattr(self, 'template_gallery'):
             try:
-                selected_template = self.template_gallery.get_selected_template()
-                if selected_template:
+                # First try to get template from the gallery object directly
+                if hasattr(self.template_gallery, 'selected_template') and self.template_gallery.selected_template:
+                    selected_template = self.template_gallery.selected_template
                     has_template = True
+                    print(f"Found template selection from gallery.selected_template: {selected_template.get('name', 'Unknown') if hasattr(selected_template, 'get') else selected_template}")
+                # Then try using get_selected_template method if available
+                elif hasattr(self.template_gallery, 'get_selected_template'):
+                    gallery_template = self.template_gallery.get_selected_template()
+                    if gallery_template:
+                        selected_template = gallery_template
+                        has_template = True
+                        print(f"Found template selection from gallery.get_selected_template(): {selected_template.get('name', 'Unknown') if hasattr(selected_template, 'get') else selected_template}")
             except Exception as e:
                 print(f"Error checking gallery template: {e}")
-        
+                
+        # Then check for selected template directly on app object as fallback
+        if not has_template and hasattr(self, 'selected_template') and self.selected_template:
+            selected_template = self.selected_template
+            has_template = True
+            print(f"Found template selection from app.selected_template: {selected_template.get('name', 'Unknown') if hasattr(selected_template, 'get') else selected_template}")
+            
+        # Finally check for template file path as last resort
+        if not has_template and hasattr(self, 'template_file_path') and self.template_file_path:
+            has_template = True
+            print(f"Using template from file path: {self.template_file_path}")
+
         if not has_template:
             missing_requirements.append("No template selected")
         
