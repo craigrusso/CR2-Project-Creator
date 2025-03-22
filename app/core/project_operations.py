@@ -185,10 +185,51 @@ def handle_batch_create(app, project_names_text):
         selected_template = app.selected_template
         print(f"Using template from app.selected_template: {selected_template}")
         
+        # Make sure we have the template name
+        template_name = selected_template.get('name') if isinstance(selected_template, dict) else None
+        
+        # If the template name is available, explicitly try to load the structure
+        if template_name:
+            print(f"DEBUG: Explicitly trying to get structure for template: {template_name}")
+            # Try with the Template_ prefix first
+            structure_name = f"Template_{template_name}"
+            print(f"DEBUG: Looking for structure with name: {structure_name}")
+            structure = app.template_manager.get_structure(structure_name)
+            
+            if structure:
+                # Set structure in the template
+                if isinstance(selected_template, dict):
+                    selected_template['structure'] = structure
+                    print(f"DEBUG: Successfully loaded structure into template: {len(structure) if isinstance(structure, list) else 'non-list'}")
+                
+                # Explicitly set the structure_name too
+                structure_name = structure_name
+            else:
+                # Try with just the template name
+                structure = app.template_manager.get_structure(template_name)
+                if structure:
+                    # Set structure in the template
+                    if isinstance(selected_template, dict):
+                        selected_template['structure'] = structure
+                        print(f"DEBUG: Successfully loaded structure into template using plain name: {len(structure) if isinstance(structure, list) else 'non-list'}")
+                    
+                    # Set structure name
+                    structure_name = template_name
+        
         # If the selected template has a structure_name, use that
         if isinstance(selected_template, dict) and 'structure_name' in selected_template:
             structure_name = selected_template['structure_name']
             print(f"Using structure_name from selected template: {structure_name}")
+            
+            # Make sure we have the structure loaded in the template
+            if isinstance(selected_template, dict) and 'structure' not in selected_template and structure_name:
+                print(f"DEBUG: Structure not found in template, attempting to load using structure_name: {structure_name}")
+                structure = app.template_manager.get_structure(structure_name)
+                if structure:
+                    selected_template['structure'] = structure
+                    print(f"DEBUG: Successfully loaded structure from structure_name: {structure}")
+                else:
+                    print(f"DEBUG: Failed to load structure using structure_name: {structure_name}")
         
         # If the selected template has a path property, use that
         if isinstance(selected_template, dict) and 'path' in selected_template and selected_template['path']:
@@ -302,9 +343,8 @@ def batch_creation_complete(app, results, selected_template=None):
     
     # If we have a gallery template, add it to recent templates
     if selected_template and isinstance(selected_template, dict) and 'name' in selected_template:
-        # Add the gallery template to recent templates
-        from app.templates.template_utils import add_to_recent_templates as add_to_recent_templates_util
-        add_to_recent_templates_util(app, selected_template)
+        # Add the gallery template to recent templates - use the local function
+        add_to_recent_templates(app, selected_template)
     elif template_file:
         # Add the direct template file to recent templates
         add_to_recent_templates(app, template_file)
