@@ -2,8 +2,8 @@
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
 import os
-import datetime
 import json
+from datetime import datetime
 
 from app.utils.utils import save_json_file
 
@@ -12,81 +12,552 @@ class StructureOperations:
     Operations for managing custom folder structures
     """
     
+    def __init__(self):
+        """Initialize the StructureOperations class with default paths."""
+        from app.core.app_config import get_config_paths
+        self.paths = get_config_paths()
+        self.custom_structures = {}  # In-memory cache of structures
+        
+        # Ensure consistent naming of directories
+        if "custom_structures_dir" in self.paths and "structures_dir" not in self.paths:
+            self.paths["structures_dir"] = self.paths["custom_structures_dir"]
+        elif "structures_dir" in self.paths and "custom_structures_dir" not in self.paths:
+            self.paths["custom_structures_dir"] = self.paths["structures_dir"]
+    
     def save_custom_structure(self, name, structure=None):
         """
-        Save a custom folder structure
-        - name: the name of the structure
-        - structure: the folder structure (list of directory objects)
+        Save a custom folder structure to disk.
         
-        Returns True if successful, False otherwise
+        Args:
+            name (str): Name of the structure
+            structure (dict): Structure data to save
+            
+        Returns:
+            bool: True if successful, False otherwise
         """
         try:
-            # Use empty list as default if no structure provided
+            # Ensure the structures directory exists
+            structures_dir = self.paths.get("structures_dir", self.paths.get("custom_structures_dir"))
+            if not structures_dir:
+                print(f"[ERROR] StructureOps: No structures directory path defined")
+                return False
+            
+            os.makedirs(structures_dir, exist_ok=True)
+            
+            # Normalize the name for file saving
+            clean_name = name.strip()
+            
+            # Extract the template name without Template_ prefix for display
+            display_name = clean_name
+            if display_name.startswith("Template_"):
+                display_name = clean_name[9:]  # Remove "Template_" prefix
+            
+            # Ensure the name has the Template_ prefix if not already present
+            if not clean_name.startswith("Template_"):
+                prefixed_name = f"Template_{clean_name}"
+            else:
+                prefixed_name = clean_name
+            
+            # Create safe filename (replace spaces with underscores)
+            safe_filename = self.sanitize_filename(prefixed_name)
+            
+            # Look for existing structure with similar name to handle renames
+            old_structure_name = None
+            if structure and isinstance(structure, dict) and "name" in structure:
+                old_name = structure["name"]
+                # Check if this is a rename operation
+                if old_name != name and old_name != prefixed_name:
+                    print(f"[DEBUG] StructureOps: Found potential old structure to replace: {old_name} -> {name}")
+                    old_structure_name = old_name
+            
+            # Create timestamp for modified date
+            timestamp = datetime.datetime.now().isoformat()
+            
+            # If structure is a list, wrap it in a dictionary structure
             if structure is None:
                 structure = []
             
-            # Create structure dictionary
-            structure = {
-                "name": name,
-                "directories": structure if isinstance(structure, list) else [structure],
-                "created": datetime.datetime.now().isoformat()
+            if isinstance(structure, list):
+                # Create a new structure dictionary
+                structure_data = {
+                    "name": prefixed_name,  # Use the prefixed name for internal structure name
+                    "display_name": display_name,  # Use unprefixed name for display
+                    "directories": structure,
+                    "created": timestamp,
+                    "modified": timestamp,
+                    "version": "1.0"
+                }
+            elif isinstance(structure, dict):
+                # Update the existing dict with the correct names
+                structure_data = structure
+                
+                # Update key fields
+                structure_data["name"] = prefixed_name
+                structure_data["display_name"] = display_name
+                structure_data["modified"] = timestamp
+                
+                # Make sure version is set
+                if "version" not in structure_data:
+                    structure_data["version"] = "1.0"
+                    
+                # Make sure created is set if not already present
+                if "created" not in structure_data:
+                    structure_data["created"] = timestamp
+            else:
+                print(f"[ERROR] StructureOps: Invalid structure type: {type(structure)}")
+                return False
+            
+            # Save the structure to the file
+            file_path = os.path.join(structures_dir, f"{safe_filename}.json")
+            
+            with open(file_path, 'w') as f:
+                json.dump(structure_data, f, indent=2)
+            
+            print(f"[DEBUG] StructureOps: Successfully saved custom structure '{prefixed_name}' to '{file_path}'")
+            
+            # Update the in-memory structure dictionary
+            if hasattr(self, 'custom_structures'):
+                # Store with the prefixed name as key
+                self.custom_structures[prefixed_name] = structure_data
+                
+                # Also index by the display name for easier lookup
+                self.custom_structures[display_name] = structure_data
+                
+                # Clean up old reference if this was a rename
+                if old_structure_name and old_structure_name in self.custom_structures:
+                    del self.custom_structures[old_structure_name]
+                    print(f"[DEBUG] StructureOps: Removed old structure '{old_structure_name}' from memory")
+                    
+                # Also clean up variations of old name
+                if old_structure_name:
+                    old_display_name = old_structure_name
+                    if old_display_name.startswith("Template_"):
+                        old_display_name = old_display_name[9:]
+                        
+                    # Clean up display name reference
+                    if old_display_name in self.custom_structures:
+                        del self.custom_structures[old_display_name]
+                        print(f"[DEBUG] StructureOps: Removed old display name '{old_display_name}' from memory")
+            
+            return True
+        except Exception as e:
+            print(f"[ERROR] StructureOps: Failed to save custom structure: {e}")
+            import traceback
+            print(traceback.format_exc())
+            return False
+    
+    def _validate_structure_format(self, structure_data):
+        """
+        Validate and ensure a structure can be properly serialized
+        
+        Args:
+            structure_data: The structure data dictionary
+            
+        Returns:
+            dict: Validated structure data or None if validation fails
+        """
+        try:
+            # Basic schema validation
+            required_fields = ["name", "directories"]
+            for field in required_fields:
+                if field not in structure_data:
+                    print(f"[ERROR] StructureOps: Missing required field '{field}' in structure data")
+                    return None
+                    
+            # Ensure directories is a list
+            if not isinstance(structure_data["directories"], list):
+                print(f"[ERROR] StructureOps: 'directories' must be a list, got {type(structure_data['directories'])}")
+                if structure_data["directories"] is None:
+                    structure_data["directories"] = []
+                else:
+                    structure_data["directories"] = [structure_data["directories"]]
+            
+            # Simple serialization test to make sure the structure can be converted to JSON
+            try:
+                json_str = json.dumps(structure_data)
+                # Try to decode back to ensure it's valid
+                test_decode = json.loads(json_str)
+                return structure_data
+            except Exception as e:
+                print(f"[ERROR] StructureOps: Structure data is not serializable: {e}")
+                
+                # Attempt to create a safe serializable version
+                safe_structure = self._create_safe_structure(structure_data)
+                if safe_structure:
+                    print(f"[DEBUG] StructureOps: Created safe serializable version of structure")
+                    return safe_structure
+                
+                return None
+                
+        except Exception as e:
+            print(f"[ERROR] StructureOps: Validation error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+            
+    def _create_safe_structure(self, structure_data):
+        """
+        Create a safely serializable version of a structure.
+        
+        Args:
+            structure_data (dict): The structure data to sanitize
+            
+        Returns:
+            dict: Sanitized structure data that can be serialized to JSON
+        """
+        if not structure_data:
+            # Return a minimal valid structure
+            return {
+                "name": "Empty",
+                "display_name": "Empty Structure",
+                "type": "custom",
+                "version": "1.0",
+                "created": datetime.now().isoformat(),
+                "modified": datetime.now().isoformat(),
+                "directories": []
             }
             
-            # Create a clean filename - replace spaces with underscores and remove any / or \ characters
-            # Also remove apostrophes to avoid filename issues
-            filename = name.replace(" ", "_").replace("/", "-").replace("\\", "-").replace("'", "")
-            
-            # Create directory if it doesn't exist
-            os.makedirs(self.paths["custom_structures_dir"], exist_ok=True)
-            
-            # Set file path
-            file_path = os.path.join(self.paths["custom_structures_dir"], f"{filename}.json")
-            
-            print(f"[DEBUG] StructureOps: Saving custom structure '{name}' to file '{file_path}'")
-            
-            # Save to file
-            success = save_json_file(file_path, structure)
-            
-            if success:
-                # Initialize custom_structures as a dictionary if it doesn't exist
-                if not hasattr(self, 'custom_structures'):
-                    self.custom_structures = {}
+        try:
+            # If it's already a dict, use it as the base
+            if isinstance(structure_data, dict):
+                safe_structure = structure_data.copy()
+            else:
+                # Convert non-dict to a dict
+                safe_structure = {"directories": structure_data if isinstance(structure_data, list) else []}
                 
-                # Store in dictionary using name as key
-                self.custom_structures[name] = structure
+            # Ensure required fields exist
+            if "name" not in safe_structure:
+                safe_structure["name"] = "Unknown"
+                
+            if "display_name" not in safe_structure:
+                safe_structure["display_name"] = safe_structure["name"]
+                
+            if "type" not in safe_structure:
+                safe_structure["type"] = "custom"
+                
+            if "version" not in safe_structure:
+                safe_structure["version"] = "1.0"
+                
+            if "created" not in safe_structure:
+                safe_structure["created"] = datetime.now().isoformat()
+                
+            if "modified" not in safe_structure:
+                safe_structure["modified"] = datetime.now().isoformat()
+                
+            # Convert datetime objects to strings
+            for key in ["created", "modified"]:
+                if key in safe_structure and isinstance(safe_structure[key], datetime):
+                    safe_structure[key] = safe_structure[key].isoformat()
+                    
+            # Ensure directories is a list
+            if "directories" not in safe_structure:
+                safe_structure["directories"] = []
+            elif not isinstance(safe_structure["directories"], list):
+                if isinstance(safe_structure["directories"], dict):
+                    safe_structure["directories"] = [safe_structure["directories"]]
+                else:
+                    safe_structure["directories"] = []
+                    
+            # Test serialization to ensure it works
+            json.dumps(safe_structure)
+            return safe_structure
             
-            return success
         except Exception as e:
-            print(f"[DEBUG] StructureOps: Error saving structure: {e}")
-            return False
+            print(f"[ERROR] StructureOps: Error creating safe structure: {e}")
+            # Return a minimal valid structure as a fallback
+            return {
+                "name": "Error",
+                "display_name": "Error Structure",
+                "type": "custom",
+                "version": "1.0",
+                "created": datetime.now().isoformat(),
+                "modified": datetime.now().isoformat(),
+                "directories": []
+            }
+    
+    def get_structure(self, structure_name):
+        """
+        Get a structure by name. Handles various naming formats.
+        
+        Args:
+            structure_name (str): The name of the structure to retrieve
+            
+        Returns:
+            dict or list: The structure data or None if not found
+        """
+        print(f"DEBUG: get_structure called with structure_name='{structure_name}'")
+        
+        if not structure_name:
+            print("WARNING: Empty structure name provided to get_structure")
+            return None
+            
+        # Normalize the structure name to handle trailing spaces and other issues
+        structure_name = structure_name.strip()
+        
+        # Generate a list of name variants to try
+        name_variations = self._get_name_variations(structure_name)
+        
+        print(f"DEBUG: Trying structure names: {name_variations[:3]}{'...' if len(name_variations) > 3 else ''}")
+        
+        # First check if already in memory
+        for name in name_variations:
+            # Check custom_structures
+            if name in self.custom_structures:
+                print(f"DEBUG: Found custom structure in memory: {name}")
+                structure_data = self.custom_structures[name]
+                
+                # Check if this is a complete structure with directories field
+                if isinstance(structure_data, dict) and 'directories' in structure_data:
+                    print(f"DEBUG: Found complete structure data with directories field")
+                    return structure_data['directories']
+                    
+                # Return the structure data as is
+                return structure_data
+                
+        # Not found in memory, try looking in the template data first
+        # This is a more direct approach since template data contains structured folder hierarchy
+        if hasattr(self, 'templates'):
+            for template in self.templates:
+                if not isinstance(template, dict):
+                    continue
+                    
+                # Check if template matches any of our name variations
+                template_name = template.get('name', '')
+                structure_name_in_template = template.get('structure_name', '')
+                
+                if template_name in name_variations or structure_name_in_template in name_variations:
+                    # Check if the template has a structure field
+                    if 'structure' in template and template['structure']:
+                        print(f"DEBUG: Found structure in template data for {structure_name}")
+                        return template['structure']
+        
+        # Not found in memory or templates, try loading from file system
+        for name in name_variations:
+            # Create sanitized filename
+            filename = self.sanitize_filename(name)
+            
+            # First try the custom structures directory
+            structure_path = os.path.join(
+                self.paths.get('custom_structures_dir', self.paths.get('structures_dir', '')), 
+                f"{filename}.json"
+            )
+            
+            if os.path.exists(structure_path):
+                try:
+                    with open(structure_path, 'r') as f:
+                        structure_data = json.load(f)
+                        
+                    # Check if we have a dictionary with directories
+                    if isinstance(structure_data, dict) and 'directories' in structure_data:
+                        # Log the structure data format
+                        print(f"DEBUG: Structure data has directories field with {len(structure_data['directories'])} entries")
+                        
+                        # Cache the structure in memory for future lookups
+                        self.custom_structures[name] = structure_data
+                        
+                        # Return the directories list, which is the actual structure
+                        return structure_data['directories']
+                    else:
+                        # Store in memory cache and return as is
+                        self.custom_structures[name] = structure_data
+                        print(f"DEBUG: Found custom structure on disk: {name}")
+                        return structure_data
+                except json.JSONDecodeError:
+                    print(f"ERROR: Invalid JSON in structure file: {structure_path}")
+                except Exception as e:
+                    print(f"ERROR: Failed to load structure file {structure_path}: {e}")
+            
+            # If not found in custom structures dir, try main structures dir if different
+            if ('custom_structures_dir' in self.paths and 'structures_dir' in self.paths and
+                self.paths['custom_structures_dir'] != self.paths['structures_dir']):
+                
+                structure_path = os.path.join(
+                    self.paths['structures_dir'], 
+                    f"{filename}.json"
+                )
+                
+                if os.path.exists(structure_path):
+                    try:
+                        with open(structure_path, 'r') as f:
+                            structure_data = json.load(f)
+                        
+                        # Check for directories field
+                        if isinstance(structure_data, dict) and 'directories' in structure_data:
+                            # Cache and return directories list
+                            self.custom_structures[name] = structure_data
+                            print(f"DEBUG: Found structure with directories in main structures dir: {name}")
+                            return structure_data['directories']
+                        else:
+                            # Store and return as is
+                            self.custom_structures[name] = structure_data
+                            print(f"DEBUG: Found structure in main structures dir: {name}")
+                            return structure_data
+                    except json.JSONDecodeError:
+                        print(f"ERROR: Invalid JSON in structure file: {structure_path}")
+                    except Exception as e:
+                        print(f"ERROR: Failed to load structure file {structure_path}: {e}")
+        
+        # If we got here, the structure wasn't found
+        print(f"DEBUG: Structure not found: {structure_name}")
+        return None
+    
+    def _get_name_variations(self, structure_name):
+        """Generate variations of a structure name for robust lookup
+        
+        Args:
+            structure_name (str): Base structure name
+            
+        Returns:
+            list: List of name variations to try
+        """
+        # Original name first (after normalization)
+        name_variations = [structure_name]
+        
+        # Add variant with Template_ prefix if not already present
+        if not structure_name.startswith("Template_"):
+            name_variations.append(f"Template_{structure_name}")
+        else:
+            # Also try without the prefix
+            name_variations.append(structure_name[9:])
+        
+        # Add variants with spaces converted to underscores and vice versa
+        if " " in structure_name:
+            name_variations.append(structure_name.replace(" ", "_"))
+            if not structure_name.startswith("Template_"):
+                name_variations.append(f"Template_{structure_name.replace(' ', '_')}")
+        elif "_" in structure_name:
+            name_variations.append(structure_name.replace("_", " "))
+            if not structure_name.startswith("Template_"):
+                name_variations.append(f"Template_{structure_name.replace('_', ' ')}")
+                
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_variations = [name for name in name_variations 
+                          if not (name.lower() in seen or seen.add(name.lower()))]
+        
+        return unique_variations
+    
+    def load_custom_structures(self):
+        """Load all custom structures"""
+        self.custom_structures = {}
+        
+        # Get custom structures directory
+        custom_structures_dir = self.paths.get("custom_structures_dir", "")
+        if not custom_structures_dir or not os.path.exists(custom_structures_dir):
+            print(f"[WARNING] StructureOps: Custom structures directory does not exist: {custom_structures_dir}")
+            return
+            
+        # Find all custom structure files
+        loaded_count = 0
+        structures_found = []
+        
+        for filename in os.listdir(custom_structures_dir):
+            if filename.endswith(".json") and filename not in ["folders.json", "preferences.json"]:
+                structures_found.append(filename)
+                
+        # Sort to ensure consistent loading order for debugging
+        structures_found.sort()
+        
+        for filename in structures_found:
+            try:
+                # Load structure file
+                file_path = os.path.join(custom_structures_dir, filename)
+                
+                # Skip any files that don't actually exist (might have been created after listing dir)
+                if not os.path.exists(file_path):
+                    continue
+                    
+                try:
+                    with open(file_path, 'r') as f:
+                        structure_data = json.load(f)
+                except Exception as e:
+                    print(f"[ERROR] StructureOps: Error parsing JSON from {filename}: {e}")
+                    continue
+                    
+                # Extract structure name - support both old and new format
+                if isinstance(structure_data, dict) and "name" in structure_data:
+                    structure_name = structure_data["name"]
+                else:
+                    # Use filename without extension for legacy files
+                    structure_name = os.path.splitext(filename)[0]
+                    
+                # Add prefix for consistency if needed - all structures should have Template_ prefix internally
+                if not structure_name.startswith("Template_"):
+                    internal_name = f"Template_{structure_name}"
+                else:
+                    internal_name = structure_name
+                    
+                # Store additional convenient name variants for easier lookup
+                display_name = structure_name
+                if display_name.startswith("Template_"):
+                    display_name = display_name[9:]  # Remove Template_ prefix for display
+                
+                # Add the structure to the dictionary with multiple key variations for robust lookups
+                self.custom_structures[internal_name] = structure_data
+                self.custom_structures[display_name] = structure_data  # Also store under non-prefixed name
+                
+                # Add clean filename variant as well
+                clean_name = internal_name.replace(" ", "_")
+                if clean_name != internal_name:
+                    self.custom_structures[clean_name] = structure_data
+                
+                print(f"[INFO] StructureOps: Loaded custom structure '{display_name}' from {filename}")
+                loaded_count += 1
+            except Exception as e:
+                print(f"[ERROR] StructureOps: Error loading custom structure {filename}: {e}")
+                
+        print(f"[INFO] StructureOps: Loaded {loaded_count} custom structures")
+        
+        # Return the count for testing
+        return loaded_count
     
     def delete_custom_structure(self, name):
         """Delete a custom folder structure"""
-        if name not in self.custom_structures:
+        if not name:
+            print(f"DEBUG: Cannot delete structure with empty name")
             return False
-        
-        # Create a clean filename
-        filename = name.replace(" ", "_").replace("/", "-").replace("\\", "-")
-        file_path = os.path.join(self.paths["custom_structures_dir"], f"{filename}.json")
-        
-        try:
-            # Delete the structure file
-            os.remove(file_path)
             
-            # Delete associated cache directory
-            cache_dir = os.path.join(self.paths["templates_dir"], "cache", filename)
-            if os.path.exists(cache_dir):
-                print(f"DEBUG: Deleting cache directory for structure '{name}': {cache_dir}")
-                import shutil
-                shutil.rmtree(cache_dir)
-                print(f"DEBUG: Successfully deleted cache directory for structure '{name}'")
+        # Create different variations of the filename to check
+        name_variants = [name]
+        if name.startswith("Template_"):
+            name_variants.append(name[9:])  # Without Template_ prefix
+        else:
+            name_variants.append(f"Template_{name}")
             
-            # Remove from in-memory dictionary
-            del self.custom_structures[name]
-            return True
-        except Exception as e:
-            print(f"Error deleting structure {name}: {e}")
-            return False
+        # With spaces replaced by underscores
+        for variant in list(name_variants):  # Make a copy of the list for iteration
+            if " " in variant:
+                name_variants.append(variant.replace(" ", "_"))
+            elif "_" in variant:
+                name_variants.append(variant.replace("_", " "))
+        
+        deleted = False
+        for variant in name_variants:
+            # Create a clean filename
+            filename = variant.replace(" ", "_").replace("/", "-").replace("\\", "-")
+            file_path = os.path.join(self.paths["custom_structures_dir"], f"{filename}.json")
+            
+            if os.path.exists(file_path):
+                try:
+                    # Delete the structure file
+                    os.remove(file_path)
+                    print(f"DEBUG: Successfully deleted structure file for '{variant}': {file_path}")
+                    
+                    # Delete associated cache directory
+                    cache_dir = os.path.join(self.paths["templates_dir"], "cache", filename)
+                    if os.path.exists(cache_dir):
+                        print(f"DEBUG: Deleting cache directory for structure '{variant}': {cache_dir}")
+                        import shutil
+                        shutil.rmtree(cache_dir)
+                        print(f"DEBUG: Successfully deleted cache directory for structure '{variant}'")
+                    
+                    deleted = True
+                except Exception as e:
+                    print(f"ERROR: Failed to delete structure file for '{variant}': {e}")
+            else:
+                print(f"DEBUG: Structure file not found for '{variant}': {file_path}")
+        
+        return deleted
     
     def get_structures(self):
         """Get a list of all available folder structures"""
@@ -182,204 +653,12 @@ class StructureOperations:
         structure = {
             "name": f"Template_{template_name}",
             "directories": unique_folders,
-            "created": datetime.datetime.now().isoformat()
+            "created": datetime.now().isoformat()
         }
         
         # Save to file
         return self.save_custom_structure(structure["name"], unique_folders)
     
-    def get_structure(self, structure_name):
-        """Get a folder structure by name"""
-        print(f"DEBUG: get_structure called with structure_name='{structure_name}'")
-        
-        # Try various possible names for the structure
-        names_to_try = [structure_name]
-        
-        # If not starting with Template_, also try with it
-        if not structure_name.startswith("Template_"):
-            names_to_try.append(f"Template_{structure_name}")
-            
-        # Try with spaces replaced by underscores and vice versa
-        if " " in structure_name:
-            names_to_try.append(structure_name.replace(" ", "_"))
-        if "_" in structure_name:
-            names_to_try.append(structure_name.replace("_", " "))
-            
-        # Try with apostrophes normalized (both with and without)
-        if "'" in structure_name:
-            names_to_try.append(structure_name.replace("'", ""))
-            
-        # Try with filename-safe versions
-        safe_name = structure_name.replace(" ", "_").replace("/", "-").replace("\\", "-").replace("'", "")
-        if safe_name not in names_to_try:
-            names_to_try.append(safe_name)
-            
-        # Try with Template_ prefix on the safe name
-        if not safe_name.startswith("Template_"):
-            names_to_try.append(f"Template_{safe_name}")
-
-        # Also try the on-disk filename format
-        filename_version = structure_name.replace(" ", "_").replace("/", "-").replace("\\", "-")
-        if filename_version not in names_to_try:
-            names_to_try.append(filename_version)
-            
-        print(f"DEBUG: Trying structure names: {names_to_try}")
-        
-        # Check all possible names
-        for name in names_to_try:
-            # Check if it's a built-in structure
-            from app.constants import DEFAULT_STRUCTURES
-            if name in DEFAULT_STRUCTURES:
-                print(f"DEBUG: Found built-in structure: {name}")
-                structure = DEFAULT_STRUCTURES[name]
-                # Ensure the structure is normalized
-                return self._normalize_structure_format(structure)
-                
-            # Check if it's in custom_structures memory
-            if hasattr(self, 'custom_structures'):
-                if isinstance(self.custom_structures, dict) and name in self.custom_structures:
-                    print(f"DEBUG: Found custom structure in memory: {name}")
-                    # Get structure data
-                    structure_data = self.custom_structures[name]
-                    
-                    # Handle different possible formats
-                    if isinstance(structure_data, dict):
-                        # The most common case - a structure data dictionary with 'directories' key
-                        if "directories" in structure_data:
-                            structure = structure_data.get("directories", [])
-                            return self._normalize_structure_format(structure)
-                        # Legacy case - directory list directly in the dictionary
-                        elif any(isinstance(value, list) for value in structure_data.values()):
-                            # Assume first list value is the structure
-                            for key, value in structure_data.items():
-                                if isinstance(value, list):
-                                    print(f"DEBUG: Using '{key}' as structure from legacy format")
-                                    return self._normalize_structure_format(value)
-                        # If all else fails, treat the entire dictionary as the structure
-                        else:
-                            print(f"DEBUG: Using entire dictionary as structure")
-                            return self._normalize_structure_format([structure_data])
-                    elif isinstance(structure_data, list):
-                        # If it's already a list, normalize it directly
-                        return self._normalize_structure_format(structure_data)
-        
-        # Also try searching the file system as a last resort
-        try:
-            custom_dir = self.paths["custom_structures_dir"]
-            for filename in os.listdir(custom_dir):
-                if filename.endswith('.json'):
-                    # Skip known non-template files
-                    if filename in ['folders.json', 'preferences.json']:
-                        continue
-                        
-                    # Remove .json extension
-                    file_base = filename[:-5]
-                    
-                    # If any variant of the name matches the file base
-                    if file_base in names_to_try or any(name.replace(" ", "_") == file_base for name in names_to_try):
-                        print(f"DEBUG: Found structure file on disk: {filename}")
-                        file_path = os.path.join(custom_dir, filename)
-                        
-                        # Load the file
-                        try:
-                            data = load_json_file(file_path)
-                            if data:
-                                # Update in-memory cache
-                                if not hasattr(self, 'custom_structures'):
-                                    self.custom_structures = {}
-                                    
-                                # Get the name from the file or use filename
-                                structure_name = data.get("name", file_base)
-                                self.custom_structures[structure_name] = data
-                                
-                                # Get the structure from the data
-                                if isinstance(data, dict) and "directories" in data:
-                                    return self._normalize_structure_format(data["directories"])
-                                elif isinstance(data, list):
-                                    return self._normalize_structure_format(data)
-                                else:
-                                    # If all else fails, wrap the data in a list
-                                    return self._normalize_structure_format([data])
-                        except Exception as e:
-                            print(f"Error loading structure file {filename}: {e}")
-        except Exception as e:
-            print(f"Error searching for structure files: {e}")
-                    
-        # If we get here, structure wasn't found
-        for name in names_to_try:
-            print(f"DEBUG: Structure not found: {name}")
-            
-        # Return empty structure if not found
-        return []
-    
-    def _normalize_structure_format(self, structure_items):
-        """
-        Ensure the structure items are properly formatted.
-        - Folders should be dictionaries with arrays: {"folder_name": []}
-        - Files should be simple strings
-        - Template variables ({{VARIABLE}}) should always remain as strings (files)
-        
-        This is CRITICAL for ensuring folders are displayed correctly in the UI.
-        """
-        if not structure_items:
-            return []
-            
-        normalized = []
-        
-        # Check if structure_items is not a list - this is a critical error
-        if not isinstance(structure_items, list):
-            print(f"[DEBUG] StructureOps: ERROR - structure_items must be a list, got {type(structure_items).__name__}")
-            
-            # Special case: if we got structure_name and structure as strings, this indicates a programming error
-            # Convert them to a valid structure format instead of failing
-            if isinstance(structure_items, dict):
-                if 'name' in structure_items and 'directories' in structure_items:
-                    print(f"[DEBUG] StructureOps: Detected structure JSON object instead of array - extracting directories")
-                    structure_items = structure_items.get('directories', [])
-                    
-                    # If directories is still not a list, return empty
-                    if not isinstance(structure_items, list):
-                        print(f"[DEBUG] StructureOps: Invalid structure format - returning empty list")
-                        return []
-                # If it's a dict but not a structure object, it might be a single folder entry
-                else:
-                    print(f"[DEBUG] StructureOps: Treating dict as a single folder entry")
-                    return [structure_items]  # Return as a list with one item
-            else:
-                # If not a dict, return empty list
-                return []
-        
-        # Process each item in the structure
-        for item in structure_items:
-            # If it's already a dictionary, process it as a folder
-            if isinstance(item, dict):
-                processed_dict = {}
-                
-                # Get the single folder name and its children
-                for folder_name, children in item.items():
-                    # Ensure the folder name is a string
-                    folder_name = str(folder_name)
-                    
-                    # Process children recursively if they exist
-                    if children is not None:
-                        processed_children = self._normalize_structure_format(children) if isinstance(children, list) else []
-                        processed_dict[folder_name] = processed_children
-                    else:
-                        # Make sure empty folders are represented as empty lists
-                        processed_dict[folder_name] = []
-                
-                # Add the processed dictionary to the result
-                normalized.append(processed_dict)
-            
-            # If it's a string, treat it as a filename
-            elif isinstance(item, str):
-                normalized.append(item)
-                
-            # Skip invalid types
-            else:
-                print(f"[DEBUG] StructureOps: Skipping invalid structure item type: {type(item).__name__}")
-        
-        return normalized
     def get_structure_for_project_type(self, project_type):
         """Get the appropriate structure for a given project type"""
         from app.constants import PROJECT_TYPE_TO_STRUCTURE
@@ -420,4 +699,43 @@ class StructureOperations:
             structure_key = "Video Editing - Basic"
         
         # Return the structure or an empty list as last resort
-        return DEFAULT_STRUCTURES.get(structure_key, []) 
+        return DEFAULT_STRUCTURES.get(structure_key, [])
+    
+    def sanitize_filename(self, name):
+        """
+        Sanitize a name for use as a filename.
+        
+        Args:
+            name (str): The name to sanitize
+            
+        Returns:
+            str: A sanitized filename that is safe to use on the filesystem
+        """
+        if not name:
+            return "untitled"
+            
+        # Normalize the name - remove extra whitespace
+        name = name.strip()
+        
+        # Replace spaces with underscores
+        name = name.replace(' ', '_')
+        
+        # Remove invalid filename characters
+        import re
+        name = re.sub(r'[\\/*?:"<>|]', '', name)
+        
+        # Ensure we don't have consecutive underscores
+        name = re.sub(r'_+', '_', name)
+        
+        # Limit length (optional)
+        if len(name) > 100:
+            name = name[:100]
+            
+        # Ensure we don't end with an underscore or period
+        name = name.rstrip('_').rstrip('.')
+        
+        # Provide a fallback name if we end up with an empty string
+        if not name:
+            return "untitled"
+            
+        return name 

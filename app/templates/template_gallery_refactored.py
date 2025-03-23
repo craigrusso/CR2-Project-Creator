@@ -57,10 +57,6 @@ class TemplateGallery(QWidget):
         # Set up the UI
         GalleryUISetup.setup_ui(self)
         
-        # Connect the new structure button click event
-        if hasattr(self, 'new_structure_button'):
-            self.new_structure_button.clicked.connect(self._on_structure_editor)
-        
         # Populate the gallery initially - do this after UI setup
         self.populate_gallery()
     
@@ -454,18 +450,27 @@ class TemplateGallery(QWidget):
                 def __init__(self, parent, **kwargs):
                     # First ensure the parent has a template_manager attribute
                     if not hasattr(parent, 'template_manager') or parent.template_manager is None:
-                        # Create a basic template_manager with just what we need for the dropdown
+                        print("EnhancedStructureEditorWithFallback: Creating basic template manager")
+                        
                         class BasicTemplateManager:
                             def __init__(self):
                                 self.custom_structures = {}
                             
                             def get_structure(self, name):
-                                print(f"BasicTemplateManager: get_structure called with name={name}")
-                                if not name:
-                                    return []
+                                print(f"BasicTemplateManager: Get structure called for {name}")
+                                # Look for built-in structures
+                                DEFAULT_STRUCTURES = {
+                                    "Empty": [],
+                                    "Basic": [
+                                        {"type": "folder", "name": "src", "children": [
+                                            {"type": "file", "name": "main.py"}
+                                        ]},
+                                        {"type": "file", "name": "README.md"}
+                                    ]
+                                }
                                 
-                                # Check if it's a built-in structure (case-insensitive)
-                                name_lower = name.lower()
+                                # Try to find the structure in our defaults
+                                name_lower = name.lower() if name else ""
                                 for key in DEFAULT_STRUCTURES:
                                     if key.lower() == name_lower:
                                         print(f"BasicTemplateManager: Found built-in structure: {key}")
@@ -479,8 +484,8 @@ class TemplateGallery(QWidget):
                     # Call the original constructor
                     super().__init__(parent, **kwargs)
                     
-                    # Ensure dropdown is populated with built-in structures
-                    self.populate_structure_dropdown()
+                    # No need to populate structure dropdown explicitly, it will be handled by the parent class
+                    # if available, otherwise just skip it
             
             # Create and show the editor
             editor = EnhancedStructureEditorWithFallback(
@@ -783,4 +788,188 @@ class TemplateGallery(QWidget):
         print(f"[DEBUG] Gallery: Sorting by {self.current_sort_field} ({self.current_sort_order})")
         
         # Refresh the gallery with new sort settings
-        self.populate_gallery(force_refresh=True) 
+        self.populate_gallery(force_refresh=True)
+    
+    def select_template(self, template_name):
+        """Select a template by name after the gallery is refreshed
+        
+        This method is used to re-select a template after a rename operation
+        or other updates that require gallery refresh.
+        
+        Args:
+            template_name: Name of the template to select
+            
+        Returns:
+            bool: True if template was found and selected, False otherwise
+        """
+        print(f"🔹 GALLERY SELECT: Attempting to select template '{template_name}'")
+        
+        # Normalize template name for comparison - handle both with and without Template_ prefix
+        clean_name = template_name
+        if clean_name.startswith("Template_"):
+            clean_name = clean_name[9:]  # Remove the prefix
+            
+        print(f"🔹 GALLERY SELECT: Using normalized name '{clean_name}' for selection")
+        
+        # Track if we found and selected the template
+        selected = False
+        
+        # First check if we have any template cards
+        if hasattr(self, 'template_cards') and self.template_cards:
+            print(f"🔹 GALLERY SELECT: Searching {len(self.template_cards)} template cards")
+            
+            # Create name variations to try matching against cards
+            name_variations = [
+                template_name,                # Original name
+                clean_name,                   # Without Template_ prefix
+                f"Template_{clean_name}",     # With Template_ prefix
+                template_name.replace(' ', '_'),    # With underscores
+                clean_name.replace(' ', '_')  # Clean with underscores
+            ]
+            
+            # Find the template card with the matching name
+            for i, card in enumerate(self.template_cards):
+                # Skip if no template property
+                if not hasattr(card, 'template'):
+                    print(f"🔹 GALLERY SELECT: Card {i} has no template property, skipping")
+                    continue
+                    
+                # Get card name for comparison
+                card_name = ""
+                if isinstance(card.template, dict) and 'name' in card.template:
+                    card_name = card.template['name']
+                elif hasattr(card, 'template_name') and callable(card.template_name):
+                    card_name = card.template_name()
+                
+                print(f"🔹 GALLERY SELECT: Checking card {i} with name '{card_name}'")
+                
+                # Check all variations of the name for matching
+                if any(card_name == variation for variation in name_variations):
+                    matching_variation = next(variation for variation in name_variations if card_name == variation)
+                    print(f"🔹 GALLERY SELECT: ✅ Found card for '{template_name}' by matching '{matching_variation}', selecting it")
+                    
+                    # Set as the selected template
+                    self.selected_template = card.template
+                    
+                    # Also set in app if available
+                    if hasattr(self, 'app') and hasattr(self.app, 'set_selected_template'):
+                        self.app.set_selected_template(card.template)
+                        print(f"🔹 GALLERY SELECT: Updated app-level selected template")
+                    
+                    # Update card selection state
+                    if hasattr(card, 'set_selected'):
+                        card.set_selected(True)
+                        print(f"🔹 GALLERY SELECT: Set card selected state to True")
+                    else:
+                        print(f"🔹 GALLERY SELECT: Card has no set_selected method")
+                        
+                    # Update all cards to reflect new selection
+                    if hasattr(self, '_update_template_card_selection'):
+                        self._update_template_card_selection()
+                        print(f"🔹 GALLERY SELECT: Updated all card selection states")
+                    else:
+                        print(f"🔹 GALLERY SELECT: No _update_template_card_selection method available")
+                    
+                    # Apply highlight effect if card supports it
+                    if hasattr(card, 'apply_rename_highlight'):
+                        card.apply_rename_highlight()
+                        print(f"🔹 GALLERY SELECT: Applied rename highlight effect to card")
+                    
+                    print(f"🔹 GALLERY SELECT: Successfully selected template '{template_name}'")
+                    selected = True
+                    break
+                else:
+                    # Debug matching attempts
+                    print(f"🔹 GALLERY SELECT: ❌ No match for {card_name} vs variations of {template_name}")
+        else:
+            print(f"🔹 GALLERY SELECT: No template cards found in gallery")
+        
+        # If we still haven't found it, try to find the template in the template manager
+        if not selected and hasattr(self, 'app') and hasattr(self.app, 'template_manager'):
+            print(f"🔹 GALLERY SELECT: Attempting to find template '{template_name}' in template manager")
+            template_manager = self.app.template_manager
+            
+            # Try to get the template with various name formats
+            template = None
+            name_variations = [
+                template_name,                # Original name
+                clean_name,                   # Without Template_ prefix
+                f"Template_{clean_name}",     # With Template_ prefix
+                template_name.replace(' ', '_'),    # With underscores
+                clean_name.replace(' ', '_'),  # Clean with underscores
+                template_name.replace('_', ' '),    # Replace underscores with spaces
+                clean_name.replace('_', ' ')   # Clean replace underscores with spaces
+            ]
+            
+            # Try all variations
+            for name in name_variations:
+                print(f"🔹 GALLERY SELECT: Trying variation '{name}' in template manager")
+                template = template_manager.get_template_by_name(name)
+                if template:
+                    print(f"🔹 GALLERY SELECT: ✅ Found template in manager with name '{name}'")
+                    break
+                else:
+                    print(f"🔹 GALLERY SELECT: ❌ Template not found in manager with name '{name}'")
+            
+            if template:
+                print(f"🔹 GALLERY SELECT: Found template in manager, updating UI selection")
+                # Set as selected template
+                self.selected_template = template
+                
+                # Also set in app if available
+                if hasattr(self.app, 'set_selected_template'):
+                    self.app.set_selected_template(template)
+                    print(f"🔹 GALLERY SELECT: Updated app-level selected template from manager")
+                
+                # We found the template but couldn't select a card, which might mean
+                # we need to refresh the gallery to show this template
+                print(f"🔹 GALLERY SELECT: Template found in manager but no matching card, might need refresh")
+                selected = True
+            else:
+                print(f"🔹 GALLERY SELECT: Template not found in manager with any name variation")
+        else:
+            if selected:
+                print(f"🔹 GALLERY SELECT: Already selected template from template cards")
+            elif not hasattr(self, 'app') or not self.app:
+                print(f"🔹 GALLERY SELECT: No app object available")
+            elif not hasattr(self.app, 'template_manager'):
+                print(f"🔹 GALLERY SELECT: No template_manager in app")
+        
+        # If we get here and haven't found the template, it failed
+        if not selected:
+            print(f"🔹 GALLERY SELECT: Failed to find template '{template_name}' in gallery or template manager")
+            
+            # Last resort: Check if we need to force refresh
+            if hasattr(self, 'templates_loaded'):
+                print(f"🔹 GALLERY SELECT: Last resort - forcing gallery refresh and trying again")
+                self.templates_loaded = False
+                self.populate_gallery(force_refresh=True)
+                
+                # Process events to ensure refresh completes
+                from PyQt5.QtWidgets import QApplication
+                QApplication.processEvents()
+                
+                # Try selection one more time with all cards
+                if hasattr(self, 'template_cards') and self.template_cards:
+                    for i, card in enumerate(self.template_cards):
+                        if hasattr(card, 'template') and isinstance(card.template, dict):
+                            card_name = card.template.get('name', '')
+                            if card_name == template_name or card_name == clean_name:
+                                print(f"🔹 GALLERY SELECT: ✅ Found card in fresh gallery")
+                                self.selected_template = card.template
+                                
+                                if hasattr(card, 'set_selected'):
+                                    card.set_selected(True)
+                                    
+                                # Update all cards to reflect new selection
+                                if hasattr(self, '_update_template_card_selection'):
+                                    self._update_template_card_selection()
+                                
+                                # Apply highlight effect if card supports it
+                                if hasattr(card, 'apply_rename_highlight'):
+                                    card.apply_rename_highlight()
+                                    
+                                selected = True
+                                break
+        
+        return selected 

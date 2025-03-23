@@ -38,29 +38,57 @@ class UIOperations:
         try:
             # Import here to avoid circular imports
             from app.dialogs.dialog_windows_pyqt import show_edit_template
+            from app.ui.structure_editor_enhanced import show_enhanced_structure_editor
             
-            # Create a new template with default values
+            # Create a new template with default values but no name yet
             new_template = {
-                "name": "New Template",
+                "name": "",  # Empty name initially
                 "category": "Custom",
                 "description": "A new custom template",
                 "type": "Standard",
                 "structure_type": "Standard",
                 "icon": "📂",
-                "created": ""
+                "created": "",
+                "is_new_template": True  # Flag to indicate this is a new template being created
             }
             
-            # Show the edit template dialog with a callback to update the template
-            show_edit_template(parent, new_template, lambda t: self.update_template(t))
+            # Show the enhanced structure editor directly
+            success, structure, structure_name = show_enhanced_structure_editor(
+                parent, 
+                structure_name="",  # Empty structure name initially
+                structure=[],
+                is_new=True
+            )
             
-            # Trigger template update to refresh UI
-            if hasattr(parent, 'template_updated') and parent.template_updated is not None:
-                parent.template_updated.emit()
+            if success and structure:
+                # Update the template with the structure
+                new_template['structure'] = structure
+                new_template['structure_name'] = structure_name
                 
-            return True
+                # Get the template name from the structure name
+                # The structure name should now have a valid name since we validated in the editor
+                template_name = structure_name
+                if structure_name.startswith("Template_"):
+                    template_name = structure_name[len("Template_"):]
+                
+                # Only save if a name was provided 
+                if template_name:
+                    new_template['name'] = template_name
+                    
+                    # Save the template
+                    self.update_template(new_template)
+                    
+                    # Trigger template update to refresh UI
+                    if hasattr(parent, 'template_updated') and parent.template_updated is not None:
+                        parent.template_updated.emit()
+                        
+                    return True
+                
+            return False
         except Exception as e:
             print(f"Error creating new template: {e}")
             if parent:
+                from PyQt5.QtWidgets import QMessageBox
                 QMessageBox.warning(parent, "Error", f"Failed to create template: {str(e)}")
             return False
     
@@ -95,11 +123,28 @@ class UIOperations:
             
         try:
             # Import here to avoid circular imports
-            from app.dialogs.dialog_windows_pyqt import show_edit_template
+            from app.ui.structure_editor_enhanced import show_enhanced_structure_editor
             
-            # Show the edit template dialog with a callback to update the template
-            show_edit_template(None, template, lambda t: self.update_template(t))
-            return True
+            # Show the enhanced structure editor directly
+            success, structure, structure_name = show_enhanced_structure_editor(
+                None, 
+                structure_name=template.get('structure_name', f"Template_{template.get('name', 'Unknown')}"),
+                structure=template.get('structure', []),
+                is_new=False
+            )
+            
+            if success and structure:
+                # Update the template with the structure
+                updated_template = template.copy()
+                updated_template['structure'] = structure
+                updated_template['structure_name'] = structure_name
+                
+                # Save the template
+                self.update_template(updated_template)
+                
+                return True
+            
+            return False
         except Exception as e:
             print(f"Error editing template: {e}")
             return False
@@ -664,14 +709,18 @@ class UIOperations:
             
         try:
             name = template.get("name", "")
-            category = template.get("category", "Custom")
-            file_path = template.get("file", "")
-            structure_type = template.get("structure_type", "Standard")
+            file_path = template.get("path", "") or template.get("file", "")
+            structure_type = template.get("type", "") or template.get("structure_type", "Standard")
             description = template.get("description", "")
             
+            # Validate required fields
+            if not name:
+                print("Error: Cannot save template with empty name")
+                return False
+            
             # Call the base class save_template method from TemplateOperations
-            from app.templates.template_operations import TemplateOperations
-            result = TemplateOperations.save_template(self, name, category, file_path, structure_type, description)
+            print(f"UIOperations.save_template: Calling save_template with name='{name}', path='{file_path}', type='{structure_type}'")
+            result = TemplateOperations.save_template(self, name, file_path, structure_type, description)
             
             # Add to recent templates if successful
             if result and hasattr(self, 'add_to_recent_templates'):

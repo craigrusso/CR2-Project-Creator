@@ -1,0 +1,50 @@
+{
+  "name": "Web Application",
+  "category": "General",
+  "structure": [
+    {
+      "Web Project": [
+        "README.md",
+        "package.json",
+        ".gitignore",
+        {
+          "src": [
+            "index.js",
+            "app.js",
+            {
+              "components": [
+                "Header.jsx",
+                "Footer.jsx",
+                "Sidebar.jsx"
+              ]
+            },
+            {
+              "styles": [
+                "main.css",
+                "variables.css"
+              ]
+            }
+          ]
+        },
+        {
+          "public": [
+            "index.html",
+            "favicon.ico",
+            {
+              "images": [
+                "logo.png",
+                "background.jpg"
+              ]
+            }
+          ]
+        },
+        {
+          "tests": [
+            "app.test.js",
+            "utils.test.js"
+          ]
+        }
+      ]
+    }
+  ]
+}

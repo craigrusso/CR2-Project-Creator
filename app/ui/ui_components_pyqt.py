@@ -679,8 +679,85 @@ class StructureEditor(QDialog):
                 file_item.setText(0, file_name)
                 file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
                 file_item.setData(0, Qt.UserRole, "file")  # Mark as file
+                
+                # Copy the file to the template cache directory
+                if self.template_path and os.path.isdir(self.template_path):
+                    # Get structure name
+                    structure_name = os.path.basename(self.template_path)
+                    # Clean up structure name for cache directory
+                    safe_name = structure_name.replace(" ", "_").replace("/", "-").replace("\\", "-").replace("'", "")
+                    
+                    # Determine cache directory path
+                    templates_dir = os.path.dirname(os.path.dirname(self.template_path))
+                    cache_dir = os.path.join(templates_dir, "cache", safe_name)
+                    
+                    # Get the relative path from the item in the tree to maintain folder structure
+                    relative_path = self._get_relative_item_path(file_item)
+                    
+                    if relative_path:
+                        # Create the full cache path including the relative path
+                        cached_file_path = os.path.join(cache_dir, relative_path)
+                        # Ensure the directory structure exists
+                        os.makedirs(os.path.dirname(cached_file_path), exist_ok=True)
+                    else:
+                        # No relative path, use direct cache directory
+                        os.makedirs(cache_dir, exist_ok=True)
+                        cached_file_path = os.path.join(cache_dir, file_name)
+                    
+                    # Copy file to cache
+                    try:
+                        print(f"Copying file to cache: {file_path} -> {cached_file_path}")
+                        shutil.copy2(file_path, cached_file_path)
+                        print(f"Successfully cached file: {cached_file_path}")
+                    except Exception as e:
+                        print(f"Error copying file to cache: {e}")
         except Exception as e:
             print(f"Error processing directory contents: {e}")
+    
+    def _get_relative_item_path(self, item):
+        """
+        Get the relative path of an item in the tree structure
+        
+        Args:
+            item: The tree item to get the path for
+            
+        Returns:
+            str: The relative path of the item from the project root, or None if not found
+        """
+        if not item:
+            return None
+            
+        path_parts = []
+        current = item
+        
+        # Find the root item
+        root_item = None
+        if hasattr(self, 'root_item'):
+            root_item = self.root_item
+        elif hasattr(self, 'tree') and self.tree.topLevelItemCount() > 0:
+            root_item = self.tree.topLevelItem(0)
+        elif hasattr(self, 'structure_tree') and self.structure_tree.topLevelItemCount() > 0:
+            root_item = self.structure_tree.topLevelItem(0)
+            
+        # If no root item identified, return None
+        if not root_item:
+            print("Warning: Could not identify root item in tree")
+            return None
+            
+        # Build the path by walking up the tree
+        while current and current != root_item:
+            path_parts.insert(0, current.text(0))
+            current = current.parent()
+            
+        # If we reached the top without finding the root, the path is incomplete
+        if not current or current != root_item:
+            return None
+            
+        # Combine path parts
+        if path_parts:
+            return os.path.join(*path_parts)
+        else:
+            return None
     
     def _import_from_folder(self):
         """Import structure from a folder"""
@@ -1435,8 +1512,85 @@ class TemplateDirectoryEditor(QDialog):
                 file_item.setText(0, file_name)
                 file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
                 file_item.setData(0, Qt.UserRole, "file")  # Mark as file
+                
+                # Copy the file to the template cache directory
+                if self.template_path and os.path.isdir(self.template_path):
+                    # Get structure name
+                    structure_name = os.path.basename(self.template_path)
+                    # Clean up structure name for cache directory
+                    safe_name = structure_name.replace(" ", "_").replace("/", "-").replace("\\", "-").replace("'", "")
+                    
+                    # Determine cache directory path
+                    templates_dir = os.path.dirname(os.path.dirname(self.template_path))
+                    cache_dir = os.path.join(templates_dir, "cache", safe_name)
+                    
+                    # Get the relative path from the item in the tree to maintain folder structure
+                    relative_path = self._get_relative_item_path(file_item)
+                    
+                    if relative_path:
+                        # Create the full cache path including the relative path
+                        cached_file_path = os.path.join(cache_dir, relative_path)
+                        # Ensure the directory structure exists
+                        os.makedirs(os.path.dirname(cached_file_path), exist_ok=True)
+                    else:
+                        # No relative path, use direct cache directory
+                        os.makedirs(cache_dir, exist_ok=True)
+                        cached_file_path = os.path.join(cache_dir, file_name)
+                    
+                    # Copy file to cache
+                    try:
+                        print(f"Copying file to cache: {file_path} -> {cached_file_path}")
+                        shutil.copy2(file_path, cached_file_path)
+                        print(f"Successfully cached file: {cached_file_path}")
+                    except Exception as e:
+                        print(f"Error copying file to cache: {e}")
         except Exception as e:
             print(f"Error processing directory contents: {e}")
+    
+    def _get_relative_item_path(self, item):
+        """
+        Get the relative path of an item in the tree structure
+        
+        Args:
+            item: The tree item to get the path for
+            
+        Returns:
+            str: The relative path of the item from the project root, or None if not found
+        """
+        if not item:
+            return None
+            
+        path_parts = []
+        current = item
+        
+        # Find the root item
+        root_item = None
+        if hasattr(self, 'root_item'):
+            root_item = self.root_item
+        elif hasattr(self, 'tree') and self.tree.topLevelItemCount() > 0:
+            root_item = self.tree.topLevelItem(0)
+        elif hasattr(self, 'structure_tree') and self.structure_tree.topLevelItemCount() > 0:
+            root_item = self.structure_tree.topLevelItem(0)
+            
+        # If no root item identified, return None
+        if not root_item:
+            print("Warning: Could not identify root item in tree")
+            return None
+            
+        # Build the path by walking up the tree
+        while current and current != root_item:
+            path_parts.insert(0, current.text(0))
+            current = current.parent()
+            
+        # If we reached the top without finding the root, the path is incomplete
+        if not current or current != root_item:
+            return None
+            
+        # Combine path parts
+        if path_parts:
+            return os.path.join(*path_parts)
+        else:
+            return None
 
 class ProjectNameInput(QDialog):
     """

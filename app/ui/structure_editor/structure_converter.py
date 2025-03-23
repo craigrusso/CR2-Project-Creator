@@ -667,7 +667,7 @@ class StructureConverter:
             item: The tree item to process
             
         Returns:
-            dict: The item data as a dictionary
+            dict or str: The item data in the format expected by the project builder
         """
         if not item:
             return None
@@ -675,50 +675,34 @@ class StructureConverter:
         # Get the item text
         name = item.text(0)
         
-        # Get item data
+        # Get item data to determine if this is a folder or file
         item_user_data = item.data(0, Qt.UserRole)
         
-        # Create item data
-        item_data = {'name': name}
-        
-        # Check if this is a folder - support multiple formats
+        # Determine if this is a folder or file
         is_folder = False
         
-        # Check legacy string format
-        if item_user_data == 'folder':
+        # Check data formats in order of preference
+        if isinstance(item_user_data, str) and item_user_data == 'folder':
+            # Direct string marker
             is_folder = True
-        # Check dictionary format with type key
         elif isinstance(item_user_data, dict) and 'type' in item_user_data:
-            if item_user_data['type'] == 'folder':
-                is_folder = True
-        # Check by looking for children - fallback detection
+            # Dict with type field
+            is_folder = item_user_data['type'] == 'folder'
         elif item.childCount() > 0:
+            # Has children, must be a folder
             is_folder = True
-            
+        
         if is_folder:
-            item_data['type'] = 'folder'
-            # Process children
+            # For folders, use the {folder_name: [children]} format that the project builder expects
             children = []
             for i in range(item.childCount()):
                 child_data = self._process_item(item.child(i))
                 if child_data:
                     children.append(child_data)
-            if children:
-                item_data['children'] = children
+            return {name: children}
         else:
-            # This is a file
-            item_data['type'] = 'file'
-            # Check if this item has binary data
-            if hasattr(item, 'binary_data'):
-                item_data['binary'] = True
-                # Store the binary data in base64
-                import base64
-                item_data['data'] = base64.b64encode(item.binary_data).decode('utf-8')
-            elif hasattr(item, 'file_path') and item.file_path:
-                # This file has a path to read from
-                item_data['file_path'] = item.file_path
-        
-        return item_data
+            # For files, just return the name string
+            return name
 
     def _normalize_structure_format(self, structure):
         """

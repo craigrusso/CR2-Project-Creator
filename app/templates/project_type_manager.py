@@ -3,7 +3,7 @@
 
 import os
 import json
-from app.core.app_config import PROJECT_TYPE_TO_STRUCTURE, DEFAULT_TEMPLATE_CATEGORIES
+from app.constants import PROJECT_TYPE_TO_STRUCTURE, DEFAULT_TEMPLATE_CATEGORIES
 
 class ProjectTypeManager:
     """

@@ -9,12 +9,11 @@ import time
 from pathlib import Path
 
 from app.utils.utils import load_json_file, save_json_file, get_config_paths
-from app.constants import DEFAULT_STRUCTURES, PROJECT_TYPE_TO_STRUCTURE, DEFAULT_TEMPLATE_CATEGORIES
+from app.constants import DEFAULT_STRUCTURES, PROJECT_TYPE_TO_STRUCTURE, DEFAULT_TEMPLATE_CATEGORIES, APP_VERSION
 from app.templates.folder_operations import FolderOperations
 from app.templates.structure_operations import StructureOperations
 from app.templates.template_operations import TemplateOperations
 from app.templates.project_type_manager import ProjectTypeManager
-from app.core.app_config import APP_VERSION
 
 class TemplateManagerCore(TemplateOperations):
     """
@@ -69,22 +68,65 @@ class TemplateManagerCore(TemplateOperations):
         self.templates = []
         
         try:
-            template_files = [f for f in os.listdir(self.paths["templates_dir"]) if f.endswith('.json')]
+            # Get all JSON files in the templates directory
+            template_files = [f for f in os.listdir(self.paths["templates_dir"]) 
+                              if f.endswith('.json') and not f.startswith('.')]
+            
+            # Some system files we should never load as templates
+            excluded_files = ['preferences.json', 'folders.json', 'colors.json', 'settings.json']
             
             for file in template_files:
+                if file in excluded_files:
+                    print(f"Skipping template with invalid name: {file}")
+                    continue
+                    
                 try:
-                    with open(os.path.join(self.paths["templates_dir"], file), 'r') as f:
-                        template = json.load(f)
-                        # Filter out templates with invalid names
-                        name = template.get('name', '')
-                        if name and name != "Unnamed" and name != "Unnamed Template":
-                            self.templates.append(template)
-                        else:
-                            print(f"Skipping template with invalid name: {file}")
+                    # Load the template JSON file
+                    file_path = os.path.join(self.paths["templates_dir"], file)
+                    with open(file_path, 'r') as f:
+                        template_data = json.load(f)
+                        
+                    # Extract template name, handling missing name and Template_ prefix
+                    template_name = template_data.get('name', '')
+                    
+                    # Handle the case where 'name' field is missing but the filename gives us a clue
+                    if not template_name and file.endswith('.json'):
+                        # Extract name from filename
+                        base_name = file[:-5]  # Remove .json extension
+                        if base_name.startswith('Template_'):
+                            base_name = base_name[9:]  # Remove Template_ prefix
+                        template_name = base_name.replace('_', ' ')  # Convert underscores to spaces
+                        
+                        # Update the template data with the extracted name
+                        template_data['name'] = template_name
+                        print(f"[DEBUG] TemplateManagerCore: Extracted name '{template_name}' from filename '{file}'")
+                    
+                    # Skip templates with empty or default names
+                    if not template_name or template_name == "Unnamed" or template_name == "Unnamed Template":
+                        print(f"Skipping template with invalid name: {file}")
+                        continue
+                    
+                    # Check for Template_ prefix in name and handle it correctly
+                    if template_name.startswith("Template_"):
+                        # For display purposes, also store the clean name without prefix
+                        clean_name = template_name[9:]  # Remove Template_ prefix
+                        
+                        # Update the template data with the clean name if needed
+                        if not template_data.get('display_name'):
+                            template_data['display_name'] = clean_name
+                        
+                    # Add the template to our list
+                    self.templates.append(template_data)
+                    print(f"[DEBUG] TemplateManagerCore: Loaded template: {template_name}")
                 except Exception as e:
                     print(f"Error loading template {file}: {e}")
+                    
+            print(f"[DEBUG] TemplateManagerCore: Loaded {len(self.templates)} templates")
         except Exception as e:
             print(f"Error loading templates: {e}")
+        
+        # Also load structures as templates for seamless integration
+        self.load_structures_as_templates()
     
     def load_template_directories(self):
         """Load all template directories"""
@@ -195,21 +237,88 @@ class TemplateManagerCore(TemplateOperations):
         return self.templates + self.template_directories
     
     def get_template_by_name(self, template_name):
-        """Get a template by its name"""
-        if not template_name:
-            return None
+        """
+        Get a template by its name, handling various name formats.
+        
+        Args:
+            template_name (str): Name of the template to find
             
-        # Look in file templates
+        Returns:
+            dict: Template object if found, None otherwise
+        """
+        if not template_name:
+            print(f"[DEBUG] TemplateManagerCore: get_template_by_name called with empty name")
+            return None
+        
+        # Generate name variations to try
+        template_name = str(template_name).strip()
+        name_variations = [
+            template_name,                                 # Original name
+            template_name.lower(),                         # Lowercase
+            template_name.upper(),                         # Uppercase
+        ]
+        
+        # Add variations with and without Template_ prefix
+        if template_name.startswith("Template_"):
+            # Add version without prefix
+            clean_name = template_name[9:]  # Remove Template_ prefix
+            name_variations.append(clean_name)
+            name_variations.append(clean_name.lower())
+        else:
+            # Add version with prefix
+            name_variations.append(f"Template_{template_name}")
+        
+        # Try with spaces converted to underscores and vice versa
+        name_variations.append(template_name.replace(" ", "_"))
+        name_variations.append(template_name.replace("_", " "))
+        
+        # First try exact match in file templates
         for template in self.templates:
-            if template.get('name') == template_name:
+            template_name_from_obj = template.get('name', '')
+            if template_name_from_obj and template_name_from_obj in name_variations:
+                print(f"[DEBUG] TemplateManagerCore: Found template by exact name match: {template_name_from_obj}")
                 return template
-                
-        # Look in directory templates
-        for template in self.template_directories:
-            if template.get('name') == template_name:
+        
+        # Then try more flexible matching in file templates
+        for template in self.templates:
+            template_name_from_obj = template.get('name', '')
+            if not template_name_from_obj:
+                continue
+            
+            # Try case insensitive match
+            if template_name_from_obj.lower() in [v.lower() for v in name_variations]:
+                print(f"[DEBUG] TemplateManagerCore: Found template by case-insensitive match: {template_name_from_obj}")
                 return template
+            
+            # Try with/without Template_ prefix
+            if template_name_from_obj.startswith("Template_"):
+                clean_obj_name = template_name_from_obj[9:]
+                if clean_obj_name.lower() in [v.lower() for v in name_variations]:
+                    print(f"[DEBUG] TemplateManagerCore: Found template by prefix-stripped match: {template_name_from_obj}")
+                    return template
+            else:
+                prefixed_obj_name = f"Template_{template_name_from_obj}"
+                if prefixed_obj_name.lower() in [v.lower() for v in name_variations]:
+                    print(f"[DEBUG] TemplateManagerCore: Found template by prefix-added match: {template_name_from_obj}")
+                    return template
+        
+        # Try same approach with directory templates
+        if hasattr(self, 'template_directories'):
+            for template in self.template_directories:
+                template_name_from_obj = template.get('name', '')
+                if template_name_from_obj and template_name_from_obj in name_variations:
+                    print(f"[DEBUG] TemplateManagerCore: Found directory template by name: {template_name_from_obj}")
+                    return template
                 
-        return None 
+                # Try more flexible matching
+                if template_name_from_obj and template_name_from_obj.lower() in [v.lower() for v in name_variations]:
+                    print(f"[DEBUG] TemplateManagerCore: Found directory template by flexible match: {template_name_from_obj}")
+                    return template
+        
+        # If not found anywhere
+        template_variations_str = ", ".join(name_variations[:3]) + (", ..." if len(name_variations) > 3 else "")
+        print(f"[DEBUG] TemplateManagerCore: Template not found for name '{template_name}' (tried variations: {template_variations_str})")
+        return None
     
     def cleanup_templates(self):
         """Clean up any problematic templates with invalid names"""
@@ -361,3 +470,65 @@ class TemplateManagerCore(TemplateOperations):
                         count += self._count_structure_items(value)
         
         return count 
+    
+    def load_structures_as_templates(self):
+        """
+        Load structure files as templates to ensure compatibility between APIs.
+        This makes structures accessible via template methods and vice versa.
+        """
+        try:
+            # Make sure we have custom structures loaded
+            if not hasattr(self, 'custom_structures') or not self.custom_structures:
+                if hasattr(self, 'load_custom_structures'):
+                    self.load_custom_structures()
+                else:
+                    print("[WARNING] TemplateManagerCore: Cannot load structures, no load_custom_structures method")
+                    return
+            
+            # Track how many structures were converted to templates
+            converted_count = 0
+            
+            # Go through all the structure data
+            for structure_name, structure_data in self.custom_structures.items():
+                # Skip if not a proper structure dictionary
+                if not isinstance(structure_data, dict):
+                    continue
+                    
+                # Skip if we already have a template with this name
+                template_name = structure_name
+                if structure_name.startswith("Template_"):
+                    # Extract the template name without the Template_ prefix
+                    template_name = structure_name[9:]
+                
+                # Check if we already have this template by name
+                template_exists = False
+                for template in self.templates:
+                    if template.get('name') == template_name:
+                        template_exists = True
+                        break
+                        
+                if template_exists:
+                    continue
+                    
+                # Create a template object from the structure data
+                template = {
+                    'name': template_name,
+                    'description': structure_data.get('description', f'Template for {template_name}'),
+                    'structure_name': structure_name,
+                    'type': 'custom',
+                    'tags': structure_data.get('tags', []),
+                    'category': structure_data.get('category', 'General'),
+                    'icon': structure_data.get('icon', ''),
+                    'color': structure_data.get('color', '')
+                }
+                
+                # Add the template to our list
+                self.templates.append(template)
+                converted_count += 1
+                
+            print(f"[DEBUG] TemplateManagerCore: Added {converted_count} structures as templates")
+            
+        except Exception as e:
+            print(f"[ERROR] TemplateManagerCore: Error loading structures as templates: {e}")
+            import traceback
+            traceback.print_exc() 

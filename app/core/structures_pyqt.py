@@ -11,7 +11,8 @@ from PyQt5.QtCore import Qt, pyqtSignal
 # Import from our centralized color scheme
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE
 # Import the enhanced structure editor instead of the basic one
-from app.ui.structure_editor_enhanced import EnhancedStructureEditor, save_structure_with_project_type
+from app.ui.structure_editor_enhanced import EnhancedStructureEditor
+from app.ui.structure_editor_functions import save_structure_with_project_type
 
 
 def create_custom_structure(app):

@@ -4,6 +4,7 @@
 import os
 import webbrowser
 import json
+import copy
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                            QPushButton, QTreeWidget, QTreeWidgetItem,
                            QMessageBox, QScrollArea, QWidget, QTabWidget, 
@@ -18,7 +19,8 @@ from PyQt5.QtGui import QFont, QPixmap, QMovie, QIcon, QRegExpValidator, QDragEn
 from app.core.app_config import APP_NAME, APP_VERSION
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
 from app.utils.utils import get_config_paths, load_config, save_config
-from app.ui.structure_editor_enhanced import show_enhanced_structure_editor
+from app.ui.structure_editor_enhanced import EnhancedStructureEditor
+from app.ui.structure_editor_functions import show_enhanced_structure_editor
 
 def preview_structure(app, structure):
     """Show a preview of the project structure"""
@@ -635,150 +637,128 @@ def show_preferences(app):
     # Execute the dialog
     return dialog.exec_()
 
-def show_edit_template(parent, template, callback=None):
-    """Show dialog to edit a template"""
-    dialog = QDialog(parent)
-    dialog.setWindowTitle("Edit Template")
-    dialog.resize(700, 550)
+def show_edit_template(template, callback=None, app=None, gallery=None):
+    """Show a dialog for editing a template
     
-    layout = QVBoxLayout(dialog)
-    layout.setContentsMargins(15, 15, 15, 15)
-    layout.setSpacing(10)
+    Args:
+        template: The template object to edit
+        callback: Function to call with updated template if edit succeeds
+        app: The main application instance
+        gallery: The gallery widget
     
-    # Create tab widget
-    tabs = QTabWidget()
+    Returns:
+        bool: Whether the edit was successful
+    """
+    print(f"🔍 EDIT TEMPLATE: Starting template edit for '{template.get('name', '') if isinstance(template, dict) else ''}'")
     
-    # Apply simple but consistent tab styling
-    tabs.setStyleSheet(f"""
-        QTabWidget::pane {{
-            border: 1px solid #444;
-            background-color: #333;
-        }}
-        QTabBar::tab {{
-            background-color: #444;
-            color: #ddd;
-            padding: 8px 12px;
-            border: 1px solid #555;
-            border-bottom: none;
-        }}
-        QTabBar::tab:selected {{
-            background-color: #555;
-            color: white;
-            border-top: 2px solid {colors['accent']};
-        }}
-    """)
+    # Create a working copy to avoid modifying the original until user accepts
+    working_template = template.copy() if isinstance(template, dict) else {}
     
-    # Create the tabs
-    create_basic_info_tab(tabs, template)
-    create_structure_tab(tabs, template, parent)
+    # Extract key information
+    template_name = working_template.get('name', '')
+    is_new = template_name == ""
     
-    # Add the tab widget to the main layout
-    layout.addWidget(tabs)
-    
-    # Buttons
-    button_layout = QHBoxLayout()
-    
-    cancel_btn = QPushButton("Cancel")
-    cancel_btn.clicked.connect(dialog.reject)
-    
-    save_btn = QPushButton("Save")
-    save_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
-    
-    button_layout.addWidget(cancel_btn)
-    button_layout.addWidget(save_btn)
-    
-    layout.addLayout(button_layout)
-    
-    # Function to convert tree to structure format
-    def get_structure_from_tree():
-        # Find the structure tree in the second tab
-        structure_tab = tabs.widget(1)
-        structure_tree = structure_tab.findChild(QTreeWidget)
-        root_item = structure_tree.topLevelItem(0)
-        
-        result = []
-        
-        def traverse(item, parent_path=""):
-            items = []
-            for i in range(item.childCount()):
-                child = item.child(i)
-                child_name = child.text(0)
-                has_children = child.childCount() > 0
-                
-                if has_children:
-                    # Directory with children
-                    sub_items = traverse(child, os.path.join(parent_path, child_name))
-                    items.append({child_name: sub_items})
-                else:
-                    # Check if it's a folder or file by looking at the user data
-                    is_folder = child.data(0, Qt.UserRole) == "folder"
-                    
-                    if is_folder:
-                        # Empty folder - represent as dictionary with empty list
-                        items.append({child_name: []})
-                    else:
-                        # File
-                        items.append(child_name)
-            
-            return items
-        
-        return traverse(root_item)
-    
-    def on_save():
-        # Find the basic info inputs in the first tab
-        basic_tab = tabs.widget(0)
-        name_input = basic_tab.findChild(QTextEdit, "name_input")
-        desc_input = basic_tab.findChild(QTextEdit, "desc_input")
-        
-        # Get template name
-        template_name = name_input.toPlainText().strip()
-        
-        # Get structure tab to access the current structure information
-        structure_tab = tabs.widget(1)
-        
-        # Find structure_name from the template's structure_type or get it from project_type
-        structure_type = template.get('structure_type')
-        
-        # If no structure_type specified, try to derive from category/project_type
-        if not structure_type:
-            project_type = template.get('category', 'Video Editing')
-            from app.constants import PROJECT_TYPE_TO_STRUCTURE
-            structure_type = PROJECT_TYPE_TO_STRUCTURE.get(project_type)
-        
-        # Use template name as fallback for structure name
+    # Determine structure name - prioritize structure_name attribute
+    structure_name = working_template.get('structure_name', '')
+    if not structure_name and template_name:
+        # If structure_name not defined, build from template name
         structure_name = f"Template_{template_name}"
+    
+    # Store original names for reference
+    original_name = template_name
+    original_structure_name = structure_name
+    
+    print(f"🔍 EDIT TEMPLATE: Template is_new={is_new}, name='{template_name}', structure_name='{structure_name}'")
+    
+    # Get structure from the template if it exists
+    structure = working_template.get('structure', [])
+    
+    # Import here to avoid circular imports
+    from app.ui.structure_editor_functions import show_enhanced_structure_editor
+    from app.templates.template_manager import TemplateManager
+    
+    # Get template manager instance
+    template_manager = None
+    if app and hasattr(app, 'template_manager'):
+        template_manager = app.template_manager
+    else:
+        template_manager = TemplateManager()
+    
+    # Determine parent window for the dialog
+    from PyQt5.QtWidgets import QWidget
+    parent_window = None
+    
+    # Try to get a valid QWidget parent
+    if gallery and isinstance(gallery, QWidget):
+        parent_window = gallery
+    elif app:
+        if hasattr(app, 'main_window') and isinstance(app.main_window, QWidget):
+            parent_window = app.main_window
+        elif hasattr(app, 'window') and isinstance(app.window, QWidget):
+            parent_window = app.window
+        elif hasattr(app, 'parent') and isinstance(app.parent, QWidget):
+            parent_window = app.parent
+    
+    # Show the structure editor
+    try:
+        success, updated_structure_name = show_enhanced_structure_editor(
+            parent=parent_window,
+            structure_name=structure_name,
+            structure=structure,
+            is_new=is_new,
+            template_name=template_name,
+            focus_name_field=is_new,
+            template_manager=template_manager,
+            callback=callback
+        )
+    except ImportError as e:
+        print(f"🔍 EDIT TEMPLATE: Error importing structure editor: {e}")
+        return False
+    except Exception as e:
+        print(f"🔍 EDIT TEMPLATE: Error showing structure editor: {e}")
+        return False
+    
+    if success:
+        # Get extracted name from structure name
+        extracted_name = updated_structure_name
+        if updated_structure_name.startswith("Template_"):
+            extracted_name = updated_structure_name[9:]  # Remove "Template_" prefix
         
-        # Get structure from tree
-        structure = get_structure_from_tree()
+        # Check if this is a rename operation
+        is_rename = original_name != "" and extracted_name != original_name
         
-        # Update template from form
-        updated_template = template.copy()
-        updated_template['name'] = template_name
-        updated_template['description'] = desc_input.toPlainText().strip()
-        # Keep the existing category if it exists, otherwise use 'General'
-        if 'category' not in updated_template:
-            updated_template['category'] = 'General'
+        # Update the template with new values
+        updated_template = working_template.copy()
+        updated_template['name'] = extracted_name
+        updated_template['structure_name'] = updated_structure_name
         
-        # Update structure information
-        updated_template['structure_type'] = structure_type
-        updated_template['structure_name'] = structure_name
-        updated_template['structure'] = structure  # Add the structure to the template
+        print(f"🔍 EDIT TEMPLATE: Structure editor returned success=True, updated_structure_name='{updated_structure_name}'")
+        print(f"🔍 EDIT TEMPLATE: Preserved original_name '{original_name}' and original_structure_name '{original_structure_name}'")
         
-        # Save the structure
-        if hasattr(parent, 'template_manager'):
-            print(f"DEBUG: Saving structure '{structure_name}' with {len(structure)} items")
-            parent.template_manager.save_custom_structure(structure_name, structure)
-        
-        dialog.accept()
-        
-        # Call the callback with the updated template
+        # Call the callback with the updated template if provided
         if callback:
-            callback(updated_template)
+            print(f"🔍 EDIT TEMPLATE: Calling callback with updated template")
+            result = callback(updated_template)
+            print(f"🔍 EDIT TEMPLATE: Callback returned: {result}")
+        
+        # If template was renamed and gallery is provided, ensure UI is updated
+        if is_rename and gallery:
+            print(f"🔍 EDIT TEMPLATE: Template was renamed, updating gallery")
+            
+            # Force template manager to reload templates
+            if template_manager:
+                template_manager.load_templates()
+                template_manager.load_custom_structures()
+                print(f"🔍 EDIT TEMPLATE: Forced reload of templates and structures")
+            
+            # Force gallery refresh with more thorough approach
+            if hasattr(gallery, 'populate_gallery'):
+                gallery.populate_gallery(force_refresh=True)
+                print(f"🔍 EDIT TEMPLATE: Forced gallery refresh")
+        
+        return True
     
-    save_btn.clicked.connect(on_save)
-    
-    # Show dialog
-    dialog.exec_()
+    return False
 
 def create_basic_info_tab(tabs, template):
     """Create the basic info tab"""
@@ -788,275 +768,207 @@ def create_basic_info_tab(tabs, template):
     # Basic info explanation
     basic_info_explanation = QLabel("Enter basic information about your template:")
     basic_info_explanation.setWordWrap(True)
+    basic_info_explanation.setStyleSheet(f"color: {colors['text_muted']}; font-size: 12px; margin-bottom: 10px;")
     basic_layout.addWidget(basic_info_explanation)
     
     # Template name
+    name_layout = QHBoxLayout()
     name_label = QLabel("Template Name:")
-    name_input = QTextEdit()
-    name_input.setObjectName("name_input")
-    name_input.setPlainText(template.get('name', 'Unnamed Template'))
-    name_input.setMaximumHeight(60)
+    name_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold;")
+    name_edit = QLineEdit(template.get('name', ''))
+    name_edit.setObjectName("template_name")
+    name_edit.setPlaceholderText("Enter a descriptive name for this template")
+    name_edit.setStyleSheet(f"background: {colors['input_bg']}; color: {colors['text']}; padding: 8px; border: 1px solid {colors['border']};")
+    name_layout.addWidget(name_label)
+    name_layout.addWidget(name_edit)
+    basic_layout.addLayout(name_layout)
     
-    # Description
-    desc_label = QLabel("Description:")
-    desc_input = QTextEdit()
-    desc_input.setObjectName("desc_input")
-    desc_input.setPlainText(template.get('description', ''))
+    # Add date field (read-only, shows current date or existing date)
+    from datetime import datetime
+    date_layout = QHBoxLayout()
+    date_label = QLabel("Created:")
+    date_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold;")
+    date_value = template.get('date', datetime.now().strftime('%Y-%m-%d'))
+    date_edit = QLineEdit(date_value)
+    date_edit.setObjectName("template_date")
+    date_edit.setReadOnly(True)
+    date_edit.setStyleSheet(f"background: {colors['input_bg']}; color: {colors['text_muted']}; padding: 8px; border: 1px solid {colors['border']};")
+    date_layout.addWidget(date_label)
+    date_layout.addWidget(date_edit)
+    basic_layout.addLayout(date_layout)
     
-    # Add to form
-    basic_layout.addWidget(name_label)
-    basic_layout.addWidget(name_input)
-    basic_layout.addWidget(desc_label)
-    basic_layout.addWidget(desc_input)
+    # Add spacer
+    basic_layout.addStretch()
     
-    # Add tab
-    tabs.addTab(basic_tab, "Basic Information")
-    
+    tabs.addTab(basic_tab, "Basic Info")
+    return basic_tab
+
 def create_structure_tab(tabs, template, parent):
     """Create the structure tab"""
-    # Create the tab widget
     structure_tab = QWidget()
     structure_layout = QVBoxLayout(structure_tab)
     
-    # Get template info
-    template_name = template.get('name', '')
-    template_type = template.get('type', '')
+    # Explanation
+    structure_explanation = QLabel("Define the folder structure for your template:")
+    structure_explanation.setWordWrap(True)
+    structure_explanation.setStyleSheet(f"color: {colors['text_muted']}; font-size: 12px; margin-bottom: 10px;")
+    structure_layout.addWidget(structure_explanation)
     
-    # Get project type - use a safe method
-    project_type = template.get("project_type", "")
-    if not project_type and "config" in template:
-        project_type = template["config"].get("project_type", "")
-    
-    # Info section
-    info_label = QLabel("This tab allows you to customize the folder structure that will be created when using this template.")
-    info_label.setWordWrap(True)
-    structure_layout.addWidget(info_label)
-    
-    # Get structure from template or default
-    template_structure_name = None
-    structure_items = []
-    
-    # If template has a structure_name, use it
-    if 'structure_name' in template:
-        template_structure_name = template.get('structure_name')
-    # For directory templates, check template.json file
-    elif template.get('type') == 'directory':
-        template_path = template.get('path', '')
-        if template_path and os.path.isdir(template_path):
-            template_json_path = os.path.join(template_path, "template.json")
-            if os.path.exists(template_json_path):
-                try:
-                    with open(template_json_path, 'r') as f:
-                        template_info = json.load(f)
-                        if 'structure_name' in template_info:
-                            template_structure_name = template_info['structure_name']
-                except Exception as e:
-                    print(f"Error reading template.json: {e}")
-    
-    # If we found a structure name, get it
-    if template_structure_name and hasattr(parent, 'template_manager'):
-        structure_items = parent.template_manager.get_structure(template_structure_name)
-    
-    # If no structure yet, use default based on category
-    if not structure_items and hasattr(parent, 'template_manager'):
-        from app.constants import PROJECT_TYPE_TO_STRUCTURE
-        
-        # Get the structure based on project type
-        structure_name = PROJECT_TYPE_TO_STRUCTURE.get(project_type)
-        if structure_name:
-            structure_items = parent.template_manager.get_structure(structure_name)
-        else:
-            # Fallback to default structure
-            structure_items = parent.template_manager.get_default_structure("Video Editing - Standard")
-    
-    # Create main structure editor button
-    edit_structure_btn = QPushButton("Edit Folder Structure")
-    edit_structure_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
-    edit_structure_btn.setMinimumHeight(50)  # Make button more prominent
-    edit_structure_btn.setFont(QFont("Arial", 12, QFont.Bold))
-    edit_structure_btn.clicked.connect(lambda: edit_template_structure(parent, template, structure_tab))
-    
-    # Add clear instruction
-    instruction_label = QLabel("Click the button above to open the structure editor")
-    instruction_label.setStyleSheet("color: #666; font-style: italic;")
-    instruction_label.setAlignment(Qt.AlignCenter)
-    
-    # Add the main editor button with clear labeling
-    edit_btn_layout = QVBoxLayout()
-    edit_btn_layout.addWidget(edit_structure_btn, 0, Qt.AlignCenter)
-    edit_btn_layout.addWidget(instruction_label)
-    structure_layout.addLayout(edit_btn_layout)
-    
-    # Add some spacing
-    structure_layout.addSpacing(20)
-    
-    # Create a preview of the structure with clear labeling
-    preview_title = QLabel("PREVIEW ONLY (Read-Only)")
-    preview_title.setStyleSheet(f"font-weight: bold; color: {colors['text']}; font-size: 14px;")
-    preview_title.setAlignment(Qt.AlignCenter)
-    structure_layout.addWidget(preview_title)
-    
-    # Clarification text
-    preview_explanation = QLabel("This preview shows the current folder structure. To make changes, use the 'Edit Folder Structure' button above.")
-    preview_explanation.setWordWrap(True)
-    preview_explanation.setStyleSheet(f"color: {colors['secondary_text']}; font-style: italic;")
-    structure_layout.addWidget(preview_explanation)
-    
-    preview_frame = QFrame()
-    preview_frame.setFrameStyle(QFrame.StyledPanel | QFrame.Sunken)
-    preview_frame.setStyleSheet(f"background-color: {colors['card_bg']}; border: 1px solid {colors['border']};")
-    preview_layout = QVBoxLayout(preview_frame)
-    
-    # Create tree widget for structure preview
-    structure_tree = QTreeWidget()
-    structure_tree.setHeaderLabels(["Folder/File"])
-    structure_tree.setIndentation(20)
-    structure_tree.setRootIsDecorated(True)
-    structure_tree.setAlternatingRowColors(True)
-    structure_tree.setEnabled(False)  # Make it visually clear this is read-only
-    structure_tree.setStyleSheet(f"""
+    # Tree widget for structure
+    tree = QTreeWidget()
+    tree.setHeaderHidden(True)
+    tree.setAlternatingRowColors(True)
+    tree.setStyleSheet(f"""
         QTreeWidget {{
             background-color: {colors['card_bg']};
             color: {colors['text']};
-            border: none;
+            border: 1px solid {colors['border']};
+            padding: 5px;
         }}
         QTreeWidget::item {{
-            color: {colors['text']};
+            padding: 3px;
         }}
-        QTreeWidget::item:alternate {{
-            background-color: {colors['bg']};
+        QTreeWidget::item:selected {{
+            background-color: {colors['accent_light']};
         }}
     """)
+    tree.setObjectName("structure_tree")
+    structure_layout.addWidget(tree)
     
-    # Create root item
-    root_item = QTreeWidgetItem(structure_tree)
-    root_item.setText(0, "Project Root")
-    root_item.setExpanded(True)
+    # Root item
+    root = QTreeWidgetItem(tree)
+    root.setText(0, "Project Root")
+    root.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+    root.setExpanded(True)
     
-    # Populate the tree with structure_items
-    if structure_items:
-        populate_structure_tree(root_item, structure_items)
+    # Button layout
+    button_layout = QHBoxLayout()
     
-    preview_layout.addWidget(structure_tree)
-    structure_layout.addWidget(preview_frame)
+    # Add folder button
+    add_folder_btn = QPushButton("Add Folder")
+    add_folder_btn.setStyleSheet(BUTTON_STYLE)
+    add_folder_btn.clicked.connect(lambda: edit_template_structure(parent, template, structure_tab))
+    button_layout.addWidget(add_folder_btn)
     
-    # Add the tab
-    tabs.addTab(structure_tab, "Folder Structure")
+    # Import structure button 
+    import_structure_btn = QPushButton("Import Structure")
+    import_structure_btn.setStyleSheet(BUTTON_STYLE)
+    import_structure_btn.clicked.connect(lambda: import_template_structure(parent, template, structure_tab))
+    button_layout.addWidget(import_structure_btn)
     
-    # Store references for later use
-    structure_tab.structure_tree = structure_tree
-    structure_tab.structure_items = structure_items
-    structure_tab.structure_name = template_structure_name
-    structure_tab.root_item = root_item
+    # Preview button
+    preview_btn = QPushButton("Preview Structure")
+    preview_btn.setStyleSheet(BUTTON_STYLE)
+    preview_btn.clicked.connect(lambda: preview_template_structure(parent, template, structure_tab))
+    button_layout.addWidget(preview_btn)
+    
+    structure_layout.addLayout(button_layout)
+    
+    # Populate tree if we have a structure
+    if 'structure' in template and template['structure']:
+        populate_structure_tree(root, template['structure'])
+    
+    # Store the root item and tree for later access
+    template['_root_item'] = root
+    template['_tree'] = tree
+    
+    tabs.addTab(structure_tab, "Structure")
+    return structure_tab
 
 def edit_template_structure(parent, template, structure_tab):
-    """Launch the enhanced structure editor for template editing"""
+    """Open enhanced structure editor for the template"""
     print("DEBUG: edit_template_structure called")
     
-    from app.ui.structure_editor_enhanced import EnhancedStructureEditor
+    # Extract the template name from the template
+    template_name = template.get('name', '')
+    if not template_name and hasattr(template, '_name_input'):
+        template_name = template._name_input.text()
     
-    # Get the current structure name and items
-    structure_name = getattr(structure_tab, 'structure_name', None)
-    structure_items = getattr(structure_tab, 'structure_items', [])
+    # Determine structure name
+    structure_name = template.get('structure_name', '')
+    if not structure_name and template_name:
+        structure_name = f"Template_{template_name}"
     
-    print(f"DEBUG: Current structure_name={structure_name}, items count={len(structure_items) if structure_items else 0}")
+    print(f"DEBUG: edit_template_structure - template_name={template_name}, structure_name={structure_name}")
     
-    # Get project type
-    project_type = template.get("project_type", "")
-    if not project_type and "config" in template:
-        project_type = template["config"].get("project_type", "")
+    # Import needed modules
+    from app.ui.structure_editor_functions import show_enhanced_structure_editor
     
-    print(f"DEBUG: Project type: {project_type}")
+    # Get template manager
+    template_manager = None
+    if hasattr(parent, 'template_manager'):
+        template_manager = parent.template_manager
+    elif hasattr(parent, 'app') and hasattr(parent.app, 'template_manager'):
+        template_manager = parent.app.template_manager
+    else:
+        from app.templates.template_manager import TemplateManager
+        template_manager = TemplateManager()
     
-    # Show the enhanced structure editor
-    print("DEBUG: Calling show_enhanced_structure_editor")
-    success, updated_structure, updated_name = show_enhanced_structure_editor(
-        parent,
+    # Get structure items
+    structure_items = template.get('structure', [])
+    
+    # Dialog reference - store this for access by the callback
+    dialog = None
+    if hasattr(structure_tab, 'window'):
+        dialog = structure_tab.window()
+    elif hasattr(parent, 'window'):
+        if callable(parent.window):
+            dialog = parent.window()
+        else:
+            dialog = parent.window
+    
+    # Get tree widget
+    tree = None
+    if hasattr(structure_tab, 'structure_tree'):
+        tree = structure_tab.structure_tree
+    
+    # Create a callback function to update the template
+    def structure_edited_callback(result):
+        """Callback for when structure is updated in the editor"""
+        print(f"DEBUG: Structure editor callback received result: {result}")
+        
+        if not result:
+            print("DEBUG: Structure editor was cancelled")
+            return
+        
+        success, updated_structure, updated_structure_name = result
+        
+        if not success:
+            print("DEBUG: Structure edit was not successful")
+            return
+        
+        # Update template with new structure
+        template['structure'] = updated_structure
+        template['structure_name'] = updated_structure_name
+        
+        print(f"DEBUG: Updated template with new structure. Name: {updated_structure_name}")
+        
+        # Update the structure tree if available
+        if tree and hasattr(template, '_root_item'):
+            root_item = template._root_item
+            # Clear existing items
+            for i in range(root_item.childCount()-1, -1, -1):
+                root_item.removeChild(root_item.child(i))
+            # Add new items
+            populate_structure_tree(root_item, updated_structure)
+            print("DEBUG: Updated structure tree view")
+    
+    # Set focus_name_field if this is a new template
+    focus_name_field = template_name == ''
+    
+    # Open the enhanced structure editor for editing
+    show_enhanced_structure_editor(
+        parent=parent,
         structure_name=structure_name,
         structure=structure_items,
-        project_type=project_type
+        is_new=template_name == '',
+        template_name=template_name,
+        focus_name_field=focus_name_field,
+        template_manager=template_manager,
+        callback=structure_edited_callback
     )
     
-    print(f"DEBUG: Editor returned: success={success}, updated_name={updated_name}, updated_structure={bool(updated_structure)}")
-    
-    if success and updated_structure:
-        print("DEBUG: Processing successful edit")
-        # Update the structure name if we got a new one
-        if updated_name:
-            print(f"DEBUG: Updating structure name to: {updated_name}")
-            structure_name = updated_name
-            structure_tab.structure_name = structure_name
-            template['structure_name'] = structure_name
-        # If we still don't have a structure name, create one from the template name
-        elif not structure_name and 'name' in template:
-            template_name = template.get('name', '')
-            structure_name = f"Template_{template_name}"
-            print(f"DEBUG: Created structure name from template: {structure_name}")
-            structure_tab.structure_name = structure_name
-            template['structure_name'] = structure_name
-        
-        # Check if updated_structure is a dictionary instead of a list
-        if isinstance(updated_structure, dict) and ('structure' in updated_structure or 'structure_name' in updated_structure):
-            print(f"DEBUG: Unwrapping structure from dictionary: {updated_structure.keys()}")
-            # Extract the actual structure array
-            if 'structure' in updated_structure and isinstance(updated_structure['structure'], list):
-                updated_structure = updated_structure['structure']
-            else:
-                # Create an empty structure if we can't find the real one
-                updated_structure = []
-            print(f"DEBUG: Unwrapped structure has {len(updated_structure)} items")
-        
-        # Verify updated_structure is a list
-        if not isinstance(updated_structure, list):
-            print(f"DEBUG: ERROR - updated_structure is not a list but {type(updated_structure)}")
-            # Try to convert to list or create empty list
-            try:
-                updated_structure = list(updated_structure)
-            except:
-                updated_structure = []
-        
-        # Update the structure preview with the directly returned structure
-        try:
-            print(f"DEBUG: Updating structure tree with {len(updated_structure) if updated_structure else 0} items")
-            # Update the tree with the structure returned from the editor
-            tree = structure_tab.structure_tree
-            root = getattr(structure_tab, 'root_item', tree.topLevelItem(0))
-            root.takeChildren()  # Clear existing items
-            
-            # Repopulate with the updated structure
-            populate_structure_tree(root, updated_structure)
-            
-            # Update the stored reference
-            structure_tab.structure_items = updated_structure
-            
-            # Set the template's structure directly
-            template['structure'] = updated_structure
-            
-            # If we have a template manager, make sure the structure is saved
-            if hasattr(parent, 'template_manager') and structure_name:
-                print(f"DEBUG: Saving to template manager: {structure_name}")
-                parent.template_manager.save_custom_structure(structure_name, updated_structure)
-                print(f"DEBUG: Saved updated structure '{structure_name}' with {len(updated_structure)} items")
-            
-            # Show visual feedback that update was successful
-            preview_frame = tree.parent()
-            if isinstance(preview_frame, QFrame):
-                original_style = preview_frame.styleSheet()
-                preview_frame.setStyleSheet(f"background-color: #c8e6c9; border: 1px solid {colors['border']};")  # Light green background that works with both light and dark themes
-                
-                # Reset after 2 seconds
-                from PyQt5.QtCore import QTimer
-                def reset_style():
-                    preview_frame.setStyleSheet(original_style)
-                QTimer.singleShot(2000, reset_style)
-                
-            print(f"DEBUG: Successfully updated structure preview")
-        except Exception as e:
-            print(f"DEBUG: Error updating structure preview: {e}")
-            import traceback
-            traceback.print_exc()
-    else:
-        print("DEBUG: Edit was canceled or no structure returned")
+    print("DEBUG: Structure editor opened successfully")
 
 def populate_structure_tree(parent_item, structure_items):
     """Populate a QTreeWidget with structure items"""
@@ -1439,30 +1351,6 @@ def import_template(parent, template_manager, dialog):
                 else:
                     QMessageBox.warning(parent, "Error", f"Failed to import template '{template_name}'.")
 
-def create_project_type(parent, template_manager, project_type_list, dialog):
-    """Create a new project type"""
-    project_type_name, ok = QInputDialog.getText(
-        parent,
-        "New Project Type",
-        "Enter project type name:"
-    )
-    
-    if ok and project_type_name:
-        # Check if project type already exists
-        existing_project_types = [project_type_list.item(i).text() for i in range(project_type_list.count())]
-        
-        if project_type_name in existing_project_types:
-            QMessageBox.warning(parent, "Error", f"Project type '{project_type_name}' already exists.")
-            return
-        
-        # Add to the list
-        project_type_list.addItem(project_type_name)
-        
-        # Sort the list
-        project_type_list.sortItems()
-        
-        # No need to save as project types are determined by templates
-
 def create_folder(parent, template_manager, folder_list, dialog):
     """Create a new template folder"""
     folder_name, ok = QInputDialog.getText(
@@ -1585,81 +1473,6 @@ def delete_folder(parent, template_manager, folder_list, dialog):
                 folder_list.takeItem(row)
             else:
                 QMessageBox.warning(parent, "Error", f"Failed to delete folder '{folder_name}'.")
-
-def show_structure_editor(parent, structure_type=None, callback=None, is_new=False, project_type=None, suggested_name=None):
-    """Show structure editor dialog"""
-    # Use the enhanced structure editor instead
-    from app.ui.structure_editor_enhanced import EnhancedStructureEditor
-    
-    # Prepare the structure editor with the right parameters
-    structure_editor = EnhancedStructureEditor(
-        parent, 
-        structure_name=structure_type if not suggested_name else suggested_name, 
-        structure=None, 
-        project_type=project_type,
-        is_new=is_new
-    )
-    
-    # Explicitly populate the structure dropdown
-    structure_editor.populate_structure_dropdown()
-    
-    # If we have a suggested name and it's a new structure, set it in the UI
-    if is_new and suggested_name:
-        structure_editor.name_input.setText(suggested_name)
-        structure_editor.name_input.selectAll()
-        structure_editor.name_input.setFocus()
-    
-    # Create a callback wrapper to capture structure name and content
-    if callback:
-        original_callback = callback
-        
-        def save_callback(name, structure):
-            # Call the original callback with name and structure
-            return original_callback(name, structure)
-            
-        structure_editor.save_callback = save_callback
-    
-    # Show the dialog modally
-    if structure_editor.exec_():
-        return True
-    return False
-
-def show_enhanced_structure_editor(parent, structure_name=None, structure=None, is_new=False, project_type=None):
-    """Show the enhanced structure editor dialog"""
-    from app.ui.structure_editor_enhanced import EnhancedStructureEditor
-    
-    # Create and show the dialog
-    structure_editor = EnhancedStructureEditor(
-        parent, 
-        structure_name=structure_name, 
-        structure=structure, 
-        project_type=project_type,
-        is_new=is_new
-    )
-    
-    # Show the dialog modally
-    result = structure_editor.exec_()
-    
-    # If successful, retrieve both the structure and name
-    if result:
-        result_data = structure_editor.get_result()
-        updated_name = getattr(structure_editor, 'result_name', structure_name)
-        
-        # Unwrap the structure data if it's in dictionary format
-        if isinstance(result_data, dict) and 'structure' in result_data:
-            updated_structure = result_data['structure']
-        else:
-            # Use whatever was returned directly
-            updated_structure = result_data
-        
-        # Fallback to the result_structure attribute if available
-        if not updated_structure and hasattr(structure_editor, 'result_structure'):
-            updated_structure = structure_editor.result_structure
-            
-        return True, updated_structure, updated_name
-    
-    # If canceled, return False and None values
-    return False, None, None
 
 def process_dropped_file(file_path, parent_item):
     """Process a file dropped onto the tree"""

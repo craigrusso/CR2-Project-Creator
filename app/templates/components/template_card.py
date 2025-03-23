@@ -565,8 +565,27 @@ class TemplateCard(QFrame):
         self.setProperty("is_selected", self.selected)
         self.setProperty("is_multi_selected", getattr(self, 'multi_selected', False))
         
+        # Temporary highlight style (when template renamed)
+        if hasattr(self, 'highlight_animation_active') and self.highlight_animation_active:
+            # Highlight styling (bright blue with border)
+            print(f"⭐ Applying HIGHLIGHT animation style to {self.template_name()}")
+            
+            # Card background
+            self.setStyleSheet("""
+                QFrame {
+                    background-color: #3C6EA5;
+                    border: 2px solid #4A86E8;
+                    border-radius: 6px;
+                }
+            """)
+            
+            # Text colors
+            self.name_label.setStyleSheet("color: white; font-weight: bold; background-color: transparent;")
+            self.type_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
+            self.icon_label.setStyleSheet("color: white; background-color: transparent;")
+        
         # Priority: multi-selected > selected > hover > normal
-        if getattr(self, 'multi_selected', False):
+        elif getattr(self, 'multi_selected', False):
             # Multi-selected styling
             self.setStyleSheet(f"""
                 QFrame {{
@@ -634,6 +653,42 @@ class TemplateCard(QFrame):
         
         # Force immediate update
         self.update()
+        
+    def apply_rename_highlight(self):
+        """Apply a highlight animation when template is renamed
+        
+        This method is called after a template has been renamed to provide
+        visual feedback to the user that the rename was successful
+        """
+        print(f"🔸 TEMPLATE CARD: Applying rename highlight to {self.template_name()}")
+        
+        # Set highlight animation active flag
+        self.highlight_animation_active = True
+        
+        # Update styling for highlight
+        self._update_styling()
+        
+        # Set a timer to remove the highlight after 2 seconds
+        if hasattr(self, 'highlight_timer'):
+            # Cancel any existing timer
+            if self.highlight_timer.isActive():
+                self.highlight_timer.stop()
+        else:
+            # Create a new timer if it doesn't exist
+            self.highlight_timer = QTimer()
+            self.highlight_timer.setSingleShot(True)
+            self.highlight_timer.timeout.connect(self._remove_highlight)
+        
+        # Start timer for 2 seconds
+        self.highlight_timer.start(2000)  # 2 seconds
+        print(f"🔸 TEMPLATE CARD: Started highlight timer for {self.template_name()} (2 seconds)")
+
+    def _remove_highlight(self):
+        """Remove the highlight effect after timer expires"""
+        print(f"🔸 TEMPLATE CARD: Removing highlight from {self.template_name()}")
+        self.highlight_animation_active = False
+        self._update_styling()
+        print(f"🔸 TEMPLATE CARD: Reset styling for {self.template_name()}")
 
     def keyPressEvent(self, event):
         """Handle key press events for template operations"""
@@ -1066,9 +1121,6 @@ class TemplateCard(QFrame):
                     border: none;
                     border-radius: 6px;
                 }}
-                QLabel {{
-                    color: white !important;
-                }}
             """)
             print(f"🔍 LISTENER: Applied multi-selected style to '{self.template_name()}'")
         
@@ -1238,7 +1290,6 @@ class TemplateListItem(QFrame):
                 """)
                 print(f"⭐ Applied SELECTED style to {template_name}")
                 self.icon_label.setStyleSheet(f"color: white; background: transparent;")
-                self.name_label.setStyleSheet(f"color: white; background: transparent; font-weight: bold;")
                 self.date_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
             elif self.multi_selected:
                 # Multi-selected state (part of multi-selection but not primary)
@@ -1251,7 +1302,6 @@ class TemplateListItem(QFrame):
                 """)
                 print(f"⭐ Applied MULTI-SELECTED style to '{template_name}'")
                 self.icon_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
-                self.name_label.setStyleSheet(f"color: {colors['highlight_text']}; background: transparent;")
                 self.date_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
             elif self.hover:
                 # Hover state
@@ -1909,3 +1959,107 @@ class TemplateListItem(QFrame):
         
         # Export the template
         export_template(self.app, template_name, include_files)
+
+    def apply_rename_highlight(self):
+        """Apply a highlight effect to show this template was recently renamed"""
+        from PyQt5.QtCore import QTimer
+        
+        print(f"⭐ Applying RENAME HIGHLIGHT effect to {self.template_name() if hasattr(self, 'template_name') else 'Unknown'}")
+        
+        # Set the highlight flag
+        self.is_highlighted = True
+        
+        # Update the styling to show the highlight
+        self._update_styling()
+        
+        # Set a timer to remove the highlight after 2 seconds
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(self._remove_highlight)
+        timer.start(2000)  # 2 seconds
+    
+    def _remove_highlight(self):
+        """Remove the highlight effect"""
+        print(f"⭐ Removing RENAME HIGHLIGHT effect from {self.template_name() if hasattr(self, 'template_name') else 'Unknown'}")
+        
+        # Clear the highlight flag
+        self.is_highlighted = False
+        
+        # Update the styling to remove the highlight
+        self._update_styling()
+    
+    def _update_styling(self):
+        """Update the styling of the card based on selection state"""
+        # Ensure the multi_selected attribute exists
+        if not hasattr(self, 'multi_selected'):
+            self.multi_selected = False
+            
+        # Ensure the is_highlighted attribute exists
+        if not hasattr(self, 'is_highlighted'):
+            self.is_highlighted = False
+            
+        # Get the template name for debugging
+        template_name = self.template_name() if hasattr(self, 'template_name') else 'Unknown'
+        
+        print(f"⭐ TemplateCard._update_styling() for {template_name}, selected={self.selected}, hover={self.hover}")
+        
+        # Apply different styles based on state
+        if self.is_highlighted:
+            # Highlight style - bright blue border with rounded corners
+            print(f"⭐ Applying RENAME HIGHLIGHT style to {template_name}")
+            style = """
+                QFrame {
+                    background-color: #1E3F66;
+                    border: 2px solid #4D96FF;
+                    border-radius: 6px;
+                }
+            """
+            self.setStyleSheet(style)
+            
+        elif self.multi_selected:
+            # Multi-select style - green border with rounded corners
+            print(f"⭐ Applying MULTI-SELECTED style to {template_name}")
+            style = """
+                QFrame {
+                    background-color: #1E3F66;
+                    border: 2px solid #2EA043;
+                    border-radius: 6px;
+                }
+            """
+            self.setStyleSheet(style)
+            
+        elif self.selected:
+            # Selected style - blue background with rounded corners
+            print(f"⭐ Applying SELECTED style to {template_name}")
+            style = """
+                QFrame {
+                    background-color: #2C4F76;
+                    border: none;
+                    border-radius: 6px;
+                }
+            """
+            self.setStyleSheet(style)
+            
+        elif self.hover:
+            # Hover style - slightly darker background with rounded corners
+            print(f"⭐ Applying HOVER style to {template_name}")
+            style = """
+                QFrame {
+                    background-color: #2A2A2A;
+                    border: none;
+                    border-radius: 6px;
+                }
+            """
+            self.setStyleSheet(style)
+            
+        else:
+            # Default style - dark background with rounded corners
+            print(f"⭐ Applying DEFAULT style to {template_name}")
+            style = """
+                QFrame {
+                    background-color: #1E1E1E;
+                    border: none;
+                    border-radius: 6px;
+                }
+            """
+            self.setStyleSheet(style)

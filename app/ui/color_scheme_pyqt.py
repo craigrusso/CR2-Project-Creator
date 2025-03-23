@@ -14,6 +14,7 @@ APP_COLORS = {
     # Main background colors
     "bg": "#1E1E1E",              # Main application background
     "card_bg": "#252526",         # Card background (darker than bg)
+    "card_bg_alt": "#2A2A2A",     # Alternative card background (for alternating rows)
     
     # Text colors
     "text": "#CCCCCC",            # Primary text color

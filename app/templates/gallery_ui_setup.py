@@ -61,7 +61,7 @@ class GalleryUISetup:
         # gallery.new_structure_button.setStyleSheet(BUTTON_STYLE)
         
         # Fix the structure editor call by using a callback to the main app
-        from app.dialogs.dialog_windows_pyqt import show_structure_editor
+        from app.dialogs.dialog_windows_pyqt import show_edit_template
         
         # Define a safer handler that checks for app availability
         def show_structure_editor_handler():

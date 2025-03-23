@@ -218,399 +218,228 @@ class GalleryEvents:
             if not hasattr(gallery, 'app') or not hasattr(gallery.app, 'template_manager'):
                 QMessageBox.warning(gallery, "Error", "Template manager not available.")
                 return
-                
-            # Get template name from user
-            template_name, ok = QInputDialog.getText(
-                gallery,
-                "New Template",
-                "Enter template name:"
+            
+            # Use the enhanced structure editor directly for creating new templates
+            from app.ui.structure_editor_functions import show_enhanced_structure_editor
+            
+            # Create an empty structure with a blank name - user will set it in the editor
+            structure_name = "Template_"  # Will be populated with the actual name after user sets it
+            
+            print(f"🔍 EDIT TEMPLATE: Starting template edit for ''")
+            print(f"🔍 EDIT TEMPLATE: Template is_new=True, name='', structure_name='{structure_name}'")
+            
+            # Open the structure editor directly
+            result, updated_structure, updated_structure_name, original_template_name, updated_template_name = show_enhanced_structure_editor(
+                parent=gallery,
+                structure_name=structure_name,
+                structure=[],
+                is_new=True,
+                template_name="",
+                focus_name_field=True,
+                template_manager=gallery.app.template_manager,
+                callback=lambda data: GalleryEvents._save_template_and_structure(gallery, data)
             )
             
-            if not ok or not template_name:
-                return
-            
-            # Create an empty template - no category (using 'Default' as placeholder)
-            # and no file association yet
-            try:
-                success = gallery.app.template_manager.save_template(
-                    template_name,
-                    "",  # No file path yet - user will add files in the editor
-                    "Standard",  # Structure type
-                    "New template"  # Description
-                )
+            if result:
+                print(f"🔍 LISTENER: Successfully created/edited template '{updated_template_name}'")
                 
-                if success:
-                    # Refresh gallery with the new template
-                    gallery.populate_gallery(force_refresh=True)
-                else:
-                    print(f"Error adding template: Failed to save template")
-            except Exception as e:
-                print(f"Error adding template: {e}")
-            
-            # Get the newly created template
-            new_template = gallery.app.template_manager.get_template_by_name(template_name)
-            
-            if not new_template:
-                QMessageBox.warning(gallery, "Error", f"Failed to retrieve template '{template_name}' after creation.")
-                gallery.populate_gallery()
-                return
-            
-            # If we're in a folder, add the template to it
-            if hasattr(gallery, 'current_folder') and gallery.current_folder:
-                print(f"Adding new template '{template_name}' to current folder '{gallery.current_folder}'")
-                gallery.app.template_manager.add_to_folder(gallery.current_folder, template_name)
-            
-            # Prompt user to select an existing structure or create a new one
-            from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QComboBox, QPushButton, QHBoxLayout, QTextEdit
-            from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
-            
-            structure_dialog = QDialog(gallery)
-            structure_dialog.setWindowTitle("Template Structure")
-            structure_dialog.resize(500, 400)  # Make dialog larger to better show preview
-            
-            # Apply styling to the dialog
-            structure_dialog.setStyleSheet(f"""
-                QDialog {{
-                    background-color: {colors.get('bg', '#1E1E1E')};
-                    color: {colors.get('text', '#FFFFFF')};
-                }}
-                QLabel {{
-                    color: {colors.get('text', '#FFFFFF')};
-                }}
-            """)
-            
-            layout = QVBoxLayout(structure_dialog)
-            layout.setContentsMargins(20, 20, 20, 20)  # Add more padding
-            layout.setSpacing(15)  # Increase spacing between widgets
-            
-            # Instruction label
-            instructions = QLabel("Select a file structure for this template or create a new one:")
-            instructions.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {colors.get('text', '#FFFFFF')};")
-            layout.addWidget(instructions)
-            
-            # Get available structures - make sure we get ALL structures
-            available_structures = ["Create New Structure"]
-            
-            # Add default structures from constants
-            if hasattr(gallery.app, 'template_manager'):
-                # First add default structures from constants
-                from app.constants import DEFAULT_STRUCTURES
-                if hasattr(gallery.app.template_manager, 'get_structure_names'):
-                    # Use the method if available
-                    all_structures = gallery.app.template_manager.get_structure_names()
-                    available_structures.extend(all_structures)
-                else:
-                    # Fallback to manual loading
-                    # Add default structures from constants
-                    if 'DEFAULT_STRUCTURES' in dir(gallery.app.template_manager):
-                        default_structures = list(gallery.app.template_manager.DEFAULT_STRUCTURES.keys())
-                        available_structures.extend(default_structures)
-                    
-                    # Add custom structures
-                    if hasattr(gallery.app.template_manager, 'custom_structures'):
-                        custom_structures = []
-                        # Handle custom_structures as a list of dictionaries
-                        if isinstance(gallery.app.template_manager.custom_structures, list):
-                            for struct in gallery.app.template_manager.custom_structures:
-                                if isinstance(struct, dict) and 'name' in struct:
-                                    custom_structures.append(struct['name'])
-                        # Or handle it as a dictionary for backward compatibility
-                        elif isinstance(gallery.app.template_manager.custom_structures, dict):
-                            custom_structures = list(gallery.app.template_manager.custom_structures.keys())
-                        
-                        # Filter out duplicates
-                        for struct in custom_structures:
-                            if struct not in available_structures:
-                                available_structures.append(struct)
-                    
-                    # Try to get built-in structures another way
-                    try:
-                        from app.constants import DEFAULT_STRUCTURES
-                        for struct in DEFAULT_STRUCTURES.keys():
-                            if struct not in available_structures:
-                                available_structures.append(struct)
-                    except ImportError:
-                        print("Could not import DEFAULT_STRUCTURES from app.constants")
-            
-            # Sort alphabetically (keeping Create New Structure at the top)
-            create_new = available_structures[0]
-            available_structures = available_structures[1:]
-            available_structures.sort()
-            available_structures.insert(0, create_new)
-            
-            # Remove duplicates while preserving order
-            unique_structures = []
-            seen = set()
-            for struct in available_structures:
-                if struct not in seen:
-                    unique_structures.append(struct)
-                    seen.add(struct)
-            available_structures = unique_structures
-            
-            # Structure selection dropdown
-            structure_combo = QComboBox()
-            
-            # Set minimum width like in the structure editor
-            structure_combo.setMinimumWidth(250)
-            
-            # Apply the standard style from the structure editor
-            structure_combo.setStyleSheet(COMBOBOX_STYLE)
-            
-            for structure in available_structures:
-                structure_combo.addItem(structure)
-            layout.addWidget(structure_combo)
-            
-            # Add a preview section
-            preview_label = QLabel("Structure Preview:")
-            preview_label.setStyleSheet(f"font-weight: bold; margin-top: 10px; color: {colors.get('text', '#FFFFFF')};")
-            layout.addWidget(preview_label)
-            
-            # Use QTextEdit instead of QLabel for better scrolling and formatting
-            preview_text = QTextEdit()
-            preview_text.setReadOnly(True)
-            preview_text.setMinimumHeight(150)  # Much taller preview area
-            
-            # Use the app's color scheme
-            preview_text.setStyleSheet(f"""
-                background-color: {colors.get('card_bg', '#2A2A2A')};
-                color: {colors.get('text', '#FFFFFF')};
-                padding: 10px;
-                border-radius: 5px;
-                font-family: monospace;
-                border: 1px solid {colors.get('card_bg', '#2A2A2A')};
-            """)
-            layout.addWidget(preview_text)
-            
-            # Update preview when structure is selected
-            def update_preview(index):
-                try:
-                    structure_name = structure_combo.currentText()
-                    if structure_name == "Create New Structure":
-                        preview_text.setText("You will create a new structure in the editor")
-                        return
-                    
-                    # Try multiple ways to get the structure
-                    structure = None
-                    
-                    # Method 1: Direct call to get_structure
-                    if hasattr(gallery.app.template_manager, 'get_structure'):
-                        try:
-                            structure = gallery.app.template_manager.get_structure(structure_name)
-                        except Exception as e:
-                            print(f"Method 1 error: {e}")
-                    
-                    # Method 2: Check in custom_structures
-                    if structure is None and hasattr(gallery.app.template_manager, 'custom_structures'):
-                        if structure_name in gallery.app.template_manager.custom_structures:
-                            structure = gallery.app.template_manager.custom_structures[structure_name]
-                    
-                    # Method 3: Try to get from DEFAULT_STRUCTURES
-                    if structure is None:
-                        try:
-                            from app.constants import DEFAULT_STRUCTURES
-                            if structure_name in DEFAULT_STRUCTURES:
-                                structure = DEFAULT_STRUCTURES[structure_name]
-                        except (ImportError, KeyError) as e:
-                            print(f"Method 3 error: {e}")
-                    
-                    # Format and display the preview
-                    if structure:
-                        # Create a formatted visual representation of the structure instead of raw display
-                        preview = ""
-                        
-                        def format_structure(items, indent=""):
-                            result = []
-                            
-                            for item in items:
-                                if isinstance(item, dict):
-                                    # It's a directory with children (or empty directory)
-                                    for dir_name, children in item.items():
-                                        result.append(f"{indent}📁 {dir_name}/")
-                                        if children:  # Only process if there are children
-                                            child_result = format_structure(children, indent + "  ")
-                                            if child_result:
-                                                result.append(child_result)
-                                elif isinstance(item, str):
-                                    # It's a file or legacy empty directory
-                                    if item.endswith('/'):
-                                        # Legacy format folder
-                                        result.append(f"{indent}📁 {item.rstrip('/')}/")
-                                    # Check for folder-like patterns in string items
-                                    elif '.' not in item or (item.startswith(tuple("0123456789")) and '_' in item[:4]):
-                                        # Probably a folder if no extension or has numeric prefix
-                                        result.append(f"{indent}📁 {item}/")
-                                    # Check for common folder names
-                                    elif any(keyword in item.lower() for keyword in [
-                                        'folder', 'dir', 'footage', 'audio', 'video', 'gfx', 'exports',
-                                        'assets', 'renders', 'project', 'images', 'documents'
-                                    ]):
-                                        result.append(f"{indent}📁 {item}/")
-                                    else:
-                                        # Regular file
-                                        result.append(f"{indent}📄 {item}")
-                            
-                            return "\n".join(result)
-                        
-                        if isinstance(structure, list):
-                            if not structure:
-                                preview_text.setText("Empty structure")
-                            else:
-                                preview = format_structure(structure)
-                                preview_text.setText(preview)
-                        elif isinstance(structure, dict):
-                            # For dictionary structures, format the keys as folders
-                            preview = "\n".join([f"📁 {key}/" for key in list(structure.keys())[:10]])
-                            if len(structure) > 10:
-                                preview += f"\n\n... and {len(structure) - 10} more folders"
-                            preview_text.setText(preview)
-                        else:
-                            # For any other type, convert to string safely
-                            preview_text.setText(str(structure)[:500])
-                    else:
-                        # No structure found
-                        preview_text.setText(f"Structure '{structure_name}' exists but preview is not available.\n\nYou can still use it.")
-                except Exception as e:
-                    print(f"Preview error for '{structure_combo.currentText()}': {e}")
-                    import traceback
-                    traceback.print_exc()
-                    preview_text.setText("Preview not available")
-            
-            structure_combo.currentIndexChanged.connect(update_preview)
-            # Initialize preview
-            update_preview(0)
-            
-            # Buttons
-            button_layout = QHBoxLayout()
-            cancel_btn = QPushButton("Cancel")
-            cancel_btn.clicked.connect(structure_dialog.reject)
-            
-            select_btn = QPushButton("Select")
-            select_btn.setDefault(True)
-            
-            # Add styling to make the select button stand out
-            select_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
-            cancel_btn.setStyleSheet(BUTTON_STYLE)
-            
-            button_layout.addStretch(1)  # Push buttons to the right
-            button_layout.addWidget(cancel_btn)
-            button_layout.addWidget(select_btn)
-            layout.addLayout(button_layout)
-            
-            # Store selected structure
-            selected_structure = [None]
-            
-            def on_select():
-                selected_structure[0] = structure_combo.currentText()
-                structure_dialog.accept()
-            
-            select_btn.clicked.connect(on_select)
-            
-            # Show dialog
-            result = structure_dialog.exec_()
-            
-            if result == QDialog.Accepted and selected_structure[0]:
-                structure_name = selected_structure[0]
+                # Force refresh gallery to show the new template
+                print(f"🔍 LISTENER: Forcing gallery refresh to show new template")
+                gallery.populate_gallery(force_refresh=True)
                 
-                # Set structure name in template
-                if structure_name != "Create New Structure":
-                    new_template['structure_name'] = structure_name
-                else:
-                    # Create a new structure named after the template
-                    new_template['structure_name'] = f"Template_{template_name}"
-                
-                # Open the editor immediately so user can add files and set up structure
-                from app.dialogs.dialog_windows_pyqt import show_edit_template
-                show_edit_template(gallery, new_template, lambda t: gallery.app.template_manager.update_template(t))
+                # Select the new template
+                if hasattr(gallery, 'select_template'):
+                    print(f"🔍 LISTENER: Selecting saved template: {updated_template_name}")
+                    gallery.select_template(updated_template_name)
             else:
-                # User cancelled, but we already created the template, so we'll just keep it
-                pass
-            
-            # Refresh the gallery to show the new template
-            
-            # Force reload templates from the template manager first
-            if hasattr(gallery.app, 'template_manager'):
-                # Reload templates from disk to ensure we have the latest data
-                if hasattr(gallery.app.template_manager, 'load_templates'):
-                    print("🔍 LISTENER: Reloading templates from template manager")
-                    gallery.app.template_manager.load_templates()
-                
-                # Also reload folders if method exists
-                if hasattr(gallery.app.template_manager, 'load_folders'):
-                    print("🔍 LISTENER: Reloading folders from template manager")
-                    gallery.app.template_manager.load_folders()
-            
-            # Now refresh the gallery with force_refresh=True
-            print("🔍 LISTENER: Forcing gallery refresh to show new template")
-            gallery.populate_gallery(force_refresh=True)
-            
-            # Select the newly created template if it exists
-            if new_template and hasattr(gallery, '_on_template_select'):
-                print(f"🔍 LISTENER: Selecting newly created template: {template_name}")
-                gallery._on_template_select(new_template)
+                print(f"🔍 LISTENER: Template editor was cancelled or failed")
             
         except Exception as e:
             import traceback
-            print(f"Error adding template: {e}")
+            print(f"Error in on_add_template: {e}")
             print(traceback.format_exc())
             QMessageBox.warning(gallery, "Error", f"Failed to add template: {str(e)}")
+
+    @staticmethod
+    def _save_template_and_structure(gallery, data):
+        """
+        Save template and its structure in one operation
+        
+        Args:
+            gallery: Gallery instance
+            data: Data from the structure editor callback
+            
+        Returns:
+            bool: True if saved successfully, False otherwise
+        """
+        try:
+            # Make sure we have access to the template manager
+            if not hasattr(gallery, 'app') or not hasattr(gallery.app, 'template_manager'):
+                print("🔍 ERROR: Template manager not available")
+                return False
+                
+            # Extract template details
+            template_name = data.get('name', '')
+            structure_name = data.get('structure_name', '')
+            structure = data.get('structure', [])
+            is_new = data.get('is_new', False)
+            is_rename = data.get('is_rename', False)
+            original_name = data.get('original_name', '')
+            
+            if not template_name:
+                print("🔍 ERROR: Cannot save template - empty name")
+                return False
+                
+            print(f"🔍 LISTENER: Saving template '{template_name}' with structure")
+            
+            # Handle rename operation
+            if is_rename and original_name:
+                print(f"🔍 LISTENER: This is a rename operation from '{original_name}' to '{template_name}'")
+                
+                # Perform the rename operation
+                success = gallery.app.template_manager.rename_template(original_name, template_name)
+                if not success:
+                    print(f"🔍 ERROR: Failed to rename template from '{original_name}' to '{template_name}'")
+                    return False
+                    
+                print(f"🔍 LISTENER: Successfully renamed template from '{original_name}' to '{template_name}'")
+            
+            # For new templates, create the basic template first
+            if is_new:
+                # Save the template to the template manager
+                success = gallery.app.template_manager.save_template(
+                    template_name,
+                    "",  # Path - will be set by structure
+                    "Standard",
+                    "Template created with structure editor"
+                )
+                
+                if not success:
+                    print(f"🔍 ERROR: Failed to save template '{template_name}'")
+                    return False
+                
+                print(f"🔍 LISTENER: Created new template '{template_name}'")
+            
+            # Now save the structure
+            if hasattr(gallery.app.template_manager, 'save_structure'):
+                # Ensure structure name matches template name
+                if not structure_name or not structure_name.startswith("Template_"):
+                    structure_name = f"Template_{template_name}"
+                
+                # Save the structure with proper association to the template
+                success = gallery.app.template_manager.save_structure(structure_name, structure)
+                
+                if success:
+                    print(f"🔍 LISTENER: Successfully saved structure '{structure_name}' for template '{template_name}'")
+                    
+                    # Associate structure with template
+                    if hasattr(gallery.app.template_manager, 'associate_structure_with_template'):
+                        gallery.app.template_manager.associate_structure_with_template(template_name, structure_name)
+                        print(f"🔍 LISTENER: Associated structure '{structure_name}' with template '{template_name}'")
+                else:
+                    print(f"🔍 ERROR: Failed to save structure '{structure_name}'")
+                    return False
+            else:
+                print(f"🔍 WARNING: Template manager does not support save_structure, structure not saved")
+            
+            # Ensure template manager reloads to have updated templates and structures
+            if hasattr(gallery.app.template_manager, 'load_templates'):
+                gallery.app.template_manager.load_templates()
+                
+            if hasattr(gallery.app.template_manager, 'load_custom_structures'):
+                gallery.app.template_manager.load_custom_structures()
+            
+            return True
+            
+        except Exception as e:
+            print(f"🔍 ERROR: Exception while saving template and structure: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     @staticmethod
     def on_edit_template(gallery, template_name=None):
-        """Handle edit template action (from button or context menu)"""
-        try:
-            print(f"on_edit_template called with template_name: {template_name}")
-            print(f"gallery has app? {hasattr(gallery, 'app')}")
-            
-            # Create a fallback template manager if needed
-            if not hasattr(gallery, 'app') or gallery.app is None:
-                print("Gallery app is None, creating a fallback app reference")
-                from app.core.app_module_pyqt import ProjectCreatorApp
-                if not hasattr(gallery, 'app') or gallery.app is None:
-                    gallery.app = ProjectCreatorApp.get_instance()
-                    print(f"Created fallback app: {gallery.app}")
-            
-            # If app exists but template_manager doesn't, try to create one
-            if hasattr(gallery, 'app') and gallery.app is not None:
-                if not hasattr(gallery.app, 'template_manager') or gallery.app.template_manager is None:
-                    print("App template_manager is None, creating a fallback")
-                    from app.templates.template_manager import TemplateManager
-                    gallery.app.template_manager = TemplateManager()
-                    print(f"Created fallback template_manager: {gallery.app.template_manager}")
-            
-            # Display debug info
-            if hasattr(gallery, 'app'):
-                print(f"App is: {gallery.app}")
-                print(f"App has template_manager? {hasattr(gallery.app, 'template_manager')}")
-                if hasattr(gallery.app, 'template_manager'):
-                    print(f"Template_manager is: {gallery.app.template_manager}")
-            
-            # Get the template name - either directly passed or from the selected template
-            if template_name is None and gallery.selected_template:
-                if isinstance(gallery.selected_template, dict):
-                    template_name = gallery.selected_template.get('name')
-                else:
-                    template_name = gallery.selected_template
-                    
-            print(f"Resolved template_name: {template_name}")
-                    
-            # If we have a template name, select it first to make sure it's the current selection
-            if template_name and hasattr(gallery.app, 'template_manager') and hasattr(gallery.app.template_manager, 'get_template_by_name'):
-                template = gallery.app.template_manager.get_template_by_name(template_name)
-                if template:
-                    gallery._on_template_select(template)
-            
-            # Now proceed with editing the selected template
-            if gallery.selected_template and hasattr(gallery.app, 'template_manager') and hasattr(gallery.app.template_manager, 'edit_template'):
-                gallery.app.template_manager.edit_template(gallery.selected_template)
-                gallery.populate_gallery()
+        """Handle edit template button click in template gallery"""
+        print(f"🔹 GALLERY EVENTS: Edit template requested")
+        
+        # Ensure gallery has required components
+        if not hasattr(gallery, 'app'):
+            print(f"❌ GALLERY EVENTS: Gallery missing app reference")
+            return
+        
+        if not hasattr(gallery.app, 'template_manager'):
+            print(f"❌ GALLERY EVENTS: App missing template manager")
+            return
+        
+        # Use either the provided template name or get it from the selected template
+        if template_name is None and hasattr(gallery, 'selected_template') and gallery.selected_template:
+            template_name = gallery.selected_template.get('name', '')
+        
+        # Make sure we have a template name
+        if not template_name:
+            print(f"⚠️ GALLERY EVENTS: No template selected for editing")
+            return
+        
+        print(f"🔹 GALLERY EVENTS: Editing template: '{template_name}'")
+        
+        # Determine structure name based on template name
+        structure_name = f"Template_{template_name}"
+        
+        # Try to get the structure from template manager
+        structure = None
+        if hasattr(gallery.app.template_manager, 'get_structure'):
+            # Try with the template name with Template_ prefix
+            structure = gallery.app.template_manager.get_structure(structure_name)
+            if structure:
+                print(f"🔹 GALLERY EVENTS: Found structure using structure_name: '{structure_name}'")
             else:
-                print(f"Cannot edit template: gallery.selected_template={gallery.selected_template}, " +
-                      f"has template_manager={hasattr(gallery.app, 'template_manager')}, " +
-                      f"has edit_template={hasattr(gallery.app.template_manager, 'edit_template') if hasattr(gallery.app, 'template_manager') else False}")
-        except Exception as e:
-            import traceback
-            print(f"Error editing template: {e}")
-            print(traceback.format_exc())
+                # Try with just the template name
+                structure = gallery.app.template_manager.get_structure(template_name)
+                if structure:
+                    print(f"🔹 GALLERY EVENTS: Found structure using template name directly: '{template_name}'")
+                    structure_name = template_name
+                else:
+                    print(f"⚠️ GALLERY EVENTS: No structure found for template, using empty structure")
+                    structure = []
+        else:
+            print(f"⚠️ GALLERY EVENTS: Template manager doesn't support get_structure, using empty structure")
+            structure = []
+            
+        # Use the enhanced structure editor directly
+        from app.ui.structure_editor_functions import show_enhanced_structure_editor
+        
+        print(f"🔍 EDIT TEMPLATE: Starting template edit for '{template_name}'")
+        print(f"🔍 EDIT TEMPLATE: Template is_new=False, name='{template_name}', structure_name='{structure_name}'")
+        
+        # Open the structure editor
+        result, updated_structure, updated_structure_name, original_template_name, updated_template_name = show_enhanced_structure_editor(
+            parent=gallery,
+            structure_name=structure_name,
+            structure=structure,
+            is_new=False,
+            template_name=template_name,
+            focus_name_field=False,
+            template_manager=gallery.app.template_manager,
+            callback=lambda data: GalleryEvents._save_template_and_structure(gallery, data)
+        )
+        
+        if result:
+            print(f"🔍 LISTENER: Successfully edited template '{updated_template_name}'")
+            
+            # Check if this was a rename operation
+            if template_name != updated_template_name:
+                print(f"🔍 LISTENER: Template was renamed from '{template_name}' to '{updated_template_name}'")
+                
+            # Force refresh gallery to show the updated template
+            print(f"🔍 LISTENER: Forcing gallery refresh to show updated template")
+            gallery.populate_gallery(force_refresh=True)
+            
+            # Select the updated template
+            if hasattr(gallery, 'select_template'):
+                print(f"🔍 LISTENER: Selecting updated template: {updated_template_name}")
+                gallery.select_template(updated_template_name)
+        else:
+            print(f"🔍 LISTENER: Template editor was cancelled or failed")
     
     @staticmethod
     def on_delete_template(gallery, template_name=None):

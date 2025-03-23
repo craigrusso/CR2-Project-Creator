@@ -18,7 +18,7 @@ from app.ui.ui_components_pyqt import ToolTip, CardFrame, SearchBox, TemplateFil
 from app.templates.template_manager import TemplateManager
 from app.core.project_builder import ProjectBuilder
 from app.dialogs.dialog_windows_pyqt import (preview_structure, show_about, 
-                                show_tutorial, show_preferences, show_structure_editor,
+                                show_tutorial, show_preferences, show_edit_template,
                                 show_batch_results)
 from app.templates.template_utils import (get_template_file, clear_template_file, clear_structure_template,
                        rename_current_template, rename_template_file)
@@ -723,10 +723,16 @@ class ProjectCreatorApp(QMainWindow):
             show_batch_results(self, results)
     
     def _create_template(self):
-        """Open dialog to create a new template"""
-        # Use our enhanced template creation form
-        show_template_creation_form(self)
-        self._refresh_ui()
+        """Create a new template"""
+        try:
+            # Use the template manager to create a new template
+            success = self.template_manager.create_new_template(self)
+            if success:
+                self._refresh_ui()
+        except Exception as e:
+            print(f"Error creating template: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _refresh_ui(self):
         """Refresh the UI after creating a new template"""

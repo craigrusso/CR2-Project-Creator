@@ -155,7 +155,7 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
         Save a custom folder structure.
         
         Args:
-            name (str): Name of the structure
+            name (str): Name of the structure (internal name with Template_ prefix if appropriate)
             structure (list): List of structure items (folders and files)
             
         Returns:
@@ -169,6 +169,22 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
         if not hasattr(self, 'custom_structures'):
             self.custom_structures = {}  # Initialize as a dictionary
         
+        # Extract display name (without Template_ prefix) for UI display
+        display_name = name
+        if name.startswith("Template_"):
+            display_name = name[9:]  # Remove "Template_" prefix for display
+        
+        # Check if we're updating an existing structure (look for the file)
+        is_update = False
+        existing_path = None
+        
+        # Try to find an existing structure file to update
+        if hasattr(self, '_get_structure_path'):
+            existing_path = self._get_structure_path(name)
+            if existing_path:
+                is_update = True
+                print(f"[DEBUG] StructureOps: Updating existing structure file at {existing_path}")
+                
         # The structure object should be stored directly with the name as the key
         try:
             # Ensure structure is a list, not a dict
@@ -188,16 +204,44 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
             # Create the structure data to store
             structure_data = {
                 "name": name,
+                "display_name": display_name,
                 "directories": normalized_structure,
                 "created": datetime.datetime.now().isoformat()
             }
             
+            # If we're updating an existing file, read it to preserve metadata
+            if is_update and existing_path:
+                try:
+                    with open(existing_path, 'r') as f:
+                        existing_data = json.load(f)
+                        
+                    # Preserve creation timestamp and other metadata
+                    if 'created' in existing_data:
+                        structure_data['created'] = existing_data['created']
+                    
+                    # Preserve any other metadata fields that aren't being explicitly updated
+                    for key, value in existing_data.items():
+                        if key not in structure_data and key != 'directories':
+                            structure_data[key] = value
+                            
+                    # Add modified timestamp
+                    structure_data['modified'] = datetime.datetime.now().isoformat()
+                    
+                    print(f"[DEBUG] StructureOps: Preserved metadata from existing structure")
+                except Exception as e:
+                    print(f"[DEBUG] StructureOps: Error reading existing structure: {e}")
+                    # Continue with saving as new if read fails
+            
             # Store in memory - important to store the whole structure_data object
             self.custom_structures[name] = structure_data
             
-            # Create a clean filename
-            filename = name.replace(" ", "_").replace("/", "-").replace("\\", "-")
-            file_path = os.path.join(self.paths["custom_structures_dir"], f"{filename}.json")
+            # Determine file path - use existing path if updating, otherwise create new
+            if is_update and existing_path:
+                file_path = existing_path
+            else:
+                # Create a clean filename
+                filename = name.replace(" ", "_").replace("/", "-").replace("\\", "-")
+                file_path = os.path.join(self.paths["custom_structures_dir"], f"{filename}.json")
             
             # Make sure the directory exists
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -206,7 +250,7 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
             with open(file_path, 'w') as f:
                 json.dump(structure_data, f, indent=2)
                 
-            print(f"[DEBUG] StructureOps: Successfully saved custom structure '{name}'")
+            print(f"[DEBUG] StructureOps: Successfully saved custom structure '{name}' with display name '{display_name}'")
             return True
         except Exception as e:
             print(f"[DEBUG] StructureOps: Error saving structure: {e}")
@@ -232,8 +276,14 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
         for item in structure_items:
             # Handle dictionaries (folders with possible children)
             if isinstance(item, dict):
+                # If the item is already a dictionary with a key and a list value,
+                # we can use it directly or process its children
+                if list(item.keys()) == 1 and isinstance(list(item.values())[0], list):
+                    folder_name = list(item.keys())[0]
+                    children = list(item.values())[0]
+                    normalized.append({folder_name: self._normalize_structure_format(children)})
                 # Handle the {"name": "folder_name", "type": "folder"} format
-                if "name" in item and "type" in item and item["type"] == "folder":
+                elif "name" in item and "type" in item and item["type"] == "folder":
                     folder_name = item["name"]
                     children = []
                     if "children" in item and isinstance(item["children"], list):
@@ -251,15 +301,260 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
                     normalized.append(processed_dict)
             # Handle string items (files or folders without format)
             elif isinstance(item, str):
-                # If it ends with a slash, it's a folder
-                if item.endswith('/'):
-                    folder_name = item[:-1]  # Remove trailing slash
-                    normalized.append({folder_name: []})
-                else:
-                    # It's a file, keep as is
-                    normalized.append(item)
-            else:
-                # Unknown type, add as is
+                # String items are treated as file names
                 normalized.append(item)
-            
+                
         return normalized
+
+    def get_template_info(self, template_name):
+        """
+        Get template information for a given template name.
+        This is a compatibility method that works with both older and newer APIs.
+        
+        Args:
+            template_name (str): Name of the template
+            
+        Returns:
+            dict: Template information including name, description, tags, etc.
+        """
+        if not template_name:
+            print(f"DEBUG: get_template_info called with empty name")
+            return None
+        
+        # First try using the get_template method if available
+        template = self.get_template(template_name)
+        if template:
+            return template
+        
+        # If template not found, try to look for it in custom structures
+        if hasattr(self, 'custom_structures') and template_name in self.custom_structures:
+            structure_data = self.custom_structures[template_name]
+            # Convert structure data to template info format
+            template_info = {
+                "name": template_name,
+                "description": structure_data.get("description", f"Structure for {template_name}"),
+                "tags": structure_data.get("tags", []),
+                "structure_name": template_name
+            }
+            return template_info
+        
+        # Try to find a structure file with this name
+        try:
+            structure_path = os.path.join(self.paths["custom_structures_dir"], 
+                                         f"{template_name.replace(' ', '_')}.json")
+            if os.path.exists(structure_path):
+                with open(structure_path, 'r') as f:
+                    structure_data = json.load(f)
+                    # Convert structure data to template info format
+                    template_info = {
+                        "name": template_name,
+                        "description": structure_data.get("description", f"Structure for {template_name}"),
+                        "tags": structure_data.get("tags", []),
+                        "structure_name": template_name
+                    }
+                    return template_info
+        except Exception as e:
+            print(f"DEBUG: Error loading structure file for template info: {e}")
+        
+        # If nothing found, return a basic template info with default values
+        print(f"DEBUG: Template info not found for {template_name}, returning default")
+        return {
+            "name": template_name,
+            "description": f"Template {template_name}",
+            "tags": [],
+            "category": "General"
+        }
+
+    def rename_template(self, oldname, newname):
+        """Rename a template and update its references, but keep structure files intact."""
+        print(f"🔄 TEMPLATE MANAGER: Renaming template '{oldname}' to '{newname}'")
+        
+        # Get current timestamp for file operations
+        timestamp = datetime.datetime.now().isoformat()
+        print(f"🔄 TEMPLATE MANAGER: Current timestamp: {timestamp}")
+        
+        # Make sure we have valid names
+        if not oldname or not newname:
+            print(f"❌ TEMPLATE MANAGER: Invalid template names for rename: old='{oldname}', new='{newname}'")
+            return False
+        
+        # Get the template object by name
+        template = self.get_template_by_name(oldname)
+        if not template:
+            print(f"❌ TEMPLATE MANAGER: Template '{oldname}' not found for renaming")
+            return False
+            
+        # Keep a reference to the original template for file handling
+        original_template = template.copy()
+        
+        # Find the actual template file path before we update the name
+        old_template_path = None
+        template_path_variants = [
+            os.path.join(self.paths["templates_dir"], f"{oldname.replace(' ', '_')}.json"),
+            os.path.join(self.paths["templates_dir"], f"{oldname}.json")
+        ]
+        for path in template_path_variants:
+            if os.path.exists(path):
+                old_template_path = path
+                print(f"🔄 TEMPLATE MANAGER: Found original template file at: {old_template_path}")
+                break
+        
+        if not old_template_path:
+            print(f"⚠️ TEMPLATE MANAGER: Could not find original template file for '{oldname}'")
+            # Fall back to the standard path format
+            old_template_path = os.path.join(self.paths["templates_dir"], f"{oldname.replace(' ', '_')}.json")
+        
+        # Keep track of the structure name - we won't rename it
+        structure_name = original_template.get('structure_name', None)
+        if not structure_name:
+            # If no structure name is explicitly set, it might use the default convention
+            structure_name = f"Template_{oldname}"
+            print(f"🔄 TEMPLATE MANAGER: Using default structure name: '{structure_name}'")
+        
+        # Update template name in the object
+        template['name'] = newname
+        
+        # IMPORTANT: Keep the structure name reference unchanged
+        # This ensures the template continues to point to the same structure
+        # Only update the template's name, not its linked structure
+        
+        # Determine where the new template file should be saved
+        new_template_path = os.path.join(self.paths["templates_dir"], f"{newname.replace(' ', '_')}.json")
+        print(f"🔄 TEMPLATE MANAGER: Will save template to new location: {new_template_path}")
+        
+        # Save the updated template to disk
+        try:
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(new_template_path), exist_ok=True)
+            
+            # Update cached_path field if it exists and templates_cache_dir is available
+            if 'cached_path' in template and 'templates_cache_dir' in self.paths:
+                template['cached_path'] = os.path.join(self.paths["templates_cache_dir"], f"{newname.replace(' ', '_')}")
+            elif 'cached_path' in template:
+                # Remove the cached_path if we can't update it properly
+                template.pop('cached_path', None)
+                print(f"⚠️ TEMPLATE MANAGER: Removed cached_path from template because templates_cache_dir is not available")
+            
+            # Write the template file
+            with open(new_template_path, 'w') as f:
+                json.dump(template, f, indent=2)
+                
+            print(f"✅ TEMPLATE MANAGER: Successfully saved template file to {new_template_path}")
+        except Exception as e:
+            print(f"❌ TEMPLATE MANAGER: Error saving template file: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+            
+        # If the old and new paths are different, delete the old template file
+        if old_template_path != new_template_path and os.path.exists(old_template_path):
+            try:
+                os.remove(old_template_path)
+                print(f"✅ TEMPLATE MANAGER: Deleted old template file: {old_template_path}")
+            except Exception as e:
+                print(f"⚠️ TEMPLATE MANAGER: Error deleting old template file: {e}")
+        
+        # Update references in templates list
+        if hasattr(self, 'templates'):
+            updated_in_list = False
+            for i, t in enumerate(self.templates):
+                if isinstance(t, dict) and t.get('name') == oldname:
+                    # Update with our modified template object that has the new name
+                    self.templates[i] = template
+                    updated_in_list = True
+                    print(f"🔄 TEMPLATE MANAGER: Updated template entry in templates list")
+                    break
+                
+            if not updated_in_list:
+                # If not found, add it
+                print(f"🔄 TEMPLATE MANAGER: Template not found in templates list, adding it")
+                self.templates.append(template)
+        
+        # Update references in folders
+        if hasattr(self, 'folders'):
+            for folder_name in self.folders:
+                if isinstance(self.folders[folder_name], list) and oldname in self.folders[folder_name]:
+                    self.folders[folder_name].remove(oldname)
+                    self.folders[folder_name].append(newname)
+                    print(f"🔄 TEMPLATE MANAGER: Updated template reference in folder '{folder_name}'")
+            
+            # Save the updated folders
+            self.save_folders()
+        
+        # Force a reload of templates to ensure everything is up to date
+        self.load_templates()
+        
+        # Notify any listeners that templates have been updated
+        if hasattr(self, 'on_templates_updated') and callable(self.on_templates_updated):
+            self.on_templates_updated()
+        
+        print(f"✅ TEMPLATE MANAGER: Successfully renamed template '{oldname}' to '{newname}'")
+        return True
+
+    def update_references(self, old_name, new_name):
+        """Update all references to a template name in the template manager
+        
+        Args:
+            old_name: Old template name
+            new_name: New template name
+        """
+        # Update template references in internal lists
+        updated = False
+        for i, template in enumerate(self.templates):
+            if template.get('name') == old_name:
+                self.templates[i]['name'] = new_name
+                updated = True
+                print(f"DEBUG: TemplateManager updated template reference from '{old_name}' to '{new_name}'")
+        
+        # Update template name in folders
+        if hasattr(self, 'template_folders'):
+            for folder_name, templates in self.template_folders.items():
+                if old_name in templates:
+                    templates.remove(old_name)
+                    templates.append(new_name)
+                    updated = True
+                    print(f"DEBUG: TemplateManager updated template reference in folder '{folder_name}'")
+        
+        # Save folders if any references were updated
+        if updated and hasattr(self, 'save_folders'):
+            self.save_folders()
+        
+        return updated
+
+    def _get_structure_path(self, structure_name):
+        """
+        Helper method to get the file path for a structure by name.
+        Handles various name formats and returns the path if the file exists.
+        
+        Args:
+            structure_name (str): The name of the structure (with or without Template_ prefix)
+        
+        Returns:
+            str: The full path to the structure file if it exists, otherwise None
+        """
+        if not structure_name:
+            return None
+        
+        # Generate all possible filename variations
+        variations = [
+            structure_name,                             # Original name
+            structure_name.replace(' ', '_'),           # With underscores
+            structure_name.replace('_', ' '),           # With spaces
+        ]
+        
+        # If it doesn't start with Template_, add variations with the prefix
+        if not structure_name.startswith("Template_"):
+            variations.extend([
+                f"Template_{structure_name}",                   # With Template_ prefix
+                f"Template_{structure_name.replace(' ', '_')}"  # With Template_ prefix and underscores
+            ])
+        
+        # Try each variation
+        for variant in variations:
+            # Clean up any potentially problematic characters for filenames
+            safe_variant = variant.replace("/", "-").replace("\\", "-").replace("'", "")
+            path = os.path.join(self.paths["custom_structures_dir"], f"{safe_variant}.json")
+            if os.path.exists(path):
+                return path
+        
+        return None

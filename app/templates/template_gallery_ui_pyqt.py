@@ -2156,6 +2156,57 @@ class TemplateListItem(QFrame):
                 self._update_styling()
         return super().eventFilter(obj, event)
 
+    def select_template(self, template_name):
+        """Select a template by name in the gallery
+        
+        Args:
+            template_name: Name of the template to select
+            
+        Returns:
+            bool: True if template was found and selected, False otherwise
+        """
+        try:
+            if not template_name:
+                return False
+                
+            print(f"🔍 LISTENER: Template selection request for '{template_name}'")
+            
+            # Find the template in the template manager
+            template = None
+            if hasattr(self, 'template_manager') and hasattr(self.template_manager, 'get_template_by_name'):
+                template = self.template_manager.get_template_by_name(template_name)
+                if template:
+                    print(f"🔍 LISTENER: Found template by name match: {template_name}")
+            
+            # If not found, try a case-insensitive search
+            if not template and hasattr(self, 'template_manager'):
+                for t in self.template_manager.get_all_templates():
+                    if t.get('name', '').lower() == template_name.lower():
+                        template = t
+                        print(f"🔍 LISTENER: Found template by case-insensitive match: {template_name}")
+                        break
+            
+            # If we found the template, select it
+            if template:
+                # Update the app-level selected template
+                if hasattr(self, 'app'):
+                    print(f"🔍 LISTENER: Updated app-level selected template to '{template_name}'")
+                    self.app.selected_template = template
+                
+                # Update gallery selection state
+                print(f"🔍 LISTENER: Template selection set to '{template_name}'")
+                self._on_template_select(template)
+                return True
+                
+            # If we got here, we couldn't find the template
+            print(f"🔍 LISTENER: Could not find template with name '{template_name}'")
+            return False
+        except Exception as e:
+            print(f"🔍 ERROR: Exception while selecting template: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
+
 def create_template_gallery(app):
     """Create and return the template gallery widget"""
     gallery = TemplateGallery(app=app)
