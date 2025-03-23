@@ -13,9 +13,9 @@ import string
 from PyQt5.QtWidgets import (
     QTreeWidgetItem, QInputDialog, QMessageBox, QMenu, QAction,
     QFileDialog, QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-    QLineEdit, QPushButton, QComboBox, QCheckBox
+    QLineEdit, QPushButton, QComboBox, QCheckBox, QApplication, QStyle
 )
-from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtCore import Qt, QSize, QTimer
 from PyQt5.QtGui import QIcon, QDrag, QBrush, QColor
 
 from .utils import get_file_icon_for_type
@@ -138,8 +138,14 @@ class FileOperations:
         file_item.setText(0, file_name)
         
         # Set icon based on file type
+        # First try to get a file type specific icon, fall back to standard file icon
         icon = get_file_icon_for_type(file_name)
+        if icon.isNull():
+            icon = QApplication.style().standardIcon(QStyle.SP_FileIcon)
         file_item.setIcon(0, icon)
+        
+        # Ensure the item is editable
+        file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
         
         # Determine if binary based on extension
         is_binary = self.is_binary_file(file_name)
@@ -184,9 +190,11 @@ class FileOperations:
         folder_item.setText(0, folder_name)
         folder_item.setData(0, Qt.UserRole, {"type": "folder"})
         
-        # Use system folder icon
-        folder_icon = QIcon.fromTheme("folder", QIcon("icons/folder.png"))
-        folder_item.setIcon(0, folder_icon)
+        # Make the folder editable
+        folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+        
+        # Set folder icon - use app standard icon instead of theme
+        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
         
         # Apply styles for folders - use bold instead of color
         font = folder_item.font(0)
@@ -294,10 +302,64 @@ class FileOperations:
             bool: True if renamed, False otherwise
         """
         if not item:
+            print("ERROR: rename_item - no item provided")
             return False
             
-        # Use inline editing instead of dialog
-        self.tree.editItem(item, 0)
+        # Make sure the item is editable
+        item.setFlags(item.flags() | Qt.ItemIsEditable)
+            
+        try:
+            # Try in-place editing first
+            self.tree.editItem(item, 0)
+            
+            # Setup timer to check if edit was successful
+            # This is needed because editItem is asynchronous
+            def check_edit_status():
+                # If editor is not visible, the edit may have failed
+                if not self.tree.isPersistentEditorOpen(item, 0) and not self.tree.itemWidget(item, 0):
+                    print("edit: editing failed")
+                    # Use dialog fallback
+                    self._rename_with_dialog(item)
+            
+            # Check status after a short delay
+            QTimer.singleShot(200, check_edit_status)
+            
+            return True
+            
+        except Exception as e:
+            print(f"edit: editing failed with error: {e}")
+            # Use dialog fallback
+            return self._rename_with_dialog(item)
+    
+    def _rename_with_dialog(self, item):
+        """Fallback for renaming using a dialog"""
+        if not item:
+            return False
+            
+        # Get current item name and type
+        current_name = item.text(0)
+        item_data = item.data(0, Qt.UserRole)
+        item_type = item_data.get('type', 'item') if isinstance(item_data, dict) else 'item'
+        
+        # Show dialog to get new name
+        new_name, ok = QInputDialog.getText(
+            self.tree,
+            f"Rename {item_type.capitalize()}",
+            f"Enter new name for {item_type}:",
+            text=current_name
+        )
+        
+        if not ok or not new_name or new_name == current_name:
+            return False
+            
+        # Update item name
+        item.setText(0, new_name)
+        
+        # Update item data
+        if isinstance(item_data, dict):
+            item_data['name'] = new_name
+            item.setData(0, Qt.UserRole, item_data)
+            
         return True
     
     def import_directory(self, target_item=None):
@@ -633,66 +695,9 @@ class FileOperations:
                     print("DEBUG: create_context_menu - connected Use Project Name to local method")
                 
                 menu.addAction(use_project_name_action)
-                
-                # Change file type action
-                change_type_action = QAction("Change File Type...", menu)
-                change_type_action.triggered.connect(lambda: self._change_file_type(item))
-                menu.addAction(change_type_action)
         
         return menu
     
-    def _change_file_type(self, item):
-        """
-        Change the type of a file
-        
-        Args:
-            item: The file item to change
-            
-        Returns:
-            bool: True if changed, False otherwise
-        """
-        if not item:
-            return False
-            
-        # Get current data
-        item_data = item.data(0, Qt.UserRole)
-        if not isinstance(item_data, dict) or item_data.get('type') != 'file':
-            return False
-            
-        # Show dialog to select file type
-        dialog = FileDetailsDialog(
-            self.editor, 
-            "Change File Type", 
-            "Select file type:",
-            file_name=item.text(0),
-            categories=list(FILE_EXTENSIONS.keys()),
-            selected_type=item_data.get('file_type', ''),
-            show_binary=True,
-            is_binary=item_data.get('is_binary', False)
-        )
-        
-        if dialog.exec_() == QDialog.Accepted:
-            file_name = dialog.get_file_name()
-            file_type = dialog.get_file_type()
-            is_binary = dialog.is_binary()
-            
-            # Update item
-            item.setText(0, file_name)
-            
-            # Update icon
-            icon = get_file_icon_for_type(file_name)
-            item.setIcon(0, icon)
-            
-            # Update data
-            item_data['name'] = file_name
-            item_data['file_type'] = file_type
-            item_data['is_binary'] = is_binary
-            item.setData(0, Qt.UserRole, item_data)
-            
-            return True
-            
-        return False
-
     def _setup_context_menu(self):
         """Set up the context menu for the tree widget"""
         if not self.tree:
@@ -852,9 +857,6 @@ class FileOperations:
         # Add "Use Project Name" option
         use_project_name_action = menu.addAction(QIcon.fromTheme("insert-text"), "Use Project Name")
         
-        # Change file type action
-        change_type_action = menu.addAction(QIcon.fromTheme("document-properties"), "Change File Type")
-        
         menu.addSeparator()
         delete_action = menu.addAction(QIcon.fromTheme("edit-delete"), "Delete")
         
@@ -868,8 +870,6 @@ class FileOperations:
         # Handle actions
         if action == rename_action:
             self.rename_item(item)
-        elif action == change_type_action:
-            self._change_file_type(item)
         elif action == use_project_name_action:
             self._use_project_name_for_file(item)
         elif action == delete_action:

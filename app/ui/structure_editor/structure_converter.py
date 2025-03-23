@@ -8,7 +8,7 @@ This module provides functions for converting between tree widgets and structure
 """
 
 import os
-from PyQt5.QtWidgets import QTreeWidgetItem
+from PyQt5.QtWidgets import QTreeWidgetItem, QApplication, QStyle
 from PyQt5.QtCore import Qt
 
 
@@ -487,68 +487,39 @@ class StructureConverter:
         Returns:
             QTreeWidgetItem: The created folder item
         """
-        # Create tree item
+        # If we have file_operations, use it if available
+        if self.editor and hasattr(self.editor, 'file_operations') and hasattr(self.editor.file_operations, 'add_folder'):
+            if folder_name:
+                # This will show a dialog, so only use if folder_name is not provided
+                # and we want to prompt the user
+                return self.editor.file_operations.add_folder(parent_item)
+        
+        # Create the folder item
         if parent_item:
             folder_item = QTreeWidgetItem(parent_item)
         else:
             folder_item = QTreeWidgetItem(self.tree_widget)
         
-        # Set folder properties
+        # Set folder name and mark as folder
         folder_item.setText(0, folder_name)
         folder_item.setData(0, Qt.UserRole, {"type": "folder"})
         
-        # If we have file_operations, use it to style the item
-        if self.editor and hasattr(self.editor, 'file_operations') and hasattr(self.editor.file_operations, '_create_item'):
-            # Use file_operations to create a properly styled item
-            styled_item = self.editor.file_operations._create_item(parent_item, folder_name, is_folder=True)
+        # Set folder icon
+        try:
+            # First try using QApplication standard icons (most reliable)
+            folder_icon = QApplication.style().standardIcon(QStyle.SP_DirIcon)
+            folder_item.setIcon(0, folder_icon)
             
-            # If a new item was created, we don't need our version
-            if styled_item and styled_item != folder_item:
-                # Remove our item
-                if parent_item:
-                    parent_item.removeChild(folder_item)
-                else:
-                    index = self.tree_widget.indexOfTopLevelItem(folder_item)
-                    if index >= 0:
-                        self.tree_widget.takeTopLevelItem(index)
-                
-                return styled_item
-        else:
-            # Apply styling ourselves
-            # Set folder icon
-            try:
-                from PyQt5.QtGui import QIcon
-                
-                # Try app/assets/icons/folder.png first
-                icon_paths = [
-                    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
-                              "assets", "icons", "folder.png"),
-                    "icons/folder.png",
-                    os.path.join(os.path.dirname(__file__), "icons", "folder.png")
-                ]
-                
-                folder_icon = None
-                for path in icon_paths:
-                    if os.path.exists(path):
-                        folder_icon = QIcon(path)
-                        if not folder_icon.isNull():
-                            break
-                
-                # Use theme icon if file not found
-                if folder_icon is None or folder_icon.isNull():
-                    folder_icon = QIcon.fromTheme("folder")
-                
-                # Set icon if we found one
-                if folder_icon and not folder_icon.isNull():
-                    folder_item.setIcon(0, folder_icon)
-                
-                # Use bold text for folders
-                font = folder_item.font(0)
-                font.setBold(True)
-                folder_item.setFont(0, font)
-                
-            except Exception as e:
-                print(f"ERROR setting folder icon: {e}")
+            # Use bold text for folders
+            font = folder_item.font(0)
+            font.setBold(True)
+            folder_item.setFont(0, font)
+            
+            # Make folder editable
+            folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+            
+        except Exception as e:
+            print(f"ERROR setting folder icon: {e}")
         
         # Return the folder item
         return folder_item
@@ -577,6 +548,29 @@ class StructureConverter:
         # Set file properties
         file_item.setText(0, file_name)
         file_item.setData(0, Qt.UserRole, {"type": "file"})
+        
+        # Set file icon
+        try:
+            # Get file icon from utils or use standard icon
+            from .utils import get_file_icon_for_type
+            file_icon = get_file_icon_for_type(file_name)
+            
+            # If no icon was found, use standard file icon
+            if file_icon.isNull():
+                file_icon = QApplication.style().standardIcon(QStyle.SP_FileIcon)
+                
+            file_item.setIcon(0, file_icon)
+        except Exception as e:
+            print(f"ERROR setting file icon: {e}")
+            
+            # Fallback to standard file icon
+            try:
+                file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+            except:
+                pass  # Skip icon if even this fails
+        
+        # Set item to be editable
+        file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
         
         # Return the file item
         return file_item

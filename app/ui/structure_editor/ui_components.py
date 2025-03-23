@@ -12,9 +12,9 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
     QTreeWidget, QTreeWidgetItem, QHeaderView, QMenu, QAction,
     QMessageBox, QTextEdit, QComboBox, QCheckBox, QSplitter, QWidget, 
-    QSizePolicy, QGroupBox, QFormLayout, QFrame, QTabWidget, QFileDialog, QInputDialog, QListWidget, QDialog
+    QSizePolicy, QGroupBox, QFormLayout, QFrame, QTabWidget, QFileDialog, QInputDialog, QListWidget, QDialog, QApplication, QStyle
 )
-from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtCore import Qt, QSize, pyqtSignal
 from PyQt5.QtGui import QFont, QIcon, QColor, QPalette
 
 # Import the main application colors
@@ -22,6 +22,375 @@ from app.ui.color_scheme_pyqt import APP_COLORS, BUTTON_STYLE, ACCENT_BUTTON_STY
 
 # Colors for UI consistency - using main app colors
 colors = APP_COLORS
+
+class StructureEditorTree(QTreeWidget):
+    """Enhanced QTreeWidget for structure editing with improved styling"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setHeaderLabels(["Name"])
+        self.setSelectionMode(QTreeWidget.ExtendedSelection)
+        self.setDragEnabled(True)
+        self.setDragDropMode(QTreeWidget.InternalMove)
+        self.setDropIndicatorShown(True)
+        self.setIndentation(20)
+        
+        # Apply enhanced styling while ensuring branch indicators remain visible
+        self.setStyleSheet(f"""
+            QTreeWidget {{
+                border: 1px solid {colors['border']};
+                background-color: white;
+                outline: none;
+            }}
+            
+            QTreeWidget::item {{
+                border: none !important;
+                padding: 5px;
+                border-radius: 3px;
+                outline: none;
+            }}
+            
+            QTreeWidget::item:hover {{
+                background-color: {colors['hover_bg']};
+                border: none !important;
+            }}
+            
+            QTreeWidget::item:selected {{
+                background-color: {colors['highlight_bg']};
+                color: {colors['highlight_text']};
+                border: none !important;
+            }}
+            
+            /* Style branch when selected for consistent color */
+            QTreeWidget::branch:selected {{
+                background-color: {colors['highlight_bg']};
+            }}
+            
+            QTreeWidget QLineEdit {{
+                background-color: white;
+                selection-background-color: {colors['highlight_bg']};
+                border: 1px solid {colors['accent']};
+                border-radius: 3px;
+                padding: 1px 2px;
+            }}
+        """)
+        
+        # Ensure branch indicators are visible
+        self.setRootIsDecorated(True)
+        self.setItemsExpandable(True)
+        
+        # Disable focus rectangle on macOS
+        self.setAttribute(Qt.WA_MacShowFocusRect, False)
+        
+        # Make all items editable with the right triggers
+        self.setEditTriggers(QTreeWidget.DoubleClicked | 
+                             QTreeWidget.EditKeyPressed | 
+                             QTreeWidget.SelectedClicked)
+
+class StructureEditor(QDialog):
+    """Dialog for editing project structure"""
+    
+    structureChanged = pyqtSignal(str, list)  # emitted when structure is saved (name, structure)
+    
+    def __init__(self, parent=None, structure_name="", structure=None, is_new=False):
+        super().__init__(parent)
+        
+        self.structure_name = structure_name
+        self.structure = structure or []
+        self.is_new = is_new
+        
+        # Setup dialog
+        self.setWindowTitle("Structure Editor")
+        self.resize(800, 600)
+        
+        # Initialize UI
+        self._init_ui()
+    
+    def _init_ui(self):
+        """Initialize the UI components"""
+        # Main layout
+        self.layout = QVBoxLayout(self)
+        self.layout.setContentsMargins(15, 15, 15, 15)
+        self.layout.setSpacing(10)
+        
+        # Structure name section
+        name_layout = QHBoxLayout()
+        self.layout.addLayout(name_layout)
+        
+        name_label = QLabel("Structure Name:")
+        name_layout.addWidget(name_label)
+        
+        self.name_input = QInputDialog.getText(
+            self, "Structure Name", 
+            "Enter name for this structure:", 
+            text=self.structure_name
+        )
+        
+        if not self.name_input[1]:  # User cancelled
+            self.reject()
+            return
+            
+        self.structure_name = self.name_input[0]
+        
+        # Structure tree title
+        tree_label = QLabel("Structure Tree:")
+        tree_label.setStyleSheet("font-weight: bold;")
+        self.layout.addWidget(tree_label)
+        
+        # Use our enhanced tree widget
+        self.tree = StructureEditorTree(self)
+        
+        # Add a root item
+        self.root_item = QTreeWidgetItem(self.tree)
+        self.root_item.setText(0, "Project Root")
+        self.root_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+        self.root_item.setExpanded(True)
+        
+        # Populate tree with existing structure if available
+        if self.structure:
+            self._populate_tree(self.structure, self.root_item)
+            
+        self.layout.addWidget(self.tree)
+        
+        # Buttons for manipulating tree
+        button_layout = QHBoxLayout()
+        self.layout.addLayout(button_layout)
+        
+        add_folder_btn = QPushButton("Add Folder")
+        add_folder_btn.clicked.connect(self._add_folder)
+        button_layout.addWidget(add_folder_btn)
+        
+        add_file_btn = QPushButton("Add File")
+        add_file_btn.clicked.connect(self._add_file)
+        button_layout.addWidget(add_file_btn)
+        
+        remove_btn = QPushButton("Remove")
+        remove_btn.clicked.connect(self._remove_item)
+        button_layout.addWidget(remove_btn)
+        
+        import_btn = QPushButton("Import Folder")
+        import_btn.clicked.connect(self._import_folder)
+        button_layout.addWidget(import_btn)
+        
+        # Save/Cancel buttons
+        action_layout = QHBoxLayout()
+        self.layout.addLayout(action_layout)
+        
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.reject)
+        action_layout.addWidget(self.cancel_button)
+        
+        action_layout.addStretch()
+        
+        self.save_button = QPushButton("Save Structure")
+        self.save_button.setDefault(True)
+        self.save_button.clicked.connect(self._save_structure)
+        action_layout.addWidget(self.save_button)
+    
+    def _populate_tree(self, structure, parent_item=None):
+        """Populate the tree with the structure data"""
+        if not structure:
+            return
+
+        for item in structure:
+            if isinstance(item, dict):
+                # Folder with name and children
+                folder_item = QTreeWidgetItem(parent_item)
+                folder_item.setText(0, item['name'])
+                folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+                folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+                
+                # Recursively add children
+                if 'children' in item:
+                    self._populate_tree(item['children'], folder_item)
+            elif isinstance(item, str):
+                # File item
+                file_item = QTreeWidgetItem(parent_item)
+                file_item.setText(0, item)
+                file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+                file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+            else:
+                # Dictionary with folder name as key
+                for folder_name, children in item.items():
+                    folder_item = QTreeWidgetItem(parent_item)
+                    folder_item.setText(0, folder_name)
+                    folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+                    folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+                    
+                    # Recursively add children
+                    if isinstance(children, list):
+                        self._populate_tree(children, folder_item)
+    
+    def _add_folder(self):
+        """Add a new folder to the selected item"""
+        selected_items = self.tree.selectedItems()
+        parent_item = selected_items[0] if selected_items else self.root_item
+        
+        folder_name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
+        
+        if ok and folder_name:
+            folder_item = QTreeWidgetItem(parent_item)
+            folder_item.setText(0, folder_name)
+            folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+            folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+            parent_item.setExpanded(True)
+    
+    def _add_file(self):
+        """Add a new file to the selected item"""
+        selected_items = self.tree.selectedItems()
+        parent_item = selected_items[0] if selected_items else self.root_item
+        
+        file_name, ok = QInputDialog.getText(self, "New File", "File name:")
+        
+        if ok and file_name:
+            file_item = QTreeWidgetItem(parent_item)
+            file_item.setText(0, file_name)
+            file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+            file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+            parent_item.setExpanded(True)
+    
+    def _remove_item(self):
+        """Remove the selected item(s)"""
+        selected_items = self.tree.selectedItems()
+        
+        if not selected_items:
+            return
+            
+        for item in selected_items:
+            if item == self.root_item:
+                QMessageBox.warning(self, "Cannot Remove", "The root item cannot be removed")
+                continue
+                
+            parent = item.parent() or self.tree.invisibleRootItem()
+            parent.removeChild(item)
+    
+    def _import_folder(self):
+        """Import structure from a filesystem folder"""
+        folder_path = QFileDialog.getExistingDirectory(
+            self, "Select Folder to Import", "", QFileDialog.ShowDirsOnly
+        )
+        
+        if not folder_path:
+            return
+            
+        # Get the target parent item
+        selected_items = self.tree.selectedItems()
+        parent_item = selected_items[0] if selected_items else self.root_item
+        
+        # Import the folder structure
+        self._import_folder_structure(folder_path, parent_item)
+    
+    def _import_folder_structure(self, folder_path, parent_item):
+        """Import a folder structure recursively"""
+        folder_name = os.path.basename(folder_path)
+        
+        # Create folder item
+        folder_item = QTreeWidgetItem(parent_item)
+        folder_item.setText(0, folder_name)
+        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+        folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+        
+        try:
+            # Get all items in the folder
+            items = os.listdir(folder_path)
+            
+            # Process directories first
+            for item in sorted(items):
+                if item.startswith('.'):  # Skip hidden items
+                    continue
+                    
+                item_path = os.path.join(folder_path, item)
+                
+                if os.path.isdir(item_path):
+                    # Recursive call for subdirectories
+                    self._import_folder_structure(item_path, folder_item)
+                else:
+                    # Add file
+                    file_item = QTreeWidgetItem(folder_item)
+                    file_item.setText(0, item)
+                    file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+                    file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+            
+            # Expand the folder
+            folder_item.setExpanded(True)
+            
+        except Exception as e:
+            print(f"Error importing folder structure: {e}")
+    
+    def _build_structure(self, item):
+        """Build the structure data from the tree item"""
+        result = []
+        
+        for i in range(item.childCount()):
+            child = item.child(i)
+            
+            if child.childCount() > 0:
+                # It's a folder with children
+                folder_dict = {child.text(0): []}
+                self._build_structure(child, folder_dict[child.text(0)])
+                result.append(folder_dict)
+            elif QIcon.hasThemeIcon(child.icon(0).name()):
+                # It's a folder (has folder icon)
+                result.append({child.text(0): []})
+            else:
+                # It's a file
+                result.append(child.text(0))
+        
+        return result
+    
+    def _build_structure(self, parent_item, result=None):
+        """
+        Build structure data recursively
+        
+        Args:
+            parent_item: The parent item to process
+            result: The result list to add items to
+            
+        Returns:
+            The structure as a list
+        """
+        if result is None:
+            result = []
+            
+        for i in range(parent_item.childCount()):
+            child = parent_item.child(i)
+            
+            # Check if it has a folder icon
+            is_folder = child.icon(0).cacheKey() == QApplication.style().standardIcon(QStyle.SP_DirIcon).cacheKey()
+            
+            if is_folder:
+                if child.childCount() > 0:
+                    # Folder with children
+                    folder_dict = {child.text(0): []}
+                    self._build_structure(child, folder_dict[child.text(0)])
+                    result.append(folder_dict)
+                else:
+                    # Empty folder
+                    result.append({child.text(0): []})
+            else:
+                # File
+                result.append(child.text(0))
+                
+        return result
+    
+    def _save_structure(self):
+        """Save the structure and close the dialog"""
+        if not self.structure_name:
+            self.structure_name, ok = QInputDialog.getText(
+                self, "Structure Name", "Enter name for this structure:"
+            )
+            
+            if not ok or not self.structure_name:
+                return
+        
+        # Build structure from tree
+        structure = self._build_structure(self.root_item)
+        
+        # Emit signal with name and structure
+        self.structureChanged.emit(self.structure_name, structure)
+        
+        # Accept and close
+        self.accept()
 
 class UIBuilder:
     """
@@ -227,7 +596,7 @@ class UIBuilder:
             print("DEBUG: Using existing tree widget")
         else:
             # Create a new tree widget
-            self.tree = QTreeWidget()
+            self.tree = StructureEditorTree()
             self.tree.setHeaderLabel("Structure")
             self.tree.setMinimumWidth(400)
             self.tree.setSelectionMode(QTreeWidget.ExtendedSelection)
@@ -267,6 +636,8 @@ class UIBuilder:
             QTreeWidget::item {{
                 padding: 5px;
                 border-bottom: 1px solid {colors['border']};
+                border: none;
+                outline: none;
             }}
             QTreeWidget::item:hover {{
                 background-color: {colors['hover_bg']};
@@ -274,6 +645,12 @@ class UIBuilder:
             QTreeWidget::item:selected {{
                 background-color: {colors['highlight_bg']};
                 color: {colors['highlight_text']};
+                border: none;
+                outline: none;
+            }}
+            QTreeWidget::branch {{
+                border: none;
+                outline: none;
             }}
             QTreeWidget::branch:has-siblings:!adjoins-item {{
                 border-image: url(vline.png) 0;
@@ -486,6 +863,8 @@ class UIBuilder:
                 QTreeWidget::item {{
                     padding: 5px;
                     border-bottom: 1px solid {colors['border']};
+                    border: none;
+                    outline: none;
                 }}
                 QTreeWidget::item:hover {{
                     background-color: {colors['hover_bg']};
@@ -493,13 +872,21 @@ class UIBuilder:
                 QTreeWidget::item:selected {{
                     background-color: {colors['highlight_bg']};
                     color: {colors['highlight_text']};
+                    border: none;
+                    outline: none;
                 }}
-                QTreeWidget QHeaderView::section {{
-                    background-color: {colors['card_bg']};
-                    color: {colors['text']};
-                    padding: 5px;
-                    border: 1px solid {colors['border']};
-                    font-weight: bold;
+                QTreeWidget::branch {{
+                    border: none;
+                    outline: none;
+                }}
+                QTreeWidget::branch:has-siblings:!adjoins-item {{
+                    border-image: url(vline.png) 0;
+                }}
+                QTreeWidget::branch:has-siblings:adjoins-item {{
+                    border-image: url(branch-more.png) 0;
+                }}
+                QTreeWidget::branch:!has-children:!has-siblings:adjoins-item {{
+                    border-image: url(branch-end.png) 0;
                 }}
             """)
     

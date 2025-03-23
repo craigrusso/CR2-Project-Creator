@@ -10,6 +10,7 @@ from app.core.app_module_pyqt import ProjectCreatorApp
 from app.core.app_config import APP_NAME, APP_VERSION, setup_dpi_awareness
 from app.ui.app_theme_pyqt import apply_dark_theme_to_template_section, force_app_palette
 from app.templates.template_manager_migration import TemplateManagerMigration
+from app.ui.tree_styling import apply_styling_to_all_tree_widgets
 
 # This is the PyQt version of the application
 UI_FRAMEWORK = 'pyqt'
@@ -119,6 +120,11 @@ def main():
             print(f"ERROR applying theme: {e}")
             import traceback
             traceback.print_exc()
+        
+        # Apply tree styling to all tree widgets
+        print("DEBUG: Applying tree styling to all tree widgets")
+        styled_count = apply_styling_to_all_tree_widgets(main_window)
+        print(f"DEBUG: Tree styling applied to all tree widgets ({styled_count} widgets styled)")
         
         print("DEBUG: Starting application main loop")
         return app.exec_()

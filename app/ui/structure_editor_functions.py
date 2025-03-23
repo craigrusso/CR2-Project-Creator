@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import (
 
 from app.ui.structure_editor_enhanced import EnhancedStructureEditor
 from app.templates.template_manager import TemplateManager
+from app.ui.tree_styling import apply_styling_to_all_tree_widgets
 
 
 def show_enhanced_structure_editor(
@@ -49,211 +50,113 @@ def show_enhanced_structure_editor(
     """
     print(f"🔧 STRUCTURE EDITOR: Showing editor for '{structure_name}' (is_new={is_new})")
     
-    # Import EnhancedStructureEditor class
-    from app.ui.structure_editor_enhanced import EnhancedStructureEditor
-    
-    # Create the editor instance
-    editor = EnhancedStructureEditor(
-        parent=parent,
-        structure_name=structure_name,
-        is_new=is_new,
-        structure=structure,
-        project_type=project_type
-    )
-    
-    # If template_name is provided, set it explicitly
-    if template_name:
-        if hasattr(editor, 'set_template_name'):
-            editor.set_template_name(template_name)
-    
-    # Store template manager reference if provided
-    if template_manager:
-        editor.template_manager = template_manager
-    
-    # Ensure we have a valid Template_ prefix
-    if structure_name and not structure_name.startswith("Template_"):
-        structure_name = f"Template_{structure_name}"
-    
-    # If template_name is provided, use it as the initial name without Template_ prefix
-    initial_name = template_name
-    if not initial_name and structure_name and structure_name.startswith("Template_"):
-        initial_name = structure_name[9:]  # Remove "Template_" prefix
-    
-    # Store original template name for rename detection
-    original_template_name = initial_name
-    
-    # Import here to avoid circular imports
     try:
-        from app.ui.enhanced_structure_editor import EnhancedStructureEditor
-    except ImportError:
-        print("❌ STRUCTURE EDITOR: Failed to import EnhancedStructureEditor")
-        # Fallback to the default editor (or handle the error)
-        return False, None, None, None, None
-    
-    # Check if the parent is a QWidget
-    from PyQt5.QtWidgets import QWidget
-    valid_parent = parent if isinstance(parent, QWidget) else None
-    if parent is not None and not isinstance(parent, QWidget):
-        print(f"⚠️ STRUCTURE EDITOR: Invalid parent type ({type(parent)}), using None instead")
-    
-    # Load template data and structure from template manager if not provided
-    if template_manager and structure_name and not structure:
-        # Try to get the structure from the template manager
-        print(f"🔧 STRUCTURE EDITOR: Getting structure '{structure_name}' from template manager")
+        # Import our dependencies
+        from app.ui.structure_editor_enhanced import EnhancedStructureEditor
+        from app.ui.tree_styling import apply_styling_to_all_tree_widgets
         
-        # Try multiple methods to get the structure
-        try:
-            # First check if there's a template with this name that has a structure
-            template = template_manager.get_template_by_name(structure_name)
-            if template and isinstance(template, dict) and 'structure' in template and template['structure']:
-                structure = template['structure']
-                print(f"🔧 STRUCTURE EDITOR: Got structure from template object: {structure is not None}")
-            
-            # If not found, try to get structure directly
-            if not structure and hasattr(template_manager, 'get_structure'):
-                structure = template_manager.get_structure(structure_name)
-                print(f"🔧 STRUCTURE EDITOR: Got structure using get_structure: {structure is not None}")
-                
-            # If not found, try custom_structures or other means
-            if not structure:
-                # Check if there's a template with a structure_name field matching our structure_name
-                for template in template_manager.templates:
-                    if isinstance(template, dict) and template.get('structure_name') == structure_name:
-                        if 'structure' in template and template['structure']:
-                            structure = template['structure']
-                            print(f"🔧 STRUCTURE EDITOR: Got structure from template with matching structure_name")
-                            break
-                
-                # If still not found and we have a template_name, try that
-                if not structure and template_name:
-                    template = template_manager.get_template_by_name(template_name)
-                    if template and isinstance(template, dict) and 'structure' in template:
-                        structure = template['structure']
-                        print(f"🔧 STRUCTURE EDITOR: Got structure from template by template_name: {template_name}")
-                        
-                # Last resort - check custom_structures directly
-                if not structure and hasattr(template_manager, 'custom_structures'):
-                    if structure_name in template_manager.custom_structures:
-                        structure_data = template_manager.custom_structures[structure_name]
-                        if isinstance(structure_data, dict) and 'directories' in structure_data:
-                            structure = structure_data['directories']
-                            print(f"🔧 STRUCTURE EDITOR: Got structure from custom_structures directories field")
-                        else:
-                            structure = structure_data
-                            print(f"🔧 STRUCTURE EDITOR: Got structure from custom_structures directly")
-        except Exception as e:
-            print(f"❌ STRUCTURE EDITOR: Error loading structure: {e}")
-            import traceback
-            traceback.print_exc()
-            
-        if not structure:
-            print(f"WARNING: No structure found for {structure_name}")
-            structure = []  # Empty structure as fallback
-            print(f"DEBUG: Created empty structure")
-    
-    # Setup the dialog with initial values
-    if structure_name:
-        # editor.set_structure_name(structure_name)
-        # Since editor has no set_structure_name method, use the attribute directly
-        editor.original_structure_name = structure_name
-        editor.template_name = structure_name
-        if structure_name and structure_name.startswith("Template_"):
-            editor.template_name = structure_name[len("Template_"):]
-    
-    if initial_name:
-        if hasattr(editor, 'set_template_name'):
-            editor.set_template_name(initial_name)
-        elif hasattr(editor, 'ui_builder') and hasattr(editor.ui_builder, 'template_name_field'):
-            editor.ui_builder.template_name_field.setText(initial_name)
-            editor.template_name = initial_name
-    
-    if structure:
-        print(f"🔧 STRUCTURE EDITOR: Loading structure into dialog")
-        if hasattr(editor, 'load_structure'):
-            editor.load_structure(structure)
-        elif hasattr(editor, 'structure_converter') and editor.structure_converter:
-            editor.structure_converter.load_structure(structure)
-            print(f"🔧 STRUCTURE EDITOR: Loaded structure into converter directly")
-        else:
-            editor.initial_structure = structure
-            print(f"🔧 STRUCTURE EDITOR: Set initial_structure attribute")
-    
-    # Store original template name
-    editor.original_template_name = original_template_name
-    
-    # Focus the name field if requested
-    if focus_name_field and hasattr(editor, 'focus_name_field'):
-        from PyQt5.QtCore import QTimer
-        QTimer.singleShot(100, lambda: editor.focus_name_field())
-    
-    # Connect to template_renamed signal if available
-    if template_manager and hasattr(editor, 'template_renamed'):
-        editor.template_renamed.connect(
-            lambda old_name, new_name: on_template_renamed(template_manager, old_name, new_name)
+        # Create the editor instance
+        editor = EnhancedStructureEditor(
+            parent=parent,
+            structure_name=structure_name,
+            is_new=is_new,
+            structure=structure,
+            project_type=project_type
         )
-    
-    # Show the dialog and get the result
-    result = editor.exec_()
-    
-    if result == editor.Accepted:
-        print(f"🔧 STRUCTURE EDITOR: Dialog accepted")
         
-        # Get structure
-        if hasattr(editor, 'get_structure'):
-            updated_structure = editor.get_structure()
-        elif hasattr(editor, 'structure_converter') and editor.structure_converter:
-            updated_structure = editor.structure_converter.get_structure()
-        else:
-            updated_structure = []
+        # If template_name is provided, set it explicitly
+        if template_name:
+            if hasattr(editor, 'set_template_name'):
+                editor.set_template_name(template_name)
         
-        # Get structure name
-        if hasattr(editor, 'get_structure_name'):
-            updated_structure_name = editor.get_structure_name()
-        else:
-            # Construct the structure name based on template name
-            template_name = editor.template_name if hasattr(editor, 'template_name') else ""
-            if template_name and not template_name.startswith("Template_"):
-                updated_structure_name = f"Template_{template_name}"
+        # Store template manager reference if provided
+        if template_manager:
+            editor.template_manager = template_manager
+        
+        # Ensure we have a valid Template_ prefix
+        if structure_name and not structure_name.startswith("Template_"):
+            structure_name = f"Template_{structure_name}"
+        
+        # If template_name is provided, use it as the initial name without Template_ prefix
+        initial_name = template_name
+        if not initial_name and structure_name and structure_name.startswith("Template_"):
+            initial_name = structure_name[9:]  # Remove "Template_" prefix
+        
+        # Store original template name for rename detection
+        original_template_name = initial_name
+        
+        # Apply tree styling to all tree widgets in the dialog
+        apply_styling_to_all_tree_widgets(editor)
+        
+        # Show the dialog and get the result
+        result = editor.exec_()
+        
+        if result == editor.Accepted:
+            print(f"🔧 STRUCTURE EDITOR: Dialog accepted")
+            
+            # Get structure
+            if hasattr(editor, 'get_structure'):
+                updated_structure = editor.get_structure()
+            elif hasattr(editor, 'structure_converter') and editor.structure_converter:
+                updated_structure = editor.structure_converter.get_structure()
             else:
-                updated_structure_name = template_name or structure_name
-        
-        # Get template name
-        if hasattr(editor, 'get_template_name'):
-            updated_template_name = editor.get_template_name()
-        else:
-            updated_template_name = editor.template_name if hasattr(editor, 'template_name') else ""
-        
-        # Check if this was a rename operation
-        is_rename = original_template_name and updated_template_name and original_template_name != updated_template_name
-        
-        # Preserve existing structure name if this is an edit operation
-        # unless explicitly changed in the dialog
-        if not is_new and structure_name and updated_structure_name != structure_name:
-            print(f"🔧 STRUCTURE EDITOR: Structure name changed from '{structure_name}' to '{updated_structure_name}'")
-        
-        if is_rename:
-            print(f"🔧 STRUCTURE EDITOR: Template renamed from '{original_template_name}' to '{updated_template_name}'")
-        
-        # If we have a callback, call it with the updated structure
-        if callable(callback):
-            print(f"🔧 STRUCTURE EDITOR: Calling callback with updated structure")
-            callback_result = callback({
-                'name': updated_template_name,
-                'original_name': original_template_name,
-                'structure_name': updated_structure_name,
-                'structure': updated_structure,
-                'is_new': is_new,
-                'is_rename': is_rename
-            })
+                updated_structure = []
+            
+            # Get structure name
+            if hasattr(editor, 'get_structure_name'):
+                updated_structure_name = editor.get_structure_name()
+            else:
+                # Construct the structure name based on template name
+                template_name = editor.template_name if hasattr(editor, 'template_name') else ""
+                if template_name and not template_name.startswith("Template_"):
+                    updated_structure_name = f"Template_{template_name}"
+                else:
+                    updated_structure_name = template_name or structure_name
+            
+            # Get template name
+            if hasattr(editor, 'get_template_name'):
+                updated_template_name = editor.get_template_name()
+            else:
+                updated_template_name = editor.template_name if hasattr(editor, 'template_name') else ""
+            
+            # Check if this was a rename operation
+            is_rename = original_template_name and updated_template_name and original_template_name != updated_template_name
+            
+            # Preserve existing structure name if this is an edit operation
+            # unless explicitly changed in the dialog
+            if not is_new and structure_name and updated_structure_name != structure_name:
+                print(f"🔧 STRUCTURE EDITOR: Structure name changed from '{structure_name}' to '{updated_structure_name}'")
+            
+            if is_rename:
+                print(f"🔧 STRUCTURE EDITOR: Template renamed from '{original_template_name}' to '{updated_template_name}'")
+            
+            # If we have a callback, call it with the updated structure
+            if callable(callback):
+                print(f"🔧 STRUCTURE EDITOR: Calling callback with updated structure")
+                callback_result = callback({
+                    'name': updated_template_name,
+                    'original_name': original_template_name,
+                    'structure_name': updated_structure_name,
+                    'structure': updated_structure,
+                    'is_new': is_new,
+                    'is_rename': is_rename
+                })
+                
+                # Return expanded information about the result
+                return callback_result, updated_structure, updated_structure_name, original_template_name, updated_template_name
             
             # Return expanded information about the result
-            return callback_result, updated_structure, updated_structure_name, original_template_name, updated_template_name
+            return True, updated_structure, updated_structure_name, original_template_name, updated_template_name
+        else:
+            print(f"🔧 STRUCTURE EDITOR: Dialog cancelled")
+            return False, None, None, None, None
+    except Exception as e:
+        print(f"ERROR showing enhanced structure editor: {e}")
+        import traceback
+        traceback.print_exc()
         
-        # Return expanded information about the result
-        return True, updated_structure, updated_structure_name, original_template_name, updated_template_name
-    else:
-        print(f"🔧 STRUCTURE EDITOR: Dialog cancelled")
-        return False, None, None, None, None
+        # Fallback to basic structure editor
+        return show_basic_structure_editor(parent, structure_name, structure, is_new, callback)
 
 def on_template_renamed(template_manager, old_name, new_name):
     """
@@ -428,4 +331,213 @@ def test_structure_conversion(editor, structure_data):
             "length": len(result_structure) if isinstance(result_structure, list) else "not a list",
             "sample": result_structure[:3] if isinstance(result_structure, list) else str(result_structure)[:100]
         }
-    } 
+    }
+
+def show_basic_structure_editor(parent, structure_name, structure, is_new=False, callback=None):
+    """
+    Show a basic structure editor dialog as a fallback
+    
+    Args:
+        parent: Parent widget
+        structure_name: Name of the structure
+        structure: Structure data
+        is_new: Whether this is a new structure
+        callback: Callback function to call when structure is saved
+        
+    Returns:
+        tuple: (success, structure, structure_name, original_template_name, updated_template_name)
+    """
+    from PyQt5.QtWidgets import QDialog, QVBoxLayout, QTreeWidget, QTreeWidgetItem, QLabel, QLineEdit, QPushButton, QHBoxLayout
+    from PyQt5.QtCore import Qt
+    
+    print(f"🔧 BASIC STRUCTURE EDITOR: Showing basic editor for '{structure_name}'")
+    
+    # Create the dialog
+    dialog = QDialog(parent)
+    dialog.setWindowTitle("Basic Structure Editor")
+    dialog.resize(600, 400)
+    
+    # Create layout
+    layout = QVBoxLayout(dialog)
+    
+    # Add name field
+    name_layout = QHBoxLayout()
+    name_label = QLabel("Template Name:")
+    name_layout.addWidget(name_label)
+    
+    # Strip "Template_" prefix for display
+    display_name = structure_name
+    if display_name.startswith("Template_"):
+        display_name = display_name[9:]
+    
+    name_field = QLineEdit(display_name)
+    name_layout.addWidget(name_field)
+    layout.addLayout(name_layout)
+    
+    # Add tree widget
+    tree = QTreeWidget(dialog)
+    tree.setHeaderLabels(["Name"])
+    layout.addWidget(tree)
+    
+    # Apply styling to the tree
+    from app.ui.tree_styling import setup_tree_for_structure_editing
+    try:
+        setup_tree_for_structure_editing(tree)
+    except Exception as e:
+        print(f"WARNING: Failed to apply tree styling: {e}")
+    
+    # Load the structure into the tree
+    def add_structure_items(parent_item, structure_items):
+        if not structure_items:
+            return
+            
+        for item in structure_items:
+            if isinstance(item, dict):
+                # Handle dictionary format (new format)
+                item_name = item.get('name', '')
+                item_type = item.get('type', 'folder')
+                children = item.get('children', [])
+                
+                tree_item = QTreeWidgetItem(parent_item)
+                tree_item.setText(0, item_name)
+                tree_item.setFlags(tree_item.flags() | Qt.ItemIsEditable)
+                
+                # Store item data
+                tree_item.setData(0, Qt.UserRole, {'type': item_type, 'name': item_name})
+                
+                # Set icon based on type
+                if item_type == 'folder':
+                    # Use folder icon
+                    from PyQt5.QtWidgets import QStyle, QApplication
+                    tree_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+                    
+                    # Add children
+                    add_structure_items(tree_item, children)
+                else:
+                    # Use file icon
+                    from PyQt5.QtWidgets import QStyle, QApplication
+                    tree_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+            elif isinstance(item, str):
+                # Handle string format (file in old format)
+                tree_item = QTreeWidgetItem(parent_item)
+                tree_item.setText(0, item)
+                tree_item.setFlags(tree_item.flags() | Qt.ItemIsEditable)
+                
+                # Set file icon and data
+                from PyQt5.QtWidgets import QStyle, QApplication
+                tree_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+                tree_item.setData(0, Qt.UserRole, {'type': 'file', 'name': item})
+            elif isinstance(item, dict) and len(item) == 1:
+                # Handle old format structure (dictionary with single key)
+                folder_name = list(item.keys())[0]
+                folder_contents = item[folder_name]
+                
+                folder_item = QTreeWidgetItem(parent_item)
+                folder_item.setText(0, folder_name)
+                folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+                
+                # Set folder icon and data
+                from PyQt5.QtWidgets import QStyle, QApplication
+                folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+                folder_item.setData(0, Qt.UserRole, {'type': 'folder', 'name': folder_name})
+                
+                # Add children
+                add_structure_items(folder_item, folder_contents)
+    
+    # Load structure data
+    if structure:
+        try:
+            add_structure_items(tree.invisibleRootItem(), structure if isinstance(structure, list) else [structure])
+        except Exception as e:
+            print(f"ERROR: Failed to load structure: {e}")
+    
+    # Add buttons
+    button_layout = QHBoxLayout()
+    cancel_button = QPushButton("Cancel")
+    save_button = QPushButton("Save")
+    button_layout.addWidget(cancel_button)
+    button_layout.addStretch()
+    button_layout.addWidget(save_button)
+    layout.addLayout(button_layout)
+    
+    # Extract structure data from tree
+    def get_structure_from_tree():
+        result = []
+        root = tree.invisibleRootItem()
+        
+        for i in range(root.childCount()):
+            item = root.child(i)
+            result.append(get_item_data(item))
+            
+        return result
+    
+    def get_item_data(item):
+        item_data = item.data(0, Qt.UserRole)
+        item_type = item_data.get('type', 'folder') if isinstance(item_data, dict) else 'folder'
+        item_name = item.text(0)
+        
+        if item_type == 'folder':
+            # Create folder item with children
+            if item.childCount() > 0:
+                children = []
+                for i in range(item.childCount()):
+                    children.append(get_item_data(item.child(i)))
+                    
+                return {
+                    'name': item_name,
+                    'type': 'folder',
+                    'children': children
+                }
+            else:
+                # Empty folder
+                return {
+                    'name': item_name,
+                    'type': 'folder'
+                }
+        else:
+            # File item
+            return {
+                'name': item_name,
+                'type': 'file'
+            }
+    
+    # Connect signals
+    cancel_button.clicked.connect(dialog.reject)
+    save_button.clicked.connect(dialog.accept)
+    
+    # Set result variables
+    result = False
+    updated_structure = None
+    updated_structure_name = structure_name
+    original_template_name = display_name
+    updated_template_name = display_name
+    
+    # Execute dialog
+    if dialog.exec_() == QDialog.Accepted:
+        # Get updated values
+        updated_template_name = name_field.text()
+        
+        # Build structure name with Template_ prefix
+        if is_new or not updated_structure_name.startswith("Template_"):
+            updated_structure_name = f"Template_{updated_template_name}"
+        
+        # Extract structure from tree
+        updated_structure = get_structure_from_tree()
+        
+        # Call callback if provided
+        if callable(callback):
+            callback_result = callback({
+                'name': updated_template_name,
+                'original_name': original_template_name,
+                'structure_name': updated_structure_name,
+                'structure': updated_structure,
+                'is_new': is_new,
+                'is_rename': original_template_name != updated_template_name
+            })
+            
+            # Use callback result as success flag
+            result = bool(callback_result)
+        else:
+            result = True
+    
+    return result, updated_structure, updated_structure_name, original_template_name, updated_template_name 

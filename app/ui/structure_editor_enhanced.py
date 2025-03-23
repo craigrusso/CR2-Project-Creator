@@ -117,22 +117,30 @@ class EnhancedStructureEditor(QDialog):
                     background-color: #2A2A2A;
                     color: #E0E0E0;
                     border: 1px solid #3A3A3A;
-                    border-radius:
-                    4px;
+                    border-radius: 4px;
                     padding: 5px;
+                    outline: none;
                 }
                 QTreeWidget::item {
                     padding: 4px;
                     border-bottom: 1px solid #3A3A3A;
+                    border: none;
+                    outline: none;
                 }
                 QTreeWidget::item:selected {
                     background-color: #2C4F76;
                     color: white;
                     border-radius: 3px;
+                    border: none;
+                    outline: none;
                 }
                 QTreeWidget::item:hover {
                     background-color: #3A3A3A;
                     border-radius: 3px;
+                }
+                QTreeWidget::branch {
+                    border: none;
+                    outline: none;
                 }
                 /* Style the item editor (QLineEdit when editing) */
                 QTreeWidget QLineEdit {
