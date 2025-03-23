@@ -150,7 +150,7 @@ class EnhancedStructureEditor(QDialog):
             # Store original keyPressEvent
             self.tree_widget._old_keyPressEvent = self.tree_widget.keyPressEvent
             # Override keyPressEvent
-            self.tree_widget.keyPressEvent = lambda event: self._handle_key_press(event)
+            self.tree_widget.keyPressEvent = self._handle_key_press
             
             # Initialize file operations handler - Always initialize this before doing anything with the tree
             try:
@@ -508,21 +508,47 @@ class EnhancedStructureEditor(QDialog):
             
     def _show_context_menu(self, position):
         """Show context menu for tree widget"""
+        # Check if file operations has its own context menu handler
+        if hasattr(self, 'file_operations') and hasattr(self.file_operations, 'create_context_menu'):
+            # Get item at position
+            item = self.tree_widget.itemAt(position)
+            
+            # Let file operations create the context menu
+            menu = self.file_operations.create_context_menu(item, position)
+            if menu:
+                # Execute the menu here instead of in create_context_menu
+                menu.exec_(self.tree_widget.mapToGlobal(position))
+                return
+                
+        # If file_operations not available or context menu creation failed, create our own menu
         # Create menu
         menu = QMenu(self)
+        
+        # Style the menu
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: #2D2D30;
+                color: #FFFFFF;
+                border: 1px solid #3F3F46;
+                padding: 5px;
+            }
+            QMenu::item {
+                padding: 5px 20px 5px 20px;
+                border-radius: 3px;
+            }
+            QMenu::item:selected {
+                background-color: #264F78;
+            }
+            QMenu::separator {
+                height: 1px;
+                background-color: #3F3F46;
+                margin: 5px;
+            }
+        """)
         
         # Get item at position
         item = self.tree_widget.itemAt(position)
         
-        # Determine if we have file operations available
-        have_file_ops = hasattr(self, 'file_operations') and self.file_operations
-        
-        # Try using file_operations.create_context_menu if available
-        if have_file_ops and hasattr(self.file_operations, 'create_context_menu'):
-            self.file_operations.create_context_menu(item, position)
-            return
-        
-        # If file_operations not available or method missing, create our own menu
         # Add common actions
         add_file_action = menu.addAction("Add File")
         add_folder_action = menu.addAction("Add Folder")
@@ -538,6 +564,7 @@ class EnhancedStructureEditor(QDialog):
             if isinstance(item_data, dict) and item_data.get('type') == 'file':
                 menu.addSeparator()
                 use_project_name_action = menu.addAction("Use Project Name")
+                use_project_name_action.setEnabled(True)
             else:
                 use_project_name_action = None
         else:
@@ -550,6 +577,7 @@ class EnhancedStructureEditor(QDialog):
         
         # Handle action
         if action:
+            print(f"DEBUG: Context menu action: {action.text()}")
             if action == add_file_action:
                 self.add_file(item)
             elif action == add_folder_action:
@@ -557,8 +585,10 @@ class EnhancedStructureEditor(QDialog):
             elif item and action == rename_action:
                 self.tree_widget.editItem(item, 0)
             elif item and action == delete_action:
+                print(f"DEBUG: Delete action triggered from context menu for item: {item.text(0)}")
                 self._delete_item(item)
             elif item and action == use_project_name_action:
+                print(f"DEBUG: Use Project Name action triggered for item: {item.text(0)}")
                 self._use_project_name_for_file(item)
     
     def _delete_item(self, item):
@@ -573,24 +603,49 @@ class EnhancedStructureEditor(QDialog):
         )
         
         if reply == QMessageBox.Yes:
+            print(f"DEBUG: Deleting item '{item.text(0)}'")
             # Get parent
             parent = item.parent()
             
+            # Get root item
+            root = self.tree_widget.invisibleRootItem()
+            
             if parent:
+                print(f"DEBUG: Item has parent, removing child using parent.removeChild")
+                # Remove child from parent
                 parent.removeChild(item)
             else:
-                # Root item
-                root = self.tree_widget.invisibleRootItem()
-                root.removeChild(item)
+                # For top-level items, use the root item's methods
+                print(f"DEBUG: Item is a top-level item, removing from root")
+                # Find the index of the item in the root
+                index = root.indexOfChild(item)
+                print(f"DEBUG: Top-level item index: {index}")
+                if index >= 0:
+                    # Remove the item from the root
+                    root.takeChild(index)
+                    print(f"DEBUG: Successfully removed top-level item at index {index}")
+                else:
+                    print(f"ERROR: Could not find index of top-level item")
+                    return False
+                
+            # Refresh the tree view to ensure UI is updated
+            self.tree_widget.update()
+            
+            print(f"DEBUG: Item deleted successfully")
+            return True
+        
+        return False
     
     def _use_project_name_for_file(self, item):
         """Set a file to use the project name"""
         if not item:
+            print("DEBUG: use_project_name - no item provided")
             return
         
         # Get item data
         item_data = item.data(0, Qt.UserRole)
         if not isinstance(item_data, dict) or item_data.get('type') != 'file':
+            print(f"DEBUG: use_project_name - item is not a file: {item.text(0)}")
             return
         
         # Get file extension (if any)
@@ -599,22 +654,59 @@ class EnhancedStructureEditor(QDialog):
         if "." in name:
             extension = "." + name.split(".")[-1]
         
-        # Update with project name
-        project_name = self.template_name if hasattr(self, 'template_name') else "Project_Name"
-        new_name = f"{project_name}{extension}"
+        # Use ${PROJECT_NAME} as the placeholder that will be replaced later
+        # This ensures it's clear this will be dynamically replaced
+        placeholder = "${PROJECT_NAME}"
         
-        # Update item
+        # Log placeholder details for debugging
+        print(f"🔍 PLACEHOLDER DEBUG: Raw placeholder: '{placeholder}'")
+        print(f"🔍 PLACEHOLDER DEBUG: Placeholder length: {len(placeholder)}")
+        print(f"🔍 PLACEHOLDER DEBUG: Placeholder bytes: {placeholder.encode('utf-8')}")
+        print(f"🔍 PLACEHOLDER DEBUG: First character: '{placeholder[0]}' (code: {ord(placeholder[0])})")
+        
+        # Set the display name to explicitly show the placeholder
+        # This makes it very clear to the user that this will be replaced
+        new_name = f"{placeholder}{extension}"
+        
+        print(f"DEBUG: use_project_name - changing name from '{name}' to '{new_name}'")
+        print(f"🔍 PLACEHOLDER DEBUG: New name first char: '{new_name[0]}' (code: {ord(new_name[0])})")
+        print(f"🔍 PLACEHOLDER DEBUG: New name bytes: {new_name.encode('utf-8')}")
+        
+        # Update item display text with the actual placeholder
         item.setText(0, new_name)
         
-        # Update data
+        # Update data - store both the display name and the placeholder
         item_data['name'] = new_name
         item_data['uses_project_name'] = True
+        item_data['placeholder'] = placeholder  # Store the placeholder that will be replaced
+        item_data['original_extension'] = extension
         item.setData(0, Qt.UserRole, item_data)
         
-        # Apply styling to indicate dynamic name
+        # Apply styling to indicate dynamic name - make it VERY clear this is special
         font = item.font(0)
         font.setItalic(True)
         item.setFont(0, font)
+        
+        # Use blue color from our app color scheme for consistency
+        try:
+            from app.ui.color_scheme_pyqt import colors
+            item.setForeground(0, QBrush(QColor(colors.get("accent", "#4A9BFF"))))
+        except (ImportError, AttributeError):
+            # Fallback if color scheme isn't available
+            item.setForeground(0, QBrush(QColor("#4A9BFF")))
+        
+        print(f"DEBUG: use_project_name - file marked to use project name: {new_name}")
+        
+        # After setting text, verify what the item actually displays
+        displayed_text = item.text(0)
+        print(f"🔍 PLACEHOLDER DEBUG: Displayed text: '{displayed_text}'")
+        print(f"🔍 PLACEHOLDER DEBUG: Displayed text first char: '{displayed_text[0]}' (code: {ord(displayed_text[0])})")
+        print(f"🔍 PLACEHOLDER DEBUG: Displayed text bytes: {displayed_text.encode('utf-8')}")
+        
+        # Check if the placeholder was correctly applied
+        if displayed_text != new_name:
+            print(f"🚨 WARNING: Displayed text doesn't match expected new name!")
+            print(f"🚨 Expected: '{new_name}', got: '{displayed_text}'")
 
     def _on_template_name_changed(self, new_name):
         """Handle template name changed event"""
@@ -700,15 +792,16 @@ class EnhancedStructureEditor(QDialog):
         
         # Delete key for removing selected items
         if event.key() == Qt.Key_Delete and have_file_ops:
+            print("DEBUG: Delete key pressed, calling delete_selected()")
             self.file_operations.delete_selected()
             event.accept()  # Mark as handled
-            return
+            return True  # Return True to indicate the event was handled
         
         # Ctrl+A for select all
         if event.key() == Qt.Key_A and event.modifiers() & Qt.ControlModifier:
             self.tree_widget.selectAll()
             event.accept()  # Mark as handled
-            return
+            return True
         
         # Ctrl+C for copy (handled by file operations)
         if event.key() == Qt.Key_C and event.modifiers() & Qt.ControlModifier and have_file_ops:
@@ -716,7 +809,7 @@ class EnhancedStructureEditor(QDialog):
             if selected and hasattr(self.file_operations, '_copy_item'):
                 self.file_operations._copy_item(selected[0])
                 event.accept()  # Mark as handled
-                return
+                return True
             
         # Ctrl+V for paste (handled by file operations)
         if event.key() == Qt.Key_V and event.modifiers() & Qt.ControlModifier and have_file_ops:
@@ -725,7 +818,7 @@ class EnhancedStructureEditor(QDialog):
             if hasattr(self.file_operations, '_paste_item'):
                 self.file_operations._paste_item(parent)
                 event.accept()  # Mark as handled
-                return
+                return True
         
         # F2 for rename
         if event.key() == Qt.Key_F2 and have_file_ops:
@@ -733,7 +826,7 @@ class EnhancedStructureEditor(QDialog):
             if selected and hasattr(self.file_operations, 'rename_item'):
                 self.file_operations.rename_item(selected[0])
                 event.accept()  # Mark as handled
-                return
+                return True
         
         # Call original event handler
         QTreeWidget.keyPressEvent(self.tree_widget, event) 

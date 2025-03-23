@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
+"""
+Project Builder Module
+
+This module handles creating projects from templates or structures.
+"""
+
 import os
 import threading
 import datetime
@@ -8,6 +14,7 @@ import shutil
 import sys
 import json
 import platform
+import re  # Add import for regex
 
 # Using PyQt for the UI framework
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar, QPushButton
@@ -79,6 +86,71 @@ class ProjectBuilder:
         self.template_manager = template_manager
         self.project_queue = []
         self.is_building = False
+    
+    def _handle_dollar_placeholder(self, input_string, project_name):
+        """
+        Specialized handling for dollar sign placeholders (${PROJECT_NAME})
+        
+        Args:
+            input_string: String that may contain the ${PROJECT_NAME} placeholder
+            project_name: Project name to replace the placeholder with
+            
+        Returns:
+            String with placeholder replaced
+        """
+        # Define all placeholder formats we need to handle
+        placeholder_dollar = "${PROJECT_NAME}"
+        
+        # Debug logging
+        print(f"🔍 DOLLAR HANDLING DEBUG: Processing string: '{input_string}'")
+        print(f"🔍 DOLLAR HANDLING DEBUG: String length: {len(input_string)}")
+        print(f"🔍 DOLLAR HANDLING DEBUG: String as bytes: {input_string.encode('utf-8')}")
+        print(f"🔍 DOLLAR HANDLING DEBUG: Project name: '{project_name}'")
+        
+        # Initialize result with input string
+        result = input_string
+        
+        # Case 1: Input contains the full placeholder "${PROJECT_NAME}"
+        if placeholder_dollar in input_string:
+            # Create a new string with the placeholder replaced
+            # We need to be careful with this replacement to ensure no $ artifacts remain
+            parts = input_string.split(placeholder_dollar)
+            result = project_name.join(parts)
+            print(f"🔍 DOLLAR HANDLING DEBUG: Full placeholder replacement: '{result}'")
+        
+        # Case 2: Input starts with $ but doesn't contain the full placeholder
+        # This likely means the display is showing $ but internally it's not matching correctly
+        elif input_string.startswith("$"):
+            # Extract the part after $ 
+            remaining = input_string[1:]
+            
+            # If it looks like it might be a malformed PROJECT_NAME placeholder
+            if remaining.startswith("{PROJECT_NAME}") or remaining.startswith("PROJECT_NAME"):
+                # In these cases, we want to just use the project name with any suffix
+                name_index = remaining.find("PROJECT_NAME")
+                if name_index >= 0:
+                    suffix_index = name_index + len("PROJECT_NAME")
+                    suffix = remaining[suffix_index:] if suffix_index < len(remaining) else ""
+                    result = f"{project_name}{suffix}"
+                    print(f"🔍 DOLLAR HANDLING DEBUG: Malformed placeholder handling: '{result}'")
+                    
+            # If it's another kind of file that just happens to start with $
+            elif "." in remaining:
+                # It has an extension - preserve the extension
+                parts = remaining.split(".")
+                ext = "." + ".".join(parts[1:])  # Handle multiple dots in filename
+                result = f"{project_name}{ext}"
+                print(f"🔍 DOLLAR HANDLING DEBUG: $ prefix with extension: '{result}'")
+                
+            # Any other $ prefix case
+            else:
+                # Just replace the $ with the project name
+                result = f"{project_name}{remaining}"
+                print(f"🔍 DOLLAR HANDLING DEBUG: Simple $ prefix handling: '{result}'")
+                
+        # Log the final result for debugging
+        print(f"🔍 DOLLAR HANDLING DEBUG: Final result: '{result}'")
+        return result
     
     def create_project(self, project_name, output_dir, template_file=None, project_type="Standard", 
                       use_version_control=True, create_backup=True, structure_name=None,
@@ -217,51 +289,40 @@ class ProjectBuilder:
         # Cache project name placeholder formats for faster replacement
         project_name_placeholder_double = "{{PROJECT_NAME}}"
         project_name_placeholder_single = "{PROJECT_NAME}"
+        project_name_placeholder_dollar = "${PROJECT_NAME}"
         
-        # Handle different types of directories input
+        # Check if directories is a list or dictionary
         if isinstance(directories, list):
             print(f"DEBUG: Processing list structure with {len(directories)} items")
+            
+            # Process each item in the list
             for item in directories:
                 print(f"DEBUG: Processing item type: {type(item)}, content: {item}")
-                # Handle nested dict - this covers both folders with children and empty folders
-                if isinstance(item, dict):
-                    for folder_name, sub_items in item.items():
-                        print(f"DEBUG: Processing folder: {folder_name} with sub_items: {sub_items}")
-                        # Replace placeholders in folder_name if needed
-                        if isinstance(folder_name, str):
-                            if project_name_placeholder_double in folder_name:
-                                new_folder_name = folder_name.replace(project_name_placeholder_double, project_name)
-                                print(f"Renamed folder in structure: {folder_name} -> {new_folder_name}")
-                                folder_name = new_folder_name
-                            elif project_name_placeholder_single in folder_name:
-                                new_folder_name = folder_name.replace(project_name_placeholder_single, project_name)
-                                print(f"Renamed folder in structure: {folder_name} -> {new_folder_name}")
-                                folder_name = new_folder_name
-                        
-                        # Create the parent folder
-                        folder_path = os.path.join(project_path, folder_name)
-                        print(f"DEBUG: Creating parent folder: {folder_path}")
-                        os.makedirs(folder_path, exist_ok=True)
-                        
-                        # Process subfolders recursively - pass the original project name
-                        # Only process if there are subitems
-                        if sub_items:
-                            print(f"DEBUG: Processing sub-items of type {type(sub_items)}")
-                            self._create_folder_structure(folder_path, sub_items, original_project_name=project_name)
-                # Handle string (file name)
-                elif isinstance(item, str):
+                original_item = item  # Store for logging
+                
+                # Handle string item - could be a file or folder name
+                if isinstance(item, str):
                     print(f"DEBUG: Processing file: {item}")
                     
-                    # Replace placeholders if needed
-                    if project_name_placeholder_double in item:
-                        new_name = item.replace(project_name_placeholder_double, project_name)
-                        print(f"Renamed file in structure: {item} -> {new_name}")
-                        item = new_name
+                    # Process item name - check for placeholders that need replacement
+                    if project_name_placeholder_dollar in item:
+                        # Split the string on the placeholder and join with the project name
+                        parts = item.split(project_name_placeholder_dollar)
+                        item = project_name.join(parts)
+                        print(f"DEBUG: Dollar placeholder replaced: '{original_item}' -> '{item}'")
+                    elif project_name_placeholder_double in item:
+                        parts = item.split(project_name_placeholder_double)
+                        item = project_name.join(parts)
+                        print(f"DEBUG: Double placeholder replaced: '{original_item}' -> '{item}'")
                     elif project_name_placeholder_single in item:
-                        new_name = item.replace(project_name_placeholder_single, project_name)
-                        print(f"Renamed file in structure: {item} -> {new_name}")
-                        item = new_name
-                        
+                        parts = item.split(project_name_placeholder_single)
+                        item = project_name.join(parts)
+                        print(f"DEBUG: Single placeholder replaced: '{original_item}' -> '{item}'")
+                    elif item.startswith("$"):
+                        # For items that just start with $ but don't have the full placeholder format
+                        item = self._handle_dollar_placeholder(item, project_name)
+                        print(f"DEBUG: $ sign at start handled: '{original_item}' -> '{item}'")
+                    
                     # Create the file (or folder, depending on whether it has an extension)
                     file_path = os.path.join(project_path, item)
                     if '.' in os.path.basename(item):
@@ -271,122 +332,85 @@ class ProjectBuilder:
                     else:
                         # No extension - treat as directory
                         os.makedirs(file_path, exist_ok=True)
+                        
                 # Handle normalized structure format
                 elif isinstance(item, dict) and 'name' in item and 'type' in item:
                     print(f"DEBUG: Processing normalized item: {item}")
                     name = item['name']
+                    original_name = name  # Store for logging
                     item_type = item['type']
                     
                     # Replace placeholders in name
                     if isinstance(name, str):
-                        if project_name_placeholder_double in name:
-                            new_name = name.replace(project_name_placeholder_double, project_name)
-                            print(f"Renamed item in structure: {name} -> {new_name}")
-                            name = new_name
+                        if project_name_placeholder_dollar in name:
+                            # Split the string on the placeholder and join with the project name
+                            parts = name.split(project_name_placeholder_dollar)
+                            name = project_name.join(parts)
+                            print(f"DEBUG: Dollar placeholder replaced in item: '{original_name}' -> '{name}'")
+                        elif project_name_placeholder_double in name:
+                            parts = name.split(project_name_placeholder_double)
+                            name = project_name.join(parts)
+                            print(f"DEBUG: Double placeholder replaced in item: '{original_name}' -> '{name}'")
                         elif project_name_placeholder_single in name:
-                            new_name = name.replace(project_name_placeholder_single, project_name)
-                            print(f"Renamed item in structure: {name} -> {new_name}")
-                            name = new_name
+                            parts = name.split(project_name_placeholder_single)
+                            name = project_name.join(parts)
+                            print(f"DEBUG: Single placeholder replaced in item: '{original_name}' -> '{name}'")
+                        elif name.startswith("$"):
+                            # For items that just start with $ but don't have the full placeholder format
+                            name = self._handle_dollar_placeholder(name, project_name)
+                            print(f"DEBUG: $ sign at start handled in item: '{original_name}' -> '{name}'")
                     
                     # Check if this is a folder or file
                     is_folder = (item_type == "folder" or item_type == "directory")
                     
+                    # Create file or folder
                     if is_folder:
-                        # It's a folder - create directory
                         folder_path = os.path.join(project_path, name)
-                        print(f"Creating folder: {folder_path}")
                         os.makedirs(folder_path, exist_ok=True)
                         
-                        # Process children if they exist
+                        # Process children recursively if they exist
                         if 'children' in item and item['children']:
-                            children = item['children']
-                            print(f"DEBUG: Processing children of type {type(children)}")
-                            self._create_folder_structure(folder_path, children, original_project_name=project_name)
+                            # Pass the original project name to keep consistent naming
+                            self._create_folder_structure(folder_path, item['children'], original_project_name)
                     else:
-                        # It's a file, create placeholder or empty file
-                        if '/' in name:
-                            # Handle file in subfolder
-                            file_dir, filename = os.path.split(name)
-                            file_dir_path = os.path.join(project_path, file_dir)
-                            os.makedirs(file_dir_path, exist_ok=True)
-                            file_path = os.path.join(file_dir_path, filename)
-                        else:
-                            file_path = os.path.join(project_path, name)
-                        
-                        # Check if this is a file that should be copied from the cache
-                        source_file = None
-                        
-                        # Check if we have a template manager with cached files
-                        if hasattr(self, 'template_manager'):
-                            # First check if file has an explicit path attribute
-                            if 'path' in item and item['path']:
-                                # Use the explicit path
-                                explicit_path = item['path']
-                                if os.path.exists(explicit_path):
-                                    source_file = explicit_path
-                                    print(f"Using explicit file path: {source_file}")
-                                else:
-                                    print(f"WARNING: Explicit file path does not exist: {explicit_path}")
+                        # Create empty file
+                        file_path = os.path.join(project_path, name)
+                        with open(file_path, 'w') as f:
+                            pass
                             
-                            # Check if the file is cached in the template manager
-                            elif hasattr(self.template_manager, 'get_cached_file_path'):
-                                structure_name = getattr(self.template_manager, 'current_structure_name', None)
-                                if structure_name:
-                                    # Try to get cached file path
-                                    try:
-                                        cache_path = self.template_manager.get_cached_file_path(name, structure_name)
-                                        if cache_path and os.path.exists(cache_path):
-                                            source_file = cache_path
-                                            print(f"Found cached file: {source_file}")
-                                    except Exception as e:
-                                        print(f"Error getting cached file path: {e}")
+                elif isinstance(item, dict) and len(item) == 1:
+                    # Handle simplified folder format {folder_name: [children]}
+                    for folder_name, children in item.items():
+                        original_folder = folder_name  # Store for logging
                         
-                        if source_file and os.path.exists(source_file):
-                            # Copy the file from the cache
-                            print(f"Copying file from cache: {source_file} -> {file_path}")
-                            import shutil
-                            try:
-                                shutil.copy2(source_file, file_path)
-                                print(f"Copied file from {source_file} to {file_path}")
-                            except Exception as e:
-                                print(f"Error copying file: {e}")
-                                # Create an empty file as fallback
-                                with open(file_path, 'w') as f:
-                                    pass
-                        else:
-                            # Create an empty file
-                            print(f"Creating empty file: {file_path}")
-                            with open(file_path, 'w') as f:
-                                pass
-                else:
-                    print(f"WARNING: Unhandled item format in structure: {type(item)}")
-        
-        # Handle case where directories is a dict (may happen in recursive calls)
-        elif isinstance(directories, dict):
-            print(f"DEBUG: Processing dictionary structure with keys: {list(directories.keys())}")
-            for folder_name, sub_items in directories.items():
-                print(f"DEBUG: Processing folder: {folder_name} with sub_items: {sub_items}")
-                # Replace placeholders in folder_name if needed
-                if isinstance(folder_name, str):
-                    if project_name_placeholder_double in folder_name:
-                        new_folder_name = folder_name.replace(project_name_placeholder_double, project_name)
-                        print(f"Renamed folder in structure: {folder_name} -> {new_folder_name}")
-                        folder_name = new_folder_name
-                    elif project_name_placeholder_single in folder_name:
-                        new_folder_name = folder_name.replace(project_name_placeholder_single, project_name)
-                        print(f"Renamed folder in structure: {folder_name} -> {new_folder_name}")
-                        folder_name = new_folder_name
-                
-                # Create the parent folder
-                folder_path = os.path.join(project_path, folder_name)
-                print(f"DEBUG: Creating dictionary parent folder: {folder_path}")
-                os.makedirs(folder_path, exist_ok=True)
-                
-                # Process subfolders recursively - pass the original project name
-                # Only process if there are subitems
-                if sub_items:
-                    print(f"DEBUG: Processing dictionary sub-items of type {type(sub_items)}")
-                    self._create_folder_structure(folder_path, sub_items, original_project_name=project_name)
+                        # Handle placeholder replacement in folder name
+                        if isinstance(folder_name, str):
+                            if project_name_placeholder_dollar in folder_name:
+                                # Split the string on the placeholder and join with the project name
+                                parts = folder_name.split(project_name_placeholder_dollar)
+                                folder_name = project_name.join(parts)
+                                print(f"DEBUG: Dollar placeholder replaced in folder: '{original_folder}' -> '{folder_name}'")
+                            elif project_name_placeholder_double in folder_name:
+                                parts = folder_name.split(project_name_placeholder_double)
+                                folder_name = project_name.join(parts)
+                                print(f"DEBUG: Double placeholder replaced in folder: '{original_folder}' -> '{folder_name}'")
+                            elif project_name_placeholder_single in folder_name:
+                                parts = folder_name.split(project_name_placeholder_single)
+                                folder_name = project_name.join(parts)
+                                print(f"DEBUG: Single placeholder replaced in folder: '{original_folder}' -> '{folder_name}'")
+                            elif folder_name.startswith("$"):
+                                # For folders that just start with $ but don't have the full placeholder format
+                                folder_name = self._handle_dollar_placeholder(folder_name, project_name)
+                                print(f"DEBUG: $ sign at start handled in folder: '{original_folder}' -> '{folder_name}'")
+                        
+                        # Create the parent folder
+                        folder_path = os.path.join(project_path, folder_name)
+                        os.makedirs(folder_path, exist_ok=True)
+                        
+                        # Process children recursively
+                        if children:
+                            # Pass the original project name to keep consistent naming
+                            self._create_folder_structure(folder_path, children, original_project_name)
         else:
             print(f"WARNING: Unhandled structure format: {type(directories)}")
     
@@ -439,6 +463,7 @@ class ProjectBuilder:
         # Define placeholder formats we need to replace
         double_brace_placeholder = "{{PROJECT_NAME}}"
         single_brace_placeholder = "{PROJECT_NAME}"
+        dollar_placeholder = "${PROJECT_NAME}"
         
         for root, dirs, files in os.walk(template_dir):
             # Skip template.json file
@@ -461,6 +486,10 @@ class ProjectBuilder:
                         new_part = part.replace(single_brace_placeholder, project_name)
                         print(f"Renamed directory: {part} -> {new_part}")
                         part = new_part
+                    elif dollar_placeholder in part:
+                        new_part = part.replace(dollar_placeholder, project_name)
+                        print(f"Renamed directory: {part} -> {new_part}")
+                        part = new_part
                     rel_path_parts.append(part)
                 rel_path = os.path.join(*rel_path_parts)
                 target_dir = os.path.join(project_path, rel_path)
@@ -479,6 +508,9 @@ class ProjectBuilder:
                     print(f"Renamed file: {file} -> {target_file_name}")
                 elif single_brace_placeholder in file:
                     target_file_name = file.replace(single_brace_placeholder, project_name)
+                    print(f"Renamed file: {file} -> {target_file_name}")
+                elif dollar_placeholder in file:
+                    target_file_name = file.replace(dollar_placeholder, project_name)
                     print(f"Renamed file: {file} -> {target_file_name}")
                 
                 # Remove the emoji indicator if present
@@ -521,83 +553,70 @@ class ProjectBuilder:
         return ext in text_extensions
     
     def _replace_template_placeholders(self, file_path, project_name):
-        """Replace placeholder content in a file with project-specific values"""
-        file_path = os.path.normpath(file_path)  # Normalize path for cross-platform compatibility
-        
+        """Replace template placeholders in file content with improved formatting support"""
         try:
-            # Skip very large files to avoid performance issues
-            if os.path.getsize(file_path) > 10 * 1024 * 1024:  # 10 MB
-                print(f"Skipping placeholder replacement in large file: {file_path}")
-                return
+            # Check if file exists and is a file (not a directory)
+            if not os.path.exists(file_path) or not os.path.isfile(file_path):
+                print(f"WARNING: Can't replace placeholders - file doesn't exist: {file_path}")
+                return False
             
-            # Use a safe reading approach with explicit encoding
+            # Only process files we recognize as text files
+            if not self._is_text_file(file_path):
+                print(f"DEBUG: Skipping binary file for placeholder replacement: {file_path}")
+                return False
+            
+            # Read the file content
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                     content = f.read()
-            except UnicodeDecodeError:
-                # Try with a different encoding
+            except Exception as e:
+                print(f"WARNING: Error reading file for placeholder replacement: {e}")
+                return False
+            
+            # Define all possible placeholder formats
+            double_brace_placeholder = "{{PROJECT_NAME}}"  # Double braces
+            single_brace_placeholder = "{PROJECT_NAME}"    # Single braces
+            dollar_placeholder = "${PROJECT_NAME}"         # Dollar sign with braces
+            
+            # Track if any replacements were made
+            replacements_made = False
+            
+            # Replace placeholders in the content
+            if double_brace_placeholder in content:
+                content = content.replace(double_brace_placeholder, project_name)
+                print(f"Replaced double brace placeholder in {os.path.basename(file_path)}")
+                replacements_made = True
+                
+            if single_brace_placeholder in content:
+                content = content.replace(single_brace_placeholder, project_name)
+                print(f"Replaced single brace placeholder in {os.path.basename(file_path)}")
+                replacements_made = True
+
+            if dollar_placeholder in content:
+                content = content.replace(dollar_placeholder, project_name)
+                print(f"Replaced dollar placeholder in {os.path.basename(file_path)}")
+                replacements_made = True
+            
+            # Write the modified content back to the file if any changes were made
+            if replacements_made:
                 try:
-                    with open(file_path, 'r', encoding='latin-1') as f:
-                        content = f.read()
-                except:
-                    print(f"Skipping placeholder replacement in non-text file: {file_path}")
-                    return
-            
-            # Check if there are any placeholders to replace
-            original_content = content
-            
-            # Create a dict of replacements
-            current_date = datetime.datetime.now().strftime("%Y-%m-%d")
-            current_year = datetime.datetime.now().strftime("%Y")
-            
-            replacements = {
-                "{{PROJECT_NAME}}": project_name,
-                "{PROJECT_NAME}": project_name,
-                "{{PROJECT NAME}}": project_name,
-                "{PROJECT NAME}": project_name,
-                "{{PROJECTNAME}}": project_name,
-                "{PROJECTNAME}": project_name,
-                "{{project_name}}": project_name.lower(),
-                "{project_name}": project_name.lower(),
-                "{{Project_Name}}": project_name.title(),
-                "{Project_Name}": project_name.title(),
-                "{{DATE}}": current_date,
-                "{DATE}": current_date,
-                "{{YEAR}}": current_year,
-                "{YEAR}": current_year
-            }
-            
-            # Apply all replacements
-            placeholders_found = False
-            for placeholder, value in replacements.items():
-                if placeholder in content:
-                    placeholders_found = True
-                    content = content.replace(placeholder, value)
-            
-            if placeholders_found:
-                print(f"Replaced placeholders in file: {file_path}")
-                # Use a safe writing approach
-                temp_file = file_path + ".tmp"
-                try:
-                    with open(temp_file, 'w', encoding='utf-8') as f:
-                        f.write(content)
-                    # On Windows, we need to remove the destination file first
-                    if platform.system() == "Windows" and os.path.exists(file_path):
-                        os.remove(file_path)
-                    os.rename(temp_file, file_path)
-                except Exception as e:
-                    print(f"Error writing to temp file, trying direct write: {e}")
-                    # Fall back to direct write
                     with open(file_path, 'w', encoding='utf-8') as f:
                         f.write(content)
-                    if os.path.exists(temp_file):
-                        os.remove(temp_file)
+                    print(f"Updated template placeholders in {os.path.basename(file_path)}")
+                    return True
+                except Exception as e:
+                    print(f"WARNING: Error writing file after placeholder replacement: {e}")
+                    return False
             
-        except UnicodeDecodeError:
-            # Not a text file or uses a different encoding
-            print(f"Skipping placeholder replacement in non-text file: {file_path}")
+            # No changes were made to the content
+            print(f"No placeholders found in {os.path.basename(file_path)}")
+            return False
+            
         except Exception as e:
-            print(f"Error replacing placeholders in {file_path}: {e}")
+            print(f"ERROR replacing template placeholders: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     def _copy_template_file(self, template_file, project_path, project_name, project_type):
         """Copy the template file to the appropriate location in the project"""

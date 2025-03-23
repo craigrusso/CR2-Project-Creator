@@ -208,15 +208,18 @@ class FileOperations:
             bool: True if items were deleted, False otherwise
         """
         if not self.tree:
+            print("DEBUG: delete_selected - tree widget not available")
             return False
             
         # Get selected items
         selected_items = self.tree.selectedItems()
         if not selected_items:
+            print("DEBUG: delete_selected - no items selected")
             return False
             
         # Confirm deletion
         count = len(selected_items)
+        print(f"DEBUG: delete_selected - {count} items selected for deletion")
         confirm_msg = f"Delete {count} selected item{'s' if count > 1 else ''}?"
         confirm_title = "Confirm Delete"
         
@@ -239,22 +242,46 @@ class FileOperations:
         )
         
         if reply != QMessageBox.Yes:
+            print("DEBUG: delete_selected - user cancelled deletion")
             return False
             
         # Delete items
+        deleted_count = 0
+        root = self.tree.invisibleRootItem()
+        
         for item in selected_items:
-            # Skip the root item or any item without a parent
-            if not item.parent():
-                continue
-                
-            # Get the parent and index
+            # Get the parent of the item
             parent = item.parent()
-            index = parent.indexOfChild(item)
             
-            # Remove from parent
-            parent.takeChild(index)
-            
-        return True
+            if parent:
+                # Handle child items (non-top-level)
+                print(f"DEBUG: delete_selected - removing child item '{item.text(0)}' from parent '{parent.text(0)}'")
+                index = parent.indexOfChild(item)
+                if index >= 0:
+                    parent.takeChild(index)
+                    deleted_count += 1
+                    print(f"DEBUG: delete_selected - child item removed successfully")
+                else:
+                    print(f"ERROR: delete_selected - failed to find index of child item")
+            else:
+                # Handle top-level items
+                print(f"DEBUG: delete_selected - removing top-level item '{item.text(0)}'")
+                index = root.indexOfChild(item)
+                if index >= 0:
+                    root.takeChild(index)
+                    deleted_count += 1
+                    print(f"DEBUG: delete_selected - top-level item removed successfully")
+                else:
+                    print(f"ERROR: delete_selected - failed to find index of top-level item")
+        
+        # Refresh the tree view
+        if deleted_count > 0:
+            self.tree.update()
+            print(f"DEBUG: delete_selected - {deleted_count} items deleted successfully")
+            return True
+        else:
+            print(f"DEBUG: delete_selected - no items were deleted")
+            return False
     
     def rename_item(self, item):
         """
@@ -503,34 +530,42 @@ class FileOperations:
         Returns:
             QMenu: The context menu
         """
+        print("DEBUG: create_context_menu - creating context menu")
         menu = QMenu(self.tree)
         
-        # Style the menu
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #2D2D30;
-                color: #FFFFFF;
-                border: 1px solid #3F3F46;
-                padding: 5px;
-            }
-            QMenu::item {
-                padding: 5px 20px 5px 20px;
-                border-radius: 3px;
-            }
-            QMenu::item:selected {
-                background-color: #264F78;
-            }
-            QMenu::separator {
-                height: 1px;
-                background-color: #3F3F46;
-                margin: 5px;
-            }
-        """)
+        # Import styles for context menu, including destructive action styling
+        try:
+            from app.ui.color_scheme_pyqt import CONTEXT_MENU_STYLE, DELETE_TEXT_STYLE
+            menu.setStyleSheet(CONTEXT_MENU_STYLE)
+        except ImportError:
+            # Fallback styling
+            menu.setStyleSheet("""
+                QMenu {
+                    background-color: #2D2D30;
+                    color: #FFFFFF;
+                    border: 1px solid #3F3F46;
+                    padding: 5px;
+                }
+                QMenu::item {
+                    padding: 5px 20px 5px 20px;
+                    border-radius: 3px;
+                }
+                QMenu::item:selected {
+                    background-color: #264F78;
+                }
+                QMenu::separator {
+                    height: 1px;
+                    background-color: #3F3F46;
+                    margin: 5px;
+                }
+            """)
         
         # Get item data
         item_data = item.data(0, Qt.UserRole) if item else None
         is_file = isinstance(item_data, dict) and item_data.get('type') == 'file'
         is_folder = isinstance(item_data, dict) and item_data.get('type') == 'folder'
+        
+        print(f"DEBUG: create_context_menu - item type: {'file' if is_file else 'folder' if is_folder else 'unknown/none'}")
         
         # Add file action
         add_file_action = QAction("Add File", menu)
@@ -562,14 +597,42 @@ class FileOperations:
             rename_action.triggered.connect(lambda: self.rename_item(item))
             menu.addAction(rename_action)
             
-            # Delete action
+            # Delete action - with destructive styling
             delete_action = QAction("Delete", menu)
-            delete_action.triggered.connect(self.delete_selected)
+            delete_action.triggered.connect(lambda: self.delete_selected())
+            
+            # Apply destructive styling to delete action
+            try:
+                from app.ui.color_scheme_pyqt import DELETE_TEXT_STYLE
+                delete_action.setProperty("destructive", "true")  # Set property for styling
+                
+                # Apply direct styling using stylesheet for compatibility
+                delete_action.setStyleSheet("color: #FF5555; font-weight: bold;")
+            except:
+                # Fallback - set color using setData
+                print("DEBUG: Using fallback styling for delete action")
+                delete_action.setData(QColor("#FF5555"))
+                
             menu.addAction(delete_action)
             
             # File-specific actions
             if is_file:
                 menu.addSeparator()
+                
+                # Add "Use Project Name" option 
+                use_project_name_action = QAction("Use Project Name", menu)
+                use_project_name_action.setEnabled(True)
+                
+                # Connect to method in editor if available
+                if self.editor and hasattr(self.editor, '_use_project_name_for_file'):
+                    use_project_name_action.triggered.connect(lambda: self.editor._use_project_name_for_file(item))
+                    print("DEBUG: create_context_menu - connected Use Project Name to editor method")
+                else:
+                    # Fallback to local method
+                    use_project_name_action.triggered.connect(lambda: self._use_project_name_for_file(item))
+                    print("DEBUG: create_context_menu - connected Use Project Name to local method")
+                
+                menu.addAction(use_project_name_action)
                 
                 # Change file type action
                 change_type_action = QAction("Change File Type...", menu)
@@ -691,8 +754,8 @@ class FileOperations:
         # Add submenu for import
         import_menu = QMenu("Import Options", menu)
         import_menu.setStyleSheet(CONTEXT_MENU_STYLE)
-        import_file_action = import_menu.addAction(QIcon.fromTheme("document-import"), "Import File")
-        import_dir_action = import_menu.addAction(QIcon.fromTheme("folder-import"), "Import Directory")
+        import_menu.addAction(QIcon.fromTheme("document-import"), "Import File")
+        import_menu.addAction(QIcon.fromTheme("folder-import"), "Import Directory")
         menu.insertMenu(import_action, import_menu)
         
         # Remove the original import action
@@ -820,55 +883,71 @@ class FileOperations:
             item: The file item to update
         """
         if not item:
+            print("DEBUG: FileOperations._use_project_name_for_file - no item provided")
             return
             
         # Get current file data and name
         item_data = item.data(0, Qt.UserRole)
         if not isinstance(item_data, dict) or item_data.get('type') != 'file':
+            print(f"DEBUG: FileOperations._use_project_name_for_file - item is not a file: {item.text(0)}")
             return
             
         current_name = item.text(0)
         
-        # Find the project name field from the editor
-        project_name = "${PROJECT_NAME}"
+        # Use ${PROJECT_NAME} as the placeholder that will be replaced during project creation
+        placeholder = "${PROJECT_NAME}"
         
-        # Try to get the actual project name from the editor
+        # For display in the editor, use the template name as an example
+        display_name = "Project_Name"
+        
+        # Try to get the actual template name from the editor for display
         if self.editor:
-            # Check if editor has a template_name_field in ui_builder
-            if hasattr(self.editor, 'ui_builder') and hasattr(self.editor.ui_builder, 'template_name_field'):
-                temp_name = self.editor.ui_builder.template_name_field.text().strip()
-                if temp_name:
-                    project_name = f"{temp_name}"
-            
-            # If we couldn't get the project name from the UI, 
-            # try getting it from the editor's template_name attribute
-            elif hasattr(self.editor, 'template_name'):
+            # Check if editor has a template_name attribute
+            if hasattr(self.editor, 'template_name'):
                 temp_name = self.editor.template_name.strip()
                 if temp_name:
-                    project_name = f"{temp_name}"
+                    display_name = temp_name
+                    print(f"DEBUG: FileOperations._use_project_name_for_file - using template name: {display_name}")
                     
+            # Check if editor has a template_name_field in ui_builder as fallback
+            elif hasattr(self.editor, 'ui_builder') and hasattr(self.editor.ui_builder, 'template_name_field'):
+                temp_name = self.editor.ui_builder.template_name_field.text().strip()
+                if temp_name:
+                    display_name = temp_name
+                    print(f"DEBUG: FileOperations._use_project_name_for_file - using template name from field: {display_name}")
+        
         # Get the file extension
-        name_parts = current_name.split('.')
         extension = ""
+        name_parts = current_name.split('.')
         if len(name_parts) > 1:
             extension = f".{name_parts[-1]}"
             
-        # Create new name with project name
-        new_name = f"{project_name}{extension}"
+        # Create new name with template name for display
+        new_name = f"{display_name}{extension}"
+        
+        print(f"DEBUG: FileOperations._use_project_name_for_file - marking file to use project name: '{current_name}' → '{new_name}' (will use '{placeholder}' as placeholder)")
         
         # Set the new name
         item.setText(0, new_name)
         
-        # Update the data
+        # Update the data - store both the display name and the placeholder
         item_data['name'] = new_name
         item_data['uses_project_name'] = True
+        item_data['placeholder'] = placeholder  # Store the placeholder that will be replaced
+        item_data['original_extension'] = extension
         item.setData(0, Qt.UserRole, item_data)
         
         # Apply styling to indicate this is a dynamic file
         font = item.font(0)
         font.setItalic(True)
         item.setFont(0, font)
-        item.setForeground(0, QBrush(QColor('#4F90CC')))  # Use a blue color to indicate dynamic name
+        
+        # Also use a different color to make it clear
+        item.setForeground(0, QBrush(QColor("#4A9BFF")))
+        
+        print(f"DEBUG: FileOperations._use_project_name_for_file - file marked to use project name: {new_name}")
+        
+        return True
 
     def _cut_item(self, item):
         """Cut item to clipboard for moving"""

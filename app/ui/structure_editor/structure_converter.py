@@ -701,8 +701,22 @@ class StructureConverter:
                     children.append(child_data)
             return {name: children}
         else:
-            # For files, just return the name string
-            return name
+            # For files, check if it's marked to use project name
+            if isinstance(item_user_data, dict) and item_user_data.get('uses_project_name', False):
+                # This file should use the project name
+                # Get the placeholder and extension from the item data
+                placeholder = item_user_data.get('placeholder', "${PROJECT_NAME}")
+                extension = item_user_data.get('original_extension', "")
+                
+                # Create name with placeholder
+                placeholder_name = f"{placeholder}{extension}"
+                print(f"DEBUG: Using placeholder name for file: {placeholder_name} (original: {name})")
+                
+                # Return the placeholder name instead of the display name
+                return placeholder_name
+            else:
+                # For normal files, just return the name string
+                return name
 
     def _normalize_structure_format(self, structure):
         """
