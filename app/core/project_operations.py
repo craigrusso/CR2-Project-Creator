@@ -343,9 +343,8 @@ def batch_creation_complete(app, results, selected_template=None):
     
     # If we have a gallery template, add it to recent templates
     if selected_template and isinstance(selected_template, dict) and 'name' in selected_template:
-        # Add the gallery template to recent templates
-        from app.templates.template_utils import add_to_recent_templates as add_to_recent_templates_util
-        add_to_recent_templates_util(app, selected_template)
+        # Add the gallery template to recent templates - use the local function
+        add_to_recent_templates(app, selected_template)
     elif template_file:
         # Add the direct template file to recent templates
         add_to_recent_templates(app, template_file)
