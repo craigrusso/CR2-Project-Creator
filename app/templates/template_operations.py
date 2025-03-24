@@ -562,7 +562,7 @@ class TemplateOperations:
                     'file_name': item_name,
                     'original_path': item.get('original_path', item.get('path', '')),
                     'cached_path': item.get('cached_path', ''),
-                    'rename_flag': item.get('rename_flag', '${PROJECT_NAME}' in item_name),
+                    'rename_flag': item.get('rename_flag', item.get('uses_project_name', False) or '${PROJECT_NAME}' in item_name),
                     'folder': current_folder,
                     'file_type': item.get('file_type', self._guess_file_type(item_name)),
                     'size': item.get('size', 0),
@@ -629,7 +629,7 @@ class TemplateOperations:
             elif item_type == 'file':
                 # Remove unnecessary file details but keep essential ones
                 # Keep name, type, and optionally rename_flag
-                keys_to_keep = ['name', 'type', 'rename_flag']
+                keys_to_keep = ['name', 'type', 'rename_flag', 'uses_project_name', 'original_name', 'original_extension']
                 keys_to_remove = [k for k in list(item.keys()) if k not in keys_to_keep]
                 
                 for key in keys_to_remove:
@@ -1177,7 +1177,7 @@ class TemplateOperations:
         template_data = None
         
         for i, template in enumerate(self.templates):
-            if template.get('name') == template_name:
+            if isinstance(template, dict) and template.get('name') == template_name:
                 template_index = i
                 template_data = template
                 break
@@ -1188,7 +1188,7 @@ class TemplateOperations:
         structured_format = False
         
         if template_data:
-            template_path = template_data.get('path')
+            template_path = template_data.get('path') or template_data.get('file_path')
             structure_name = template_data.get('structure_name')
             structured_format = 'structure' in template_data or structure_name
             
@@ -1197,8 +1197,27 @@ class TemplateOperations:
             print(f"[DEBUG] TemplateOps: Template path: {template_path}")
             print(f"[DEBUG] TemplateOps: Structure name: {structure_name}")
             print(f"[DEBUG] TemplateOps: Structured format: {structured_format}")
+        
+        # Try to determine template path if not found in template data
+        if not template_path and template_name:
+            # Check the most likely file paths based on template name
+            possible_paths = [
+                # Direct template name
+                os.path.join(self.paths.get('templates_dir', ''), f"{normalized_name}.json"),
+                # Template_ prefix
+                os.path.join(self.paths.get('templates_dir', ''), f"Template_{normalized_name}.json"),
+                # Original name with spaces
+                os.path.join(self.paths.get('templates_dir', ''), f"{template_name}.json")
+            ]
+            
+            for path in possible_paths:
+                if os.path.exists(path):
+                    template_path = path
+                    print(f"[DEBUG] TemplateOps: Found template file at {template_path}")
+                    break
             
         # Delete from filesystem if template file exists
+        template_file_deleted = False
         if template_path and os.path.exists(template_path):
             try:
                 # Don't try to delete the entire directory
@@ -1207,16 +1226,41 @@ class TemplateOperations:
                     json_path = os.path.join(template_path, f"{template_name}.json")
                     if os.path.exists(json_path):
                         os.remove(json_path)
+                        template_file_deleted = True
                         print(f"[DEBUG] TemplateOps: Deleted template file '{json_path}'")
                 else:
                     # Delete the file directly
                     os.remove(template_path)
+                    template_file_deleted = True
                     print(f"[DEBUG] TemplateOps: Deleted template file '{template_path}'")
             
             except Exception as e:
                 print(f"[ERROR] TemplateOps: Failed to delete template file '{template_path}': {e}")
-            
+        elif not template_path:
+            # Try to delete based on template name
+            try:
+                # Check templates directory for matching files
+                templates_dir = self.paths.get('templates_dir')
+                if templates_dir and os.path.exists(templates_dir):
+                    # Look for template_name.json and normalized_name.json
+                    template_files = [
+                        f"{template_name}.json",
+                        f"{normalized_name}.json",
+                        f"Template_{normalized_name}.json"
+                    ]
+                    
+                    for filename in template_files:
+                        file_path = os.path.join(templates_dir, filename)
+                        if os.path.exists(file_path):
+                            os.remove(file_path)
+                            template_file_deleted = True
+                            print(f"[DEBUG] TemplateOps: Deleted template file '{file_path}'")
+                            break
+            except Exception as e:
+                print(f"[ERROR] TemplateOps: Failed to delete template file by name '{template_name}': {e}")
+        
         # Check if structures_dir exists in paths and is valid before trying to delete structure files
+        structure_file_deleted = False
         if 'structures_dir' in self.paths and self.paths['structures_dir'] and os.path.exists(self.paths['structures_dir']):
             # Delete associated structure files
             # Try different possible structure names
@@ -1236,24 +1280,23 @@ class TemplateOperations:
                 structure_paths.append(os.path.join(self.paths['structures_dir'], f"{structure_name}.json"))
             
             # Try deleting each possible structure file
-            structure_deleted = False
             for structure_path in structure_paths:
                 if os.path.exists(structure_path):
                     try:
                         os.remove(structure_path)
                         print(f"DEBUG: Successfully deleted structure file for '{template_name}': {structure_path}")
-                        structure_deleted = True
+                        structure_file_deleted = True
                     except Exception as e:
                         print(f"ERROR: Failed to delete structure file: {e}")
             
             # If no structure was deleted, log it
-            if not structure_deleted:
+            if not structure_file_deleted:
                 print(f"DEBUG: No structure file found for '{template_name}'")
         else:
             print(f"DEBUG: Skipping structure file deletion - structures_dir not found or invalid")
         
         # Ensure we have a templates_cache_dir in paths
-        if 'templates_cache_dir' not in self.paths:
+        if 'templates_cache_dir' not in self.paths or not self.paths['templates_cache_dir']:
             try:
                 from app.utils.cache_preferences import CachePreferences
                 cache_prefs = CachePreferences()
@@ -1269,11 +1312,16 @@ class TemplateOperations:
         
         # Only add paths if we have a valid templates_cache_dir
         if 'templates_cache_dir' in self.paths and self.paths['templates_cache_dir']:
+            # Add commonly used cache path variations
             cache_paths = [
                 # Original name
                 os.path.join(self.paths['templates_cache_dir'], template_name),
                 # Normalized name
                 os.path.join(self.paths['templates_cache_dir'], normalized_name),
+                # Template cache subdirectory
+                os.path.join(self.paths['templates_cache_dir'], "template_cache", template_name),
+                # Template cache subdirectory with normalized name
+                os.path.join(self.paths['templates_cache_dir'], "template_cache", normalized_name),
             ]
         
         # Check the cached_path from template if available
@@ -1287,6 +1335,22 @@ class TemplateOperations:
                 parent_dir = os.path.dirname(cached_path)
                 if os.path.isdir(parent_dir):
                     cache_paths.append(parent_dir)
+        
+        # Also check for cached files in template files list
+        if template_data and 'files' in template_data and isinstance(template_data['files'], list):
+            for file_data in template_data['files']:
+                if isinstance(file_data, dict) and 'cached_path' in file_data:
+                    cached_path = file_data['cached_path']
+                    if cached_path:
+                        # Get the directory containing the cached file
+                        cache_dir = os.path.dirname(cached_path)
+                        if os.path.isdir(cache_dir) and cache_dir not in cache_paths:
+                            cache_paths.append(cache_dir)
+                        
+                        # Try the parent directory too
+                        parent_dir = os.path.dirname(cache_dir)
+                        if os.path.isdir(parent_dir) and parent_dir not in cache_paths:
+                            cache_paths.append(parent_dir)
         
         # Try to delete each cache directory
         cache_deleted = False
@@ -1303,21 +1367,33 @@ class TemplateOperations:
         if not cache_deleted:
             print(f"[INFO] TemplateOps: No cache directory found for '{template_name}'")
         
-        # Also check template cache patterns under different locations
+        # Use all available CachePreferences locations to check for template caches
         try:
             from app.utils.cache_preferences import CachePreferences
             cache_prefs = CachePreferences()
-            cache_base = cache_prefs.get_cache_location()
+            cache_locations = [
+                cache_prefs.get_cache_location(), 
+                os.path.join(os.path.expanduser("~"), ".echelon", "template_cache")
+            ]
             
-            # Check for template cache
-            template_cache_dir = os.path.join(cache_base, 'template_cache', template_name)
-            if os.path.exists(template_cache_dir) and os.path.isdir(template_cache_dir):
-                try:
-                    shutil.rmtree(template_cache_dir)
-                    print(f"[DEBUG] TemplateOps: Deleted template cache directory: {template_cache_dir}")
-                    cache_deleted = True
-                except Exception as e:
-                    print(f"[WARNING] TemplateOps: Failed to delete template cache: {e}")
+            for cache_base in cache_locations:
+                if cache_base and os.path.exists(cache_base):
+                    # Check for template cache in various forms
+                    template_cache_paths = [
+                        os.path.join(cache_base, template_name),
+                        os.path.join(cache_base, normalized_name),
+                        os.path.join(cache_base, 'template_cache', template_name),
+                        os.path.join(cache_base, 'template_cache', normalized_name)
+                    ]
+                    
+                    for template_cache_dir in template_cache_paths:
+                        if os.path.exists(template_cache_dir) and os.path.isdir(template_cache_dir):
+                            try:
+                                shutil.rmtree(template_cache_dir)
+                                print(f"[DEBUG] TemplateOps: Deleted template cache directory: {template_cache_dir}")
+                                cache_deleted = True
+                            except Exception as e:
+                                print(f"[WARNING] TemplateOps: Failed to delete template cache: {e}")
         except Exception as e:
             print(f"[WARNING] TemplateOps: Error checking additional cache locations: {e}")
         
@@ -1326,15 +1402,97 @@ class TemplateOperations:
             del self.templates[template_index]
             print(f"[DEBUG] TemplateOps: Removed template '{template_name}' from templates list")
         
-        # Force refresh of the template gallery
-        if hasattr(self, 'refresh_template_gallery'):
-            self.app.refresh_template_gallery()
-            print(f"[DEBUG] TemplateOps: Forced gallery refresh after template deletion")
+        # Also check and remove from self.templates if it's a dictionary (TemplateManagerCore)
+        if hasattr(self, 'templates') and isinstance(self.templates, dict):
+            if template_name in self.templates:
+                del self.templates[template_name]
+                print(f"[DEBUG] TemplateOps: Removed template '{template_name}' from templates dictionary")
+        
+        # Clean shared template caches in various managers
+        self._clean_template_caches(template_name, normalized_name)
+        
+        # Force reload templates to ensure it doesn't reappear
+        if hasattr(self, 'reload_templates'):
+            self.reload_templates()
+            print(f"[DEBUG] TemplateOps: Forced reload_templates() after deletion")
+        elif hasattr(self, 'load_templates'):
+            self.load_templates()
+            print(f"[DEBUG] TemplateOps: Forced load_templates() after deletion")
+            
+        # Force refresh UI components that display templates
+        try:
+            # Try to refresh the gallery if available
+            if hasattr(self, 'app') and self.app:
+                print(f"[DEBUG] TemplateOps: Have app reference, attempting UI updates")
+                
+                # Refresh template gallery
+                if hasattr(self.app, 'refresh_template_gallery'):
+                    self.app.refresh_template_gallery()
+                    print(f"[DEBUG] TemplateOps: Called app.refresh_template_gallery()")
+                elif hasattr(self.app, 'template_gallery') and hasattr(self.app.template_gallery, 'refresh'):
+                    self.app.template_gallery.refresh()
+                    print(f"[DEBUG] TemplateOps: Called app.template_gallery.refresh()")
+                    
+                # Update template UI components
+                if hasattr(self.app, 'update_template_ui'):
+                    self.app.update_template_ui()
+                    print(f"[DEBUG] TemplateOps: Called app.update_template_ui()")
+                    
+                # Update recent templates if needed
+                if hasattr(self.app, 'update_recent_templates_menu'):
+                    self.app.update_recent_templates_menu()
+                    print(f"[DEBUG] TemplateOps: Called app.update_recent_templates_menu()")
+        except Exception as e:
+            print(f"[WARNING] TemplateOps: Error refreshing UI after template deletion: {e}")
         
         # Mark as successful even if we couldn't find the template in memory
         # Since we still attempted to delete from filesystem
-        print(f"[INFO] TemplateOps: Successfully deleted template '{template_name}'")
+        deleted = template_file_deleted or structure_file_deleted or cache_deleted or template_index is not None
+        if deleted:
+            print(f"[INFO] TemplateOps: Successfully deleted template '{template_name}'")
+        else:
+            print(f"[WARNING] TemplateOps: Template '{template_name}' may not have been fully deleted")
+        
         return True
+    
+    def _clean_template_caches(self, template_name, normalized_name=None):
+        """
+        Clean up any template caches that might exist in various managers
+        
+        Args:
+            template_name: The name of the template to remove from caches
+            normalized_name: Optional normalized version of the template name
+        """
+        if normalized_name is None:
+            normalized_name = template_name.replace(" ", "_").replace("/", "-").replace("\\", "-")
+            
+        # Try to clean up template-related caches in memory
+        try:
+            # Clear from remembered templates if found
+            if hasattr(self, 'recent_templates') and isinstance(self.recent_templates, list):
+                self.recent_templates = [t for t in self.recent_templates 
+                                      if (isinstance(t, dict) and t.get('name') != template_name)
+                                      or (isinstance(t, str) and t != template_name)]
+                print(f"[DEBUG] TemplateOps: Cleaned up recent_templates list")
+            
+            # Clear folder references
+            if hasattr(self, 'folders') and isinstance(self.folders, dict):
+                for folder, templates in list(self.folders.items()):
+                    if isinstance(templates, list) and template_name in templates:
+                        self.folders[folder] = [t for t in templates if t != template_name]
+                        print(f"[DEBUG] TemplateOps: Removed template from folder '{folder}'")
+                # Save the updated folders
+                if hasattr(self, 'save_folders'):
+                    self.save_folders()
+                    print(f"[DEBUG] TemplateOps: Saved updated folders")
+            
+            # Update any selectors or UI components that might be caching the template
+            if hasattr(self, 'update_selectors'):
+                self.update_selectors()
+                print(f"[DEBUG] TemplateOps: Updated template selectors")
+                
+        except Exception as e:
+            print(f"[WARNING] TemplateOps: Error cleaning template caches: {e}")
     
     def delete_template_directory(self, template):
         """Delete a directory-based template"""

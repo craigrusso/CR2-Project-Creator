@@ -96,11 +96,19 @@ class TemplateManagerCore(TemplateOperations):
         
         try:
             # Get all JSON files in the templates directory
-            template_files = [f for f in os.listdir(self.paths["templates_dir"]) 
+            templates_dir = self.paths.get("templates_dir", "")
+            if not templates_dir or not os.path.exists(templates_dir):
+                print(f"WARNING: Templates directory does not exist: {templates_dir}")
+                return
+                
+            template_files = [f for f in os.listdir(templates_dir) 
                               if f.endswith('.json') and not f.startswith('.')]
             
             # Some system files we should never load as templates
-            excluded_files = ['preferences.json', 'folders.json', 'colors.json', 'settings.json']
+            excluded_files = ['preferences.json', 'folders.json', 'colors.json', 'settings.json', 'settings.json.bak']
+            
+            # Keep track of loaded template names to avoid duplicates
+            loaded_templates = set()
             
             for file in template_files:
                 if file in excluded_files:
@@ -109,9 +117,23 @@ class TemplateManagerCore(TemplateOperations):
                     
                 try:
                     # Load the template JSON file
-                    file_path = os.path.join(self.paths["templates_dir"], file)
-                    with open(file_path, 'r') as f:
-                        template_data = json.load(f)
+                    file_path = os.path.join(templates_dir, file)
+                    
+                    # Check if the file is valid JSON
+                    try:
+                        with open(file_path, 'r') as f:
+                            template_data = json.load(f)
+                    except json.JSONDecodeError as e:
+                        print(f"ERROR: Invalid JSON in template file {file}: {e}")
+                        continue
+                    except Exception as e:
+                        print(f"ERROR: Failed to read template file {file}: {e}")
+                        continue
+                    
+                    # Make sure it's a dictionary
+                    if not isinstance(template_data, dict):
+                        print(f"WARNING: Template file {file} contains invalid data (not a dictionary)")
+                        continue
                         
                     # Extract template name, handling missing name and Template_ prefix
                     template_name = template_data.get('name', '')
@@ -131,6 +153,11 @@ class TemplateManagerCore(TemplateOperations):
                     # Skip templates with empty or default names
                     if not template_name or template_name == "Unnamed" or template_name == "Unnamed Template":
                         print(f"Skipping template with invalid name: {file}")
+                        continue
+                    
+                    # Skip duplicate templates (same name)
+                    if template_name in loaded_templates:
+                        print(f"WARNING: Skipping duplicate template '{template_name}' from file {file}")
                         continue
                     
                     # Check for Template_ prefix in name and handle it correctly
@@ -156,9 +183,13 @@ class TemplateManagerCore(TemplateOperations):
                     if 'files' not in template_data:
                         template_data['files'] = []
                         print(f"[DEBUG] TemplateManagerCore: Added empty files array to template: {template_name}")
+                    
+                    # Store the file path in the template data for future reference
+                    template_data['file_path'] = file_path
                         
                     # Add the template to our list
                     self.templates.append(template_data)
+                    loaded_templates.add(template_name)
                     print(f"[DEBUG] TemplateManagerCore: Loaded template: {template_name}")
                 except Exception as e:
                     print(f"Error loading template {file}: {e}")

@@ -2,7 +2,7 @@
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
 from PyQt5.QtWidgets import QInputDialog, QMessageBox, QFileDialog, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QTextEdit, QApplication
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 import os
 from PyQt5.QtGui import QIcon, QFont, QPixmap
 import time
@@ -613,38 +613,65 @@ class GalleryEvents:
         if confirm == QMessageBox.Yes:
             # Delete the template
             print(f"[DEBUG] Gallery: Calling delete_template for '{real_template_name}'")
-            success = template_manager.delete_template(real_template_name)
             
-            if success:
-                print(f"[DEBUG] Gallery: Successfully deleted template '{real_template_name}'")
-                # If we used a different name than provided, also try to delete that
-                if real_template_name != template_name:
-                    print(f"[DEBUG] Gallery: Also attempting to delete '{template_name}'")
-                    template_manager.delete_template(template_name)
+            try:
+                # Check that we're calling the right method with the right parameters
+                if not hasattr(template_manager, 'delete_template'):
+                    print(f"[ERROR] Gallery: template_manager does not have delete_template method")
+                    QMessageBox.warning(gallery, "Error", f"Cannot delete template - template manager missing required method.")
+                    return
                 
-                # Reset selection
-                gallery.selected_template = None
+                # Call the delete method, safely catching any exceptions
+                success = template_manager.delete_template(real_template_name)
                 
-                # Force reload of template data
-                if hasattr(template_manager, 'load_templates'):
-                    template_manager.load_templates()
-                if hasattr(template_manager, 'load_folders'):
-                    template_manager.load_folders()
+                print(f"[DEBUG] Gallery: delete_template returned: {success}")
                 
-                # Refresh the gallery
-                gallery.populate_gallery(force_refresh=True)
-            else:
-                print(f"[DEBUG] Gallery: Failed to delete template '{real_template_name}'")
-                QMessageBox.warning(gallery, "Error", f"Failed to delete template '{real_template_name}'.")
-                
-                # Try deletion with original name as fallback
-                if real_template_name != template_name:
-                    print(f"[DEBUG] Gallery: Trying fallback deletion with '{template_name}'")
-                    success = template_manager.delete_template(template_name)
-                    if success:
-                        print(f"[DEBUG] Gallery: Fallback deletion succeeded")
-                        gallery.selected_template = None
-                        gallery.populate_gallery(force_refresh=True)
+                if success:
+                    print(f"[DEBUG] Gallery: Successfully deleted template '{real_template_name}'")
+                    # If we used a different name than provided, also try to delete that
+                    if real_template_name != template_name:
+                        print(f"[DEBUG] Gallery: Also attempting to delete '{template_name}'")
+                        template_manager.delete_template(template_name)
+                    
+                    # Reset selection
+                    gallery.selected_template = None
+                    
+                    # Clear multi-selection if applicable
+                    if hasattr(gallery, 'multi_selected_templates'):
+                        gallery.multi_selected_templates.clear()
+                    
+                    # Force reload of template data
+                    if hasattr(template_manager, 'load_templates'):
+                        print(f"[DEBUG] Gallery: Reloading templates after deletion")
+                        template_manager.load_templates()
+                    if hasattr(template_manager, 'load_folders'):
+                        print(f"[DEBUG] Gallery: Reloading folders after deletion")
+                        template_manager.load_folders()
+                    
+                    # Show success message if possible
+                    if hasattr(gallery.app, 'show_status_message'):
+                        gallery.app.show_status_message(f"Deleted template '{real_template_name}'", "success")
+                    
+                    # Refresh the gallery with a short delay to ensure the UI updates
+                    print(f"[DEBUG] Gallery: Refreshing gallery display after deletion")
+                    QTimer.singleShot(100, lambda: gallery.populate_gallery(force_refresh=True))
+                else:
+                    print(f"[DEBUG] Gallery: Failed to delete template '{real_template_name}'")
+                    QMessageBox.warning(gallery, "Error", f"Failed to delete template '{real_template_name}'.")
+                    
+                    # Try deletion with original name as fallback
+                    if real_template_name != template_name:
+                        print(f"[DEBUG] Gallery: Trying fallback deletion with '{template_name}'")
+                        success = template_manager.delete_template(template_name)
+                        if success:
+                            print(f"[DEBUG] Gallery: Fallback deletion succeeded")
+                            gallery.selected_template = None
+                            gallery.populate_gallery(force_refresh=True)
+            except Exception as e:
+                print(f"[ERROR] Gallery: Exception during template deletion: {e}")
+                import traceback
+                traceback.print_exc()
+                QMessageBox.warning(gallery, "Error", f"Error deleting template: {str(e)}")
     
     @staticmethod
     def on_manage_templates(gallery):
@@ -829,35 +856,58 @@ class GalleryEvents:
             if confirm == QMessageBox.Yes:
                 # Delete all templates in one operation
                 if hasattr(gallery.app, 'template_manager'):
-                    for name in template_names:
+                    success_count = 0
+                    failed_count = 0
+                    
+                    # Add delays between deletions to avoid UI locks
+                    for i, name in enumerate(template_names):
                         print(f"🔍 LISTENER: Gallery - Deleting template '{name}'")
-                        gallery.app.template_manager.delete_template(name)
-                
-                # Show success message
-                if hasattr(gallery.app, 'show_status_message'):
-                    if len(template_names) == 1:
-                        gallery.app.show_status_message(f"Deleted template '{template_names[0]}'", "success")
-                    else:
-                        gallery.app.show_status_message(f"Deleted {len(template_names)} templates", "success")
-                
-                # Reset selections
-                gallery.selected_template = None
+                        try:
+                            if gallery.app.template_manager.delete_template(name):
+                                success_count += 1
+                                print(f"🔍 LISTENER: Gallery - Successfully deleted template '{name}'")
+                            else:
+                                failed_count += 1
+                                print(f"🔍 LISTENER: Gallery - Failed to delete template '{name}'")
+                        except Exception as e:
+                            failed_count += 1
+                            print(f"🔍 LISTENER: Gallery - Exception during deletion of '{name}': {e}")
+                            import traceback
+                            traceback.print_exc()
                     
-                # Clear multi-selection
-                if hasattr(gallery, 'multi_selected_templates'):
-                    gallery.multi_selected_templates.clear()
-                    
-                # Reload template data
-                if (hasattr(gallery.app, 'template_manager') and 
-                    hasattr(gallery.app.template_manager, 'load_templates')):
-                    gallery.app.template_manager.load_templates()
-                    
-                if (hasattr(gallery.app, 'template_manager') and 
-                    hasattr(gallery.app.template_manager, 'load_folders')):
-                    gallery.app.template_manager.load_folders()
+                    # Show appropriate success/failure message
+                    if hasattr(gallery.app, 'show_status_message'):
+                        if success_count == len(template_names):
+                            if len(template_names) == 1:
+                                gallery.app.show_status_message(f"Deleted template '{template_names[0]}'", "success")
+                            else:
+                                gallery.app.show_status_message(f"Deleted {success_count} templates", "success")
+                        elif success_count > 0:
+                            gallery.app.show_status_message(f"Deleted {success_count} templates, {failed_count} failed", "warning")
+                        else:
+                            gallery.app.show_status_message(f"Failed to delete templates", "error")
                 
-                # Refresh the gallery
-                gallery.populate_gallery(force_refresh=True)
+                    # Reset selections
+                    gallery.selected_template = None
+                        
+                    # Clear multi-selection
+                    if hasattr(gallery, 'multi_selected_templates'):
+                        gallery.multi_selected_templates.clear()
+                        
+                    # Reload template data
+                    if (hasattr(gallery.app, 'template_manager') and 
+                        hasattr(gallery.app.template_manager, 'load_templates')):
+                        print(f"🔍 LISTENER: Gallery - Reloading templates after deletion")
+                        gallery.app.template_manager.load_templates()
+                        
+                    if (hasattr(gallery.app, 'template_manager') and 
+                        hasattr(gallery.app.template_manager, 'load_folders')):
+                        print(f"🔍 LISTENER: Gallery - Reloading folders after deletion")
+                        gallery.app.template_manager.load_folders()
+                    
+                    # Refresh the gallery with a slight delay to ensure UI updates
+                    print(f"🔍 LISTENER: Gallery - Refreshing gallery after deletion")
+                    QTimer.singleShot(100, lambda: gallery.populate_gallery(force_refresh=True))
                 
             return True
         else:
