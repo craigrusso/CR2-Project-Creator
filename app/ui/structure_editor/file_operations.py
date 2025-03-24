@@ -10,25 +10,76 @@ import os
 import mimetypes
 import random
 import string
+import json
 from PyQt5.QtWidgets import (
     QTreeWidgetItem, QInputDialog, QMessageBox, QMenu, QAction,
     QFileDialog, QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-    QLineEdit, QPushButton, QComboBox, QCheckBox, QApplication, QStyle
+    QLineEdit, QPushButton, QComboBox, QCheckBox, QApplication, QStyle,
+    QListWidget, QListWidgetItem
 )
 from PyQt5.QtCore import Qt, QSize, QTimer
-from PyQt5.QtGui import QIcon, QDrag, QBrush, QColor
+from PyQt5.QtGui import QIcon, QDrag, QBrush, QColor, QCursor
 
 from .utils import get_file_icon_for_type
 
-# Common file extensions by category
+# Import binary file handler
+try:
+    from app.utils.binary_file_handler import BinaryFileHandler
+except ImportError:
+    # Simple fallback implementation
+    class BinaryFileHandler:
+        @staticmethod
+        def is_binary_file(file_path):
+            # Very basic check
+            if not os.path.exists(file_path):
+                return False
+            _, ext = os.path.splitext(file_path)
+            ext = ext.lower()
+            binary_extensions = ['.jpg', '.png', '.gif', '.mp3', '.mp4', '.pdf']
+            return ext in binary_extensions
+        
+        @staticmethod
+        def should_embed_binary_file(file_path, max_size_kb=500):
+            if not os.path.exists(file_path):
+                return False
+            return os.path.getsize(file_path) / 1024 <= max_size_kb
+
+# Define file extensions (copied from the original file_types.py)
 FILE_EXTENSIONS = {
-    "Text": [".txt", ".md", ".csv", ".json", ".xml", ".yaml", ".ini"],
-    "Code": [".py", ".js", ".html", ".css", ".cpp", ".h", ".java", ".php", ".go", ".rs"],
-    "Image": [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".bmp", ".tiff"],
-    "Audio": [".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac"],
-    "Video": [".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv"],
-    "Document": [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx"],
-    "Archive": [".zip", ".rar", ".7z", ".tar", ".gz"]
+    'Image': ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg'],
+    'Audio': ['.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a'],
+    'Video': ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv'],
+    'Archive': ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'],
+}
+
+FILE_CATEGORIES = {
+    'Image': 'Images',
+    'Audio': 'Audio',
+    'Video': 'Video',
+    'Archive': 'Archives',
+    'Document': 'Documents',
+    'Code': 'Code',
+    'Data': 'Data'
+}
+
+COMMON_EXTENSIONS = {
+    '.jpg': 'Image', 
+    '.jpeg': 'Image',
+    '.png': 'Image',
+    '.mp3': 'Audio',
+    '.wav': 'Audio',
+    '.mp4': 'Video',
+    '.avi': 'Video',
+    '.zip': 'Archive',
+    '.rar': 'Archive',
+    '.txt': 'Text',
+    '.md': 'Markdown',
+    '.html': 'HTML',
+    '.css': 'CSS',
+    '.js': 'JavaScript',
+    '.py': 'Python',
+    '.json': 'JSON',
+    '.xml': 'XML'
 }
 
 class FileOperations:
@@ -57,115 +108,174 @@ class FileOperations:
     
     def add_file(self, parent_item=None, file_name=None, file_type=None):
         """
-        Add a file to the structure
+        Add a file or files to the structure tree
         
         Args:
-            parent_item: Parent item to add the file to (optional)
-            file_name: Name of the file (optional, will prompt if None)
-            file_type: Type of the file (optional)
-            
-        Returns:
-            QTreeWidgetItem: The new file item
-        """
-        if not self.tree:
-            print("ERROR: Tree widget not available")
-            return None
-            
-        # If no parent specified, use selected item or root
-        if not parent_item:
-            selected_items = self.tree.selectedItems()
-            if selected_items:
-                parent_item = selected_items[0]
-                
-                # If selected item is a file, use its parent
-                item_data = parent_item.data(0, Qt.UserRole)
-                if isinstance(item_data, dict) and item_data.get('type') == 'file':
-                    if parent_item.parent():
-                        parent_item = parent_item.parent()
-                    else:
-                        parent_item = self.tree.invisibleRootItem()
-            else:
-                # Use root item
-                parent_item = self.tree.invisibleRootItem()
+            parent_item: Parent tree item to add the file to
+            file_name: Name of the file (optional)
+            file_type: Type of file (optional)
         
-        # If no file name provided, show file browser dialog to select files
+        Returns:
+            QTreeWidgetItem or list of QTreeWidgetItems: The created file item(s)
+        """
+        # Get reference to the tree widget
+        if not hasattr(self, 'tree'):
+            if hasattr(self.editor, 'tree'):
+                self.tree = self.editor.tree
+            elif hasattr(self.editor, 'structure_tree'):
+                self.tree = self.editor.structure_tree
+            
+        if not self.tree:
+            print("ERROR: No tree widget available for file operations")
+            return None
+    
+        # If parent is not specified, use root item
+        if not parent_item:
+            if self.tree.topLevelItemCount() > 0:
+                parent_item = self.tree.topLevelItem(0)
+            else:
+                parent_item = QTreeWidgetItem(self.tree)
+                parent_item.setText(0, "Project Root")
+                parent_item.setData(0, Qt.UserRole, {"type": "folder", "name": "Project Root"})
+    
+        # If file_name is a list or tuple, add multiple files
+        if isinstance(file_name, (list, tuple)):
+            added_items = []
+            for name in file_name:
+                added_item = self._add_file_item(parent_item, name, file_type)
+                if added_item:
+                    added_items.append(added_item)
+            return added_items
+    
+        # If file_name is not specified, show file browser
         if not file_name:
-            file_paths, _ = QFileDialog.getOpenFileNames(
-                self.editor,
-                "Select Files to Add",
-                os.path.expanduser("~"),
-                "All Files (*)"
+            file_path, _ = QFileDialog.getOpenFileName(
+                self.editor, 
+                "Select File", 
+                "", 
+                "All Files (*.*)"
             )
             
-            if not file_paths:
-                return None  # User canceled
+            if not file_path:
+                return None
             
-            # Add each selected file
-            added_items = []
-            for file_path in file_paths:
-                file_name = os.path.basename(file_path)
-                file_item = self._add_file_item(parent_item, file_name, file_type)
-                
-                # If it's a binary file, cache its contents
-                if self.is_binary_file(file_name) and os.path.exists(file_path):
-                    try:
-                        with open(file_path, 'rb') as f:
-                            content = f.read()
-                            # Generate a unique key for this content
-                            cache_key = f"{file_name}_{id(file_item)}"
-                            self.cached_files[cache_key] = content
-                            
-                            # Update file data
-                            file_data = file_item.data(0, Qt.UserRole)
-                            file_data['cached'] = True
-                            file_data['cache_key'] = cache_key
-                            file_item.setData(0, Qt.UserRole, file_data)
-                    except Exception as e:
-                        print(f"DEBUG: Failed to cache binary file: {e}")
-                
-                added_items.append(file_item)
+            # Get file name from path
+            file_name = os.path.basename(file_path)
             
-            # Return the last added item
-            return added_items[-1] if added_items else None
+            # Add file with original path
+            file_item = self._add_file_item(parent_item, file_name)
+            
+            # Store file information for caching but don't cache yet
+            # (Caching will happen when template is saved)
+            try:
+                # Get file data from the tree item
+                file_data = file_item.data(0, Qt.UserRole)
+                
+                # Set original path
+                file_data['path'] = file_path
+                file_data['original_path'] = file_path
+                
+                # Determine if binary
+                from app.utils.binary_file_handler import BinaryFileHandler
+                is_binary = BinaryFileHandler.is_binary_file(file_path)
+                file_data['is_binary'] = is_binary
+                
+                # Get template name from the editor if available
+                template_name = "Unknown Template"
+                if hasattr(self.editor, 'template_name'):
+                    template_name = self.editor.template_name
+                elif hasattr(self.editor, 'name_input') and hasattr(self.editor.name_input, 'text'):
+                    template_name = self.editor.name_input.text()
+                
+                # Get relative path in the tree structure for later use
+                relative_path = self._get_relative_path(file_item)
+                file_data['relative_path'] = relative_path
+                file_data['template_name'] = template_name
+                
+                # Update file data in the tree item
+                file_item.setData(0, Qt.UserRole, file_data)
+                
+                # Store reference to the file in the editor's cache tracking if available
+                if hasattr(self.editor, 'files_to_cache'):
+                    self.editor.files_to_cache[relative_path] = {
+                        "original_path": file_path,
+                        "relative_path": relative_path,
+                        "template_name": template_name
+                    }
+                    
+                # Add visual indicator that file is tracked but not yet cached
+                from PyQt5.QtGui import QBrush, QColor
+                colors = self._get_editor_colors()
+                file_item.setForeground(0, QBrush(QColor(colors.get('tracked', '#88AADD'))))
+                
+            except Exception as e:
+                print(f"Error preparing file for caching: {e}")
+            
+            return file_item
         
         # If file name is provided, just add a single file
         return self._add_file_item(parent_item, file_name, file_type)
     
-    def _add_file_item(self, parent_item, file_name, file_type=None):
-        """Helper method to add a file item to the tree"""
-        # Create tree item
+    def _add_file_item(self, parent_item, file_name, file_type=None, original_path=None):
+        """
+        Create a tree item for a file
+        
+        Args:
+            parent_item: Parent item for the file
+            file_name: Name of the file
+            file_type: Type of file (optional)
+            original_path: Original path to the file (optional)
+            
+        Returns:
+            QTreeWidgetItem: The created file item
+        """
+        # Make sure we have a parent
+        if not parent_item:
+            parent_item = self.tree.invisibleRootItem()
+            
+        # Create the item
         file_item = QTreeWidgetItem(parent_item)
         file_item.setText(0, file_name)
         
-        # Set icon based on file type
-        # First try to get a file type specific icon, fall back to standard file icon
-        icon = get_file_icon_for_type(file_name)
-        if icon.isNull():
-            icon = QApplication.style().standardIcon(QStyle.SP_FileIcon)
-        file_item.setIcon(0, icon)
+        # Set the icon based on file extension
+        from .utils import get_file_icon_for_type
+        file_item.setIcon(0, get_file_icon_for_type(file_name))
         
         # Ensure the item is editable
         file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
         
-        # Determine if binary based on extension
-        is_binary = self.is_binary_file(file_name)
+        # Store item data
+        is_binary = False
         
-        # Store file data
-        file_data = {
+        # Check if it's a binary file if we have a path
+        if original_path and os.path.exists(original_path):
+            is_binary = BinaryFileHandler.is_binary_file(original_path)
+        else:
+            # Guess based on extension
+            is_binary = self.is_binary_file(file_name)
+        
+        # Create item data dictionary
+        item_data = {
             "type": "file",
             "name": file_name,
             "is_binary": is_binary
         }
         
-        # Add file type if provided
-        if file_type:
-            file_data["file_type"] = file_type
-            
-        file_item.setData(0, Qt.UserRole, file_data)
+        # Add original path if provided
+        if original_path:
+            item_data["path"] = original_path
+        
+        # Set the data
+        file_item.setData(0, Qt.UserRole, item_data)
+        
+        # Visual indicator for binary files
+        if is_binary:
+            file_item.setForeground(0, QBrush(QColor("#8C9EFF")))  # Light purple for binary files
         
         # Expand parent and select new item
         parent_item.setExpanded(True)
-        self.tree.setCurrentItem(file_item)
+        if hasattr(self.tree, 'setCurrentItem'):
+            self.tree.setCurrentItem(file_item)
         
         return file_item
     
@@ -480,73 +590,96 @@ class FileOperations:
         Import a file from the file system
         
         Args:
-            target_item: Item to import into (optional)
+            target_item: Target tree item to add the file to (optional)
             
         Returns:
-            bool: True if imported, False otherwise
+            QTreeWidgetItem: The created file item or None if canceled
         """
-        if not self.tree:
-            return False
-            
-        # Get file path
+        # Open file dialog to select file
         file_path, _ = QFileDialog.getOpenFileName(
-            self.editor,
-            "Select File to Import",
-            os.path.expanduser("~"),
-            "All Files (*)"
+            self.editor, 
+            "Import File", 
+            "", 
+            "All Files (*.*)"
         )
         
         if not file_path:
-            return False  # User canceled
-            
-        # If no target specified, use selected item or root
+            return None
+        
+        # Use target item or get selected item
         if not target_item:
             selected_items = self.tree.selectedItems()
             if selected_items:
                 target_item = selected_items[0]
-                
-                # If selected item is a file, use its parent
-                item_data = target_item.data(0, Qt.UserRole)
-                if isinstance(item_data, dict) and item_data.get('type') == 'file':
-                    if target_item.parent():
-                        target_item = target_item.parent()
-                    else:
-                        target_item = self.tree.invisibleRootItem()
             else:
                 # Use root item
-                target_item = self.tree.invisibleRootItem()
+                if self.tree.topLevelItemCount() > 0:
+                    target_item = self.tree.topLevelItem(0)
+                else:
+                    # Create root item if not exists
+                    target_item = QTreeWidgetItem(self.tree)
+                    target_item.setText(0, "Project Root")
+                    target_item.setData(0, Qt.UserRole, {"type": "folder", "name": "Project Root"})
         
         # Import the file
         try:
             # Get file name from path
             file_name = os.path.basename(file_path)
             
-            # Add file
-            file_item = self.add_file(target_item, file_name)
+            # Add file with original path
+            file_item = self._add_file_item(target_item, file_name, original_path=file_path)
             
-            # If it's a binary file, cache it
-            if self.is_binary_file(file_name):
-                try:
-                    with open(file_path, 'rb') as f:
-                        content = f.read()
-                        self.cached_files[file_path] = content
-                        
-                        # Update file data
-                        file_data = file_item.data(0, Qt.UserRole)
-                        file_data['cached'] = True
-                        file_data['cache_key'] = file_path
-                        file_item.setData(0, Qt.UserRole, file_data)
-                except Exception as e:
-                    print(f"DEBUG: Failed to cache binary file: {e}")
+            # Store file information for caching but don't cache yet
+            # (Caching will happen when template is saved)
+            try:
+                # Get file data from the tree item
+                file_data = file_item.data(0, Qt.UserRole)
+                
+                # Set original path
+                file_data['path'] = file_path
+                file_data['original_path'] = file_path
+                
+                # Determine if binary
+                from app.utils.binary_file_handler import BinaryFileHandler
+                is_binary = BinaryFileHandler.is_binary_file(file_path)
+                file_data['is_binary'] = is_binary
+                
+                # Get template name from the editor if available
+                template_name = "Unknown Template"
+                if hasattr(self.editor, 'template_name'):
+                    template_name = self.editor.template_name
+                elif hasattr(self.editor, 'name_input') and hasattr(self.editor.name_input, 'text'):
+                    template_name = self.editor.name_input.text()
+                
+                # Get relative path in the tree structure for later use  
+                relative_path = self._get_relative_path(file_item)
+                file_data['relative_path'] = relative_path
+                file_data['template_name'] = template_name
+                
+                # Update file data in the tree item
+                file_item.setData(0, Qt.UserRole, file_data)
+                
+                # Store reference to the file in the editor's cache tracking if available
+                if hasattr(self.editor, 'files_to_cache'):
+                    self.editor.files_to_cache[relative_path] = {
+                        "original_path": file_path,
+                        "relative_path": relative_path,
+                        "template_name": template_name
+                    }
+                    
+                # Add visual indicator that file is tracked but not yet cached
+                from PyQt5.QtGui import QBrush, QColor
+                colors = self._get_editor_colors()
+                file_item.setForeground(0, QBrush(QColor(colors.get('tracked', '#88AADD'))))
+                
+            except Exception as e:
+                print(f"Error preparing file for caching: {e}")
+                
+            return file_item
             
-            return True
         except Exception as e:
-            QMessageBox.critical(
-                self.editor,
-                "Import Error",
-                f"Error importing file: {str(e)}"
-            )
-            return False
+            print(f"Error importing file: {e}")
+            return None
     
     def is_binary_file(self, file_path):
         """
@@ -558,28 +691,8 @@ class FileOperations:
         Returns:
             bool: True if binary, False otherwise
         """
-        # Get the file extension
-        _, ext = os.path.splitext(file_path)
-        ext = ext.lower()
-        
-        # Common binary file extensions
-        binary_extensions = set()
-        for extensions in [FILE_EXTENSIONS['Image'], FILE_EXTENSIONS['Audio'], 
-                          FILE_EXTENSIONS['Video'], FILE_EXTENSIONS['Archive']]:
-            binary_extensions.update(extensions)
-        
-        # Check if it's a known binary extension
-        if ext in binary_extensions:
-            return True
-            
-        # Use mimetypes as fallback
-        if ext:
-            mime_type, _ = mimetypes.guess_type(file_path)
-            if mime_type:
-                return mime_type.startswith(('image/', 'audio/', 'video/', 'application/octet-stream'))
-                
-        # Default to non-binary
-        return False
+        # Use BinaryFileHandler if available
+        return BinaryFileHandler.is_binary_file(file_path)
     
     def create_context_menu(self, item, position):
         """
@@ -1086,6 +1199,58 @@ class FileOperations:
         # Get item properties
         name = item_data.get('name', '')
         is_folder = item_data.get('is_folder', False)
+
+    def _get_relative_path(self, item):
+        """
+        Get the relative path of an item in the tree
+        
+        Args:
+            item: Tree item to get path for
+            
+        Returns:
+            str: Relative path of the item
+        """
+        if not item:
+            return ""
+            
+        # Start with the item's name
+        path_parts = [item.text(0)]
+        
+        # Walk up the tree
+        parent = item.parent()
+        while parent and parent != self.tree.invisibleRootItem():
+            path_parts.insert(0, parent.text(0))
+            parent = parent.parent()
+        
+        # Join parts with platform-independent separator
+        return "/".join(path_parts[:-1])  # Exclude the file name itself
+
+    def _get_editor_colors(self):
+        """
+        Get color scheme from the editor or use defaults
+        
+        Returns:
+            dict: Dictionary of color values
+        """
+        try:
+            # Try to get colors from app's color scheme
+            from app.ui.color_scheme_pyqt import APP_COLORS
+            return APP_COLORS
+        except ImportError:
+            # Fallback colors
+            return {
+                'accent': '#007ACC',            # Blue accent color
+                'accent_light': '#338ACC',      # Lighter blue
+                'accent_dark': '#005A9C',       # Darker blue
+                'tracked': '#88AADD',           # Light blue for tracked files
+                'background': '#1E1E1E',        # Dark background
+                'text': '#FFFFFF',              # White text
+                'text_secondary': '#CCCCCC',    # Light gray secondary text
+                'border': '#444444',            # Dark gray borders
+                'warning': '#FF9900',           # Orange warning
+                'error': '#FF5555',             # Red error
+                'success': '#55AA55'            # Green success
+            }
 
 class FileDetailsDialog(QDialog):
     """Dialog for entering file details"""

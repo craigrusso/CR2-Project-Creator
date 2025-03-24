@@ -512,9 +512,36 @@ class ProjectCreatorApp(QMainWindow):
     
     def get_current_output_dir(self):
         """Get the current output directory from the entry field"""
-        if hasattr(self, 'output_dir_input'):
-            return self.output_dir_input.text()
-        return ""
+        if hasattr(self, 'output_dir_input') and self.output_dir_input:
+            output_dir = self.output_dir_input.text().strip()
+            if output_dir:
+                # Ensure the directory exists
+                try:
+                    if not os.path.exists(output_dir):
+                        os.makedirs(output_dir, exist_ok=True)
+                        print(f"Created output directory: {output_dir}")
+                except Exception as e:
+                    print(f"Warning: Could not create output directory: {e}")
+                
+                print(f"Using output directory from UI: {output_dir}")
+                return output_dir
+        
+        # If no output directory in the UI, check config
+        if hasattr(self, 'config') and 'last_output_dir' in self.config:
+            output_dir = self.config['last_output_dir']
+            if output_dir and os.path.exists(output_dir):
+                print(f"Using output directory from config: {output_dir}")
+                return output_dir
+                
+        # Fall back to default paths
+        if hasattr(self, 'default_output_path') and self.default_output_path:
+            print(f"Using default output path: {self.default_output_path}")
+            return self.default_output_path
+            
+        # Last resort - use desktop
+        desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+        print(f"Fallback to desktop directory: {desktop_path}")
+        return desktop_path
         
     def update_recent_menu(self):
         """Update the recent projects menu"""

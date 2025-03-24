@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                            QInputDialog, QFileDialog, QApplication, QStyle,
                            QTabWidget, QGridLayout, QGroupBox, QRadioButton,
                            QButtonGroup, QComboBox, QSplitter, QSizePolicy,
-                           QFrame)
+                           QFrame, QSpinBox)
 from PyQt5.QtCore import Qt, QSize, QByteArray, QUrl, QRegExp, QCoreApplication, QMimeData
 from PyQt5.QtGui import QFont, QPixmap, QMovie, QIcon, QRegExpValidator, QDragEnterEvent, QDragMoveEvent, QDropEvent
 
@@ -588,6 +588,184 @@ def show_preferences(app):
     tabs.addTab(general_tab, "General")
     tabs.addTab(storage_tab, "Storage Locations")
     
+    # --- Cache Management Tab ---
+    cache_tab = QWidget()
+    cache_layout = QVBoxLayout(cache_tab)
+    
+    # Import necessary modules for cache management
+    try:
+        from app.utils.cache_preferences import CachePreferences
+        from app.utils.file_cache_manager import FileCacheManager
+        
+        # Get current cache preferences
+        cache_prefs = CachePreferences()
+        
+        # Enable file caching group
+        caching_group = QGroupBox("File Caching Settings")
+        caching_layout = QVBoxLayout(caching_group)
+        
+        # Enable caching checkbox
+        enable_caching_check = QCheckBox("Enable file caching")
+        enable_caching_check.setChecked(cache_prefs.should_cache_files())
+        enable_caching_check.setToolTip("Cache files used in templates for better performance")
+        caching_layout.addWidget(enable_caching_check)
+        
+        # Auto-clean cache
+        auto_clean_check = QCheckBox("Automatically clean cache periodically")
+        auto_clean_check.setChecked(cache_prefs.should_clean_cache())
+        auto_clean_check.setToolTip("Remove old and unused cached files")
+        caching_layout.addWidget(auto_clean_check)
+        
+        # Cache parameters grid
+        params_layout = QGridLayout()
+        
+        # Cache location
+        cache_location_label = QLabel("Cache Location:")
+        params_layout.addWidget(cache_location_label, 0, 0)
+        
+        cache_location_field = QLineEdit()
+        cache_location_field.setText(cache_prefs.get_cache_location())
+        cache_location_field.setReadOnly(True)
+        params_layout.addWidget(cache_location_field, 0, 1)
+        
+        cache_browse_btn = QPushButton("Change...")
+        def browse_cache_location():
+            dir_path = QFileDialog.getExistingDirectory(
+                dialog, "Select Cache Directory", cache_location_field.text())
+            if dir_path:
+                cache_location_field.setText(dir_path)
+        cache_browse_btn.clicked.connect(browse_cache_location)
+        params_layout.addWidget(cache_browse_btn, 0, 2)
+        
+        cache_open_btn = QPushButton("Open")
+        def open_cache_location():
+            from app.utils.utils import open_folder
+            open_folder(cache_location_field.text())
+        cache_open_btn.clicked.connect(open_cache_location)
+        params_layout.addWidget(cache_open_btn, 0, 3)
+        
+        # Maximum cache size
+        max_size_label = QLabel("Maximum Cache Size (MB):")
+        params_layout.addWidget(max_size_label, 1, 0)
+        
+        max_size_field = QSpinBox()
+        max_size_field.setMinimum(100)  # 100MB minimum
+        max_size_field.setMaximum(10000)  # 10GB maximum
+        max_size_field.setValue(cache_prefs.get_preference("max_cache_size_mb", 1000))
+        max_size_field.setSingleStep(100)
+        params_layout.addWidget(max_size_field, 1, 1)
+        
+        # Maximum cache age
+        max_age_label = QLabel("Maximum Cache Age (days):")
+        params_layout.addWidget(max_age_label, 2, 0)
+        
+        max_age_field = QSpinBox()
+        max_age_field.setMinimum(1)  # 1 day minimum
+        max_age_field.setMaximum(365)  # 1 year maximum
+        max_age_field.setValue(cache_prefs.get_preference("max_cache_age_days", 30))
+        max_age_field.setSingleStep(1)
+        params_layout.addWidget(max_age_field, 2, 1)
+        
+        caching_layout.addLayout(params_layout)
+        
+        # Cache statistics group
+        stats_group = QGroupBox("Cache Statistics")
+        stats_layout = QVBoxLayout(stats_group)
+        
+        # Get cache statistics
+        cache_manager = FileCacheManager(cache_prefs.get_cache_location())
+        cache_stats = cache_manager.get_cache_stats()
+        
+        # Display statistics in a grid
+        stats_grid = QGridLayout()
+        
+        stats_grid.addWidget(QLabel("Total Files:"), 0, 0)
+        stats_grid.addWidget(QLabel(str(cache_stats.get("cached_files", 0))), 0, 1)
+        
+        stats_grid.addWidget(QLabel("Total Size:"), 1, 0)
+        stats_grid.addWidget(QLabel(cache_manager._human_readable_size(cache_stats.get("total_size", 0))), 1, 1)
+        
+        stats_grid.addWidget(QLabel("Cache Hits:"), 2, 0)
+        stats_grid.addWidget(QLabel(str(cache_stats.get("hits", 0))), 2, 1)
+        
+        stats_grid.addWidget(QLabel("Cache Misses:"), 3, 0)
+        stats_grid.addWidget(QLabel(str(cache_stats.get("misses", 0))), 3, 1)
+        
+        stats_layout.addLayout(stats_grid)
+        
+        # Cache maintenance buttons
+        maintenance_layout = QHBoxLayout()
+        
+        clean_cache_btn = QPushButton("Clean Cache Now")
+        def clean_cache():
+            from PyQt5.QtWidgets import QMessageBox
+            result = QMessageBox.question(dialog, "Clean Cache", 
+                                         "Are you sure you want to clean the cache? This will remove old and unused files.")
+            if result == QMessageBox.Yes:
+                try:
+                    files_removed = cache_manager.prune_cache(
+                        max_age_days=max_age_field.value(),
+                        max_size_mb=max_size_field.value()
+                    )
+                    # Update statistics
+                    new_stats = cache_manager.get_cache_stats()
+                    QMessageBox.information(dialog, "Cache Cleaned", 
+                                         f"Cache cleaned successfully. {files_removed} files removed.")
+                    # Refresh the stats display
+                    # (This is a simple implementation - in a full version, we'd update the labels)
+                except Exception as e:
+                    QMessageBox.warning(dialog, "Error", f"Error cleaning cache: {e}")
+        clean_cache_btn.clicked.connect(clean_cache)
+        maintenance_layout.addWidget(clean_cache_btn)
+        
+        clear_cache_btn = QPushButton("Clear All Cache")
+        def clear_cache():
+            from PyQt5.QtWidgets import QMessageBox
+            result = QMessageBox.warning(dialog, "Clear Cache", 
+                                        "Are you sure you want to clear all cache? This will remove ALL cached files.")
+            if result == QMessageBox.Yes:
+                try:
+                    cache_manager.clear_all_caches()
+                    QMessageBox.information(dialog, "Cache Cleared", "All cache files have been removed.")
+                    # Update statistics
+                    # (This is a simple implementation - in a full version, we'd update the labels)
+                except Exception as e:
+                    QMessageBox.warning(dialog, "Error", f"Error clearing cache: {e}")
+        clear_cache_btn.clicked.connect(clear_cache)
+        maintenance_layout.addWidget(clear_cache_btn)
+        
+        stats_layout.addLayout(maintenance_layout)
+        
+        # Add the groups to the cache tab
+        cache_layout.addWidget(caching_group)
+        cache_layout.addWidget(stats_group)
+        cache_layout.addStretch()
+        
+        # Save function for cache preferences
+        def save_cache_preferences():
+            cache_prefs.set_preference("enable_file_caching", enable_caching_check.isChecked())
+            cache_prefs.set_preference("auto_clean_cache", auto_clean_check.isChecked())
+            cache_prefs.set_preference("max_cache_size_mb", max_size_field.value())
+            cache_prefs.set_preference("max_cache_age_days", max_age_field.value())
+            cache_prefs.set_preference("cache_location", cache_location_field.text())
+            cache_prefs.save_preferences()
+        
+    except ImportError as e:
+        # If cache modules aren't available, show a message
+        warning_label = QLabel("Cache management features are not available.")
+        warning_details = QLabel(f"Error: {e}")
+        warning_details.setStyleSheet("color: red;")
+        cache_layout.addWidget(warning_label)
+        cache_layout.addWidget(warning_details)
+        cache_layout.addStretch()
+        
+        def save_cache_preferences():
+            # No-op if modules not available
+            pass
+    
+    # Add the cache tab to the tab widget
+    tabs.addTab(cache_tab, "File Cache")
+    
     # Add the tab widget to the main layout
     main_layout.addWidget(tabs)
     
@@ -616,6 +794,9 @@ def show_preferences(app):
         from app.utils.utils import save_json_file
         paths_file = os.path.join(paths["config_dir"], "paths.json")
         save_json_file(paths_file, paths)
+        
+        # Save cache preferences
+        save_cache_preferences()
         
         # Close the dialog
         dialog.accept()

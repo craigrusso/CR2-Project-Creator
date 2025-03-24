@@ -118,6 +118,10 @@ class TemplateHandler:
             try:
                 # Save to template manager if available
                 if self.template_manager:
+                    # First, process any files that need to be cached
+                    self._process_files_for_caching(structure_name, structure)
+                    
+                    # Now save the structure with the updated file paths
                     success = self.template_manager.save_structure(structure_name, structure)
                     
                     if success:
@@ -316,4 +320,99 @@ class TemplateHandler:
             return False
         except Exception as e:
             print(f"ERROR setting project type: {e}")
-            return False 
+            return False
+    
+    def _process_files_for_caching(self, template_name, structure):
+        """
+        Process files in the structure to ensure they are cached
+        
+        Args:
+            template_name: Name of the template
+            structure: Structure data to update with cache paths
+            
+        Returns:
+            None (modifies structure in place)
+        """
+        try:
+            # Import cache manager if needed
+            from app.utils.file_cache_manager import FileCacheManager
+            from app.utils.cache_preferences import CachePreferences
+            
+            # Check if caching is enabled
+            cache_prefs = CachePreferences()
+            if not cache_prefs.should_cache_files():
+                print("File caching is disabled in preferences")
+                return
+            
+            # Initialize cache manager
+            cache_manager = FileCacheManager(cache_prefs.get_cache_location())
+            
+            # Process the structure recursively
+            self._process_structure_for_caching(structure, template_name, cache_manager)
+            
+        except ImportError:
+            print("Cache manager not available, skipping file caching")
+        except Exception as e:
+            import traceback
+            print(f"Error processing files for caching: {e}")
+            traceback.print_exc()
+    
+    def _process_structure_for_caching(self, structure_item, template_name, cache_manager, path=""):
+        """
+        Recursively process a structure item to cache files
+        
+        Args:
+            structure_item: Structure item to process (can be dict, list, or string)
+            template_name: Name of the template
+            cache_manager: Cache manager instance
+            path: Current path in the structure (for relative paths)
+            
+        Returns:
+            None (modifies structure_item in place)
+        """
+        # Check if this is a list of items
+        if isinstance(structure_item, list):
+            for item in structure_item:
+                self._process_structure_for_caching(item, template_name, cache_manager, path)
+                
+        # Check if this is a dictionary (folder or normalized item)
+        elif isinstance(structure_item, dict):
+            # Check if this is a normalized format item
+            if 'type' in structure_item and 'name' in structure_item:
+                item_type = structure_item.get('type')
+                item_name = structure_item.get('name')
+                
+                # Handle folder
+                if item_type == 'folder' or item_type == 'directory':
+                    # Process children recursively with updated path
+                    if 'children' in structure_item and isinstance(structure_item['children'], list):
+                        new_path = os.path.join(path, item_name)
+                        self._process_structure_for_caching(structure_item['children'], template_name, cache_manager, new_path)
+                
+                # Handle file
+                elif item_type == 'file':
+                    # Check if we have an original path and need to cache
+                    if 'original_path' in structure_item and os.path.exists(structure_item['original_path']):
+                        # Determine the relative path in template
+                        relative_path = os.path.join(path, item_name)
+                        
+                        # Cache the file
+                        file_info = cache_manager.cache_file(
+                            structure_item['original_path'], 
+                            template_name,
+                            relative_path
+                        )
+                        
+                        if file_info:
+                            # Update structure with cache info
+                            structure_item['cache_path'] = file_info['cache_path']
+                            structure_item['file_hash'] = file_info['file_hash']
+                            print(f"Cached file: {item_name} -> {file_info['cache_path']}")
+            
+            # Check if it's a traditional folder structure {folder_name: [children]}
+            else:
+                for key, value in structure_item.items():
+                    # The key is the folder name and value should be a list of children
+                    if isinstance(value, list):
+                        new_path = os.path.join(path, key)
+                        self._process_structure_for_caching(value, template_name, cache_manager, new_path) 

@@ -15,11 +15,23 @@ import sys
 import json
 import platform
 import re  # Add import for regex
+from pathlib import Path
 
 # Using PyQt for the UI framework
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar, QPushButton
 from PyQt5.QtCore import Qt, QTimer
 UI_FRAMEWORK = 'pyqt'
+
+# Import binary file handler
+try:
+    from app.utils.binary_file_handler import BinaryFileHandler
+except ImportError:
+    # Fallback implementation if not available
+    class BinaryFileHandler:
+        @staticmethod
+        def decode_binary_file(encoded_data, output_path):
+            print(f"WARNING: BinaryFileHandler not available, can't decode file to {output_path}")
+            return False
 
 # Define PyQt version of progress window
 class BatchProgressWindowPyQt(QDialog):
@@ -152,524 +164,971 @@ class ProjectBuilder:
         print(f"🔍 DOLLAR HANDLING DEBUG: Final result: '{result}'")
         return result
     
-    def create_project(self, project_name, output_dir, template_file=None, project_type="Standard", 
-                      use_version_control=True, create_backup=True, structure_name=None,
-                      batch_mode=False, callback=None):
-        """Create a single project with the specified settings"""
-        if not project_name or not output_dir:
-            return False, "Project name and output directory are required"
+    def create_project(self, project_name, output_dir=None, template_file=None, project_type="Standard", 
+                   structure_name=None, create_backup=True, use_cached_files=True):
+        """
+        Create a project with the given name from a template
         
-        # Debug information
-        print(f"DEBUG: Creating project '{project_name}' in '{output_dir}'")
-        print(f"DEBUG: template_file={template_file}, structure_name={structure_name}")
+        Args:
+            project_name (str): Name of the project
+            output_dir (str): Path to create the project in (parent directory)
+            template_file (str, optional): Path to template file or name of template
+            project_type (str, optional): Type of project
+            structure_name (str, optional): Name of structure to use
+            create_backup (bool, optional): Whether to create backup files
+            use_cached_files (bool, optional): Whether to use cached files
+            
+        Returns:
+            tuple: (success, project_path) where success is True if project was created successfully
+                  and project_path is the path to the created project directory or error message
+        """
+        # Log what's received for debugging
+        print(f"DEBUG: Creating project '{project_name}' in directory: '{output_dir}'")
+        print(f"DEBUG: Using template: '{template_file}', structure: '{structure_name}'")
         
-        # Base project path
-        project_path = os.path.join(output_dir, project_name)
-        version = 1
-        
-        # Check if project folder already exists
-        while os.path.exists(project_path):
-            project_path = os.path.join(output_dir, f"{project_name}_{version}")
-            version += 1
-        
+        if not project_name:
+            error_message = "Project name is required"
+            print(f"ERROR: {error_message}")
+            return False, error_message
+            
+        if not output_dir:
+            error_message = "Output directory is required"
+            print(f"ERROR: {error_message}")
+            return False, error_message
+            
+        # Ensure output directory exists
         try:
-            # Create base directory
-            os.makedirs(project_path)
-            
-            # Make sure template_file is actually a valid path before processing it
-            # Process template first (if provided and it's not our dummy gallery template)
-            if template_file and template_file != "gallery_template":
-                print(f"DEBUG: Processing template file: {template_file}")
-                # Only process the template if it's a valid directory or file that exists
-                # This prevents copying from the application root directory unintentionally
-                if os.path.exists(template_file):
-                    if os.path.isdir(template_file):
-                        # Make sure we're not copying from the app's root directory
-                        app_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                        print(f"DEBUG: App root directory: {app_root}")
-                        print(f"DEBUG: Template directory: {os.path.abspath(template_file)}")
-                        
-                        if os.path.abspath(template_file) == app_root:
-                            print(f"Warning: Attempting to copy from application root directory, skipping template copy")
-                        else:
-                            # Directory-based template
-                            self._copy_template_directory(template_file, project_path, project_name)
-                    elif os.path.isfile(template_file):
-                        # File-based template
-                        self._copy_template_file(template_file, project_path, project_name, project_type)
-                    else:
-                        print(f"Warning: Template file does not exist: {template_file}")
-                else:
-                    print(f"Warning: Template path does not exist: {template_file}")
-            
-            # Create directory structure - get structure from name if provided
-            if structure_name:
-                # Store the current structure name for use in file copying
-                if hasattr(self.template_manager, 'current_structure_name'):
-                    print(f"DEBUG: Setting current_structure_name to {structure_name}")
-                    self.template_manager.current_structure_name = structure_name
-                else:
-                    print(f"DEBUG: Adding current_structure_name attribute with value {structure_name}")
-                    setattr(self.template_manager, 'current_structure_name', structure_name)
-                
-                # Get the structure by name
-                directories = self.template_manager.get_structure(structure_name)
-                # Debug the structure data
-                print(f"DEBUG: Retrieved structure data from template_manager.get_structure({structure_name})")
-                print(f"DEBUG: Structure data type: {type(directories)}")
-                print(f"DEBUG: Structure data content: {directories}")
-                
-                # Create the structure - pass the original project name
-                self._create_folder_structure(project_path, directories, original_project_name=project_name)
-            else:
-                # Try to get the structure from the selected template
-                print("DEBUG: No structure_name provided, checking if template has embedded structure")
-                directories = None
-                
-                if hasattr(self.template_manager, 'selected_template') and self.template_manager.selected_template:
-                    selected_template = self.template_manager.selected_template
-                    print(f"DEBUG: Found selected_template: {selected_template}")
-                    
-                    if isinstance(selected_template, dict) and 'structure' in selected_template:
-                        directories = selected_template['structure']
-                        print(f"DEBUG: Found structure in selected_template: {directories}")
-                    
-                    # If no structure in template, try to load it using template name
-                    if directories is None and isinstance(selected_template, dict) and 'name' in selected_template:
-                        template_name = selected_template['name']
-                        print(f"DEBUG: Attempting to load structure for template name: {template_name}")
-                        
-                        # Try with Template_ prefix
-                        structure_name = f"Template_{template_name}"
-                        directories = self.template_manager.get_structure(structure_name)
-                        
-                        if directories:
-                            print(f"DEBUG: Successfully loaded structure using Template_ prefix: {directories}")
-                        else:
-                            # Try with the plain template name
-                            directories = self.template_manager.get_structure(template_name)
-                            if directories:
-                                print(f"DEBUG: Successfully loaded structure using plain template name: {directories}")
-                
-                # Use an empty list for directories if none provided
-                if not directories:
-                    directories = []
-                    print("DEBUG: Using empty directories list")
-                
-                # Create the structure
-                if directories:
-                    print(f"DEBUG: Creating folder structure with directories: {directories}")
-                    self._create_folder_structure(project_path, directories, original_project_name=project_name)
-            
-            # Add to recent projects
-            add_to_recent_projects(project_path)
-            
-            # Return success
-            return True, project_path
-            
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir, exist_ok=True)
+                print(f"DEBUG: Created output directory: {output_dir}")
         except Exception as e:
-            import traceback
-            print(f"Error creating project: {e}")
-            traceback.print_exc()
-            return False, f"Error: {e}"
-    
-    def _create_folder_structure(self, project_path, directories, original_project_name=None):
-        """Create folder structure with improved handling of nested directories and files"""
-        # Use the original project name if provided, otherwise get from the path
-        # This ensures we use the correct project name in nested folders
-        if original_project_name is None:
-            project_name = os.path.basename(project_path)
-        else:
-            project_name = original_project_name
-            
-        print(f"Creating folder structure at {project_path} with project name: {project_name}")
-        print(f"DEBUG: Structure format type: {type(directories)}")
-        print(f"DEBUG: Structure content: {directories}")
-            
-        # Cache project name placeholder formats for faster replacement
-        project_name_placeholder_double = "{{PROJECT_NAME}}"
-        project_name_placeholder_single = "{PROJECT_NAME}"
-        project_name_placeholder_dollar = "${PROJECT_NAME}"
+            error_message = f"Failed to create output directory: {str(e)}"
+            print(f"ERROR: {error_message}")
+            return False, error_message
         
-        # Check if directories is a list or dictionary
-        if isinstance(directories, list):
-            print(f"DEBUG: Processing list structure with {len(directories)} items")
+        # Create the project directory 
+        project_dir = os.path.join(output_dir, project_name)
+        print(f"DEBUG: Project will be created at: {project_dir}")
+        
+        # Check if project directory already exists
+        if os.path.exists(project_dir):
+            if create_backup:
+                # Create backup if requested
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                backup_dir = f"{project_dir}_backup_{timestamp}"
+                try:
+                    shutil.move(project_dir, backup_dir)
+                    print(f"DEBUG: Created backup at {backup_dir}")
+                except Exception as e:
+                    error_message = f"Failed to create backup: {str(e)}"
+                    print(f"ERROR: {error_message}")
+                    return False, error_message
+            else:
+                error_message = f"Project directory already exists: {project_dir}"
+                print(f"ERROR: {error_message}")
+                return False, error_message
+                
+        # Create project directory
+        try:
+            os.makedirs(project_dir, exist_ok=True)
+        except Exception as e:
+            error_message = f"Failed to create project directory: {str(e)}"
+            print(f"ERROR: {error_message}")
+            return False, error_message
+            
+        # If template_file is an object, extract structure and other data
+        template_data = None
+        if isinstance(template_file, dict):
+            template_data = template_file
+            
+            # Use structure from template
+            if structure_name is None and 'structure_name' in template_data:
+                structure_name = template_data['structure_name']
+                print(f"DEBUG: Using structure from template: {structure_name}")
+                
+            # Use template path for files
+            template_file = template_data.get('path')
+                
+        # Get template data and structure
+        structure_data, template_result = self._get_structure_data(structure_name, template_file)
+        
+        # Use template_data if provided directly
+        if template_data and not template_result:
+            template_result = template_data
+            
+        # Create folders from structure
+        if structure_data:
+            try:
+                created_folders = self._create_folders_from_structure(project_dir, structure_data)
+                print(f"DEBUG: Created {len(created_folders)} folders from structure")
+            except Exception as e:
+                error_message = f"Failed to create folder structure: {str(e)}"
+                print(f"ERROR: {error_message}")
+                return False, error_message
+                
+        # Process files if available
+        files_array = []
+        if template_result:
+            # Get files array from template
+            files_array = template_result.get('files', [])
+            
+        if files_array:
+            try:
+                # Set up placeholders for variable replacement
+                placeholders = {
+                    'PROJECT_NAME': project_name
+                }
+                
+                # Process files
+                copied_files = self._process_files_array(project_dir, files_array, placeholders, use_cached_files)
+                print(f"DEBUG: Copied {len(copied_files)} files from template")
+            except Exception as e:
+                error_message = f"Failed to copy files: {str(e)}"
+                print(f"ERROR: {error_message}")
+                # Don't return error here, just log it - still successful if structure was created
+                
+        # Success!
+        return True, project_dir
+        
+    def _get_structure_data(self, structure_name=None, template_name=None):
+        """
+        Get the structure data from either a named structure or a template
+        
+        Args:
+            structure_name (str, optional): Name of the structure to use
+            template_name (str, optional): Name of the template to use
+            
+        Returns:
+            tuple: (structure_data, template_data) where structure_data is the structure dict
+                  and template_data is the full template dict if available
+        """
+        structure_data = None
+        template_data = None
+        
+        # Try to load structure first if provided
+        if structure_name:
+            print(f"DEBUG: get_structure called with structure_name='{structure_name}'")
+            structure_data = self.template_manager.get_structure(structure_name)
+            
+            # If structure was found, return it
+            if structure_data:
+                return structure_data, None
+                
+        # If no structure found or none provided, try template
+        if template_name:
+            # Check if template_name is actually a template object (dict)
+            if isinstance(template_name, dict) and 'structure' in template_name:
+                print(f"DEBUG: Using provided template object directly")
+                template_data = template_name
+                structure_data = template_data.get('structure')
+            else:
+                # Try to get template from template manager
+                print(f"DEBUG: Looking up template by name: '{template_name}'")
+                template_data = self.template_manager.get_template(template_name)
+            
+            if template_data:
+                # Get structure from template data
+                if isinstance(template_data, dict):
+                    # Check for structure in template
+                    if 'structure' in template_data:
+                        structure_data = template_data['structure']
+                        print(f"DEBUG: Found structure in template. Type: {type(structure_data)}")
+                        
+                        if structure_data:
+                            # Debug output for structure format
+                            if isinstance(structure_data, dict):
+                                print(f"DEBUG: Structure keys: {structure_data.keys()}")
+                            elif isinstance(structure_data, list):
+                                print(f"DEBUG: Structure is a list with {len(structure_data)} items")
+                            
+                            # Ensure structure data is valid - convert list to appropriate format if needed
+                            if isinstance(structure_data, list):
+                                # Handle newer list-based format
+                                print(f"DEBUG: Using list-based structure format")
+                                
+                            # Extract files array from old format if present in structure
+                            if isinstance(structure_data, dict) and 'files' in structure_data:
+                                files = structure_data.pop('files', [])
+                                # Add files to template data if not already there
+                                if 'files' not in template_data:
+                                    template_data['files'] = files
+                                print(f"DEBUG: Extracted {len(files)} files from structure data")
+                            
+                            return structure_data, template_data
+                        else:
+                            print(f"WARNING: Structure data is empty in template")
+                    else:
+                        print(f"WARNING: No structure field found in template")
+                else:
+                    print(f"WARNING: Template data is not a dictionary: {type(template_data)}")
+        
+        # If still no structure, return default structure
+        if not structure_data:
+            print(f"WARNING: No structure found for template: {template_name}, structure: {structure_name}")
+            print(f"WARNING: Using default fallback structure")
+            structure_data = self._get_default_structure()
+            
+        return structure_data, template_data
+    
+    def _ensure_valid_structure(self, structure_data):
+        """
+        Ensure structure data is valid and not an empty array.
+        
+        Args:
+            structure_data: The structure data to validate
+            
+        Returns:
+            dict or list: Valid structure data
+        """
+        # If structure is None or empty array, return a minimal valid structure
+        if structure_data is None or (isinstance(structure_data, list) and not structure_data):
+            print("WARNING: Empty structure data, using minimal default structure")
+            return self._get_default_structure()
+        
+        # If it's a dict with 'root' that is an empty array, populate with minimal structure
+        if isinstance(structure_data, dict) and 'root' in structure_data:
+            if not structure_data['root'] or (isinstance(structure_data['root'], list) and not structure_data['root']):
+                print("WARNING: Empty root in structure data, using minimal default structure")
+                structure_data['root'] = self._get_default_structure()['root']
+                
+        return structure_data
+    
+    def _get_default_structure(self):
+        """
+        Get a default empty structure
+        
+        Returns:
+            dict: Empty structure with root folder
+        """
+        return {
+            "folders": {
+                "src": {},
+                "docs": {},
+                "resources": {}
+            }
+        }
+        
+    def _create_folders_from_structure(self, base_path, structure_data):
+        """
+        Create folder structure from a structure dictionary or list
+        
+        Args:
+            base_path (str): Base directory to create folders in
+            structure_data (dict or list): Structure data with folders
+            
+        Returns:
+            list: List of created paths
+        """
+        created_paths = []
+        
+        # Check if structure_data is None
+        if not structure_data:
+            print(f"WARNING: Empty structure data")
+            return created_paths
+            
+        # Handle dictionary-based structure format
+        if isinstance(structure_data, dict):
+            # Create folders from structure
+            if 'folders' in structure_data and isinstance(structure_data['folders'], dict):
+                folders = structure_data['folders']
+                created_paths.extend(self._create_folders_recursive(base_path, folders))
+            else:
+                print(f"WARNING: Dictionary structure data missing 'folders' key or not in expected format")
+        
+        # Handle list-based structure format (like in the template structure)
+        elif isinstance(structure_data, list):
+            print(f"DEBUG: Processing list-based structure with {len(structure_data)} items")
             
             # Process each item in the list
-            for item in directories:
-                print(f"DEBUG: Processing item type: {type(item)}, content: {item}")
-                original_item = item  # Store for logging
-                
-                # Handle string item - could be a file or folder name
-                if isinstance(item, str):
-                    print(f"DEBUG: Processing file: {item}")
-                    
-                    # Process item name - check for placeholders that need replacement
-                    if project_name_placeholder_dollar in item:
-                        # Split the string on the placeholder and join with the project name
-                        parts = item.split(project_name_placeholder_dollar)
-                        item = project_name.join(parts)
-                        print(f"DEBUG: Dollar placeholder replaced: '{original_item}' -> '{item}'")
-                    elif project_name_placeholder_double in item:
-                        parts = item.split(project_name_placeholder_double)
-                        item = project_name.join(parts)
-                        print(f"DEBUG: Double placeholder replaced: '{original_item}' -> '{item}'")
-                    elif project_name_placeholder_single in item:
-                        parts = item.split(project_name_placeholder_single)
-                        item = project_name.join(parts)
-                        print(f"DEBUG: Single placeholder replaced: '{original_item}' -> '{item}'")
-                    elif item.startswith("$"):
-                        # For items that just start with $ but don't have the full placeholder format
-                        item = self._handle_dollar_placeholder(item, project_name)
-                        print(f"DEBUG: $ sign at start handled: '{original_item}' -> '{item}'")
-                    
-                    # Create the file (or folder, depending on whether it has an extension)
-                    file_path = os.path.join(project_path, item)
-                    if '.' in os.path.basename(item):
-                        # It's a file - create an empty file
-                        with open(file_path, 'w') as f:
-                            pass
-                    else:
-                        # No extension - treat as directory
-                        os.makedirs(file_path, exist_ok=True)
-                        
-                # Handle normalized structure format
-                elif isinstance(item, dict) and 'name' in item and 'type' in item:
-                    print(f"DEBUG: Processing normalized item: {item}")
-                    name = item['name']
-                    original_name = name  # Store for logging
-                    item_type = item['type']
-                    
-                    # Replace placeholders in name
-                    if isinstance(name, str):
-                        if project_name_placeholder_dollar in name:
-                            # Split the string on the placeholder and join with the project name
-                            parts = name.split(project_name_placeholder_dollar)
-                            name = project_name.join(parts)
-                            print(f"DEBUG: Dollar placeholder replaced in item: '{original_name}' -> '{name}'")
-                        elif project_name_placeholder_double in name:
-                            parts = name.split(project_name_placeholder_double)
-                            name = project_name.join(parts)
-                            print(f"DEBUG: Double placeholder replaced in item: '{original_name}' -> '{name}'")
-                        elif project_name_placeholder_single in name:
-                            parts = name.split(project_name_placeholder_single)
-                            name = project_name.join(parts)
-                            print(f"DEBUG: Single placeholder replaced in item: '{original_name}' -> '{name}'")
-                        elif name.startswith("$"):
-                            # For items that just start with $ but don't have the full placeholder format
-                            name = self._handle_dollar_placeholder(name, project_name)
-                            print(f"DEBUG: $ sign at start handled in item: '{original_name}' -> '{name}'")
-                    
-                    # Check if this is a folder or file
-                    is_folder = (item_type == "folder" or item_type == "directory")
-                    
-                    # Create file or folder
-                    if is_folder:
-                        folder_path = os.path.join(project_path, name)
-                        os.makedirs(folder_path, exist_ok=True)
-                        
-                        # Process children recursively if they exist
-                        if 'children' in item and item['children']:
-                            # Pass the original project name to keep consistent naming
-                            self._create_folder_structure(folder_path, item['children'], original_project_name)
-                    else:
-                        # Create empty file
-                        file_path = os.path.join(project_path, name)
-                        with open(file_path, 'w') as f:
-                            pass
+            for item in structure_data:
+                # Only process folder items
+                if isinstance(item, dict) and item.get('type') == 'folder':
+                    folder_name = item.get('name')
+                    if folder_name:
+                        # Create the folder
+                        folder_path = os.path.join(base_path, folder_name)
+                        try:
+                            os.makedirs(folder_path, exist_ok=True)
+                            created_paths.append(folder_path)
+                            print(f"Created folder: {folder_path}")
                             
-                elif isinstance(item, dict) and len(item) == 1:
-                    # Handle simplified folder format {folder_name: [children]}
-                    for folder_name, children in item.items():
-                        original_folder = folder_name  # Store for logging
-                        
-                        # Handle placeholder replacement in folder name
-                        if isinstance(folder_name, str):
-                            if project_name_placeholder_dollar in folder_name:
-                                # Split the string on the placeholder and join with the project name
-                                parts = folder_name.split(project_name_placeholder_dollar)
-                                folder_name = project_name.join(parts)
-                                print(f"DEBUG: Dollar placeholder replaced in folder: '{original_folder}' -> '{folder_name}'")
-                            elif project_name_placeholder_double in folder_name:
-                                parts = folder_name.split(project_name_placeholder_double)
-                                folder_name = project_name.join(parts)
-                                print(f"DEBUG: Double placeholder replaced in folder: '{original_folder}' -> '{folder_name}'")
-                            elif project_name_placeholder_single in folder_name:
-                                parts = folder_name.split(project_name_placeholder_single)
-                                folder_name = project_name.join(parts)
-                                print(f"DEBUG: Single placeholder replaced in folder: '{original_folder}' -> '{folder_name}'")
-                            elif folder_name.startswith("$"):
-                                # For folders that just start with $ but don't have the full placeholder format
-                                folder_name = self._handle_dollar_placeholder(folder_name, project_name)
-                                print(f"DEBUG: $ sign at start handled in folder: '{original_folder}' -> '{folder_name}'")
-                        
-                        # Create the parent folder
-                        folder_path = os.path.join(project_path, folder_name)
-                        os.makedirs(folder_path, exist_ok=True)
-                        
-                        # Process children recursively
-                        if children:
-                            # Pass the original project name to keep consistent naming
-                            self._create_folder_structure(folder_path, children, original_project_name)
+                            # Process children recursively if they exist
+                            children = item.get('children', [])
+                            if children and isinstance(children, list):
+                                for child in children:
+                                    if isinstance(child, dict) and child.get('type') == 'folder':
+                                        child_name = child.get('name')
+                                        if child_name:
+                                            child_path = os.path.join(folder_path, child_name)
+                                            try:
+                                                os.makedirs(child_path, exist_ok=True)
+                                                created_paths.append(child_path)
+                                                print(f"Created subfolder: {child_path}")
+                                                
+                                                # Process grandchildren if they exist
+                                                grandchildren = child.get('children', [])
+                                                if grandchildren and isinstance(grandchildren, list):
+                                                    for grandchild in grandchildren:
+                                                        if isinstance(grandchild, dict) and grandchild.get('type') == 'folder':
+                                                            grandchild_name = grandchild.get('name')
+                                                            if grandchild_name:
+                                                                grandchild_path = os.path.join(child_path, grandchild_name)
+                                                                try:
+                                                                    os.makedirs(grandchild_path, exist_ok=True)
+                                                                    created_paths.append(grandchild_path)
+                                                                    print(f"Created grandchild folder: {grandchild_path}")
+                                                                except Exception as e:
+                                                                    error_message = f"Failed to create grandchild folder {grandchild_path}: {str(e)}"
+                                                                    print(f"ERROR: {error_message}")
+                                                                    self._add_error(error_message)
+                                            except Exception as e:
+                                                error_message = f"Failed to create subfolder {child_path}: {str(e)}"
+                                                print(f"ERROR: {error_message}")
+                                                self._add_error(error_message)
+                        except Exception as e:
+                            error_message = f"Failed to create folder {folder_path}: {str(e)}"
+                            print(f"ERROR: {error_message}")
+                            self._add_error(error_message)
         else:
-            print(f"WARNING: Unhandled structure format: {type(directories)}")
-    
-    def _process_template(self, template_file, project_path, project_name, project_type):
-        """Process template files with improved handling for different template types"""
-        # Determine if this is a single file or a template directory
-        if os.path.isdir(template_file):
-            self._copy_template_directory(template_file, project_path, project_name)
-        else:
-            self._copy_template_file(template_file, project_path, project_name, project_type)
-    
-    def _copy_template_directory(self, template_dir, project_path, project_name):
-        """Copy a directory template, renaming files that match specific patterns"""
-        print(f"Copying template directory: {template_dir} to {project_path}")
-        
-        # Safety check: make sure we're not copying from system directories
-        template_abs_path = os.path.abspath(template_dir)
-        app_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        
-        # Define system directories based on platform
-        system_dirs = [app_root]
-        if platform.system() == "Windows":
-            # Add Windows system directories
-            system_roots = [os.path.splitdrive(sys.executable)[0] + '\\']
-            system_dirs.extend([
-                os.path.join(root, folder) 
-                for root in system_roots
-                for folder in ['Windows', 'Program Files', 'Program Files (x86)']
-            ])
-        else:
-            # Unix-like system directories (Linux and macOS)
-            system_dirs.extend(["/", "/usr", "/etc", "/var", "/bin", "/sbin", "/lib"])
+            print(f"WARNING: Invalid structure data type: {type(structure_data)}")
             
-            # Add macOS specific system directories
-            if platform.system() == "Darwin":
-                system_dirs.extend(["/System", "/Library", "/Applications"])
-        
-        if any(template_abs_path == os.path.abspath(d) or 
-               template_abs_path.startswith(os.path.abspath(d) + os.sep) 
-               for d in system_dirs):
-            print(f"WARNING: Refusing to copy from system directory or app root: {template_abs_path}")
-            print(f"This is likely unintentional and could copy unwanted files.")
-            return
-        
-        # Skip if the directory doesn't exist
-        if not os.path.exists(template_dir) or not os.path.isdir(template_dir):
-            print(f"WARNING: Template directory does not exist: {template_dir}")
-            return
-        
-        # Define placeholder formats we need to replace
-        double_brace_placeholder = "{{PROJECT_NAME}}"
-        single_brace_placeholder = "{PROJECT_NAME}"
-        dollar_placeholder = "${PROJECT_NAME}"
-        
-        for root, dirs, files in os.walk(template_dir):
-            # Skip template.json file
-            if "template.json" in files:
-                files.remove("template.json")
-                
-            # Get relative path from template dir
-            rel_path = os.path.relpath(root, template_dir)
-            if rel_path == '.':  # Root directory
-                target_dir = project_path
-            else:
-                # Replace PROJECT_NAME in directory names if needed
-                rel_path_parts = []
-                for part in rel_path.split(os.sep):
-                    if double_brace_placeholder in part:
-                        new_part = part.replace(double_brace_placeholder, project_name)
-                        print(f"Renamed directory: {part} -> {new_part}")
-                        part = new_part
-                    elif single_brace_placeholder in part:
-                        new_part = part.replace(single_brace_placeholder, project_name)
-                        print(f"Renamed directory: {part} -> {new_part}")
-                        part = new_part
-                    elif dollar_placeholder in part:
-                        new_part = part.replace(dollar_placeholder, project_name)
-                        print(f"Renamed directory: {part} -> {new_part}")
-                        part = new_part
-                    rel_path_parts.append(part)
-                rel_path = os.path.join(*rel_path_parts)
-                target_dir = os.path.join(project_path, rel_path)
-            
-            # Create target directory
-            os.makedirs(target_dir, exist_ok=True)
-            
-            # Copy files, renaming any with placeholder in them
-            for file in files:
-                source_file = os.path.join(root, file)
-                
-                # Handle file renaming if needed
-                target_file_name = file
-                if double_brace_placeholder in file:
-                    target_file_name = file.replace(double_brace_placeholder, project_name)
-                    print(f"Renamed file: {file} -> {target_file_name}")
-                elif single_brace_placeholder in file:
-                    target_file_name = file.replace(single_brace_placeholder, project_name)
-                    print(f"Renamed file: {file} -> {target_file_name}")
-                elif dollar_placeholder in file:
-                    target_file_name = file.replace(dollar_placeholder, project_name)
-                    print(f"Renamed file: {file} -> {target_file_name}")
-                
-                # Remove the emoji indicator if present
-                if '🔄' in target_file_name:
-                    target_file_name = target_file_name.replace('🔄', '').strip()
-                    print(f"Removed emoji from file name: {target_file_name}")
-                
-                target_file = os.path.join(target_dir, target_file_name)
-                
-                # Copy the file
-                shutil.copy2(source_file, target_file)
-                
-                # If it's a text file that might need content replacement
-                if self._is_text_file(source_file):
-                    self._replace_template_placeholders(target_file, project_name)
+        return created_paths
     
-    def _is_text_file(self, file_path):
-        """Check if a file is likely a text file that can have placeholders replaced"""
-        # Basic check based on extension
-        text_extensions = [
-            '.txt', '.md', '.json', '.xml', '.html', '.css', '.js', '.jsx', '.ts', '.tsx',
-            '.py', '.c', '.cpp', '.h', '.hpp', '.java', '.config', '.yaml', '.yml', '.toml',
-            '.sh', '.bash', '.bat', '.ps1', '.sql', '.php', '.rb', '.swift', '.dart',
-            '.gitignore', '.env', '.ini', '.cfg', '.conf', '.properties'
-        ]
-        _, ext = os.path.splitext(file_path.lower())
+    def _create_folders_recursive(self, base_path, folders_dict, parent_path=''):
+        """
+        Recursively create folders from a nested dictionary
         
-        # Try to detect text files without extensions
-        if not ext and os.path.exists(file_path):
+        Args:
+            base_path (str): Base directory
+            folders_dict (dict): Dictionary of folders
+            parent_path (str): Current parent path
+            
+        Returns:
+            list: List of created paths
+        """
+        created_paths = []
+        
+        if not isinstance(folders_dict, dict):
+            return created_paths
+            
+        for folder_name, sub_folders in folders_dict.items():
+            # Skip folders starting with "." to avoid creating hidden folders
+            if folder_name.startswith('.'):
+                continue
+                
+            # Create folder path
+            folder_path = os.path.join(base_path, parent_path, folder_name)
+            
             try:
-                # Try to open and read a few bytes
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    sample = f.read(1024)
-                    # If we can read it as text, it's likely a text file
-                    return '\0' not in sample  # Binary files often contain null bytes
-            except:
-                # If we can't read it as text, assume it's not a text file
-                return False
+                # Create the folder
+                os.makedirs(folder_path, exist_ok=True)
+                created_paths.append(folder_path)
+                print(f"Created folder: {folder_path}")
                 
-        return ext in text_extensions
-    
-    def _replace_template_placeholders(self, file_path, project_name):
-        """Replace template placeholders in file content with improved formatting support"""
-        try:
-            # Check if file exists and is a file (not a directory)
-            if not os.path.exists(file_path) or not os.path.isfile(file_path):
-                print(f"WARNING: Can't replace placeholders - file doesn't exist: {file_path}")
-                return False
-            
-            # Only process files we recognize as text files
-            if not self._is_text_file(file_path):
-                print(f"DEBUG: Skipping binary file for placeholder replacement: {file_path}")
-                return False
-            
-            # Read the file content
-            try:
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read()
+                # Process subfolders recursively
+                if isinstance(sub_folders, dict):
+                    sub_path = os.path.join(parent_path, folder_name)
+                    sub_created = self._create_folders_recursive(base_path, sub_folders, sub_path)
+                    created_paths.extend(sub_created)
             except Exception as e:
-                print(f"WARNING: Error reading file for placeholder replacement: {e}")
-                return False
-            
-            # Define all possible placeholder formats
-            double_brace_placeholder = "{{PROJECT_NAME}}"  # Double braces
-            single_brace_placeholder = "{PROJECT_NAME}"    # Single braces
-            dollar_placeholder = "${PROJECT_NAME}"         # Dollar sign with braces
-            
-            # Track if any replacements were made
-            replacements_made = False
-            
-            # Replace placeholders in the content
-            if double_brace_placeholder in content:
-                content = content.replace(double_brace_placeholder, project_name)
-                print(f"Replaced double brace placeholder in {os.path.basename(file_path)}")
-                replacements_made = True
+                error_message = f"Failed to create folder {folder_path}: {str(e)}"
+                print(f"ERROR: {error_message}")
+                self._add_error(error_message)
                 
-            if single_brace_placeholder in content:
-                content = content.replace(single_brace_placeholder, project_name)
-                print(f"Replaced single brace placeholder in {os.path.basename(file_path)}")
-                replacements_made = True
-
-            if dollar_placeholder in content:
-                content = content.replace(dollar_placeholder, project_name)
-                print(f"Replaced dollar placeholder in {os.path.basename(file_path)}")
-                replacements_made = True
-            
-            # Write the modified content back to the file if any changes were made
-            if replacements_made:
-                try:
-                    with open(file_path, 'w', encoding='utf-8') as f:
-                        f.write(content)
-                    print(f"Updated template placeholders in {os.path.basename(file_path)}")
-                    return True
-                except Exception as e:
-                    print(f"WARNING: Error writing file after placeholder replacement: {e}")
-                    return False
-            
-            # No changes were made to the content
-            print(f"No placeholders found in {os.path.basename(file_path)}")
-            return False
-            
-        except Exception as e:
-            print(f"ERROR replacing template placeholders: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
+        return created_paths
     
-    def _copy_template_file(self, template_file, project_path, project_name, project_type):
-        """Copy the template file to the appropriate location in the project"""
-        filename = os.path.basename(template_file)
-        _, ext = os.path.splitext(filename)
+    def _camel_case(self, s):
+        """
+        Convert a string to CamelCase
         
-        # Check if filename contains placeholders (both formats)
-        if "{{PROJECT_NAME}}" in filename:
-            print(f"Template filename contains placeholder: {filename}")
-            # Replace placeholder but keep the extension
-            filename = filename.replace("{{PROJECT_NAME}}", project_name)
-            print(f"Renamed template file to: {filename}")
-        elif "{PROJECT_NAME}" in filename:
-            print(f"Template filename contains placeholder: {filename}")
-            # Replace placeholder but keep the extension
-            filename = filename.replace("{PROJECT_NAME}", project_name)
-            print(f"Renamed template file to: {filename}")
+        Args:
+            s: String to convert
+            
+        Returns:
+            str: Camel case string
+        """
+        if not s:
+            return ""
         
-        # Remove emoji indicator if present
-        if '🔄' in filename:
-            filename = filename.replace('🔄', '').strip()
-            print(f"Removed emoji from file name: {filename}")
+        # Split on non-alphanumeric characters
+        words = re.split(r'[^a-zA-Z0-9]', s)
+        # Join with first letter of each word capitalized
+        return ''.join(word.title() for word in words if word)
+    
+    def _create_folder_structure(self, output_path, structure_data, placeholders=None, dry_run=False):
+        """
+        Create folder structure from a structure dictionary or list
         
-        # Determine destination subfolder based on file type
-        if ext.lower() in ['.prproj']:
-            dest_folder = os.path.join(project_path, "01_PREMIER_PROJECT")
-        elif ext.lower() in ['.aep', '.aepx']:
-            if project_type == "Motion Graphics":
-                dest_folder = os.path.join(project_path, "01_AE_PROJECTS")
-            else:
-                dest_folder = os.path.join(project_path, "02_AE_PROJECTS")
-        elif ext.lower() in ['.psd']:
-            dest_folder = os.path.join(project_path, "01_PHOTOSHOP_PROJECTS")
-        elif ext.lower() in ['.ai']:
-            dest_folder = os.path.join(project_path, "02_ILLUSTRATOR_PROJECTS")
+        Args:
+            output_path (str): Base directory to create folders in
+            structure_data (dict or list): Structure data with folders
+            placeholders (dict, optional): Dictionary of placeholders to replace
+            dry_run (bool, optional): If True, don't actually create directories/files
+            
+        Returns:
+            list: List of created paths
+        """
+        created_paths = []
+        
+        if not placeholders:
+            placeholders = {}
+        
+        # Check if structure data is valid - accept both dict and list formats
+        if not structure_data:
+            print(f"WARNING: Empty structure data")
+            return created_paths
+        
+        # For list-based structures, process using _process_template directly
+        if isinstance(structure_data, list):
+            print(f"DEBUG: Processing list-based structure with {len(structure_data)} items")
+            return self._process_template(output_path, structure_data, placeholders, created_paths, dry_run)
+        
+        # Handle dictionary-based structures
+        print(f"DEBUG: Processing dictionary-based structure")
+        
+        # Handle the root dictionary format - common in newer structures
+        if 'root' in structure_data:
+            # Don't create an actual 'root' directory, just process the contents
+            if isinstance(structure_data['root'], list):
+                # Process each item in the root list
+                return self._process_template(output_path, structure_data['root'], placeholders, created_paths, dry_run)
+        
+        # Handle structure as a dictionary with named folders
+        # Convert to a list of dictionaries for consistent processing
+        structure_to_process = []
+        for key, value in structure_data.items():
+            if key != 'root':  # Skip the root key to avoid duplication
+                if isinstance(value, list) or isinstance(value, dict):
+                    folder_item = {
+                        'type': 'folder',
+                        'name': key,
+                        'children': value if isinstance(value, list) else []
+                    }
+                    structure_to_process.append(folder_item)
+                else:
+                    folder_item = {
+                        'type': 'folder',
+                        'name': key
+                    }
+                    structure_to_process.append(folder_item)
+        
+        # Process the normalized structure list
+        if structure_to_process:
+            return self._process_template(output_path, structure_to_process, placeholders, created_paths, dry_run)
         else:
-            dest_folder = project_path
+            print("WARNING: Invalid or empty structure format")
+            return created_paths
+
+    def _process_item(self, parent_path, item, placeholders, created_paths, dry_run):
+        """
+        Process a single item (file or folder) in the structure
         
-        # Make sure destination folder exists
-        os.makedirs(dest_folder, exist_ok=True)
+        Args:
+            parent_path: Path to the parent directory
+            item: Item to process (dictionary with name, type, etc.)
+            placeholders: Placeholders for variable substitution
+            created_paths: List to add created paths to
+            dry_run: If True, don't actually create anything
+            
+        Returns:
+            None
+        """
+        if not isinstance(item, dict) or 'name' not in item or 'type' not in item:
+            print(f"WARNING: Invalid item format: {item}")
+            return
+            
+        item_name = self._replace_placeholders(item['name'], placeholders)
+        item_path = os.path.join(parent_path, item_name)
         
-        # Copy the template file
-        dest_path = os.path.join(dest_folder, filename)
-        shutil.copy2(template_file, dest_path)
+        if item['type'] == 'folder':
+            # Skip creating 'root' folders to avoid unnecessary nesting
+            if item_name.lower() == 'root':
+                # Process children directly in the parent_path
+                if 'children' in item and item['children']:
+                    for child in item['children']:
+                        self._process_item(parent_path, child, placeholders, created_paths, dry_run)
+            else:
+                # Create the directory
+                print(f"DEBUG: Creating directory from custom structure: {item_path}")
+                if not dry_run:
+                    os.makedirs(item_path, exist_ok=True)
+                created_paths.append(item_path)
+                
+                # Process children
+                if 'children' in item and item['children']:
+                    for child in item['children']:
+                        self._process_item(item_path, child, placeholders, created_paths, dry_run)
         
-        # If it's a text file, replace placeholders in content
-        if self._is_text_file(template_file):
-            self._replace_template_placeholders(dest_path, project_name)
+        elif item['type'] == 'file':
+            # Create the file
+            self._process_file(parent_path, item, placeholders, dry_run)
+            if not dry_run:
+                created_paths.append(item_path)
+
+    def _process_template(self, output_path, structure, placeholders=None, created_paths=None, dry_run=False):
+        """
+        Process a template structure
+        
+        Args:
+            output_path: Path where to create the structure
+            structure: Structure data (list or dict)
+            placeholders: Placeholders for variable substitution
+            created_paths: List to store created paths
+            dry_run: If True, don't actually create anything
+            
+        Returns:
+            list: List of created paths
+        """
+        if not created_paths:
+            created_paths = []
+        
+        if not placeholders:
+            placeholders = {}
+        
+        if not structure:
+            return created_paths
+        
+        # Log the structure details for debugging
+        print(f"DEBUG: Processing template structure of type {type(structure)} with {len(structure) if isinstance(structure, list) else 'unknown'} items")
+        
+        # Normalize structure format to ensure consistent processing
+        normalized_structure = self._normalize_structure_format(structure)
+        
+        # Process each item in the normalized structure
+        for item in normalized_structure:
+            # All items should be dictionaries with 'type' and 'name' at this point
+            if not isinstance(item, dict) or 'type' not in item or 'name' not in item:
+                print(f"WARNING: Skipping invalid item format after normalization: {item}")
+                continue
+            
+            item_type = item.get('type')
+            item_name = item.get('name')
+            
+            # Apply placeholders to the name
+            if placeholders and isinstance(item_name, str):
+                item_name = self._replace_placeholders(item_name, placeholders)
+                item['name'] = item_name  # Update the item with the processed name
+            
+            # Final validation of name
+            if not item_name or item_name == '[]' or item_name == 'name':
+                print(f"WARNING: Skipping item with empty/invalid name after normalization: {item}")
+                continue
+            
+            print(f"DEBUG: Processing item: {item_name} of type {item_type}")
+            
+            if item_type == 'folder':
+                # Skip root folders to avoid unnecessary nesting
+                if item_name.lower() == 'root':
+                    # Process children of root folder directly in the parent path
+                    if 'children' in item and item['children']:
+                        self._process_template(output_path, item['children'], placeholders, created_paths, dry_run)
+                else:
+                    # Process as a directory
+                    folder_path = os.path.join(output_path, item_name)
+                    
+                    # Create the directory
+                    print(f"DEBUG: Creating directory: {folder_path}")
+                    if not dry_run:
+                        os.makedirs(folder_path, exist_ok=True)
+                    
+                    # Add to created paths
+                    created_paths.append(folder_path)
+                    
+                    # Process children if any
+                    if 'children' in item and item['children']:
+                        self._process_template(folder_path, item['children'], placeholders, created_paths, dry_run)
+            
+            elif item_type == 'file':
+                # Process as a file
+                try:
+                    file_path = self._process_file(output_path, item, placeholders, dry_run)
+                    if file_path:
+                        created_paths.append(file_path)
+                except Exception as e:
+                    print(f"ERROR: Failed to process file {item_name}: {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"WARNING: Unknown item type: {item_type} for {item_name}")
+        
+        return created_paths
     
-    def batch_create_projects(self, project_names, output_dir, template_file=None, 
-                             project_type="Standard", structure_name=None,
-                             use_version_control=True, create_backup=True,
-                             callback=None):
+    def _normalize_structure_format(self, structure):
+        """
+        Normalize structure format to ensure consistent processing
+        
+        Args:
+            structure: Structure data in any supported format
+            
+        Returns:
+            list: Normalized structure list with consistent format
+        """
+        normalized = []
+        
+        # Handle different structure formats
+        
+        # Already normalized format (list of dicts with type and name)
+        if isinstance(structure, list):
+            print(f"DEBUG: Normalizing structure list with {len(structure)} items")
+            for item in structure:
+                if isinstance(item, dict) and 'type' in item and 'name' in item:
+                    # Already in normalized format, just copy it including any children
+                    normalized_item = dict(item)  # Create a copy to avoid modifying original
+                    
+                    # Process children recursively if they exist
+                    if 'children' in normalized_item and isinstance(normalized_item['children'], list):
+                        normalized_item['children'] = self._normalize_structure_format(normalized_item['children'])
+                        
+                    normalized.append(normalized_item)
+                elif isinstance(item, dict) and len(item) == 1:
+                    # Old format: {folder_name: [children]}
+                    for folder_name, children in item.items():
+                        folder_item = {
+                            'type': 'folder',
+                            'name': folder_name
+                        }
+                        
+                        # Add children if any
+                        if isinstance(children, list) and children:
+                            folder_item['children'] = self._normalize_structure_format(children)
+                            
+                        normalized.append(folder_item)
+                elif isinstance(item, str):
+                    # Simple string item (treat as file)
+                    normalized.append({
+                        'type': 'file',
+                        'name': item
+                    })
+                else:
+                    print(f"WARNING: Unsupported item format in structure: {item}")
+                    if isinstance(item, dict):
+                        print(f"Item keys: {list(item.keys())}")
+                        # Try to interpret as folder or file based on available keys
+                        if 'name' in item:
+                            item_type = item.get('type', 'file')  # Default to file if type is missing
+                            normalized_item = {
+                                'type': item_type,
+                                'name': item['name']
+                            }
+                            
+                            # Handle children if this is a folder
+                            if item_type == 'folder' and 'children' in item:
+                                normalized_item['children'] = self._normalize_structure_format(item['children'])
+                                
+                            normalized.append(normalized_item)
+        
+            return normalized
+        
+        # Newer format with root array
+        elif isinstance(structure, dict) and 'root' in structure and isinstance(structure['root'], list):
+            # Process root items
+            print(f"DEBUG: Normalizing structure with 'root' key containing {len(structure['root'])} items")
+            for item in structure['root']:
+                if isinstance(item, dict) and 'type' in item and 'name' in item:
+                    # Already in normalized format, just copy it including any children
+                    normalized_item = dict(item)  # Create a copy to avoid modifying original
+                    
+                    # Process children recursively if they exist
+                    if 'children' in normalized_item and isinstance(normalized_item['children'], list):
+                        normalized_item['children'] = self._normalize_structure_format(normalized_item['children'])
+                        
+                    normalized.append(normalized_item)
+                elif isinstance(item, dict) and len(item) == 1:
+                    # Old format: {folder_name: [children]}
+                    for folder_name, children in item.items():
+                        folder_item = {
+                            'type': 'folder',
+                            'name': folder_name
+                        }
+                        
+                        # Add children if any
+                        if isinstance(children, list) and children:
+                            folder_item['children'] = self._normalize_structure_format(children)
+                            
+                        normalized.append(folder_item)
+                elif isinstance(item, str):
+                    # Simple string item (treat as file)
+                    normalized.append({
+                        'type': 'file',
+                        'name': item
+                    })
+                else:
+                    print(f"WARNING: Unsupported item format in structure root: {item}")
+                    if isinstance(item, dict) and 'name' in item:
+                        item_type = item.get('type', 'file')  # Default to file if type is missing
+                        normalized_item = {
+                            'type': item_type,
+                            'name': item['name']
+                        }
+                        
+                        # Handle children if this is a folder
+                        if item_type == 'folder' and 'children' in item:
+                            normalized_item['children'] = self._normalize_structure_format(item['children'])
+                            
+                        normalized.append(normalized_item)
+        
+        # Old format: dictionary of {folder_name: [children]}
+        elif isinstance(structure, dict):
+            print(f"DEBUG: Normalizing dictionary structure with {len(structure)} keys")
+            for key, value in structure.items():
+                if key != 'root':  # Skip 'root' key to avoid duplication
+                    folder_item = {
+                        'type': 'folder',
+                        'name': key
+                    }
+                    
+                    # Add children if any
+                    if isinstance(value, list) and value:
+                        folder_item['children'] = self._normalize_structure_format(value)
+                    elif isinstance(value, dict):
+                        # Nested dictionary structure
+                        folder_item['children'] = self._normalize_structure_format(value)
+                        
+                    normalized.append(folder_item)
+        
+        print(f"DEBUG: Normalized structure has {len(normalized)} items")
+        return normalized
+        
+    def _process_directory(self, output_path, contents, directory_name, placeholders, created_paths, dry_run=False):
+        """
+        Process a directory item in the structure
+        
+        Args:
+            output_path: Base path for the directory
+            contents: List of child items
+            directory_name: Name of the directory
+            placeholders: Placeholders to replace
+            created_paths: List to store created paths
+            dry_run: If True, don't actually create the directory
+        """
+        # Skip invalid directory names
+        if not directory_name or directory_name == '[]' or directory_name == 'name':
+            print(f"WARNING: Skipping directory with invalid name: {directory_name}")
+            return
+        
+        # Convert to string if it's not already
+        if not isinstance(directory_name, str):
+            directory_name = str(directory_name)
+        
+        # If placeholders present, apply them to the directory name
+        if placeholders:
+            directory_name = self._replace_placeholders(directory_name, placeholders)
+        
+        # Create directory path
+        directory_path = os.path.join(output_path, directory_name)
+        
+        # Create the directory if it doesn't exist
+        print(f"DEBUG: Creating directory from custom structure: {directory_path}")
+        if not dry_run:
+            os.makedirs(directory_path, exist_ok=True)
+        
+        # Add to created paths
+        created_paths.append(directory_path)
+        
+        # Process children if any
+        if contents:
+            # Normalize children to ensure consistent format
+            normalized_children = self._normalize_structure_format(contents)
+            self._process_template(directory_path, normalized_children, placeholders, created_paths, dry_run)
+        
+    def _process_file(self, parent_output_path, item, placeholders=None, dry_run=False):
+        """
+        Process a file item in the structure
+        
+        Args:
+            parent_output_path: Parent directory path
+            item: File item data (dict or string)
+            placeholders: Optional dictionary of placeholders to replace
+            dry_run: If True, don't actually create the file
+            
+        Returns:
+            str: Path to the created file, or None if failed
+        """
+        if not placeholders:
+            placeholders = {}
+        
+        # Handle different item formats
+        item_name = None
+        is_binary = False
+        content = None
+        source_path = None
+        embedded_data = None
+        
+        # Normalize item to dict format if it's a string
+        if isinstance(item, str):
+            item_name = item
+            item = {'name': item_name, 'type': 'file'}
+        
+        # Get file name from item
+        if isinstance(item, dict):
+            item_name = item.get('name')
+            
+            # Normalize name if it's an array
+            if isinstance(item_name, list):
+                if item_name and item_name[0]:
+                    item_name = str(item_name[0])
+                else:
+                    print(f"WARNING: Skipping file with empty name array: {item}")
+                    return None
+                
+            # Skip files with empty or placeholder names
+            if not item_name or item_name == '[]' or item_name == 'name':
+                print(f"WARNING: Skipping file with empty/invalid name: {item}")
+                return None
+            
+            # Apply placeholders to file name
+            if placeholders:
+                item_name = self._replace_placeholders(item_name, placeholders)
+            
+            # Handle special case for ${PROJECT_NAME}
+            if "${PROJECT_NAME}" in item_name:
+                project_name = placeholders.get("PROJECT_NAME", "Unknown")
+                item_name = item_name.replace("${PROJECT_NAME}", project_name)
+            
+            # Get output file path
+            file_path = os.path.join(parent_output_path, item_name)
+            
+            # Handle string items
+            if 'path' in item:
+                # Get source path for the file
+                source_path = item.get('path')
+                
+                # Check for original_path if path doesn't exist or is invalid
+                if not source_path or not os.path.exists(source_path):
+                    source_path = item.get('original_path')
+                
+                # Check for cached_path if original path doesn't exist
+                if not source_path or not os.path.exists(source_path):
+                    source_path = item.get('cached_path')
+                
+                # Check if source path exists
+                if source_path and os.path.exists(source_path):
+                    # Check if this is a binary file
+                    is_binary = item.get('is_binary', False)
+                    
+                    # Normalize is_binary if it's a list
+                    if isinstance(is_binary, list):
+                        is_binary = bool(is_binary[0]) if is_binary else False
+                    
+                    # Copy the file to the output path
+                    if not dry_run:
+                        try:
+                            # Create parent directory if it doesn't exist
+                            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                            
+                            # Copy the file
+                            import shutil
+                            shutil.copy2(source_path, file_path)
+                        except Exception as e:
+                            print(f"ERROR: Failed to copy file {source_path} to {file_path}: {e}")
+                            return None
+                else:
+                    print(f"WARNING: Source file not found for {item_name}")
+            
+            # Handle embedded binary data
+            elif 'data' in item or 'binary_data' in item or 'embedded_data' in item:
+                # Get encoded binary data
+                embedded_data = item.get('data') or item.get('binary_data') or item.get('embedded_data')
+                
+                # If data is available, decode and write it
+                if embedded_data:
+                    if not dry_run:
+                        try:
+                            # Create parent directory if it doesn't exist
+                            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                            
+                            # Import binary file handler
+                            from app.utils.binary_file_handler import BinaryFileHandler
+                            
+                            # Decode and write the data
+                            success = BinaryFileHandler.decode_binary_file(embedded_data, file_path)
+                            if not success:
+                                print(f"ERROR: Failed to decode embedded data for {item_name}")
+                                
+                                # Create an empty file as a placeholder
+                                with open(file_path, 'wb') as f:
+                                    f.write(b'')
+                        except Exception as e:
+                            print(f"ERROR: Failed to write embedded data for {item_name}: {e}")
+                            
+                            # Create an empty file as a placeholder
+                            try:
+                                with open(file_path, 'wb') as f:
+                                    f.write(b'')
+                            except Exception as e2:
+                                print(f"ERROR: Failed to create placeholder file: {e2}")
+                                return None
+                else:
+                    print(f"WARNING: No embedded data found for {item_name}")
+                    
+                    # Create a minimal valid file based on extension
+                    if not dry_run:
+                        try:
+                            ext = os.path.splitext(item_name)[1].lower()
+                            placeholder_content = b''
+                            
+                            if ext in ['.json', '.txt', '.md', '.html', '.xml', '.csv']:
+                                placeholder_content = b'{}'  # Minimal valid JSON
+                            elif ext in ['.js', '.py', '.java', '.c', '.cpp']:
+                                placeholder_content = b'// Empty file'
+                            
+                            with open(file_path, 'wb') as f:
+                                f.write(placeholder_content)
+                        except Exception as e:
+                            print(f"ERROR: Failed to create minimal file for {item_name}: {e}")
+                            return None
+            
+            # Handle content field (text files)
+            elif 'content' in item:
+                content = item.get('content')
+                
+                # Normalize content if it's a list
+                if isinstance(content, list):
+                    content = content[0] if content else ''
+                
+                # Apply placeholders to content
+                if placeholders and isinstance(content, str):
+                    for key, value in placeholders.items():
+                        content = content.replace(f"${{{key}}}", str(value))
+                
+                # Write content to file
+                if not dry_run and content is not None:
+                    try:
+                        # Create parent directory if it doesn't exist
+                        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                        
+                        # Write the content
+                        with open(file_path, 'w', encoding='utf-8') as f:
+                            f.write(str(content))
+                    except Exception as e:
+                        print(f"ERROR: Failed to write content for {item_name}: {e}")
+                        return None
+            
+            # Handle case where no source or content is provided
+            else:
+                # Create an empty file
+                if not dry_run:
+                    try:
+                        # Create parent directory if it doesn't exist
+                        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                        
+                        # Create an empty file
+                        with open(file_path, 'w') as f:
+                            pass
+                    except Exception as e:
+                        print(f"ERROR: Failed to create empty file {item_name}: {e}")
+                        return None
+                    
+            return file_path
+        
+        # Handle unknown item format
+        else:
+            print(f"WARNING: Unsupported file item format: {type(item)}")
+            return None
+    
+    def start_batch_creation(self, project_names, output_dir, template_file=None, project_type="Standard", 
+                            structure_name=None, use_version_control=False, create_backup=True, callback=None,
+                            selected_template=None):
         """
         Set up a batch creation of multiple projects
         
@@ -682,13 +1141,14 @@ class ProjectBuilder:
             use_version_control: Whether to use version control
             create_backup: Whether to create backups
             callback: Function to call when batch process completes
+            selected_template: The selected template object (used for gallery templates)
         """
         if not project_names or not output_dir:
             return False
         
         # Create queue of projects to create
         self.project_queue = [(name.strip(), output_dir, template_file, project_type, 
-                             use_version_control, create_backup, structure_name) 
+                             use_version_control, create_backup, structure_name, selected_template) 
                              for name in project_names if name.strip()]
         
         # Start batch processing thread
@@ -710,7 +1170,7 @@ class ProjectBuilder:
         
         # Process all projects in the queue
         for i, (name, output_dir, template_file, project_type, 
-               use_version_control, create_backup, structure_name) in enumerate(self.project_queue):
+               use_version_control, create_backup, structure_name, selected_template) in enumerate(self.project_queue):
             
             # Log progress
             print(f"Creating project {i+1}/{len(self.project_queue)}: {name}")
@@ -719,19 +1179,25 @@ class ProjectBuilder:
             if template_file == "gallery_template":
                 print(f"Using gallery template with structure: {structure_name}")
                 print(f"Project name: {name}, Output dir: {output_dir}")
+                
+                # Special handling for gallery template - use the actual template name
+                # instead of the generic "gallery_template" string
+                if selected_template and isinstance(selected_template, dict) and 'name' in selected_template:
+                    actual_template_name = selected_template['name']
+                    print(f"Using actual template name '{actual_template_name}' instead of 'gallery_template'")
+                    template_file = actual_template_name
             else:
                 print(f"Using template file: {template_file}")
-                if not os.path.exists(template_file):
+                if template_file and not os.path.exists(template_file):
                     print(f"Warning: Template file does not exist: {template_file}")
             
             # Create project
-            success, result = self.create_project(
-                name, output_dir, template_file, project_type,
-                use_version_control, create_backup, structure_name,
-                batch_mode=True
+            success, project_dir = self.create_project(
+                name, output_dir, structure_name=structure_name,
+                template_file=template_file, use_cached_files=True
             )
             
-            results.append((name, success, result))
+            results.append((name, success, project_dir))
         
         # Completed
         self.is_building = False
@@ -745,3 +1211,285 @@ class ProjectBuilder:
 
         # Return results for potential direct use
         return results
+
+    def _replace_placeholders(self, text, placeholders):
+        """
+        Replace placeholders in text with values
+        
+        Args:
+            text: Text with placeholders
+            placeholders: Dictionary of placeholder values
+            
+        Returns:
+            str: Text with placeholders replaced
+        """
+        if not text or not isinstance(text, str):
+            return text
+            
+        result = text
+        
+        # Replace ${PLACEHOLDER} format
+        for key, value in placeholders.items():
+            placeholder = f"${{{key}}}"
+            result = result.replace(placeholder, value)
+            
+        # Replace $PLACEHOLDER format
+        for key, value in placeholders.items():
+            placeholder = f"${key}"
+            result = result.replace(placeholder, value)
+            
+        return result
+        
+    def _add_error(self, error_message):
+        """
+        Add an error message to the error log
+        
+        Args:
+            error_message: Error message to add
+        """
+        if not hasattr(self, '_errors'):
+            self._errors = []
+            
+        self._errors.append(error_message)
+        print(f"ERROR: {error_message}")
+
+    def batch_create_projects(self, project_names, template_name=None, structure_name=None, output_dir=None, 
+                             use_cached_files=True, template_data=None):
+        """
+        Create multiple projects based on a list of project names
+        
+        Args:
+            project_names (list): List of project names to create
+            template_name (str, optional): Name of the template to use
+            structure_name (str, optional): Name of the structure to use
+            output_dir (str, optional): Directory to create projects in
+            use_cached_files (bool, optional): Whether to use cached files
+            template_data (dict, optional): Template data to use instead of loading from name
+            
+        Returns:
+            dict: Dictionary of results with project names as keys and status as values
+        """
+        results = {}
+        successful_projects = 0
+        
+        # Validate input
+        if not project_names or not isinstance(project_names, list):
+            print(f"ERROR: Invalid project names: {project_names}")
+            return {"error": "Invalid project names", "successful_count": 0, "total_count": 0}
+            
+        if not output_dir:
+            print("ERROR: No output directory specified")
+            return {"error": "No output directory specified", "successful_count": 0, "total_count": 0}
+            
+        # Ensure output directory exists
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Process each project
+        for project_name in project_names:
+            try:
+                project_name = project_name.strip()
+                if not project_name:
+                    continue
+                    
+                # Create subdirectory for project
+                project_dir = os.path.join(output_dir, project_name)
+                
+                print(f"Creating project: {project_name} in {project_dir}")
+                
+                # Create the project
+                success, project_dir = self.create_project(
+                    project_name=project_name,
+                    output_dir=output_dir,
+                    template_file=template_name,
+                    structure_name=structure_name,
+                    use_cached_files=use_cached_files
+                )
+                
+                # Check if project creation was successful
+                if success:
+                    successful_projects += 1
+                    
+                results[project_name] = {
+                    "success": success,
+                    "message": f"Project created successfully at {project_dir}" if success else f"Failed to create project: {project_dir}",
+                    "directory": project_dir,
+                    "details": project_dir
+                }
+                
+            except Exception as e:
+                results[project_name] = {
+                    "success": False,
+                    "message": f"Failed to create project: {str(e)}",
+                    "error": str(e)
+                }
+                import traceback
+                traceback.print_exc()
+                
+        # Add summary information to results
+        results["summary"] = {
+            "successful_count": successful_projects,
+            "total_count": len(project_names),
+            "success_rate": f"{successful_projects}/{len(project_names)}"
+        }
+        
+        print(f"Batch creation complete: {successful_projects} of {len(project_names)} projects created successfully")
+        return results
+
+    def _process_files_array(self, project_dir, files_array, placeholders, use_cached_files=True):
+        """
+        Process the files array and copy files to the project
+        
+        Args:
+            project_dir: Base project directory
+            files_array: Array of file objects
+            placeholders: Dictionary of placeholders for variable substitution
+            use_cached_files: Whether to use cached files when available
+            
+        Returns:
+            list: Paths of copied files
+        """
+        copied_files = []
+        
+        if not files_array:
+            return copied_files
+            
+        print(f"Processing {len(files_array)} files from files array")
+        
+        for file_data in files_array:
+            try:
+                # Get file info
+                file_name = file_data.get('file_name')
+                original_path = file_data.get('original_path')
+                cached_path = file_data.get('cached_path')
+                folder = file_data.get('folder', '')
+                rename_flag = file_data.get('rename_flag', False)
+                file_type = file_data.get('file_type', 'other')
+                
+                if not file_name:
+                    print(f"WARNING: File data missing file_name: {file_data}")
+                    continue
+                
+                # Apply placeholders to file name if flag is set
+                if rename_flag:
+                    # Extract file extension
+                    name_parts = os.path.splitext(file_name)
+                    if len(name_parts) == 2:
+                        base_name, ext = name_parts
+                        # Replace placeholders in base name only
+                        new_base_name = self._replace_placeholders(base_name, placeholders)
+                        file_name = new_base_name + ext
+                    else:
+                        # No extension, just replace in the whole name
+                        file_name = self._replace_placeholders(file_name, placeholders)
+                    
+                    print(f"Renamed file: {file_data.get('file_name')} -> {file_name}")
+                    
+                # Apply placeholders to folder path
+                folder = self._replace_placeholders(folder, placeholders)
+                
+                # Create folder structure if it doesn't exist
+                folder_path = os.path.join(project_dir, folder)
+                os.makedirs(folder_path, exist_ok=True)
+                
+                # Determine destination path
+                dest_path = os.path.join(folder_path, file_name)
+                
+                # Determine source path (cached or original)
+                source_path = None
+                
+                # Try cached path first
+                if use_cached_files and cached_path and os.path.exists(cached_path):
+                    source_path = cached_path
+                    print(f"Using cached file: {source_path}")
+                
+                # Fall back to original path
+                if not source_path and original_path and os.path.exists(original_path):
+                    source_path = original_path
+                    print(f"Using original file: {source_path}")
+                
+                # Skip if no valid source path
+                if not source_path:
+                    print(f"WARNING: No valid source path for file {file_name}")
+                    continue
+                
+                # Copy the file
+                try:
+                    shutil.copy2(source_path, dest_path)
+                    copied_files.append(dest_path)
+                    print(f"Copied file: {source_path} -> {dest_path}")
+                except Exception as e:
+                    print(f"ERROR: Failed to copy file {source_path} to {dest_path}: {str(e)}")
+                    
+            except Exception as e:
+                print(f"ERROR processing file: {str(e)}")
+                
+        return copied_files
+        
+    def _might_contain_placeholders(self, file_path):
+        """
+        Check if a file might contain placeholders by reading the first few KB
+        
+        Args:
+            file_path: Path to the file to check
+            
+        Returns:
+            bool: True if the file might contain placeholders
+        """
+        try:
+            # Read the first 8KB of the file
+            with open(file_path, 'rb') as f:
+                data = f.read(8192)
+            
+            # Convert to string with errors ignored
+            text = data.decode('utf-8', errors='ignore')
+            
+            # Check for common placeholder patterns
+            return '${' in text or '$PROJECT_NAME' in text or '$project_name' in text
+        except Exception as e:
+            print(f"Error checking for placeholders: {e}")
+            return False
+            
+    def _process_binary_file(self, source_path, dest_path, placeholders):
+        """
+        Process a binary file that might contain placeholder text
+        
+        Args:
+            source_path: Source file path
+            dest_path: Destination file path
+            placeholders: Dictionary of placeholders
+            
+        Returns:
+            bool: Success status
+        """
+        try:
+            # Read the binary file
+            with open(source_path, 'rb') as f:
+                binary_data = f.read()
+            
+            # Convert to string with errors ignored for processing
+            text_data = binary_data.decode('utf-8', errors='ignore')
+            
+            # Replace placeholders
+            for key, value in placeholders.items():
+                placeholder1 = f"${{{key}}}"
+                placeholder2 = f"${key}"
+                text_data = text_data.replace(placeholder1, value)
+                text_data = text_data.replace(placeholder2, value)
+            
+            # Convert back to binary and write
+            with open(dest_path, 'wb') as f:
+                f.write(text_data.encode('utf-8', errors='ignore'))
+                
+            return True
+        except Exception as e:
+            print(f"Error processing binary file: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Fallback to direct copy
+            try:
+                shutil.copy2(source_path, dest_path)
+                return True
+            except Exception as copy_error:
+                print(f"Error in fallback copy: {copy_error}")
+                return False

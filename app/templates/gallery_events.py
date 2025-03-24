@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import QInputDialog, QMessageBox, QFileDialog, QDialog, QVB
 from PyQt5.QtCore import Qt
 import os
 from PyQt5.QtGui import QIcon, QFont, QPixmap
+import time
 
 # Import styling
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE
@@ -306,41 +307,73 @@ class GalleryEvents:
             
             # For new templates, create the basic template first
             if is_new:
-                # Save the template to the template manager
-                success = gallery.app.template_manager.save_template(
-                    template_name,
-                    "",  # Path - will be set by structure
-                    "Standard",
-                    "Template created with structure editor"
-                )
+                # Create template data
+                template_data = {
+                    'name': template_name,
+                    'description': "Template created with structure editor",
+                    'category': 'Custom',
+                    'type': 'Standard',
+                    'created': time.time(),
+                    'modified': time.time(),
+                    'tags': []
+                }
                 
-                if not success:
-                    print(f"🔍 ERROR: Failed to save template '{template_name}'")
-                    return False
+                # Get source files from the template data if available
+                source_files = []
+                if hasattr(gallery, 'template_editor') and hasattr(gallery.template_editor, 'get_files'):
+                    try:
+                        source_files = gallery.template_editor.get_files()
+                        print(f"🔍 LISTENER: Found {len(source_files)} files in template editor")
+                    except Exception as e:
+                        print(f"🔍 ERROR: Failed to get files from template editor: {e}")
                 
-                print(f"🔍 LISTENER: Created new template '{template_name}'")
-            
-            # Now save the structure
-            if hasattr(gallery.app.template_manager, 'save_structure'):
-                # Ensure structure name matches template name
-                if not structure_name or not structure_name.startswith("Template_"):
-                    structure_name = f"Template_{template_name}"
-                
-                # Save the structure with proper association to the template
-                success = gallery.app.template_manager.save_structure(structure_name, structure)
-                
-                if success:
-                    print(f"🔍 LISTENER: Successfully saved structure '{structure_name}' for template '{template_name}'")
+                try:
+                    # Save the template with the new method signature
+                    print(f"🔍 LISTENER: Saving template '{template_name}' with structure")
+                    success = gallery.app.template_manager.save_template(
+                        template_name=template_name,
+                        structure=structure,
+                        template_data=template_data,
+                        source_files=source_files,
+                        cache_files=True
+                    )
                     
-                    # Associate structure with template
-                    if hasattr(gallery.app.template_manager, 'associate_structure_with_template'):
-                        gallery.app.template_manager.associate_structure_with_template(template_name, structure_name)
-                        print(f"🔍 LISTENER: Associated structure '{structure_name}' with template '{template_name}'")
-                else:
-                    print(f"🔍 ERROR: Failed to save structure '{structure_name}'")
+                    if not success:
+                        print(f"🔍 ERROR: Failed to save template '{template_name}'")
+                        return False
+                    
+                    print(f"🔍 LISTENER: Created new template '{template_name}'")
+                    
+                    # Since we've already saved the structure with the template, we can skip the separate
+                    # structure saving step below
+                    return True
+                except Exception as e:
+                    print(f"🔍 ERROR: Exception while saving template: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
                     return False
             else:
-                print(f"🔍 WARNING: Template manager does not support save_structure, structure not saved")
+                # For existing templates, update the structure
+                if hasattr(gallery.app.template_manager, 'save_structure'):
+                    # Ensure structure name matches template name
+                    if not structure_name or not structure_name.startswith("Template_"):
+                        structure_name = f"Template_{template_name}"
+                    
+                    # Save the structure with proper association to the template
+                    success = gallery.app.template_manager.save_structure(structure_name, structure)
+                    
+                    if success:
+                        print(f"🔍 LISTENER: Successfully saved structure '{structure_name}' for template '{template_name}'")
+                        
+                        # Associate structure with template
+                        if hasattr(gallery.app.template_manager, 'associate_structure_with_template'):
+                            gallery.app.template_manager.associate_structure_with_template(template_name, structure_name)
+                            print(f"🔍 LISTENER: Associated structure '{structure_name}' with template '{template_name}'")
+                    else:
+                        print(f"🔍 ERROR: Failed to save structure '{structure_name}'")
+                        return False
+                else:
+                    print(f"🔍 WARNING: Template manager does not support save_structure, structure not saved")
             
             # Ensure template manager reloads to have updated templates and structures
             if hasattr(gallery.app.template_manager, 'load_templates'):

@@ -7,11 +7,22 @@ Handles drag and drop operations for files and folders
 """
 
 import os
-from PyQt5.QtWidgets import QTreeWidgetItem, QMessageBox
+from PyQt5.QtWidgets import QTreeWidgetItem, QMessageBox, QApplication, QStyle
 from PyQt5.QtCore import Qt, QMimeData, QUrl
 from PyQt5.QtGui import QDrag, QIcon, QBrush, QColor, QPixmap, QPainter
 
 from .utils import get_file_icon_for_type
+
+# Import binary file handler
+try:
+    from app.utils.binary_file_handler import BinaryFileHandler
+except ImportError:
+    # Fallback if not available
+    class BinaryFileHandler:
+        @staticmethod
+        def is_binary_file(file_path):
+            # Simple fallback implementation
+            return False
 
 class DragDropHandler:
     """
@@ -150,191 +161,311 @@ class DragDropHandler:
         self.tree.setProperty("drop-in-progress", True)
         self.tree.style().polish(self.tree)
         
-        # Process each URL
-        for url in event.mimeData().urls():
-            file_path = url.toLocalFile()
-            
-            if not file_path:
-                continue
+        try:
+            # Process each URL
+            for url in event.mimeData().urls():
+                file_path = url.toLocalFile()
                 
-            # Check if it's a directory or file
-            if os.path.isdir(file_path):
-                # Make sure the path is normalized
-                file_path = os.path.normpath(file_path)
-                # Get directory basename
-                dir_basename = os.path.basename(file_path)
-                
-                # Check for duplicates when dropping at the root level
-                if drop_item == self.tree.invisibleRootItem():
-                    root = self.tree.invisibleRootItem()
-                    for i in range(root.childCount()):
-                        child = root.child(i)
-                        child_data = child.data(0, Qt.UserRole)
-                        
-                        if (isinstance(child_data, dict) and 
-                            child_data.get('type') == 'folder' and 
-                            child.text(0) == dir_basename):
-                            
-                            # Ask if the user wants to replace or add
-                            reply = QMessageBox.question(
-                                self.tree,
-                                "Duplicate Folder",
-                                f"A folder named '{dir_basename}' already exists. What would you like to do?",
-                                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
-                                QMessageBox.Cancel
-                            )
-                            
-                            if reply == QMessageBox.Yes:
-                                # Remove existing folder (Replace)
-                                root.removeChild(child)
-                                break
-                            elif reply == QMessageBox.Cancel:
-                                # Skip this URL
-                                continue
-                            # If No (Add), just continue
-                
-                # Print debug info for troubleshooting
-                print(f"DEBUG: Dropping directory: {file_path}, basename: {dir_basename}")
-                
-                # Add the directory with proper top-level handling
-                self._add_directory_to_tree(file_path, drop_item)
-            else:
-                self._add_file_to_tree(file_path, drop_item)
-                
-        # Reset visual feedback
-        self.tree.setProperty("drop-in-progress", False)
-        self.tree.style().polish(self.tree)
-        
-        # Accept the drop action
-        event.acceptProposedAction()
+                # Skip if empty
+                if not file_path:
+                    continue
+                    
+                # Check if it's a directory or a file
+                if os.path.isdir(file_path):
+                    self._process_dropped_directory(file_path, drop_item)
+                else:
+                    self._process_dropped_file(file_path, drop_item)
+                    
+            # Accept the drop action
+            event.acceptProposedAction()
+        except Exception as e:
+            print(f"ERROR: Failed to process dropped URLs: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # Reset drag feedback
+            self.tree.setProperty("drop-in-progress", False)
+            self.tree.style().polish(self.tree)
     
-    def _add_file_to_tree(self, file_path, parent_item):
+    def _process_dropped_file(self, file_path, parent_item):
+        """
+        Process a dropped file
+        
+        Args:
+            file_path: Path to the dropped file
+            parent_item: Parent tree item to add the file to
+            
+        Returns:
+            QTreeWidgetItem: The created file item or None if failed
+        """
+        try:
+            # Ensure file exists
+            if not os.path.exists(file_path):
+                print(f"DEBUG: File not found: {file_path}")
+                return None
+            
+            # Get just the file name
+            file_name = os.path.basename(file_path)
+            
+            # Skip .DS_Store and hidden files
+            if file_name.startswith('.') or file_name == '.DS_Store':
+                print(f"DEBUG: Skipping hidden file or .DS_Store: {file_name}")
+                return None
+            
+            # Determine if this is a binary file
+            is_binary = BinaryFileHandler.is_binary_file(file_path)
+            should_embed = False
+            
+            if is_binary:
+                print(f"DEBUG: Detected binary file: {file_name}")
+                should_embed = BinaryFileHandler.should_embed_binary_file(file_path)
+                if should_embed:
+                    print(f"DEBUG: Binary file {file_name} will be embedded in structure")
+                else:
+                    print(f"DEBUG: Binary file {file_name} will be cached during template save")
+            
+            # Create a file hash for identification
+            file_hash = None
+            try:
+                import hashlib
+                with open(file_path, 'rb') as f:
+                    file_hash = hashlib.md5(f.read()).hexdigest()
+                print(f"DEBUG: File hash for {file_name}: {file_hash}")
+            except Exception as e:
+                print(f"ERROR: Failed to create hash for file {file_name}: {e}")
+                # Create a default hash from the file path as fallback
+                file_hash = hashlib.md5(file_path.encode('utf-8')).hexdigest()
+                print(f"DEBUG: Created fallback hash for {file_name}: {file_hash}")
+            
+            # Create a new tree item for the file
+            file_item = QTreeWidgetItem(parent_item)
+            file_item.setText(0, file_name)
+            
+            # Set icon based on file type
+            from .utils import get_file_icon_for_type
+            file_item.setIcon(0, get_file_icon_for_type(file_name))
+            
+            # Make the item editable
+            file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+            
+            # Get template name from the editor if available
+            template_name = "Unknown Template"
+            if hasattr(self.editor, 'template_name'):
+                template_name = self.editor.template_name
+            elif hasattr(self.editor, 'name_input') and hasattr(self.editor.name_input, 'text'):
+                template_name = self.editor.name_input.text()
+            
+            # Get relative path in the tree structure for later use
+            relative_path = ""
+            if hasattr(self.editor, 'file_ops') and hasattr(self.editor.file_ops, '_get_relative_path'):
+                relative_path = self.editor.file_ops._get_relative_path(file_item)
+            
+            # Store complete file metadata
+            file_data = {
+                'type': 'file',
+                'name': file_name,
+                'path': file_path,
+                'original_path': file_path,
+                'is_binary': is_binary,
+                'should_embed': should_embed,
+                'cache_hash': file_hash,
+                'relative_path': relative_path,
+                'template_name': template_name
+            }
+            
+            # Set special visual indicator for binary files
+            if is_binary:
+                # Light purple for binary files
+                file_item.setForeground(0, QBrush(QColor(180, 120, 220)))
+            else:
+                # Add visual indicator that file is tracked but not yet cached
+                file_item.setForeground(0, QBrush(QColor('#88AADD')))  # Light blue
+            
+            # Store the data in the tree item
+            file_item.setData(0, Qt.UserRole, file_data)
+            
+            # Store reference to the file in the editor's cache tracking if available
+            if hasattr(self.editor, 'files_to_cache'):
+                self.editor.files_to_cache[relative_path] = {
+                    "original_path": file_path,
+                    "relative_path": relative_path,
+                    "template_name": template_name,
+                    "cache_hash": file_hash
+                }
+            
+            return file_item
+            
+        except Exception as e:
+            print(f"ERROR: Failed to process dropped file: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def _add_file_to_tree(self, file_path, parent_item=None):
         """
         Add a file to the tree
         
         Args:
-            file_path: Path to the file
-            parent_item: Parent item to add to
-            
+            file_path: Path to the file to add
+            parent_item: Parent tree item to add to
+        
         Returns:
-            QTreeWidgetItem: The added item
+            QTreeWidgetItem: The created file item
         """
+        if not parent_item:
+            parent_item = self.tree.invisibleRootItem()
+        
         # Get file name
         file_name = os.path.basename(file_path)
         
-        # Skip hidden files and macOS system files
-        if file_name.startswith('.') or file_name == '.DS_Store':
-            print(f"DEBUG: Skipping hidden file: {file_name}")
-            return None
-        
-        # Create a tree item
+        # Create a file item
         file_item = QTreeWidgetItem(parent_item)
         file_item.setText(0, file_name)
+        file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
         
-        # Set icon based on file type
-        icon = get_file_icon_for_type(file_path)
-        file_item.setIcon(0, icon)
+        # Check if it's a binary file
+        is_binary = BinaryFileHandler.is_binary_file(file_path)
+        
+        # Get template name from the editor if available
+        template_name = "Unknown Template"
+        if hasattr(self.editor, 'template_name'):
+            template_name = self.editor.template_name
+        elif hasattr(self.editor, 'name_input') and hasattr(self.editor.name_input, 'text'):
+            template_name = self.editor.name_input.text()
+        
+        # Get relative path for later use in caching
+        relative_path = ""
+        if hasattr(self.editor, 'file_ops') and hasattr(self.editor.file_ops, '_get_relative_path'):
+            relative_path = self.editor.file_ops._get_relative_path(file_item)
+        
+        # Create file hash
+        file_hash = None
+        try:
+            import hashlib
+            with open(file_path, 'rb') as f:
+                file_hash = hashlib.md5(f.read()).hexdigest()
+        except Exception as e:
+            print(f"Error calculating file hash: {e}")
+            # Fallback to path-based hash
+            file_hash = hashlib.md5(file_path.encode('utf-8')).hexdigest()
         
         # Store file data
-        is_binary = False
-        if hasattr(self.editor, 'file_operations') and hasattr(self.editor.file_operations, 'is_binary_file'):
-            is_binary = self.editor.file_operations.is_binary_file(file_path)
-            
         file_data = {
-            "type": "file",
-            "path": file_path,
-            "name": file_name,
-            "is_binary": is_binary
+            'type': 'file',
+            'name': file_name,
+            'path': file_path,
+            'original_path': file_path,
+            'is_binary': is_binary,
+            'cache_hash': file_hash,
+            'relative_path': relative_path,
+            'template_name': template_name
         }
-        
-        # If it's a binary file, cache the content
-        if is_binary and hasattr(self.editor, 'files_to_cache'):
-            try:
-                with open(file_path, 'rb') as f:
-                    content = f.read()
-                    self.editor.files_to_cache[file_path] = content
-                    file_data['cached'] = True
-            except Exception as e:
-                print(f"DEBUG: Failed to cache binary file: {e}")
-        
         file_item.setData(0, Qt.UserRole, file_data)
         
-        # Expand parent
-        parent_item.setExpanded(True)
+        # Set visual indicator
+        if is_binary:
+            # Light purple for binary files
+            file_item.setForeground(0, QBrush(QColor(180, 120, 220)))
+        else:
+            # Light blue for tracked files
+            file_item.setForeground(0, QBrush(QColor('#88AADD')))
+        
+        # Make the item editable
+        file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+        
+        # Store reference to the file in the editor's cache tracking if available
+        if hasattr(self.editor, 'files_to_cache'):
+            self.editor.files_to_cache[relative_path] = {
+                "original_path": file_path,
+                "relative_path": relative_path,
+                "template_name": template_name,
+                "cache_hash": file_hash
+            }
         
         return file_item
     
-    def _add_directory_to_tree(self, dir_path, parent_item):
+    def _add_directory_to_tree(self, dir_path, parent_item=None, folder_name=None):
         """
-        Add a directory to the tree, recursively adding its contents
+        Add a directory to the tree
         
         Args:
-            dir_path: Path to the directory
-            parent_item: Parent item to add to
-            
+            dir_path: Directory path to add
+            parent_item: Parent tree item to add to
+            folder_name: Optional folder name override
+        
         Returns:
-            QTreeWidgetItem: The added item
+            QTreeWidgetItem: The created folder item
         """
-        # Get directory name - ensure we're using the correct basename
-        dir_path = os.path.normpath(dir_path)
-        dir_name = os.path.basename(dir_path)
+        if not parent_item:
+            parent_item = self.tree.invisibleRootItem()
         
-        print(f"DEBUG: Adding directory: {dir_path}, folder name: {dir_name}")
+        # If this is the first call, get just the directory name
+        if not folder_name:
+            folder_name = os.path.basename(dir_path)
         
-        # Skip hidden directories
-        if dir_name.startswith('.'):
-            print(f"DEBUG: Skipping hidden directory: {dir_name}")
-            return None
+        # Create a folder item
+        folder_item = QTreeWidgetItem(parent_item)
+        folder_item.setText(0, folder_name)
+        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
         
-        # Create a tree item
-        dir_item = QTreeWidgetItem(parent_item)
-        dir_item.setText(0, dir_name)  # Set the folder name correctly
+        # Store folder data
+        folder_data = {
+            'type': 'folder',
+            'name': folder_name,
+            'path': dir_path,
+            'children': []  # Initialize empty children array
+        }
+        folder_item.setData(0, Qt.UserRole, folder_data)
         
-        # Set folder icon
-        folder_icon = QIcon.fromTheme("folder")
-        # Try to get a folder icon from assets if theme icon is not available
-        if folder_icon.isNull():
-            icon_paths = [
-                os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
-                          "assets", "icons", "folder.png"),
-                "icons/folder.png"
-            ]
-            
-            for path in icon_paths:
-                if os.path.exists(path):
-                    folder_icon = QIcon(path)
-                    if not folder_icon.isNull():
-                        break
+        # Make the item editable
+        folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
         
-        dir_item.setIcon(0, folder_icon)
-        
-        # Store directory data
-        dir_item.setData(0, Qt.UserRole, {
-            "type": "folder", 
-            "name": dir_name,
-            "path": dir_path
-        })
-        
-        # Add child items
+        # Process all the contents
         try:
-            for item in sorted(os.listdir(dir_path)):
-                # Skip hidden files and .DS_Store
-                if item.startswith('.') or item == '.DS_Store':
-                    continue
+            # Get directory contents, sorted alphabetically with folders first
+            dir_contents = []
+            try:
+                # Get the list of all files and directories
+                contents = os.listdir(dir_path)
+                # Split into files and dirs
+                dirs = []
+                files = []
+                for item in contents:
+                    # Skip hidden files and .DS_Store
+                    if item.startswith('.') or item == '.DS_Store':
+                        continue
                     
-                item_path = os.path.join(dir_path, item)
+                    full_path = os.path.join(dir_path, item)
+                    if os.path.isdir(full_path):
+                        dirs.append(item)
+                    else:
+                        files.append(item)
+                
+                # Sort both lists and combine with directories first
+                dirs.sort()
+                files.sort()
+                dir_contents = dirs + files
+            except Exception as e:
+                print(f"Error listing directory contents: {e}")
+                return folder_item
+            
+            # Process each item
+            for item_name in dir_contents:
+                item_path = os.path.join(dir_path, item_name)
                 
                 if os.path.isdir(item_path):
-                    self._add_directory_to_tree(item_path, dir_item)
+                    # Recursively add the directory
+                    self._add_directory_to_tree(item_path, folder_item)
                 else:
-                    self._add_file_to_tree(item_path, dir_item)
-        except Exception as e:
-            print(f"DEBUG: Error listing directory '{dir_path}': {e}")
+                    # Add the file
+                    self._add_file_to_tree(item_path, folder_item)
             
-        # Expand the directory item
-        dir_item.setExpanded(True)
+            # Expand the folder
+            folder_item.setExpanded(True)
+        except Exception as e:
+            print(f"Error processing directory: {e}")
         
-        return dir_item
+        return folder_item
     
     def _mouse_press_event(self, event):
         """
@@ -718,4 +849,107 @@ class DragDropHandler:
         if file_type == 'doc' or filename.lower() in ('readme.md', 'license', 'contributing.md'):
             font.setItalic(True)
         
-        item.setFont(0, font) 
+        item.setFont(0, font)
+    
+    def _process_dropped_directory(self, dir_path, parent_item):
+        """
+        Process a dropped directory recursively
+        
+        Args:
+            dir_path: Path to the directory
+            parent_item: Parent tree item to add the directory to
+        """
+        try:
+            # Normalize path and get directory name
+            dir_path = os.path.normpath(dir_path)
+            dir_name = os.path.basename(dir_path)
+            
+            # Skip hidden directories
+            if dir_name.startswith('.'):
+                print(f"DEBUG: Skipping hidden directory: {dir_name}")
+                return None
+            
+            # Check for duplicates when dropping at the root level
+            if parent_item == self.tree.invisibleRootItem():
+                root = self.tree.invisibleRootItem()
+                for i in range(root.childCount()):
+                    child = root.child(i)
+                    child_data = child.data(0, Qt.UserRole)
+                    
+                    if (isinstance(child_data, dict) and 
+                        child_data.get('type') == 'folder' and 
+                        child.text(0) == dir_name):
+                        
+                        # Ask if the user wants to replace or add
+                        from PyQt5.QtWidgets import QMessageBox
+                        reply = QMessageBox.question(
+                            self.tree,
+                            "Duplicate Folder",
+                            f"A folder named '{dir_name}' already exists. What would you like to do?",
+                            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                            QMessageBox.Cancel
+                        )
+                        
+                        if reply == QMessageBox.Yes:
+                            # Remove existing folder (Replace)
+                            root.removeChild(child)
+                            break
+                        elif reply == QMessageBox.Cancel:
+                            # Skip this directory
+                            return None
+                        # If No (Add), just continue
+            
+            # Create a folder item
+            folder_item = QTreeWidgetItem(parent_item)
+            folder_item.setText(0, dir_name)
+            
+            # Set folder icon
+            # Try to get system folder icon
+            folder_icon = QIcon.fromTheme("folder")
+            if folder_icon.isNull():
+                # Fallback to standard icon if available
+                folder_icon = QApplication.style().standardIcon(QStyle.SP_DirIcon)
+            
+            folder_item.setIcon(0, folder_icon)
+            
+            # Make the folder editable
+            folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+            
+            # Store folder data
+            folder_data = {
+                'type': 'folder',
+                'name': dir_name,
+                'path': dir_path
+            }
+            folder_item.setData(0, Qt.UserRole, folder_data)
+            
+            # Process directory contents
+            try:
+                # List directory contents
+                for item_name in sorted(os.listdir(dir_path)):
+                    # Skip hidden files and .DS_Store
+                    if item_name.startswith('.') or item_name == '.DS_Store':
+                        continue
+                    
+                    item_path = os.path.join(dir_path, item_name)
+                    
+                    # Process subdirectories and files
+                    if os.path.isdir(item_path):
+                        self._process_dropped_directory(item_path, folder_item)
+                    else:
+                        self._process_dropped_file(item_path, folder_item)
+            except Exception as e:
+                print(f"ERROR: Failed to process directory contents: {e}")
+                import traceback
+                traceback.print_exc()
+            
+            # Expand the folder to show its contents
+            folder_item.setExpanded(True)
+            
+            return folder_item
+            
+        except Exception as e:
+            print(f"ERROR: Failed to process dropped directory: {e}")
+            import traceback
+            traceback.print_exc()
+            return None 

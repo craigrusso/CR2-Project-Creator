@@ -273,7 +273,27 @@ def handle_template_edit(gallery, template=None, selected_template=None, name=No
                     
                     # Save the template with required parameters
                     if name:
-                        save_success = gallery.app.template_manager.save_template(name, file_path, structure_type, description)
+                        # Create template data dictionary
+                        template_data = {
+                            'name': name,
+                            'description': description,
+                            'type': structure_type,
+                            'category': template.get('category', 'Custom'),
+                            'created': template.get('created', time.time()),
+                            'modified': time.time(),
+                            'tags': template.get('tags', [])
+                        }
+                        
+                        # Get structure from template if it exists
+                        structure = template.get('structure', None)
+                        
+                        # Call save_template with the new parameter format
+                        save_success = gallery.app.template_manager.save_template(
+                            template_name=name,
+                            template_data=template_data,
+                            structure=structure,
+                            overwrite=True
+                        )
                         print(f"🔷 GALLERY LISTENER: Template save result: {save_success}")
                     else:
                         print("🔍 ERROR: Cannot save template - empty name")

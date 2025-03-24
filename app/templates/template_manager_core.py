@@ -14,6 +14,7 @@ from app.templates.folder_operations import FolderOperations
 from app.templates.structure_operations import StructureOperations
 from app.templates.template_operations import TemplateOperations
 from app.templates.project_type_manager import ProjectTypeManager
+from app.utils.cache_preferences import CachePreferences
 
 class TemplateManagerCore(TemplateOperations):
     """
@@ -36,13 +37,33 @@ class TemplateManagerCore(TemplateOperations):
         self.folders = {}  # Map of folder name to list of template names
         self.preferences = {}  # User preferences
         
+        # Add the cache_location path from CachePreferences
+        cache_prefs = CachePreferences()
+        self.paths["templates_cache_dir"] = cache_prefs.get_cache_location()
+        print(f"DEBUG: Set templates_cache_dir path to: {self.paths['templates_cache_dir']}")
+        
         # Create template directory if it doesn't exist
         self._ensure_directories_exist()
         
         # Load templates, structures, and folders
         self.load_template_directories()
         self.load_templates()
+        
+        # Load custom structures and ensure they're properly stored
+        if not hasattr(self, 'custom_structures'):
+            self.custom_structures = {}
+        
         self.load_custom_structures()
+        
+        # Make sure structures reference the same dictionary as custom_structures for backward compatibility
+        if not hasattr(self, 'structures'):
+            self.structures = self.custom_structures
+        else:
+            # Update structures with custom_structures values
+            for key, value in self.custom_structures.items():
+                self.structures[key] = value
+        
+        # Load folders
         self.load_folders()
         
         # Load user preferences
@@ -56,12 +77,18 @@ class TemplateManagerCore(TemplateOperations):
         
         # For project types (replacing categories)
         self.project_type_manager = ProjectTypeManager(self)
+        
+        # Debug check to make sure structures are properly loaded
+        print(f"DEBUG: After initialization: {len(self.custom_structures)} custom structures available")
+        print(f"DEBUG: Structure keys: {list(self.custom_structures.keys())}")
     
     def _ensure_directories_exist(self):
         """Ensure all required directories exist"""
-        for path_key in ["templates_dir", "custom_structures_dir", "template_directories_dir"]:
+        # Add templates_cache_dir to the list of directories to ensure it exists
+        for path_key in ["templates_dir", "custom_structures_dir", "template_directories_dir", "templates_cache_dir"]:
             if path_key in self.paths:
                 os.makedirs(self.paths[path_key], exist_ok=True)
+                print(f"DEBUG: Ensured directory exists: {self.paths[path_key]}")
     
     def load_templates(self):
         """Load all templates from the templates directory"""
@@ -114,16 +141,35 @@ class TemplateManagerCore(TemplateOperations):
                         # Update the template data with the clean name if needed
                         if not template_data.get('display_name'):
                             template_data['display_name'] = clean_name
+                    
+                    # Ensure template has a type (default to "Standard" if missing)
+                    if 'type' not in template_data or not template_data['type']:
+                        template_data['type'] = 'Standard'
+                        print(f"[DEBUG] TemplateManagerCore: Added default type 'Standard' to template: {template_name}")
+                        
+                    # Ensure template structure is in correct format
+                    if 'structure' in template_data and template_data['structure']:
+                        # Structure is already present, make sure it's properly formatted
+                        print(f"[DEBUG] TemplateManagerCore: Template '{template_name}' has structure")
+                    
+                    # Validate files array exists
+                    if 'files' not in template_data:
+                        template_data['files'] = []
+                        print(f"[DEBUG] TemplateManagerCore: Added empty files array to template: {template_name}")
                         
                     # Add the template to our list
                     self.templates.append(template_data)
                     print(f"[DEBUG] TemplateManagerCore: Loaded template: {template_name}")
                 except Exception as e:
                     print(f"Error loading template {file}: {e}")
+                    import traceback
+                    traceback.print_exc()
                     
             print(f"[DEBUG] TemplateManagerCore: Loaded {len(self.templates)} templates")
         except Exception as e:
             print(f"Error loading templates: {e}")
+            import traceback
+            traceback.print_exc()
         
         # Also load structures as templates for seamless integration
         self.load_structures_as_templates()
@@ -155,36 +201,49 @@ class TemplateManagerCore(TemplateOperations):
             print(f"Error loading template directories: {e}")
     
     def load_custom_structures(self):
-        """Load custom structures from the custom structures directory"""
-        self.custom_structures = {}  # Initialize as empty dictionary
+        """Load custom structures from structures directory and store in both dictionaries"""
+        # First call the parent method to load structures
+        result = super().load_custom_structures()
         
-        custom_structures_dir = self.paths.get("custom_structures_dir")
-        if not custom_structures_dir or not os.path.exists(custom_structures_dir):
-            return
+        # Make sure the custom_structures dictionary is populated
+        if not self.custom_structures:
+            print("WARNING: custom_structures dictionary is empty after load, attempting to force load")
+            # Try to directly load the structures
+            structures_dir = self.paths.get('custom_structures_dir')
+            if structures_dir and os.path.exists(structures_dir):
+                print(f"DEBUG: Loading structures from {structures_dir}")
+                structure_files = [f for f in os.listdir(structures_dir) if f.endswith('.json')]
+                
+                for filename in structure_files:
+                    try:
+                        structure_path = os.path.join(structures_dir, filename)
+                        with open(structure_path, 'r') as f:
+                            structure_data = json.load(f)
+                            
+                        if structure_data:
+                            structure_name = filename.replace('.json', '')
+                            # Convert underscores to spaces in the structure name
+                            display_name = structure_name.replace('_', ' ')
+                            if display_name.startswith('Template '):
+                                display_name = display_name[len('Template '):]
+                                
+                            # Store in both dictionaries
+                            self.custom_structures[structure_name] = structure_data
+                            if 'name' in structure_data:
+                                self.custom_structures[structure_data['name']] = structure_data
+                                
+                            print(f"DEBUG: Directly loaded structure {structure_name}")
+                    except Exception as e:
+                        print(f"WARNING: Failed to load structure {filename}: {e}")
         
-        try:
-            structure_files = [f for f in os.listdir(custom_structures_dir) if f.endswith('.json')]
-            
-            for file in structure_files:
-                try:
-                    filepath = os.path.join(custom_structures_dir, file)
-                    with open(filepath, 'r') as f:
-                        structure_data = json.load(f)
-                    
-                    # Get the structure name
-                    structure_name = structure_data.get('name', 'Unknown')
-                    
-                    # Add the structure to our dictionary
-                    self.custom_structures[structure_name] = structure_data
-                    print(f"INFO: Loaded custom structure '{structure_name}' from {file}")
-                except Exception as e:
-                    print(f"ERROR: Failed to load custom structure {file}: {e}")
-                    
-            print(f"INFO: Loaded {len(self.custom_structures)} custom structures")
-        except Exception as e:
-            print(f"ERROR: Failed to load custom structures: {e}")
-            
-        return self.custom_structures
+        print(f"DEBUG: Loaded {len(self.custom_structures)} custom structures")
+        
+        # Ensure both dictionaries have the same data
+        if hasattr(self, 'structures'):
+            for key, value in self.custom_structures.items():
+                self.structures[key] = value
+                
+        return result
     
     def load_folders(self):
         """Load template folders from configuration"""
@@ -272,6 +331,15 @@ class TemplateManagerCore(TemplateOperations):
         name_variations.append(template_name.replace(" ", "_"))
         name_variations.append(template_name.replace("_", " "))
         
+        # Debug template search
+        print(f"[DEBUG] TemplateManagerCore: Looking for template '{template_name}' with {len(name_variations)} variations")
+        print(f"[DEBUG] TemplateManagerCore: We have {len(self.templates)} templates loaded")
+        
+        # Print the first few template names for debugging
+        template_names = [t.get('name', 'unnamed') for t in self.templates]
+        debug_names = template_names[:5] if len(template_names) > 5 else template_names
+        print(f"[DEBUG] TemplateManagerCore: Available templates: {debug_names}{'...' if len(template_names) > 5 else ''}")
+        
         # First try exact match in file templates
         for template in self.templates:
             template_name_from_obj = template.get('name', '')
@@ -315,6 +383,21 @@ class TemplateManagerCore(TemplateOperations):
                     print(f"[DEBUG] TemplateManagerCore: Found directory template by flexible match: {template_name_from_obj}")
                     return template
         
+        # Try to find by filename match (for templates saved with different internal name)
+        for template in self.templates:
+            if 'file_path' in template:
+                file_path = template['file_path']
+                if file_path:
+                    # Extract filename without extension
+                    filename = os.path.basename(file_path)
+                    if filename.endswith('.json'):
+                        filename = filename[:-5]  # Remove .json extension
+                    
+                    # Check if filename matches any of our variations
+                    if filename.lower() in [v.lower() for v in name_variations]:
+                        print(f"[DEBUG] TemplateManagerCore: Found template by filename match: {filename} -> {template.get('name', '')}")
+                        return template
+                        
         # If not found anywhere
         template_variations_str = ", ".join(name_variations[:3]) + (", ..." if len(name_variations) > 3 else "")
         print(f"[DEBUG] TemplateManagerCore: Template not found for name '{template_name}' (tried variations: {template_variations_str})")
@@ -472,10 +555,7 @@ class TemplateManagerCore(TemplateOperations):
         return count 
     
     def load_structures_as_templates(self):
-        """
-        Load structure files as templates to ensure compatibility between APIs.
-        This makes structures accessible via template methods and vice versa.
-        """
+        """Load custom structures as templates if they don't exist as templates"""
         try:
             # Make sure we have custom structures loaded
             if not hasattr(self, 'custom_structures') or not self.custom_structures:
@@ -488,47 +568,88 @@ class TemplateManagerCore(TemplateOperations):
             # Track how many structures were converted to templates
             converted_count = 0
             
-            # Go through all the structure data
-            for structure_name, structure_data in self.custom_structures.items():
-                # Skip if not a proper structure dictionary
-                if not isinstance(structure_data, dict):
-                    continue
-                    
-                # Skip if we already have a template with this name
-                template_name = structure_name
-                if structure_name.startswith("Template_"):
-                    # Extract the template name without the Template_ prefix
-                    template_name = structure_name[9:]
-                
-                # Check if we already have this template by name
-                template_exists = False
-                for template in self.templates:
-                    if template.get('name') == template_name:
-                        template_exists = True
-                        break
-                        
-                if template_exists:
-                    continue
-                    
-                # Create a template object from the structure data
-                template = {
-                    'name': template_name,
-                    'description': structure_data.get('description', f'Template for {template_name}'),
-                    'structure_name': structure_name,
-                    'type': 'custom',
-                    'tags': structure_data.get('tags', []),
-                    'category': structure_data.get('category', 'General'),
-                    'icon': structure_data.get('icon', ''),
-                    'color': structure_data.get('color', '')
-                }
-                
-                # Add the template to our list
-                self.templates.append(template)
-                converted_count += 1
-                
+            # Handle different custom_structures formats
+            if isinstance(self.custom_structures, dict):
+                # Dictionary format - iterate over keys and values
+                for structure_name, structure_data in self.custom_structures.items():
+                    # Process each structure by name and data
+                    if self._convert_structure_to_template(structure_name, structure_data):
+                        converted_count += 1
+            elif isinstance(self.custom_structures, list):
+                # List format - each item should be a dict with a name
+                for structure_item in self.custom_structures:
+                    if isinstance(structure_item, dict) and 'name' in structure_item:
+                        structure_name = structure_item['name']
+                        # Process the structure using its name and data
+                        if self._convert_structure_to_template(structure_name, structure_item):
+                            converted_count += 1
+                    else:
+                        print(f"[WARNING] TemplateManagerCore: Skipping structure item without name: {structure_item}")
+            else:
+                print(f"[ERROR] TemplateManagerCore: custom_structures has unknown type: {type(self.custom_structures)}")
+                return
+            
             print(f"[DEBUG] TemplateManagerCore: Added {converted_count} structures as templates")
             
         except Exception as e:
             print(f"[ERROR] TemplateManagerCore: Error loading structures as templates: {e}")
             import traceback
-            traceback.print_exc() 
+            traceback.print_exc()
+            
+    def _convert_structure_to_template(self, structure_name, structure_data):
+        """
+        Convert a structure to a template
+        
+        Args:
+            structure_name: Name of the structure
+            structure_data: Structure data
+            
+        Returns:
+            bool: True if converted, False otherwise
+        """
+        # Skip if not a proper structure dictionary
+        if not isinstance(structure_data, dict):
+            return False
+            
+        # Skip if we already have a template with this name
+        template_name = structure_name
+        if structure_name.startswith("Template_"):
+            # Extract the template name without the Template_ prefix
+            template_name = structure_name[9:]
+        
+        # Check if we already have this template by name
+        template_exists = False
+        if isinstance(self.templates, dict):
+            template_exists = template_name in self.templates
+        else:
+            for template in self.templates:
+                if isinstance(template, dict) and template.get('name') == template_name:
+                    template_exists = True
+                    break
+                    
+        if template_exists:
+            return False
+            
+        # Create a template object from the structure data
+        template = {
+            'name': template_name,
+            'description': structure_data.get('description', f'Template for {template_name}'),
+            'structure_name': structure_name,
+            'type': 'custom',
+            'tags': structure_data.get('tags', []),
+            'category': structure_data.get('category', 'General'),
+            'created': structure_data.get('created', time.time()),
+            'modified': structure_data.get('modified', time.time())
+        }
+        
+        # Add the structure data to the template if available
+        if 'structure' in structure_data:
+            template['structure'] = structure_data['structure']
+            
+        # Add the template to our list
+        if isinstance(self.templates, dict):
+            self.templates[template_name] = template
+        else:
+            self.templates.append(template)
+            
+        return True 

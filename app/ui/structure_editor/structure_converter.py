@@ -8,9 +8,42 @@ This module provides functions for converting between tree widgets and structure
 """
 
 import os
+import json
+from pathlib import Path
 from PyQt5.QtWidgets import QTreeWidgetItem, QApplication, QStyle
 from PyQt5.QtCore import Qt
 
+# Import StructureUtils
+try:
+    from app.utils.structure_utils import StructureUtils
+except ImportError:
+    # Fallback if not available
+    class StructureUtils:
+        @staticmethod
+        def normalize_structure(structure):
+            return structure
+            
+        @staticmethod
+        def normalize_item(item):
+            return item
+
+# Import BinaryFileHandler
+try:
+    from app.utils.binary_file_handler import BinaryFileHandler
+except ImportError:
+    # Fallback if not available
+    class BinaryFileHandler:
+        @staticmethod
+        def is_binary_file(file_path):
+            return False
+            
+        @staticmethod
+        def encode_binary_file(file_path):
+            return None
+            
+        @staticmethod
+        def should_embed_binary_file(file_path, max_size_kb=500):
+            return False
 
 class StructureConverter:
     """Handles conversion between tree widget and structure data formats"""
@@ -66,29 +99,29 @@ class StructureConverter:
     
     def create_structure_from_tree(self):
         """
-        Create a structure representation from the tree widget
+        Create a structure from the tree widget
         
         Returns:
-            list: Structure data
+            list: The structure data
         """
-        # Check if tree widget exists
         if not self.tree_widget:
-            print("ERROR: No tree widget available")
+            print("DEBUG: No tree widget available")
             return []
-        
-        # Get the root item
-        root = self.tree_widget.invisibleRootItem()
-        
-        # Initialize the structure
+            
         structure = []
+        root = self.tree_widget.invisibleRootItem()
         
         # Process all top-level items
         for i in range(root.childCount()):
             item = root.child(i)
             self._add_item_to_structure(item, structure)
+            
+        print(f"DEBUG: Generated structure with {len(structure)} items")
         
-        print(f"DEBUG: Created structure with {len(structure)} top-level items")
-        return structure
+        # Normalize the structure using StructureUtils
+        normalized_structure = StructureUtils.normalize_structure(structure)
+        
+        return normalized_structure
     
     def _add_item_to_structure(self, item, parent_list):
         """
@@ -96,41 +129,156 @@ class StructureConverter:
         
         Args:
             item: Tree widget item
-            parent_list: Parent list to add to
+            parent_list: Parent list to add the item to
+            
+        Returns:
+            dict: Item structure or None if it should be skipped
         """
-        # Get item data
-        item_data = item.data(0, Qt.UserRole)
+        # Skip None items
+        if item is None:
+            print(f"DEBUG: Skipping None item")
+            return None
         
-        # If no data, try to infer type from children
-        if not item_data:
-            # If it has children, assume it's a folder
-            if item.childCount() > 0:
-                item_data = {'type': 'folder', 'name': item.text(0)}
-            else:
-                # Otherwise, assume it's a file
-                item_data = {'type': 'file', 'name': item.text(0)}
+        # Get item data and type
+        item_data = item.data(0, Qt.UserRole) or {}
+        item_type = item_data.get('type', None)
         
-        # Check type from data
-        if isinstance(item_data, dict) and 'type' in item_data:
-            if item_data['type'] == 'folder':
-                # It's a folder
-                folder_name = item.text(0)
-                children = []
-                
-                # Add all children
-                for i in range(item.childCount()):
-                    self._add_item_to_structure(item.child(i), children)
-                
-                # Add folder to parent list
-                parent_list.append({folder_name: children})
-            else:
-                # It's a file or other type
-                file_name = item.text(0)
-                parent_list.append(file_name)
-        else:
-            # If we can't determine type, add as a file
-            file_name = item.text(0)
-            parent_list.append(file_name)
+        # If type is not specified in data, infer it from child count
+        if not item_type:
+            item_type = 'folder' if item.childCount() > 0 else 'file'
+        
+        if item_type == 'folder':
+            # Handle folder
+            folder_name = item_data.get('name', item.text(0))
+            
+            # Skip folders with empty names, arrays or placeholder names
+            if not folder_name or folder_name == '[]' or folder_name == 'name' or folder_name == '':
+                print(f"DEBUG: Skipping folder with empty/invalid name: {folder_name}")
+                return None
+            
+            # Convert folder_name to string if it's a list
+            if isinstance(folder_name, list):
+                # Only use first item if it exists and is not empty
+                if len(folder_name) > 0 and folder_name[0]:
+                    folder_name = str(folder_name[0])
+                else:
+                    print(f"DEBUG: Skipping folder with empty name array: {folder_name}")
+                    return None
+            
+            # Ensure folder_name is a string
+            folder_name = str(folder_name)
+            
+            # Create folder structure
+            folder_structure = {
+                'name': folder_name,
+                'type': 'folder'
+            }
+            
+            # Add path if available
+            if 'path' in item_data:
+                folder_structure['path'] = item_data.get('path')
+            
+            # Process children
+            children = []
+            for i in range(item.childCount()):
+                child_item = item.child(i)
+                child_structure = self._add_item_to_structure(child_item, children)
+                if child_structure:
+                    children.append(child_structure)
+            
+            # Add children list if there are any
+            if children:
+                folder_structure['children'] = children
+            
+            # Don't add empty folders unless specifically allowed
+            if not children and not self.keep_empty_folders:
+                print(f"DEBUG: Skipping empty folder: {folder_name}")
+                return None
+            
+            # Add to parent list
+            return folder_structure
+            
+        elif item_type == 'file':
+            # Add a file
+            file_name = item_data.get('name', item.text(0))
+            file_path = item_data.get('path', '')
+            is_binary = item_data.get('is_binary', False)
+            original_path = item_data.get('original_path', '')
+            cached_path = item_data.get('cached_path', '')
+            
+            # Skip items with empty name arrays or values or name placeholders
+            if not file_name or file_name == [] or file_name == 'name' or file_name == '' or (isinstance(file_name, list) and len(file_name) == 0):
+                print(f"DEBUG: Skipping file with empty/invalid name: {item_data}")
+                return None
+            
+            # Ensure file_name is a string, not a list or other data type
+            if isinstance(file_name, list):
+                if len(file_name) > 0 and file_name[0]:
+                    file_name = str(file_name[0])
+                else:
+                    print(f"DEBUG: Skipping file with empty name array: {item_data}")
+                    return None
+            
+            # Convert file_name to string if it's not already
+            file_name = str(file_name)
+            
+            # Clean up file_name - remove [] if present
+            if file_name == '[]':
+                print(f"DEBUG: Skipping file with empty name: {item_data}")
+                return None
+            
+            # Ensure is_binary is a boolean
+            if isinstance(is_binary, list):
+                is_binary = bool(is_binary[0]) if is_binary else False
+            elif not isinstance(is_binary, bool):
+                is_binary = bool(is_binary)
+            
+            # Create file structure
+            file_structure = {
+                'name': file_name,
+                'type': 'file',
+                'is_binary': is_binary
+            }
+            
+            # Add paths if available - ensure they are strings
+            if original_path:
+                file_structure['original_path'] = str(original_path) if not isinstance(original_path, list) else (str(original_path[0]) if original_path else '')
+            
+            if file_path and file_path != original_path:
+                file_structure['path'] = str(file_path) if not isinstance(file_path, list) else (str(file_path[0]) if file_path else '')
+            
+            if cached_path:
+                file_structure['cached_path'] = str(cached_path) if not isinstance(cached_path, list) else (str(cached_path[0]) if cached_path else '')
+            
+            # Add file content if available
+            if 'content' in item_data:
+                content = item_data.get('content')
+                if content is not None:
+                    file_structure['content'] = str(content) if not isinstance(content, list) else (str(content[0]) if content else '')
+            
+            # Add binary data if available
+            if 'data' in item_data:
+                data = item_data.get('data')
+                if data:
+                    file_structure['data'] = data
+            
+            # Add cached hash if available
+            if 'cache_hash' in item_data:
+                cache_hash = item_data.get('cache_hash')
+                if cache_hash:
+                    file_structure['cache_hash'] = str(cache_hash) if not isinstance(cache_hash, list) else (str(cache_hash[0]) if cache_hash else '')
+            
+            # Skip items that have empty values or [] as their value for any field
+            for key, val in list(file_structure.items()):
+                if val == [] or val == '[]' or (isinstance(val, list) and len(val) == 0):
+                    print(f"DEBUG: Removing empty array for key {key} in file structure")
+                    file_structure.pop(key)
+            
+            return file_structure
+        
+        # Unknown item type
+        print(f"DEBUG: Skipping unknown item type: {item_type}")
+        return None
     
     def load_structure(self, structure):
         """
@@ -685,18 +833,32 @@ class StructureConverter:
         elif item.childCount() > 0:
             # Has children, must be a folder
             is_folder = True
-        
+            
+        # If this is a folder, process all children
         if is_folder:
-            # For folders, use the {folder_name: [children]} format that the project builder expects
+            # Create a folder object
+            folder_item = {
+                'name': name,
+                'type': 'folder'
+            }
+            
+            # Process children
             children = []
             for i in range(item.childCount()):
-                child_data = self._process_item(item.child(i))
+                child_item = item.child(i)
+                child_data = self._process_item(child_item)
                 if child_data:
                     children.append(child_data)
-            return {name: children}
+                    
+            # Add children to folder
+            if children:
+                folder_item['children'] = children
+                
+            return folder_item
         else:
-            # For files, check if it's marked to use project name
-            if isinstance(item_user_data, dict) and item_user_data.get('uses_project_name', False):
+            # This is a file
+            # Check if there's user data that indicates it's a project name placeholder file
+            if isinstance(item_user_data, dict) and item_user_data.get('use_project_name'):
                 # This file should use the project name
                 # Get the placeholder and extension from the item data
                 placeholder = item_user_data.get('placeholder', "${PROJECT_NAME}")
@@ -706,11 +868,43 @@ class StructureConverter:
                 placeholder_name = f"{placeholder}{extension}"
                 print(f"DEBUG: Using placeholder name for file: {placeholder_name} (original: {name})")
                 
-                # Return the placeholder name instead of the display name
-                return placeholder_name
+                # Return a file item with placeholder
+                file_item = {
+                    'name': placeholder_name,
+                    'type': 'file',
+                    'use_project_name': True
+                }
+                
+                return file_item
+            elif isinstance(item_user_data, dict):
+                # Regular file with additional data
+                file_item = {
+                    'name': name,
+                    'type': 'file'
+                }
+                
+                # Add original file path if available
+                if 'original_path' in item_user_data:
+                    file_item['original_path'] = item_user_data['original_path']
+                    
+                # Add cache path if available
+                if 'cache_path' in item_user_data:
+                    file_item['cache_path'] = item_user_data['cache_path']
+                elif 'cached' in item_user_data and item_user_data['cached'] and 'cache_key' in item_user_data:
+                    file_item['cache_key'] = item_user_data['cache_key']
+                    
+                # Add other relevant metadata
+                for key in ['is_binary', 'file_type']:
+                    if key in item_user_data:
+                        file_item[key] = item_user_data[key]
+                        
+                return file_item
             else:
-                # For normal files, just return the name string
-                return name
+                # For normal files, just return the name string with enhanced structure
+                return {
+                    'name': name,
+                    'type': 'file'
+                }
 
     def _normalize_structure_format(self, structure):
         """
@@ -890,3 +1084,105 @@ class StructureConverter:
         
         print(f"DEBUG: Structure verification: {result}")
         return result 
+
+    def tree_to_structure(self):
+        """
+        Convert the tree to a structure format
+        
+        Returns:
+            dict: Structure dictionary
+        """
+        if not self.tree_widget:
+            print("ERROR: tree_to_structure called with no tree_widget available")
+            return {}
+            
+        # Create empty structure
+        structure = {}
+        
+        # Process top-level items
+        root = self.tree_widget.invisibleRootItem()
+        for i in range(root.childCount()):
+            item = root.child(i)
+            self._add_item_to_structure(structure, item)
+            
+        return structure
+        
+    def _add_item_to_structure(self, structure, item):
+        """
+        Add an item to the structure
+        
+        Args:
+            structure: Structure dictionary to add to
+            item: Tree item to add
+        """
+        # Get item data
+        item_data = item.data(0, Qt.UserRole)
+        
+        # If no data, infer from text
+        if not item_data:
+            if item.childCount() > 0:
+                item_data = {'type': 'folder', 'name': item.text(0)}
+            else:
+                item_data = {'type': 'file', 'name': item.text(0)}
+                
+        # Create normalized format
+        if isinstance(item_data, dict):
+            item_type = item_data.get('type', 'file' if item.childCount() == 0 else 'folder')
+            item_name = item_data.get('name', item.text(0))
+            
+            normalized_item = {
+                'type': item_type,
+                'name': item_name
+            }
+            
+            # Add path information for files
+            if item_type == 'file':
+                # Add original path if available
+                if 'original_path' in item_data:
+                    normalized_item['original_path'] = item_data['original_path']
+                
+                # Add cache path if available
+                if 'cache_path' in item_data:
+                    normalized_item['cache_path'] = item_data['cache_path']
+                
+                # Add binary flag if available
+                if 'is_binary' in item_data:
+                    normalized_item['is_binary'] = item_data['is_binary']
+            
+            # Handle children for folders
+            if item_type == 'folder' and item.childCount() > 0:
+                children = []
+                for i in range(item.childCount()):
+                    child_item = item.child(i)
+                    
+                    # Skip hidden files
+                    child_text = child_item.text(0)
+                    if child_text.startswith('.') or child_text == '.DS_Store':
+                        continue
+                        
+                    # Get child data
+                    child_data = child_item.data(0, Qt.UserRole)
+                    
+                    if not child_data:
+                        if child_item.childCount() > 0:
+                            child_data = {'type': 'folder', 'name': child_item.text(0)}
+                        else:
+                            child_data = {'type': 'file', 'name': child_item.text(0)}
+                    
+                    # Create child structure
+                    child_structure = {}
+                    self._add_item_to_structure(child_structure, child_item)
+                    
+                    # Add to children list
+                    if child_structure:
+                        children.append(next(iter(child_structure.values())))
+                        
+                normalized_item['children'] = children
+            
+            # Add to structure
+            if item.parent() is None or item.parent() == self.tree_widget.invisibleRootItem():
+                # Top level item
+                structure[item_name] = normalized_item
+            else:
+                # Child item
+                structure[item.text(0)] = normalized_item 

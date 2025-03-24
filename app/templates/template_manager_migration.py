@@ -70,18 +70,44 @@ class TemplateManagerMigration:
         app.template_manager_enhanced = TemplateManagerEnhancedProxy(app.template_manager)
         
     @staticmethod
-    def apply_migration(app):
+    def apply_migration(app=None):
         """
-        Apply the full migration process:
-        1. Migrate data from enhanced to unified
-        2. Create a proxy for backward compatibility
+        Apply all necessary migrations to templates and structures
         
         Args:
-            app: The application instance
-            
-        Returns:
-            bool: True if migration was successful
+            app: Main application instance (optional)
         """
+        # Get home directory
+        home_dir = os.path.expanduser("~")
+        
+        # Paths
+        echelon_dir = os.path.join(home_dir, '.echelon')
+        templates_dir = os.path.join(echelon_dir, 'templates')
+        
+        # Ensure directories exist
+        os.makedirs(echelon_dir, exist_ok=True)
+        os.makedirs(templates_dir, exist_ok=True)
+        
+        # Check for old structures directory and remove the warning
+        # No need to migrate or rename it since we're moving away from it
+        structures_dir = os.path.join(echelon_dir, 'structures')
+        if os.path.exists(structures_dir):
+            # Check if it has any files
+            structure_files = [f for f in os.listdir(structures_dir) if os.path.isfile(os.path.join(structures_dir, f))]
+            if structure_files:
+                print(f"INFO: Found .echelon/structures folder with {len(structure_files)} files.")
+                print(f"INFO: The structures folder is no longer used. All template data is now stored in the template JSON files.")
+            else:
+                print(f"INFO: Found empty .echelon/structures folder. This folder is no longer used.")
+            
+            # Simply delete the directory if it's empty
+            if not structure_files:
+                try:
+                    os.rmdir(structures_dir)
+                    print(f"INFO: Removed empty structures directory: {structures_dir}")
+                except Exception as e:
+                    print(f"WARNING: Could not remove structures directory: {e}")
+            
         success = TemplateManagerMigration.migrate_enhanced_to_unified(app)
         if success:
             TemplateManagerMigration.create_template_manager_enhanced_proxy(app)
