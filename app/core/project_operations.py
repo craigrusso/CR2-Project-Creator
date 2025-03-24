@@ -221,16 +221,24 @@ def handle_batch_create(app, project_names_text):
     elif hasattr(app, 'default_output_path'):
         output_dir = app.default_output_path
         print(f"DEBUG: Output directory from app.default_output_path: {output_dir}")
-    else:
+        
+    # If no output directory is available, always prompt the user to select one
+    if not output_dir:
         # User needs to select an output directory
+        print("DEBUG: No output directory found, prompting user to select one")
         if hasattr(app, 'get_output_dir') and callable(app.get_output_dir):
             output_dir = app.get_output_dir()
             print(f"DEBUG: Output directory from get_output_dir prompt: {output_dir}")
-        
-        # If still no output directory, use desktop as fallback
-        if not output_dir:
-            output_dir = os.path.join(os.path.expanduser("~"), "Desktop")
-            print(f"DEBUG: Using desktop as fallback output directory: {output_dir}")
+            
+            # If user cancelled the selection, abort the operation
+            if not output_dir:
+                app.show_status_message("Project creation cancelled - no output location selected", message_type="warning")
+                return {"error": "Project creation cancelled - no output location selected", "successful_count": 0, "total_count": 0}
+        else:
+            # Critical error - no way to get an output directory
+            error_msg = "Cannot create projects - no method available to select output directory"
+            app.show_status_message(error_msg, message_type="error")
+            return {"error": error_msg, "successful_count": 0, "total_count": 0}
     
     # Create debug output
     print(f"Using actual template name: {template_name}")

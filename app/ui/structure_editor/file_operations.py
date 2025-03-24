@@ -696,11 +696,11 @@ class FileOperations:
     
     def create_context_menu(self, item, position):
         """
-        Create a context menu for a tree item
+        Create a context menu for a tree item at the specified position
         
         Args:
-            item: The item to create a menu for
-            position: Position for the menu
+            item: The tree item to create a menu for
+            position: Position to show the menu at
             
         Returns:
             QMenu: The context menu
@@ -734,7 +734,7 @@ class FileOperations:
                     margin: 5px;
                 }
             """)
-        
+            
         # Get item data
         item_data = item.data(0, Qt.UserRole) if item else None
         is_file = isinstance(item_data, dict) and item_data.get('type') == 'file'
@@ -794,20 +794,28 @@ class FileOperations:
             if is_file:
                 menu.addSeparator()
                 
-                # Add "Use Project Name" option 
-                use_project_name_action = QAction("Use Project Name", menu)
-                use_project_name_action.setEnabled(True)
+                # Determine whether to show "Use Project Name" or "Use Original Name"
+                uses_project_name = item_data.get('uses_project_name', False)
                 
-                # Connect to method in editor if available
-                if self.editor and hasattr(self.editor, '_use_project_name_for_file'):
-                    use_project_name_action.triggered.connect(lambda: self.editor._use_project_name_for_file(item))
-                    print("DEBUG: create_context_menu - connected Use Project Name to editor method")
+                if uses_project_name:
+                    # Show "Use Original Name" option
+                    use_name_action = QAction("Use Original Name", menu)
+                else:
+                    # Show "Use Project Name" option
+                    use_name_action = QAction("Use Project Name", menu)
+                    
+                use_name_action.setEnabled(True)
+                
+                # Connect to toggle method
+                if self.editor and hasattr(self.editor, '_toggle_project_name_for_file'):
+                    use_name_action.triggered.connect(lambda: self.editor._toggle_project_name_for_file(item))
+                    print("DEBUG: create_context_menu - connected toggle action to editor method")
                 else:
                     # Fallback to local method
-                    use_project_name_action.triggered.connect(lambda: self._use_project_name_for_file(item))
-                    print("DEBUG: create_context_menu - connected Use Project Name to local method")
+                    use_name_action.triggered.connect(lambda: self._toggle_project_name_for_file(item))
+                    print("DEBUG: create_context_menu - connected toggle action to local method")
                 
-                menu.addAction(use_project_name_action)
+                menu.addAction(use_name_action)
         
         return menu
     
@@ -865,23 +873,10 @@ class FileOperations:
         menu.setStyleSheet(CONTEXT_MENU_STYLE)
         
         # Add actions
-        add_folder_action = menu.addAction(QIcon.fromTheme("folder-new"), "Add Folder")
-        add_file_action = menu.addAction(QIcon.fromTheme("document-new"), "Add File")
-        import_action = menu.addAction(QIcon.fromTheme("document-import"), "Import")
-        
-        # Add submenu for import
-        import_menu = QMenu("Import Options", menu)
-        import_menu.setStyleSheet(CONTEXT_MENU_STYLE)
-        import_menu.addAction(QIcon.fromTheme("document-import"), "Import File")
-        import_menu.addAction(QIcon.fromTheme("folder-import"), "Import Directory")
-        menu.insertMenu(import_action, import_menu)
-        
-        # Remove the original import action
-        menu.removeAction(import_action)
-        
-        # Add keyboard shortcuts to actions
-        add_folder_action.setShortcut("Ctrl+Shift+N")
-        add_file_action.setShortcut("Ctrl+N")
+        add_folder_action = menu.addAction("Add Folder")
+        add_file_action = menu.addAction("Add File")
+        menu.addSeparator()
+        import_dir_action = menu.addAction("Import Directory...")
         
         # Execute the menu
         action = menu.exec_(self.tree.mapToGlobal(position))
@@ -891,8 +886,6 @@ class FileOperations:
             self.add_folder()
         elif action == add_file_action:
             self.add_file()
-        elif action == import_file_action:
-            self.import_file()
         elif action == import_dir_action:
             self.import_directory()
 
@@ -967,8 +960,17 @@ class FileOperations:
         rename_action = menu.addAction(QIcon.fromTheme("edit-rename"), "Rename")
         menu.addSeparator()
         
-        # Add "Use Project Name" option
-        use_project_name_action = menu.addAction(QIcon.fromTheme("insert-text"), "Use Project Name")
+        # Get item data
+        item_data = item.data(0, Qt.UserRole)
+        # Determine whether to show "Use Project Name" or "Use Original Name"
+        uses_project_name = item_data.get('uses_project_name', False)
+        
+        if uses_project_name:
+            # Show "Use Original Name" option
+            use_name_action = menu.addAction(QIcon.fromTheme("insert-text"), "Use Original Name")
+        else:
+            # Show "Use Project Name" option
+            use_name_action = menu.addAction(QIcon.fromTheme("insert-text"), "Use Project Name")
         
         menu.addSeparator()
         delete_action = menu.addAction(QIcon.fromTheme("edit-delete"), "Delete")
@@ -983,11 +985,11 @@ class FileOperations:
         # Handle actions
         if action == rename_action:
             self.rename_item(item)
-        elif action == use_project_name_action:
-            self._use_project_name_for_file(item)
+        elif action == use_name_action:
+            self._toggle_project_name_for_file(item)
         elif action == delete_action:
             self.delete_selected()
-
+            
     def _use_project_name_for_file(self, item):
         """
         Set a file to use the project name as its name
@@ -1007,6 +1009,15 @@ class FileOperations:
             
         current_name = item.text(0)
         
+        # Check if we're toggling - if we already have uses_project_name set to True
+        if item_data.get('uses_project_name') == True and 'original_name' in item_data:
+            # Toggle back to original name
+            return self._toggle_project_name_for_file(item)
+            
+        # Store original name if we don't already have it
+        if 'original_name' not in item_data:
+            item_data['original_name'] = current_name
+            
         # Use ${PROJECT_NAME} as the placeholder that will be replaced during project creation
         placeholder = "${PROJECT_NAME}"
         
@@ -1035,19 +1046,20 @@ class FileOperations:
         if len(name_parts) > 1:
             extension = f".{name_parts[-1]}"
             
-        # Create new name with template name for display
-        new_name = f"{display_name}{extension}"
+        # Create new display name with template name for visual feedback
+        display_placeholder_name = f"{placeholder}{extension}"
+        print(f"DEBUG: FileOperations._use_project_name_for_file - displaying placeholder: '{display_placeholder_name}' (original: '{current_name}')")
         
-        print(f"DEBUG: FileOperations._use_project_name_for_file - marking file to use project name: '{current_name}' → '{new_name}' (will use '{placeholder}' as placeholder)")
+        # Update the display text (for visual feedback only)
+        item.setText(0, display_placeholder_name)
         
-        # Set the new name
-        item.setText(0, new_name)
-        
-        # Update the data - store both the display name and the placeholder
-        item_data['name'] = new_name
+        # Update the data - keep the original name but set the flags
+        # IMPORTANT: Do not change the 'name' field, only add the flags
         item_data['uses_project_name'] = True
-        item_data['placeholder'] = placeholder  # Store the placeholder that will be replaced
+        item_data['rename_flag'] = True  # Set rename_flag to true when uses_project_name is true
         item_data['original_extension'] = extension
+        
+        # Store the item_data back to the item
         item.setData(0, Qt.UserRole, item_data)
         
         # Apply styling to indicate this is a dynamic file
@@ -1058,147 +1070,57 @@ class FileOperations:
         # Also use a different color to make it clear
         item.setForeground(0, QBrush(QColor("#4A9BFF")))
         
-        print(f"DEBUG: FileOperations._use_project_name_for_file - file marked to use project name: {new_name}")
+        print(f"DEBUG: FileOperations._use_project_name_for_file - file marked to use project name: {current_name}")
         
         return True
-
-    def _cut_item(self, item):
-        """Cut item to clipboard for moving"""
-        self._copy_item(item, is_cut=True)
-
-    def _copy_item(self, item, is_cut=False):
-        """Copy item to internal clipboard"""
-        if not item:
-            return
         
-        # Get item data
-        item_data = item.data(0, Qt.UserRole)
-        if not item_data:
-            return
-        
-        # Create clipboard data
-        is_folder = item_data.get('type') == 'folder'
-        name = item.text(0)
-        
-        # For folders, create a deep copy of the structure
-        children = []
-        if is_folder:
-            for i in range(item.childCount()):
-                child_item = item.child(i)
-                children.append(self._create_item_data(child_item))
-        
-        # Store in clipboard
-        self._clipboard_item = {
-            'name': name,
-            'is_folder': is_folder,
-            'children': children,
-            'is_cut': is_cut,
-            'source_item': item if is_cut else None
-        }
-        
-        # Visual indication for cut items
-        if is_cut:
-            item.setForeground(0, QBrush(QColor(150, 150, 150)))  # Grayed out for cut items
-            font = item.font(0)
-            font.setItalic(True)
-            item.setFont(0, font)
-
-    def _create_item_data(self, item):
+    def _toggle_project_name_for_file(self, item):
         """
-        Create a recursive data structure for an item and its children
+        Toggle between using project name and original name for a file
         
         Args:
-            item: The tree item to create data for
+            item: The file item to update
+        """
+        if not item:
+            return False
             
-        Returns:
-            dict: Item data with children for folders
-        """
-        if not item:
-            return None
-        
-        # Get item data
+        # Get current file data
         item_data = item.data(0, Qt.UserRole)
-        if not item_data:
-            return None
+        if not isinstance(item_data, dict) or item_data.get('type') != 'file':
+            return False
+            
+        # Get current state
+        uses_project_name = item_data.get('uses_project_name', False)
         
-        is_folder = item_data.get('type') == 'folder'
-        name = item.text(0)
+        if uses_project_name:
+            # Currently using project name, switch back to original name display
+            original_name = item_data.get('original_name', item.text(0))
+            if not original_name:
+                print("ERROR: Original name not found, cannot toggle")
+                return False
+                
+            # Update display to show original name
+            item.setText(0, original_name)
+            
+            # Update data - turn off the flags but keep original_name for future use
+            item_data['uses_project_name'] = False
+            item_data['rename_flag'] = False  # Also set rename_flag to false
+            
+            # Restore normal styling
+            font = item.font(0)
+            font.setItalic(False)
+            item.setFont(0, font)
+            item.setForeground(0, QBrush(QColor("#000000")))
+            
+            print(f"DEBUG: Toggled file back to original name display: {original_name}")
+        else:
+            # Not using project name, switch to using project name
+            return self._use_project_name_for_file(item)
+            
+        # Update the data
+        item.setData(0, Qt.UserRole, item_data)
         
-        # Create data structure
-        result = {
-            'name': name,
-            'is_folder': is_folder,
-            'children': []
-        }
-        
-        # For folders, add children
-        if is_folder:
-            for i in range(item.childCount()):
-                child_item = item.child(i)
-                child_data = self._create_item_data(child_item)
-                if child_data:
-                    result['children'].append(child_data)
-        
-        return result
-
-    def _paste_item(self, parent_item):
-        """
-        Paste item from clipboard to the given parent
-        
-        Args:
-            parent_item: Parent to paste under (or None for root)
-        """
-        if not hasattr(self, '_clipboard_item') or not self._clipboard_item:
-            return
-        
-        # Get clipboard data
-        clipboard_data = self._clipboard_item
-        name = clipboard_data.get('name', '')
-        is_folder = clipboard_data.get('is_folder', False)
-        children = clipboard_data.get('children', [])
-        is_cut = clipboard_data.get('is_cut', False)
-        source_item = clipboard_data.get('source_item')
-        
-        # Check for valid name
-        if not name:
-            return
-        
-        # Create the new item
-        new_item = self._create_item(parent_item, name, is_folder=is_folder)
-        
-        # For folders, recursively add children
-        if is_folder and children:
-            for child_data in children:
-                self._paste_child_item(new_item, child_data)
-        
-        # If this was a cut operation, remove the original item
-        if is_cut and source_item:
-            source_parent = source_item.parent()
-            if source_parent:
-                source_parent.removeChild(source_item)
-            else:
-                index = self.tree.indexOfTopLevelItem(source_item)
-                if index >= 0:
-                    self.tree.takeTopLevelItem(index)
-        
-        # Expand the parent to show pasted item
-        if parent_item:
-            parent_item.setExpanded(True)
-
-    def _paste_child_item(self, parent_item, item_data):
-        """
-        Recursively paste child items from clipboard data
-        
-        Args:
-            parent_item: Parent to paste under
-            item_data: Item data structure to create
-        """
-        if not parent_item or not item_data:
-            return
-        
-        # Get item properties
-        name = item_data.get('name', '')
-        is_folder = item_data.get('is_folder', False)
+        return True
 
     def _get_relative_path(self, item):
         """

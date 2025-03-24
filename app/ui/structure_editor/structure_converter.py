@@ -803,36 +803,33 @@ class StructureConverter:
 
     def _process_item(self, item):
         """
-        Process a tree item and its children to generate structure
+        Process a single tree widget item into a structure item
         
         Args:
-            item: The tree item to process
+            item: The tree widget item to process
             
         Returns:
-            dict or str: The item data in the format expected by the project builder
+            dict or None: Processed structure item or None if invalid
         """
         if not item:
             return None
-        
-        # Get the item text
+            
+        # Get basic info
         name = item.text(0)
-        
-        # Get item data to determine if this is a folder or file
+        if not name:
+            print("WARNING: Empty name in structure item")
+            return None
+            
+        # Get item data if available
         item_user_data = item.data(0, Qt.UserRole)
         
-        # Determine if this is a folder or file
+        # Determine if it's a folder
         is_folder = False
-        
-        # Check data formats in order of preference
-        if isinstance(item_user_data, str) and item_user_data == 'folder':
-            # Direct string marker
-            is_folder = True
-        elif isinstance(item_user_data, dict) and 'type' in item_user_data:
-            # Dict with type field
-            is_folder = item_user_data['type'] == 'folder'
-        elif item.childCount() > 0:
-            # Has children, must be a folder
-            is_folder = True
+        if isinstance(item_user_data, dict) and 'type' in item_user_data:
+            is_folder = item_user_data.get('type') == 'folder'
+        else:
+            # Try to guess by checking for children
+            is_folder = item.childCount() > 0
             
         # If this is a folder, process all children
         if is_folder:
@@ -857,54 +854,44 @@ class StructureConverter:
             return folder_item
         else:
             # This is a file
-            # Check if there's user data that indicates it's a project name placeholder file
-            if isinstance(item_user_data, dict) and item_user_data.get('use_project_name'):
-                # This file should use the project name
-                # Get the placeholder and extension from the item data
-                placeholder = item_user_data.get('placeholder', "${PROJECT_NAME}")
-                extension = item_user_data.get('original_extension', "")
+            # Check for project name placeholder flag or rename flag
+            if isinstance(item_user_data, dict):
+                rename_flag = item_user_data.get('rename_flag', False)
+                uses_project_name = item_user_data.get('uses_project_name', False)
                 
-                # Create name with placeholder
-                placeholder_name = f"{placeholder}{extension}"
-                print(f"DEBUG: Using placeholder name for file: {placeholder_name} (original: {name})")
-                
-                # Return a file item with placeholder
-                file_item = {
-                    'name': placeholder_name,
-                    'type': 'file',
-                    'use_project_name': True
-                }
-                
-                return file_item
-            elif isinstance(item_user_data, dict):
-                # Regular file with additional data
-                file_item = {
-                    'name': name,
-                    'type': 'file'
-                }
-                
-                # Add original file path if available
-                if 'original_path' in item_user_data:
-                    file_item['original_path'] = item_user_data['original_path']
+                if rename_flag or uses_project_name:
+                    # Get the original filename - use this as the actual name field
+                    original_name = item_user_data.get('original_name', name)
                     
-                # Add cache path if available
-                if 'cache_path' in item_user_data:
-                    file_item['cache_path'] = item_user_data['cache_path']
-                elif 'cached' in item_user_data and item_user_data['cached'] and 'cache_key' in item_user_data:
-                    file_item['cache_key'] = item_user_data['cache_key']
+                    # Create file item with both flags set for compatibility
+                    # IMPORTANT: 'name' field stores the original filename, not the placeholder
+                    file_item = {
+                        'name': original_name,  # Store original filename
+                        'type': 'file',
+                        'rename_flag': True,  # Always set rename_flag to true
+                        'uses_project_name': True  # Keep uses_project_name for backward compatibility
+                    }
                     
-                # Add other relevant metadata
-                for key in ['is_binary', 'file_type']:
-                    if key in item_user_data:
-                        file_item[key] = item_user_data[key]
-                        
-                return file_item
+                    # Include any other useful file metadata from the item_user_data
+                    for key in ['path', 'is_binary', 'cached_path', 'original_name', 'original_extension']:
+                        if key in item_user_data:
+                            file_item[key] = item_user_data[key]
+                    
+                    return file_item
             else:
-                # For normal files, just return the name string with enhanced structure
-                return {
+                # Regular file without placeholder
+                file_item = {
                     'name': name,
                     'type': 'file'
                 }
+                
+                # Include any other useful file metadata from the item_user_data
+                if isinstance(item_user_data, dict):
+                    for key in ['path', 'is_binary', 'cached_path', 'rename_flag', 'uses_project_name', 'original_name', 'original_extension']:
+                        if key in item_user_data:
+                            file_item[key] = item_user_data[key]
+                
+                return file_item
 
     def _normalize_structure_format(self, structure):
         """

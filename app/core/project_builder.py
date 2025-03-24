@@ -933,34 +933,24 @@ class ProjectBuilder:
         
     def _process_file(self, parent_output_path, item, placeholders=None, dry_run=False):
         """
-        Process a file item in the structure
+        Process a file item from the structure, copying it to the output path with placeholders applied
         
         Args:
-            parent_output_path: Parent directory path
-            item: File item data (dict or string)
-            placeholders: Optional dictionary of placeholders to replace
-            dry_run: If True, don't actually create the file
+            parent_output_path: The output path for the parent directory
+            item: The file item to process
+            placeholders: Dictionary of placeholder replacements
+            dry_run: If True, don't actually create files, just check structure
             
         Returns:
-            str: Path to the created file, or None if failed
+            str or None: The output file path if successful, None if failed
         """
-        if not placeholders:
+        # Default placeholders to empty dict if None
+        if placeholders is None:
             placeholders = {}
-        
-        # Handle different item formats
-        item_name = None
-        is_binary = False
-        content = None
-        source_path = None
-        embedded_data = None
-        
-        # Normalize item to dict format if it's a string
-        if isinstance(item, str):
-            item_name = item
-            item = {'name': item_name, 'type': 'file'}
         
         # Get file name from item
         if isinstance(item, dict):
+            # Get the original name from the name field
             item_name = item.get('name')
             
             # Normalize name if it's an array
@@ -976,154 +966,182 @@ class ProjectBuilder:
                 print(f"WARNING: Skipping file with empty/invalid name: {item}")
                 return None
             
-            # Apply placeholders to file name
-            if placeholders:
-                item_name = self._replace_placeholders(item_name, placeholders)
+            # Initialize output_name with item_name as a fallback
+            output_name = item_name
             
-            # Handle special case for ${PROJECT_NAME}
+            # Check if this file should use the project name based on the flag
+            # Prefer rename_flag, but fall back to uses_project_name for backward compatibility
+            rename_flag = item.get('rename_flag', False)
+            uses_project_name = item.get('uses_project_name', False)
+            
+            print(f"DEBUG: Processing file '{item_name}' with rename_flag={rename_flag}, uses_project_name={uses_project_name}")
+            
+            # First check if the filename contains a placeholder
             if "${PROJECT_NAME}" in item_name:
+                # Apply placeholder replacement directly
+                output_name = self._replace_placeholders(item_name, placeholders)
+                print(f"Applied placeholder to filename: {item_name} -> {output_name}")
+            elif rename_flag or uses_project_name:
+                # Get the project name
                 project_name = placeholders.get("PROJECT_NAME", "Unknown")
-                item_name = item_name.replace("${PROJECT_NAME}", project_name)
+                
+                # Extract file extension
+                name_parts = os.path.splitext(item_name)
+                if len(name_parts) == 2:
+                    base_name, ext = name_parts
+                    # Replace base name with project name
+                    output_name = f"{project_name}{ext}"
+                else:
+                    # No extension, use project name directly
+                    output_name = project_name
+                
+                print(f"Renamed file: {item_name} -> {output_name}")
+            else:
+                # For files not using project name, apply normal placeholder replacement
+                print(f"DEBUG: Applying normal placeholder replacement to: '{item_name}'")
+                output_name = self._replace_placeholders(item_name, placeholders) if placeholders else item_name
+                print(f"DEBUG: After placeholder replacement: '{output_name}'")
+                
+                # Handle special case for ${PROJECT_NAME} in the name (legacy support)
+                if "${PROJECT_NAME}" in output_name:
+                    project_name = placeholders.get("PROJECT_NAME", "Unknown")
+                    output_name = output_name.replace("${PROJECT_NAME}", project_name)
+                    print(f"DEBUG: After legacy placeholder replacement: '{output_name}'")
             
             # Get output file path
-            file_path = os.path.join(parent_output_path, item_name)
+            file_path = os.path.join(parent_output_path, output_name)
             
             # Handle string items
-            if 'path' in item:
-                # Get source path for the file
-                source_path = item.get('path')
-                
-                # Check for original_path if path doesn't exist or is invalid
-                if not source_path or not os.path.exists(source_path):
-                    source_path = item.get('original_path')
-                
-                # Check for cached_path if original path doesn't exist
-                if not source_path or not os.path.exists(source_path):
-                    source_path = item.get('cached_path')
-                
-                # Check if source path exists
-                if source_path and os.path.exists(source_path):
-                    # Check if this is a binary file
-                    is_binary = item.get('is_binary', False)
-                    
-                    # Normalize is_binary if it's a list
-                    if isinstance(is_binary, list):
-                        is_binary = bool(is_binary[0]) if is_binary else False
-                    
-                    # Copy the file to the output path
-                    if not dry_run:
-                        try:
-                            # Create parent directory if it doesn't exist
-                            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-                            
-                            # Copy the file
-                            import shutil
-                            shutil.copy2(source_path, file_path)
-                        except Exception as e:
-                            print(f"ERROR: Failed to copy file {source_path} to {file_path}: {e}")
-                            return None
-                else:
-                    print(f"WARNING: Source file not found for {item_name}")
+            source_path = None
+            content = None
             
-            # Handle embedded binary data
-            elif 'data' in item or 'binary_data' in item or 'embedded_data' in item:
-                # Get encoded binary data
-                embedded_data = item.get('data') or item.get('binary_data') or item.get('embedded_data')
+            # Check if we have path or cached_path for the file
+            if 'original_path' in item:
+                source_path = item['original_path']
+            elif 'path' in item:
+                source_path = item['path']
+            elif 'cached_path' in item:
+                source_path = item['cached_path']
                 
-                # If data is available, decode and write it
-                if embedded_data:
-                    if not dry_run:
-                        try:
-                            # Create parent directory if it doesn't exist
-                            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-                            
-                            # Import binary file handler
-                            from app.utils.binary_file_handler import BinaryFileHandler
-                            
-                            # Decode and write the data
-                            success = BinaryFileHandler.decode_binary_file(embedded_data, file_path)
-                            if not success:
-                                print(f"ERROR: Failed to decode embedded data for {item_name}")
-                                
-                                # Create an empty file as a placeholder
-                                with open(file_path, 'wb') as f:
-                                    f.write(b'')
-                        except Exception as e:
-                            print(f"ERROR: Failed to write embedded data for {item_name}: {e}")
-                            
-                            # Create an empty file as a placeholder
-                            try:
-                                with open(file_path, 'wb') as f:
-                                    f.write(b'')
-                            except Exception as e2:
-                                print(f"ERROR: Failed to create placeholder file: {e2}")
-                                return None
-                else:
-                    print(f"WARNING: No embedded data found for {item_name}")
-                    
-                    # Create a minimal valid file based on extension
-                    if not dry_run:
-                        try:
-                            ext = os.path.splitext(item_name)[1].lower()
-                            placeholder_content = b''
-                            
-                            if ext in ['.json', '.txt', '.md', '.html', '.xml', '.csv']:
-                                placeholder_content = b'{}'  # Minimal valid JSON
-                            elif ext in ['.js', '.py', '.java', '.c', '.cpp']:
-                                placeholder_content = b'// Empty file'
-                            
-                            with open(file_path, 'wb') as f:
-                                f.write(placeholder_content)
-                        except Exception as e:
-                            print(f"ERROR: Failed to create minimal file for {item_name}: {e}")
-                            return None
+            # Skip if we're in dry run mode
+            if dry_run:
+                return file_path
+                
+            # If the file already exists, verify overwrite
+            if os.path.exists(file_path) and not self._verify_overwrite(file_path):
+                print(f"WARNING: Not overwriting existing file: {file_path}")
+                return None
+                
+            # Create parent directory if needed
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
-            # Handle content field (text files)
-            elif 'content' in item:
-                content = item.get('content')
+            # Process file content
+            if source_path and os.path.exists(source_path):
+                # Binary files are copied directly
+                is_binary = item.get('is_binary', False)
                 
-                # Normalize content if it's a list
-                if isinstance(content, list):
-                    content = content[0] if content else ''
-                
-                # Apply placeholders to content
-                if placeholders and isinstance(content, str):
-                    for key, value in placeholders.items():
-                        content = content.replace(f"${{{key}}}", str(value))
-                
-                # Write content to file
-                if not dry_run and content is not None:
+                if is_binary:
+                    # For binary files, just copy the file
                     try:
-                        # Create parent directory if it doesn't exist
-                        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-                        
-                        # Write the content
+                        shutil.copy2(source_path, file_path)
+                        print(f"Copied binary file to {file_path}")
+                        return file_path
+                    except Exception as e:
+                        error_message = f"Failed to copy binary file {source_path} to {file_path}: {str(e)}"
+                        print(f"ERROR: {error_message}")
+                        self._add_error(error_message)
+                        return None
+                else:
+                    # For text files, replace placeholders
+                    try:
+                        # Read the file
+                        with open(source_path, 'r', encoding='utf-8', errors='replace') as f:
+                            content = f.read()
+                            
+                        # Replace placeholders if they exist
+                        if placeholders and self._might_contain_placeholders(source_path):
+                            content = self._replace_placeholders(content, placeholders)
+                            
+                        # Write the file
                         with open(file_path, 'w', encoding='utf-8') as f:
-                            f.write(str(content))
+                            f.write(content)
+                            
+                        print(f"Created file with placeholders: {file_path}")
+                        return file_path
+                    except UnicodeDecodeError:
+                        # If Unicode decoding fails, treat as binary and copy directly
+                        try:
+                            shutil.copy2(source_path, file_path)
+                            print(f"Copied file (binary after Unicode decode error) to {file_path}")
+                            return file_path
+                        except Exception as e:
+                            error_message = f"Failed to copy file {source_path} to {file_path}: {str(e)}"
+                            print(f"ERROR: {error_message}")
+                            self._add_error(error_message)
+                            return None
                     except Exception as e:
-                        print(f"ERROR: Failed to write content for {item_name}: {e}")
+                        error_message = f"Failed to process file {source_path} to {file_path}: {str(e)}"
+                        print(f"ERROR: {error_message}")
+                        self._add_error(error_message)
                         return None
-            
-            # Handle case where no source or content is provided
-            else:
-                # Create an empty file
-                if not dry_run:
-                    try:
-                        # Create parent directory if it doesn't exist
-                        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-                        
-                        # Create an empty file
-                        with open(file_path, 'w') as f:
-                            pass
-                    except Exception as e:
-                        print(f"ERROR: Failed to create empty file {item_name}: {e}")
-                        return None
+            elif 'content' in item or content:
+                # Direct file content provided
+                file_content = content or item.get('content', '')
+                
+                # Apply placeholders
+                if placeholders:
+                    file_content = self._replace_placeholders(file_content, placeholders)
                     
-            return file_path
-        
-        # Handle unknown item format
+                # Write the content to the file
+                try:
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.write(file_content)
+                        
+                    print(f"Created file with content: {file_path}")
+                    return file_path
+                except Exception as e:
+                    error_message = f"Failed to write content to {file_path}: {str(e)}"
+                    print(f"ERROR: {error_message}")
+                    self._add_error(error_message)
+                    return None
+            else:
+                # No content or source path, create an empty file
+                try:
+                    with open(file_path, 'w') as f:
+                        pass
+                        
+                    print(f"Created empty file: {file_path}")
+                    return file_path
+                except Exception as e:
+                    error_message = f"Failed to create empty file {file_path}: {str(e)}"
+                    print(f"ERROR: {error_message}")
+                    self._add_error(error_message)
+                    return None
+        elif isinstance(item, str):
+            # Simple string item - just create an empty file with the name
+            file_path = os.path.join(parent_output_path, item)
+            
+            # Skip if we're in dry run mode
+            if dry_run:
+                return file_path
+                
+            # Create parent directory if needed
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            
+            # Create the file
+            try:
+                with open(file_path, 'w') as f:
+                    pass
+                    
+                print(f"Created empty file: {file_path}")
+                return file_path
+            except Exception as e:
+                error_message = f"Failed to create empty file {file_path}: {str(e)}"
+                print(f"ERROR: {error_message}")
+                self._add_error(error_message)
+                return None
         else:
-            print(f"WARNING: Unsupported file item format: {type(item)}")
+            print(f"WARNING: Unrecognized file item format: {item}")
             return None
     
     def start_batch_creation(self, project_names, output_dir, template_file=None, project_type="Standard", 
@@ -1253,6 +1271,21 @@ class ProjectBuilder:
         self._errors.append(error_message)
         print(f"ERROR: {error_message}")
 
+    def _verify_overwrite(self, file_path):
+        """
+        Verify if an existing file should be overwritten
+        
+        Args:
+            file_path: Path to the file to check
+            
+        Returns:
+            bool: True if the file should be overwritten, False otherwise
+        """
+        # By default, allow overwriting files during project creation
+        # This is a simple implementation; in the real app UI, 
+        # this could prompt the user or check preferences
+        return True
+        
     def batch_create_projects(self, project_names, template_name=None, structure_name=None, output_dir=None, 
                              use_cached_files=True, template_data=None):
         """
@@ -1369,21 +1402,28 @@ class ProjectBuilder:
                     print(f"WARNING: File data missing file_name: {file_data}")
                     continue
                 
+                # First check if the filename contains a placeholder
+                if "${PROJECT_NAME}" in file_name:
+                    # Apply placeholder replacement directly
+                    file_name = self._replace_placeholders(file_name, placeholders)
+                    print(f"Applied placeholder to filename: {file_data.get('file_name')} -> {file_name}")
                 # Apply placeholders to file name if flag is set
-                if rename_flag:
+                elif rename_flag:
+                    # Get the project name
+                    project_name = placeholders.get("PROJECT_NAME", "Unknown")
+                    
                     # Extract file extension
                     name_parts = os.path.splitext(file_name)
                     if len(name_parts) == 2:
                         base_name, ext = name_parts
-                        # Replace placeholders in base name only
-                        new_base_name = self._replace_placeholders(base_name, placeholders)
-                        file_name = new_base_name + ext
+                        # Replace base name with project name
+                        file_name = f"{project_name}{ext}"
                     else:
-                        # No extension, just replace in the whole name
-                        file_name = self._replace_placeholders(file_name, placeholders)
+                        # No extension, use project name directly
+                        file_name = project_name
                     
                     print(f"Renamed file: {file_data.get('file_name')} -> {file_name}")
-                    
+                
                 # Apply placeholders to folder path
                 folder = self._replace_placeholders(folder, placeholders)
                 
@@ -1417,6 +1457,26 @@ class ProjectBuilder:
                     shutil.copy2(source_path, dest_path)
                     copied_files.append(dest_path)
                     print(f"Copied file: {source_path} -> {dest_path}")
+                    
+                    # Replace placeholders in text files only, not in binary files
+                    is_binary = file_data.get('is_binary', False)
+                    
+                    if not is_binary and placeholders and self._might_contain_placeholders(source_path):
+                        try:
+                            # Read the file
+                            with open(dest_path, 'r', encoding='utf-8', errors='replace') as f:
+                                content = f.read()
+                                
+                            # Replace placeholders
+                            content = self._replace_placeholders(content, placeholders)
+                            
+                            # Write back the modified content
+                            with open(dest_path, 'w', encoding='utf-8') as f:
+                                f.write(content)
+                                
+                            print(f"Replaced placeholders in file: {dest_path}")
+                        except Exception as e:
+                            print(f"WARNING: Error replacing placeholders in {dest_path}: {str(e)}")
                 except Exception as e:
                     print(f"ERROR: Failed to copy file {source_path} to {dest_path}: {str(e)}")
                     
@@ -1436,9 +1496,27 @@ class ProjectBuilder:
             bool: True if the file might contain placeholders
         """
         try:
+            # First check if the file is likely binary based on extension
+            _, ext = os.path.splitext(file_path)
+            ext = ext.lower()
+            
+            # Common binary extensions - shortlist for quick check
+            binary_extensions = {
+                '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.ico', '.webp', 
+                '.mp3', '.wav', '.mp4', '.mov', '.zip', '.exe', '.pdf'
+            }
+            
+            # If it's a common binary extension, assume it doesn't have placeholders
+            if ext in binary_extensions:
+                return False
+                
             # Read the first 8KB of the file
             with open(file_path, 'rb') as f:
                 data = f.read(8192)
+                
+            # If contains null bytes, likely binary
+            if b'\0' in data:
+                return False
             
             # Convert to string with errors ignored
             text = data.decode('utf-8', errors='ignore')
@@ -1462,34 +1540,13 @@ class ProjectBuilder:
             bool: Success status
         """
         try:
-            # Read the binary file
-            with open(source_path, 'rb') as f:
-                binary_data = f.read()
-            
-            # Convert to string with errors ignored for processing
-            text_data = binary_data.decode('utf-8', errors='ignore')
-            
-            # Replace placeholders
-            for key, value in placeholders.items():
-                placeholder1 = f"${{{key}}}"
-                placeholder2 = f"${key}"
-                text_data = text_data.replace(placeholder1, value)
-                text_data = text_data.replace(placeholder2, value)
-            
-            # Convert back to binary and write
-            with open(dest_path, 'wb') as f:
-                f.write(text_data.encode('utf-8', errors='ignore'))
-                
+            # For binary files, simply copy - don't attempt to replace placeholders
+            # This ensures binary file integrity is maintained
+            print(f"Processing binary file: using direct copy method")
+            shutil.copy2(source_path, dest_path)
             return True
         except Exception as e:
-            print(f"Error processing binary file: {e}")
+            print(f"Error copying binary file: {e}")
             import traceback
             traceback.print_exc()
-            
-            # Fallback to direct copy
-            try:
-                shutil.copy2(source_path, dest_path)
-                return True
-            except Exception as copy_error:
-                print(f"Error in fallback copy: {copy_error}")
-                return False
+            return False

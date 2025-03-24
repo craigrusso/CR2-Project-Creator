@@ -656,6 +656,11 @@ class EnhancedStructureEditor(QDialog):
             print(f"DEBUG: use_project_name - item is not a file: {item.text(0)}")
             return
         
+        # Store original name if we don't already have it
+        current_name = item.text(0)
+        if 'original_name' not in item_data:
+            item_data['original_name'] = current_name
+        
         # Get file extension (if any)
         name = item.text(0)
         extension = ""
@@ -674,47 +679,76 @@ class EnhancedStructureEditor(QDialog):
         
         # Set the display name to explicitly show the placeholder
         # This makes it very clear to the user that this will be replaced
-        new_name = f"{placeholder}{extension}"
+        display_placeholder_name = f"{placeholder}{extension}"
         
-        print(f"DEBUG: use_project_name - changing name from '{name}' to '{new_name}'")
-        print(f"🔍 PLACEHOLDER DEBUG: New name first char: '{new_name[0]}' (code: {ord(new_name[0])})")
-        print(f"🔍 PLACEHOLDER DEBUG: New name bytes: {new_name.encode('utf-8')}")
+        print(f"DEBUG: use_project_name - changing display from '{name}' to '{display_placeholder_name}'")
+        print(f"🔍 PLACEHOLDER DEBUG: New name first char: '{display_placeholder_name[0]}' (code: {ord(display_placeholder_name[0])})")
+        print(f"🔍 PLACEHOLDER DEBUG: New name bytes: {display_placeholder_name.encode('utf-8')}")
         
-        # Update item display text with the actual placeholder
-        item.setText(0, new_name)
+        # Update item display text with the actual placeholder (for visual feedback only)
+        item.setText(0, display_placeholder_name)
         
-        # Update data - store both the display name and the placeholder
-        item_data['name'] = new_name
-        item_data['uses_project_name'] = True
-        item_data['placeholder'] = placeholder  # Store the placeholder that will be replaced
+        # Update data - keep the original name but set the flags
+        # IMPORTANT: Don't modify the 'name' field, just add the flags
+        # Set both flags for backward compatibility, but rename_flag is the primary flag
+        item_data['rename_flag'] = True  # Primary flag for indicating that file should be renamed
+        item_data['uses_project_name'] = True  # Keep for backward compatibility
         item_data['original_extension'] = extension
         item.setData(0, Qt.UserRole, item_data)
         
-        # Apply styling to indicate dynamic name - make it VERY clear this is special
+        # Apply styling to indicate this is a dynamic file
         font = item.font(0)
         font.setItalic(True)
         item.setFont(0, font)
         
-        # Use blue color from our app color scheme for consistency
-        try:
-            from app.ui.color_scheme_pyqt import colors
-            item.setForeground(0, QBrush(QColor(colors.get("accent", "#4A9BFF"))))
-        except (ImportError, AttributeError):
-            # Fallback if color scheme isn't available
-            item.setForeground(0, QBrush(QColor("#4A9BFF")))
+        # Also use a different color to make it clear
+        item.setForeground(0, QBrush(QColor("#4A9BFF")))
         
-        print(f"DEBUG: use_project_name - file marked to use project name: {new_name}")
+        return True
         
-        # After setting text, verify what the item actually displays
-        displayed_text = item.text(0)
-        print(f"🔍 PLACEHOLDER DEBUG: Displayed text: '{displayed_text}'")
-        print(f"🔍 PLACEHOLDER DEBUG: Displayed text first char: '{displayed_text[0]}' (code: {ord(displayed_text[0])})")
-        print(f"🔍 PLACEHOLDER DEBUG: Displayed text bytes: {displayed_text.encode('utf-8')}")
+    def _toggle_project_name_for_file(self, item):
+        """Toggle between using project name and original name for a file"""
+        if not item:
+            return False
+            
+        # Get item data
+        item_data = item.data(0, Qt.UserRole)
+        if not isinstance(item_data, dict) or item_data.get('type') != 'file':
+            return False
+            
+        # Check current state - prioritize rename_flag but check uses_project_name for backward compatibility
+        rename_flag = item_data.get('rename_flag', False)
+        uses_project_name = item_data.get('uses_project_name', False)
         
-        # Check if the placeholder was correctly applied
-        if displayed_text != new_name:
-            print(f"🚨 WARNING: Displayed text doesn't match expected new name!")
-            print(f"🚨 Expected: '{new_name}', got: '{displayed_text}'")
+        if rename_flag or uses_project_name:
+            # Currently using project name, switch back to original name display
+            original_name = item_data.get('original_name')
+            if not original_name:
+                print("ERROR: Original name not found, cannot toggle")
+                return False
+                
+            # Update display to show original name
+            item.setText(0, original_name)
+            
+            # Update data - turn off both flags but keep original_name for future use
+            item_data['rename_flag'] = False  # Primary flag indicating rename should not happen
+            item_data['uses_project_name'] = False  # Keep in sync for backward compatibility
+            
+            # Restore normal styling
+            font = item.font(0)
+            font.setItalic(False)
+            item.setFont(0, font)
+            item.setForeground(0, QBrush(QColor("#000000")))
+            
+            print(f"DEBUG: Toggled file back to original name display: {original_name}")
+        else:
+            # Not using project name, switch to using project name
+            return self._use_project_name_for_file(item)
+            
+        # Update the data
+        item.setData(0, Qt.UserRole, item_data)
+        
+        return True
 
     def _on_template_name_changed(self, new_name):
         """Handle template name changed event"""
