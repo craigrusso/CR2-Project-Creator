@@ -164,6 +164,79 @@ class ProjectBuilder:
         print(f"🔍 DOLLAR HANDLING DEBUG: Final result: '{result}'")
         return result
     
+    def _apply_structure_flags_to_files(self, structure_data, files_array):
+        """
+        Apply rename and project name flags from structure to files array
+        
+        Args:
+            structure_data: Structure data that might contain file flags
+            files_array: Array of files to update with flags
+            
+        Returns:
+            list: Updated files array
+        """
+        if not structure_data or not files_array:
+            return files_array
+            
+        print(f"DEBUG: Applying structure flags to {len(files_array)} files")
+        
+        # Create lookup dictionary for files by name
+        files_by_name = {}
+        for file_data in files_array:
+            file_name = file_data.get('file_name')
+            if file_name:
+                files_by_name[file_name] = file_data
+                
+        # Function to search for files in structure recursively
+        def process_structure_items(items, path=""):
+            if not items or not isinstance(items, list):
+                return
+                
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                    
+                if item.get('type') == 'file':
+                    file_name = item.get('name')
+                    if not file_name:
+                        continue
+                        
+                    # Check if this file is in our files_array
+                    if file_name in files_by_name:
+                        # Check for rename flags
+                        rename_flag = item.get('rename_flag', False)
+                        uses_project_name = item.get('uses_project_name', False)
+                        
+                        if rename_flag or uses_project_name:
+                            print(f"DEBUG: Found flag in structure for file '{file_name}': rename_flag={rename_flag}, uses_project_name={uses_project_name}")
+                            
+                            # Apply flags to the file data
+                            file_data = files_by_name[file_name]
+                            if rename_flag and not file_data.get('rename_flag'):
+                                file_data['rename_flag'] = True
+                                print(f"DEBUG: Applied rename_flag to file: {file_name}")
+                                
+                            if uses_project_name and not file_data.get('uses_project_name'):
+                                file_data['uses_project_name'] = True
+                                print(f"DEBUG: Applied uses_project_name to file: {file_name}")
+                
+                # Process children if this is a folder
+                if item.get('type') == 'folder' and 'children' in item:
+                    new_path = path
+                    if item.get('name'):
+                        if new_path:
+                            new_path += '/'
+                        new_path += item.get('name')
+                    process_structure_items(item.get('children', []), new_path)
+        
+        # Process the structure
+        if isinstance(structure_data, list):
+            process_structure_items(structure_data)
+        elif isinstance(structure_data, dict) and 'root' in structure_data:
+            process_structure_items(structure_data['root'])
+            
+        return files_array
+
     def create_project(self, project_name, output_dir=None, template_file=None, project_type="Standard", 
                    structure_name=None, create_backup=True, use_cached_files=True):
         """
@@ -271,6 +344,9 @@ class ProjectBuilder:
         if template_result:
             # Get files array from template
             files_array = template_result.get('files', [])
+            
+            # Apply structure flags to files array (add rename_flag and uses_project_name from structure)
+            files_array = self._apply_structure_flags_to_files(structure_data, files_array)
             
         if files_array:
             try:
@@ -953,6 +1029,10 @@ class ProjectBuilder:
             # Get the original name from the name field
             item_name = item.get('name')
             
+            print(f"🔍 DEBUG FILE RENAMING: Processing file item {item_name}")
+            print(f"🔍 DEBUG FILE RENAMING: Full item data: {item}")
+            print(f"🔍 DEBUG FILE RENAMING: Placeholders: {placeholders}")
+            
             # Normalize name if it's an array
             if isinstance(item_name, list):
                 if item_name and item_name[0]:
@@ -1011,6 +1091,11 @@ class ProjectBuilder:
             # Get output file path
             file_path = os.path.join(parent_output_path, output_name)
             
+            # Print final paths
+            print(f"🔍 DEBUG FILE RENAMING: Original name: {item_name}")
+            print(f"🔍 DEBUG FILE RENAMING: Output name: {output_name}")
+            print(f"🔍 DEBUG FILE RENAMING: Full output path: {file_path}")
+            
             # Handle string items
             source_path = None
             content = None
@@ -1018,10 +1103,13 @@ class ProjectBuilder:
             # Check if we have path or cached_path for the file
             if 'original_path' in item:
                 source_path = item['original_path']
+                print(f"🔍 DEBUG FILE RENAMING: Using original_path: {source_path}")
             elif 'path' in item:
                 source_path = item['path']
+                print(f"🔍 DEBUG FILE RENAMING: Using path: {source_path}")
             elif 'cached_path' in item:
                 source_path = item['cached_path']
+                print(f"🔍 DEBUG FILE RENAMING: Using cached_path: {source_path}")
                 
             # Skip if we're in dry run mode
             if dry_run:
@@ -1043,8 +1131,14 @@ class ProjectBuilder:
                 if is_binary:
                     # For binary files, just copy the file
                     try:
+                        # Use shutil.copy2 to copy file with metadata
                         shutil.copy2(source_path, file_path)
                         print(f"Copied binary file to {file_path}")
+                        
+                        # Log the renaming operation for debugging
+                        if output_name != item_name:
+                            print(f"✅ Successfully renamed binary file: {item_name} -> {output_name}")
+                            
                         return file_path
                     except Exception as e:
                         error_message = f"Failed to copy binary file {source_path} to {file_path}: {str(e)}"
@@ -1066,6 +1160,10 @@ class ProjectBuilder:
                         with open(file_path, 'w', encoding='utf-8') as f:
                             f.write(content)
                             
+                        # Log the renaming operation for debugging
+                        if output_name != item_name:
+                            print(f"✅ Successfully renamed text file: {item_name} -> {output_name}")
+                            
                         print(f"Created file with placeholders: {file_path}")
                         return file_path
                     except UnicodeDecodeError:
@@ -1073,6 +1171,11 @@ class ProjectBuilder:
                         try:
                             shutil.copy2(source_path, file_path)
                             print(f"Copied file (binary after Unicode decode error) to {file_path}")
+                            
+                            # Log the renaming operation for debugging
+                            if output_name != item_name:
+                                print(f"✅ Successfully renamed file after Unicode decode error: {item_name} -> {output_name}")
+                                
                             return file_path
                         except Exception as e:
                             error_message = f"Failed to copy file {source_path} to {file_path}: {str(e)}"
@@ -1097,6 +1200,10 @@ class ProjectBuilder:
                     with open(file_path, 'w', encoding='utf-8') as f:
                         f.write(file_content)
                         
+                    # Log the renaming operation for debugging
+                    if output_name != item_name:
+                        print(f"✅ Successfully renamed file with direct content: {item_name} -> {output_name}")
+                        
                     print(f"Created file with content: {file_path}")
                     return file_path
                 except Exception as e:
@@ -1109,6 +1216,10 @@ class ProjectBuilder:
                 try:
                     with open(file_path, 'w') as f:
                         pass
+                        
+                    # Log the renaming operation for debugging
+                    if output_name != item_name:
+                        print(f"✅ Successfully renamed empty file: {item_name} -> {output_name}")
                         
                     print(f"Created empty file: {file_path}")
                     return file_path
@@ -1132,6 +1243,10 @@ class ProjectBuilder:
             try:
                 with open(file_path, 'w') as f:
                     pass
+                    
+                # Log the renaming operation for debugging
+                if output_name != item:
+                    print(f"✅ Successfully renamed empty file: {item} -> {output_name}")
                     
                 print(f"Created empty file: {file_path}")
                 return file_path
@@ -1396,19 +1511,23 @@ class ProjectBuilder:
                 cached_path = file_data.get('cached_path')
                 folder = file_data.get('folder', '')
                 rename_flag = file_data.get('rename_flag', False)
+                uses_project_name = file_data.get('uses_project_name', False)  # Added check for uses_project_name
                 file_type = file_data.get('file_type', 'other')
                 
                 if not file_name:
                     print(f"WARNING: File data missing file_name: {file_data}")
                     continue
                 
+                # Print debug info for renaming
+                print(f"🔍 RENAMING DEBUG: Processing file '{file_name}' with rename_flag={rename_flag}, uses_project_name={uses_project_name}")
+                
                 # First check if the filename contains a placeholder
                 if "${PROJECT_NAME}" in file_name:
                     # Apply placeholder replacement directly
                     file_name = self._replace_placeholders(file_name, placeholders)
                     print(f"Applied placeholder to filename: {file_data.get('file_name')} -> {file_name}")
-                # Apply placeholders to file name if flag is set
-                elif rename_flag:
+                # Apply placeholders to file name if either flag is set
+                elif rename_flag or uses_project_name:  # Check for either flag
                     # Get the project name
                     project_name = placeholders.get("PROJECT_NAME", "Unknown")
                     
@@ -1434,6 +1553,11 @@ class ProjectBuilder:
                 # Determine destination path
                 dest_path = os.path.join(folder_path, file_name)
                 
+                # Debug info for file paths
+                print(f"🔍 RENAMING DEBUG: Original name: {file_data.get('file_name')}")
+                print(f"🔍 RENAMING DEBUG: Output name: {file_name}")
+                print(f"🔍 RENAMING DEBUG: Full output path: {dest_path}")
+                
                 # Determine source path (cached or original)
                 source_path = None
                 
@@ -1457,6 +1581,10 @@ class ProjectBuilder:
                     shutil.copy2(source_path, dest_path)
                     copied_files.append(dest_path)
                     print(f"Copied file: {source_path} -> {dest_path}")
+                    
+                    # Log successful renaming
+                    if file_name != file_data.get('file_name'):
+                        print(f"✅ Successfully renamed file: {file_data.get('file_name')} -> {file_name}")
                     
                     # Replace placeholders in text files only, not in binary files
                     is_binary = file_data.get('is_binary', False)
