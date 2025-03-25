@@ -23,70 +23,51 @@ from app.utils.utils import (
 )
 
 
-def create_project(app):
-    """Create a new project from the current settings"""
+def create_project(app, project_name, output_directory=None):
+    """Create a new project with the given name"""
+    print("\n=== PROJECT CREATION DEBUG ===")
+    print(f"🔍 Creating project: '{project_name}'")
+    print(f"🔍 Selected template: {app.selected_template}")
+    print(f"🔍 Template file path: {app.template_file_path}")
+    print(f"🔍 Structure name: {app.structure_name if hasattr(app, 'structure_name') else 'None'}")
+    
     # Validate project name
-    project_name_val = app.project_name_input.text().strip() if hasattr(app, 'project_name_input') else ""
-    
-    if not project_name_val:
-        app.show_status_message("Please enter a project name", message_type="error")
-        return
-    
-    # Check for selected template - try multiple locations
-    selected_template = None
-    
-    # Method 1: Check app.selected_template
-    if hasattr(app, 'selected_template') and app.selected_template:
-        selected_template = app.selected_template
-        print(f"Using template from app.selected_template: {selected_template}")
-    
-    # Method 2: Check gallery's selected template
-    if not selected_template and hasattr(app, 'template_gallery'):
-        if hasattr(app.template_gallery, 'get_selected_template'):
-            selected_template = app.template_gallery.get_selected_template()
-            if selected_template:
-                print(f"Using template from gallery: {selected_template}")
-    
-    # Method 3: Check template_file_path as fallback
-    if not selected_template and hasattr(app, 'template_file_path') and app.template_file_path:
-        template_path = app.template_file_path
-        print(f"Using template from template_file_path: {template_path}")
+    if not project_name:
+        error_msg = "Please enter a project name"
+        app.show_status_message(error_msg)
+        print(f"❌ Error: {error_msg}")
+        print("=== END PROJECT CREATION DEBUG ===\n")
+        return False
         
-        # Create a simple template object
-        selected_template = {
-            'name': os.path.basename(template_path),
-            'path': template_path,
-            'type': 'file' if os.path.isfile(template_path) else 'directory'
-        }
-    
-    if not selected_template:
-        app.show_status_message("Please select a template from the gallery", message_type="error")
-        return
-    
-    # Get output directory
-    output_dir = app.get_current_output_dir(use_fallbacks=False) if hasattr(app, 'get_current_output_dir') else app.root_path
-    
-    # If no output directory is set, directly prompt the user to select one
-    if not output_dir:
-        output_dir = app.get_output_dir()
+    # Validate template selection
+    if not app.selected_template:
+        error_msg = "Please select a template"
+        app.show_status_message(error_msg)
+        print(f"❌ Error: {error_msg}")
+        print("=== END PROJECT CREATION DEBUG ===\n")
+        return False
         
-        # If user still hasn't selected a location, abort
-        if not output_dir:
-            app.show_status_message("Please select an output location to create projects", message_type="warning")
-            return
+    # Get output directory from UI if not provided
+    if not output_directory:
+        output_directory = app.output_directory_input.text()
+        print(f"🔍 Using output directory from UI: {output_directory}")
     
-    print(f"DEBUG OUTPUT DIR: Selected output directory is: {output_dir}")
+    # Save output directory in config
+    app.config.set('output_directory', output_directory)
+    app.config.save()
+    print("✓ Saved output directory to config")
     
-    # Ensure the output directory is saved in the config
-    if hasattr(app, 'config'):
-        app.config["last_output_dir"] = output_dir
-        if hasattr(app, 'save_config'):
-            app.save_config()
-        elif 'save_config' in globals():
-            save_config(app.config)
-    
-    # Get project name
-    project_name = project_name_val
+    # Create project directory
+    project_path = os.path.join(output_directory, project_name)
+    try:
+        os.makedirs(project_path, exist_ok=True)
+        print(f"✓ Created project directory: {project_path}")
+    except Exception as e:
+        error_msg = f"Failed to create project directory: {str(e)}"
+        app.show_status_message(error_msg)
+        print(f"❌ Error: {error_msg}")
+        print("=== END PROJECT CREATION DEBUG ===\n")
+        return False
     
     # Get structure name
     if UI_FRAMEWORK == 'pyqt':
@@ -94,16 +75,19 @@ def create_project(app):
     else:
         structure_name = app.structure_var.get() if hasattr(app, 'structure_var') else "Default"
     
+    print(f"Structure name: {structure_name}")
+    
     # If the selected template has a structure_name, use that instead
-    if isinstance(selected_template, dict) and 'structure_name' in selected_template:
-        structure_name = selected_template['structure_name']
+    if isinstance(app.selected_template, dict) and 'structure_name' in app.selected_template:
+        structure_name = app.selected_template['structure_name']
         print(f"Using template's structure_name: {structure_name}")
     
     if structure_name == "Default":
         structure_name = None
     
     # Use the selected template
-    template_path = selected_template.get('path') if isinstance(selected_template, dict) and 'path' in selected_template else None
+    template_path = app.selected_template.get('path') if isinstance(app.selected_template, dict) and 'path' in app.selected_template else None
+    print(f"Template path: {template_path}")
     
     # For compatibility, set template_file_path to the selected template's path
     app.template_file_path = template_path
@@ -112,10 +96,16 @@ def create_project(app):
     if template_path:
         add_to_recent_templates(app, template_path)
     
+    print("\nCreating project with:")
+    print(f"- Project name: {project_name}")
+    print(f"- Output directory: {output_directory}")
+    print(f"- Template path: {template_path}")
+    print(f"- Structure name: {structure_name}")
+    
     # Create the project using the selected output directory
     result, project_path = app.project_builder.create_project(
         project_name=project_name,
-        output_dir=output_dir,
+        output_dir=output_directory,
         template_file=template_path,
         project_type="Standard", 
         structure_name=structure_name,
@@ -126,6 +116,7 @@ def create_project(app):
         # Show success message
         success_message = f"Project '{project_name}' created successfully at\n{project_path}"
         QMessageBox.information(app, "Success", success_message)
+        print(f"✓ Success: {success_message}")
         
         # Add to recent projects
         add_to_recent_projects(app, project_name, project_path)
@@ -142,7 +133,11 @@ def create_project(app):
     else:
         error_message = f"Failed to create project '{project_name}': {project_path}"
         QMessageBox.critical(app, "Error", error_message)
+        print(f"❌ Error: {error_message}")
         app.show_status_message(f"Error creating project: {project_path}", message_type="error")
+    
+    print("=== END PROJECT CREATION DEBUG ===\n")
+    return result
 
 
 def handle_batch_create(app, project_names_text):

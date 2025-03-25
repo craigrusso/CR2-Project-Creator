@@ -2192,6 +2192,19 @@ class TemplateListItem(QFrame):
                 if hasattr(self, 'app'):
                     print(f"🔍 LISTENER: Updated app-level selected template to '{template_name}'")
                     self.app.selected_template = template
+                    
+                    # Also update template_file_path if available
+                    if isinstance(template, dict):
+                        if 'path' in template:
+                            self.app.template_file_path = template['path']
+                            print(f"🔍 LISTENER: Updated app-level template file path to '{template['path']}'")
+                        else:
+                            # Try to get the path from the template manager
+                            if hasattr(self.app, 'template_manager'):
+                                template_info = self.app.template_manager.get_template_by_name(template_name)
+                                if template_info and 'path' in template_info:
+                                    self.app.template_file_path = template_info['path']
+                                    print(f"🔍 LISTENER: Updated app-level template file path from template manager")
                 
                 # Update gallery selection state
                 print(f"🔍 LISTENER: Template selection set to '{template_name}'")

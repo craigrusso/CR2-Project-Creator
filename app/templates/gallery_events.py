@@ -78,6 +78,7 @@ class GalleryEvents:
         """Handle template selection"""
         # Debug output
         template_name = template.get('name', 'Unknown')
+        print(f"\n=== TEMPLATE SELECTION DEBUG ===")
         print(f"🔍 LISTENER: Template selection event for '{template_name}'")
         
         # Check if this is the same template as already selected
@@ -100,15 +101,74 @@ class GalleryEvents:
             if hasattr(gallery, 'app'):
                 gallery.app.selected_template = template
                 print(f"🔍 LISTENER: Re-synchronized app-level selected template to '{template_name}'")
+                
+                # Also ensure template_file_path is set
+                if isinstance(template, dict):
+                    if 'path' in template:
+                        gallery.app.template_file_path = template['path']
+                        print(f"🔍 LISTENER: Re-synchronized app-level template file path to '{template['path']}'")
+                    else:
+                        # Try to get the path from the template manager
+                        if hasattr(gallery.app, 'template_manager'):
+                            template_info = gallery.app.template_manager.get_template_by_name(template.get('name', ''))
+                            if template_info and 'path' in template_info:
+                                gallery.app.template_file_path = template_info['path']
+                                print(f"🔍 LISTENER: Re-synchronized app-level template file path from template manager")
+                            else:
+                                print("❌ LISTENER: Could not find template path in template manager")
             return
             
         # Set the selected template in gallery state
         gallery.selected_template = template
+        print(f"🔍 LISTENER: Updated gallery selected template to '{template_name}'")
         
         # Also ensure it's set in the app object if available
         if hasattr(gallery, 'app'):
             gallery.app.selected_template = template
             print(f"🔍 LISTENER: Updated app-level selected template to '{template_name}'")
+            
+            # Also update template_file_path if available
+            template_path = None
+            
+            # Method 1: Try to get path directly from template
+            if isinstance(template, dict) and 'path' in template:
+                template_path = template['path']
+                print(f"✓ LISTENER: Found template path in template object: '{template_path}'")
+            
+            # Method 2: Try to get path from template manager
+            if not template_path and hasattr(gallery.app, 'template_manager'):
+                template_info = gallery.app.template_manager.get_template_by_name(template.get('name', ''))
+                if template_info and 'path' in template_info:
+                    template_path = template_info['path']
+                    print(f"✓ LISTENER: Found template path in template manager: '{template_path}'")
+                else:
+                    print("❌ LISTENER: Could not find template path in template manager")
+                    
+                    # Method 3: Try to find the template file in the templates directory
+                    if hasattr(gallery.app.template_manager, 'paths'):
+                        templates_dir = gallery.app.template_manager.paths.get('templates_dir')
+                        if templates_dir:
+                            # Try different filename variations
+                            template_name = template.get('name', '')
+                            normalized_name = template_name.replace(" ", "_")
+                            possible_paths = [
+                                os.path.join(templates_dir, f"{template_name}.json"),
+                                os.path.join(templates_dir, f"{normalized_name}.json"),
+                                os.path.join(templates_dir, f"Template_{normalized_name}.json")
+                            ]
+                            
+                            for path in possible_paths:
+                                if os.path.exists(path):
+                                    template_path = path
+                                    print(f"✓ LISTENER: Found template path in templates directory: '{template_path}'")
+                                    break
+            
+            # Update app's template_file_path if we found a path
+            if template_path:
+                gallery.app.template_file_path = template_path
+                print(f"✓ LISTENER: Updated app-level template file path to '{template_path}'")
+            else:
+                print("❌ LISTENER: Could not find template path")
         
         gallery.selected_folder = None  # Reset folder selection
         print(f"🔍 LISTENER: Template selection set to '{template_name}'")
@@ -144,6 +204,8 @@ class GalleryEvents:
         # Emit template selected event if using PyQt
         if hasattr(gallery, 'template_selected'):
             gallery.template_selected.emit(template)
+            
+        print("=== END TEMPLATE SELECTION DEBUG ===\n")
     
     @staticmethod
     def on_folder_select(gallery, folder_name):

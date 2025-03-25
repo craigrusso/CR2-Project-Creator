@@ -483,20 +483,15 @@ class TemplateListItem(QFrame):
     
     def mousePressEvent(self, event):
         """Handle mouse press events to initiate selection, dragging, or context menu"""
-        
-        # Store position for potential drag operation later
-        self.mouse_press_pos = event.pos()
-        template_name = self.template.get('name', '') if isinstance(self.template, dict) else str(self.template)
-        
         if event.button() == Qt.LeftButton:
-            # Check for keyboard modifiers for multi-selection
-            mod_keys = QApplication.keyboardModifiers()
-            is_multi_select = bool(mod_keys & (Qt.ControlModifier | Qt.ShiftModifier | Qt.MetaModifier))
+            # Store press position for potential drag
+            self.mouse_press_pos = event.pos()
             
-            print(f"🔍 LISTENER: Template list item clicked for template: {template_name}")
-            print(f"🔍 LISTENER: Modifiers value: {int(mod_keys)}, is_multi_select: {is_multi_select}")
+            # Get modifiers for multi-select
+            modifiers = event.modifiers()
+            is_multi_select = bool(modifiers & (Qt.ControlModifier | Qt.ShiftModifier))
             
-            # Find the parent gallery
+            # Find gallery parent
             gallery = self.gallery
             if not gallery:
                 # Try to find gallery by traversing parent hierarchy
@@ -507,16 +502,12 @@ class TemplateListItem(QFrame):
                         break
                     parent = parent.parent()
             
-            # Check if this item is already part of a multi-selection
+            # Check if clicking on an already multi-selected item
             self.was_multi_selected = False
             if gallery and hasattr(gallery, 'multi_selected_templates'):
-                # See if this template is in the multi-selection list
-                for template in gallery.multi_selected_templates:
-                    t_name = template.get('name', '') if isinstance(template, dict) else str(template)
-                    if t_name == template_name:
-                        self.was_multi_selected = True
-                        print(f"🔍 LISTENER: Clicking on already multi-selected item for potential drag")
-                        break
+                if self.template in gallery.multi_selected_templates:
+                    self.was_multi_selected = True
+                    self.clicking_multi_selected = True
             
             if gallery:
                 # Handle multi-selection with Ctrl/Cmd or Shift
@@ -527,24 +518,25 @@ class TemplateListItem(QFrame):
                     # Emit multi-select signal
                     self.multiSelectRequested.emit(self.template)
                 else:
-                    # Normal click behavior but don't clear multi-selection if clicking on a multi-selected item
-                    # This is crucial for allowing drag of multi-selections
+                    # Normal click behavior
+                    # Clear multi-selection if not clicking on a multi-selected item
                     if not self.was_multi_selected:
-                        # Only clear if not clicking on an already multi-selected item
-                        if hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
-                            if hasattr(gallery, 'selected_template') and not gallery.selected_template == self.template:
-                                # Clear multi-selection only when clicking a different item without modifiers
-                                gallery.multi_selected_templates.clear()
+                        if hasattr(gallery, 'multi_selected_templates'):
+                            gallery.multi_selected_templates.clear()
                         
                         # Turn off multi-selection mode
                         if hasattr(gallery, 'is_multi_selecting'):
                             gallery.is_multi_selecting = False
+                        
+                        # Use the shared event handler for template selection
+                        from app.templates.gallery_events import GalleryEvents
+                        GalleryEvents.on_template_select(gallery, self.template)
                     
-                    # Emit clicked signal to update application selection state
+                    # Emit clicked signal to update selection state
                     self.clicked.emit(self.template)
                 
-                # Update all list items in the gallery manually to ensure UI refresh
-                if hasattr(gallery, 'template_item_map') and gallery.template_item_map:
+                # Update all list items in the gallery
+                if hasattr(gallery, 'template_item_map'):
                     for item_name, list_item in list(gallery.template_item_map.items()):
                         try:
                             is_this_item_selected = (gallery.selected_template == list_item.template) if hasattr(gallery, 'selected_template') else False
@@ -559,8 +551,8 @@ class TemplateListItem(QFrame):
                         except Exception as e:
                             print(f"Error updating item {item_name}: {e}")
                 
-                # Also update any template cards if we're in grid view
-                if hasattr(gallery, 'template_cards') and gallery.template_cards:
+                # Also update template cards if in grid view
+                if hasattr(gallery, 'template_cards'):
                     for card in gallery.template_cards:
                         if not card or not hasattr(card, 'template'):
                             continue
