@@ -95,6 +95,11 @@ class GalleryEvents:
                         else:
                             # Ensure other items are not selected
                             card.set_selected(False)
+            
+            # Ensure app-level selection is synchronized even for same template
+            if hasattr(gallery, 'app'):
+                gallery.app.selected_template = template
+                print(f"🔍 LISTENER: Re-synchronized app-level selected template to '{template_name}'")
             return
             
         # Set the selected template in gallery state

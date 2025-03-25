@@ -970,44 +970,22 @@ class GalleryTemplatesSetup:
                 # Block signals during populate to prevent recursive updates
                 gallery.templates_list_widget.blockSignals(True)
                 
-                # Create and schedule a delayed population function
-                def delayed_populate():
-                    try:
-                        # Get templates to show based on current folder
-                        templates_to_show = {}
-                        current_folder = gallery.current_folder if hasattr(gallery, 'current_folder') else None
-                        
-                        if current_folder:
-                            # Get templates in this folder
-                            templates_to_show = GalleryTemplatesSetup.get_templates_in_folder(gallery, current_folder)
-                        else:
-                            # Show all templates
-                            templates_to_show = gallery.template_manager.templates if hasattr(gallery, 'template_manager') and hasattr(gallery.template_manager, 'templates') else {}
-                        
-                        # Populate the list view with current templates
-                        GalleryTemplatesSetup.populate_templates_list(gallery, templates_to_show)
-                        
-                        # Unblock signals after population is complete
-                        gallery.templates_list_widget.blockSignals(False)
-                        
-                        # Update selection state after population
-                        GalleryTemplatesSetup.update_template_selection_state(gallery)
-                        
-                    except Exception as e:
-                        import traceback
-                        print(f"Error in delayed list population: {e}")
-                        traceback.print_exc()
-                        
-                        # Make sure signals are unblocked even on error
-                        if hasattr(gallery, 'templates_list_widget'):
-                            gallery.templates_list_widget.blockSignals(False)
+                # Populate the list view
+                GalleryTemplatesSetup.populate_templates_list(gallery, None)
                 
-                # Schedule the delayed population
-                QTimer.singleShot(50, delayed_populate)
+                # Unblock signals after populating
+                gallery.templates_list_widget.blockSignals(False)
             
             # Save preference
             if hasattr(gallery, 'app') and hasattr(gallery.app, 'preferences'):
                 gallery.app.preferences.set('template_view_mode', mode)
+            
+            # Ensure app-level selection is synchronized with gallery selection
+            if hasattr(gallery, 'selected_template') and gallery.selected_template:
+                if hasattr(gallery, 'app'):
+                    gallery.app.selected_template = gallery.selected_template
+                    template_name = gallery.selected_template.get('name', 'Unknown')
+                    print(f"🔍 LISTENER: Re-synchronized app-level selected template to '{template_name}' after view switch")
             
             # Update the UI to reflect selection state
             GalleryTemplatesSetup.update_template_selection_state(gallery)
@@ -1265,8 +1243,9 @@ class GalleryTemplatesSetup:
         if hasattr(gallery, 'selected_template') and gallery.selected_template:
             had_selection = True
             gallery.selected_template = None
-            if hasattr(gallery, 'app') and hasattr(gallery.app, 'selected_template'):
+            if hasattr(gallery, 'app'):
                 gallery.app.selected_template = None
+                print(f"🔍 LISTENER: Cleared app-level selected template")
             print(f"🔍 LISTENER: Cleared primary selection")
             
         # Clear multi-selection
