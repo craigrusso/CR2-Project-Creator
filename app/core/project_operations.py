@@ -64,7 +64,7 @@ def create_project(app):
         return
     
     # Get output directory
-    output_dir = app.get_current_output_dir() if hasattr(app, 'get_current_output_dir') else app.root_path
+    output_dir = app.get_current_output_dir(use_fallbacks=False) if hasattr(app, 'get_current_output_dir') else app.root_path
     
     # If no output directory is set, directly prompt the user to select one
     if not output_dir:
@@ -72,7 +72,7 @@ def create_project(app):
         
         # If user still hasn't selected a location, abort
         if not output_dir:
-            app.show_status_message("Project creation cancelled - no output location selected", message_type="warning")
+            app.show_status_message("Please select an output location to create projects", message_type="warning")
             return
     
     print(f"DEBUG OUTPUT DIR: Selected output directory is: {output_dir}")
@@ -213,7 +213,7 @@ def handle_batch_create(app, project_names_text):
     # Get the output directory
     output_dir = None
     if hasattr(app, 'get_current_output_dir') and callable(app.get_current_output_dir):
-        output_dir = app.get_current_output_dir()
+        output_dir = app.get_current_output_dir(use_fallbacks=False)
         print(f"DEBUG: Output directory from get_current_output_dir: {output_dir}")
     elif hasattr(app, 'output_directory') and app.output_directory:
         output_dir = app.output_directory

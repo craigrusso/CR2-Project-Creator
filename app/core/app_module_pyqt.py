@@ -510,8 +510,17 @@ class ProjectCreatorApp(QMainWindow):
             
         return directory  # Return the selected directory so it can be used by callers
     
-    def get_current_output_dir(self):
-        """Get the current output directory from the entry field"""
+    def get_current_output_dir(self, use_fallbacks=True):
+        """Get the current output directory from the entry field
+        
+        Args:
+            use_fallbacks: If True, will use fallbacks (config, default path, desktop)
+                          If False, will only return a directory if explicitly set by user
+        
+        Returns:
+            str: The output directory path, or None if not set and use_fallbacks is False
+        """
+        # First check if user has explicitly set a directory in the UI
         if hasattr(self, 'output_dir_input') and self.output_dir_input:
             output_dir = self.output_dir_input.text().strip()
             if output_dir:
@@ -526,14 +535,19 @@ class ProjectCreatorApp(QMainWindow):
                 print(f"Using output directory from UI: {output_dir}")
                 return output_dir
         
-        # If no output directory in the UI, check config
+        # If no explicit directory and fallbacks are disabled, return None
+        if not use_fallbacks:
+            print("No output directory explicitly set, and fallbacks disabled")
+            return None
+            
+        # If fallbacks enabled, try using last directory from config
         if hasattr(self, 'config') and 'last_output_dir' in self.config:
             output_dir = self.config['last_output_dir']
             if output_dir and os.path.exists(output_dir):
                 print(f"Using output directory from config: {output_dir}")
                 return output_dir
                 
-        # Fall back to default paths
+        # Fall back to default paths if available
         if hasattr(self, 'default_output_path') and self.default_output_path:
             print(f"Using default output path: {self.default_output_path}")
             return self.default_output_path
@@ -852,12 +866,12 @@ class ProjectCreatorApp(QMainWindow):
         if not has_template:
             missing_requirements.append("No template selected")
         
-        output_dir = self.get_current_output_dir()
+        output_dir = self.get_current_output_dir(use_fallbacks=False)
         if not output_dir:
             # Instead of adding it to missing requirements, directly prompt for selection
             output_dir = self.get_output_dir()
             if not output_dir:  # User cancelled the directory selection
-                self.show_status_message("Project creation cancelled - no output location selected", message_type="warning")
+                self.show_status_message("Please select an output location to create projects", message_type="warning")
                 return
         
         # Check if there's still any missing requirements
