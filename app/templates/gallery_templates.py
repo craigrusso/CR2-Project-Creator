@@ -292,7 +292,9 @@ def handle_template_edit(gallery, template=None, selected_template=None, name=No
                             template_name=name,
                             template_data=template_data,
                             structure=structure,
-                            overwrite=True
+                            category=template.get('category', 'Custom'),
+                            is_update=True,
+                            original_name=original_template_name if original_template_name != name else None
                         )
                         print(f"🔷 GALLERY LISTENER: Template save result: {save_success}")
                     else:

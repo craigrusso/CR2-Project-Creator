@@ -30,30 +30,49 @@ class TemplatesGallery(QWidget):
             is_new=False
         )
         
-        if success:
-            print(f"DEBUG: Structure editor returned successfully")
-            
-            # Check if the name changed
-            if new_name and new_name != template_name:
-                print(f"DEBUG: Template name changed from {template_name} to {new_name}")
+        if success and new_name:
+            # Get the template manager
+            if hasattr(self, 'app') and hasattr(self.app, 'template_manager'):
+                # First save the structure
+                structure_save_success = self.app.template_manager.save_custom_structure(
+                    name=new_name,
+                    structure=structure
+                )
                 
-                # Update the template reference in the parent app if template_manager exists
-                if hasattr(self, 'parent') and self.parent and hasattr(self.parent, 'template_manager'):
-                    # Rename the template in the template manager
-                    self.parent.template_manager.rename_template(template_name, new_name)
-                    print(f"INFO: Renamed structure from '{template_name}' to '{new_name}'")
-                    
-                    # Update any data structures that reference this template
-                    self._update_template_references(template_name, new_name)
-                    
-                    # Update gallery and reload templates
-                    QTimer.singleShot(100, self.refresh_templates)
-                    
-                    # Scroll to the renamed template after a short delay
-                    QTimer.singleShot(300, lambda: self.scroll_to_template(new_name))
-            else:
-                # Even if name didn't change, refresh to show structure changes
-                QTimer.singleShot(100, self.refresh_templates)
+                if not structure_save_success:
+                    print(f"DEBUG: Failed to save structure for template '{new_name}'")
+                    return False
+                
+                # Create template data
+                template_data = {
+                    'name': new_name,
+                    'structure_name': f"Template_{new_name}",
+                    'structure': structure,
+                    'modified': time.time(),
+                    'category': 'Custom'  # Default category
+                }
+                
+                # Save the template with the updated structure
+                template_save_success = self.app.template_manager.save_template(
+                    template_name=new_name,
+                    structure=structure,
+                    template_data=template_data,
+                    category='Custom',
+                    is_update=True,
+                    original_name=template_name if template_name != new_name else None
+                )
+                
+                if template_save_success:
+                    print(f"DEBUG: Successfully saved template '{new_name}'")
+                    # Force refresh of gallery
+                    if hasattr(self, 'populate_gallery'):
+                        self.populate_gallery(force_refresh=True)
+                    return True
+                else:
+                    print(f"DEBUG: Failed to save template '{new_name}'")
+                    return False
+        
+        return success
 
     def _update_template_references(self, old_name, new_name):
         """Update all references to a template name in internal data structures"""

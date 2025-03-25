@@ -1270,10 +1270,14 @@ class TemplateDirectoryEditor(QDialog):
     
     def save_template(self):
         """Save the template and close the dialog"""
+        print("\n[DEBUG] TemplateDirectoryEditor.save_template: Starting save operation")
+        
         # Validate basic info
         name = self.name_input.text().strip()
         category = self.category_input.text().strip()
         description = self.desc_input.toPlainText().strip()
+        
+        print(f"[DEBUG] Template info - name: {name}, category: {category}")
         
         if not name:
             QMessageBox.warning(self, "Validation Error", "Template name is required")
@@ -1285,9 +1289,11 @@ class TemplateDirectoryEditor(QDialog):
         
         # Create structure name
         structure_name = f"Template_{name}"
+        print(f"[DEBUG] Structure name: {structure_name}")
         
         # Get structure from tree
         structure = self._get_structure_from_tree()
+        print(f"[DEBUG] Structure from tree: {structure}")
         
         # Update template info
         self.template_info['name'] = name
@@ -1301,23 +1307,34 @@ class TemplateDirectoryEditor(QDialog):
             return
         
         try:
+            print(f"[DEBUG] Saving template.json to: {self.template_path}")
             # Save template.json
             template_json_path = os.path.join(self.template_path, "template.json")
             with open(template_json_path, 'w') as f:
                 json.dump(self.template_info, f, indent=2)
+            print("[DEBUG] template.json saved successfully")
                 
             # Also save the structure definition
             parent = self.parent()
             if parent and hasattr(parent, 'template_manager'):
-                parent.template_manager.save_custom_structure(structure_name, structure)
+                print(f"[DEBUG] Saving structure via template manager: {structure_name}")
+                success = parent.template_manager.save_custom_structure(structure_name, structure)
+                print(f"[DEBUG] Structure save result: {success}")
+            else:
+                print("[WARNING] No template manager found to save structure")
             
             # Call the save callback if provided
             if self.save_callback:
+                print("[DEBUG] Calling save callback")
                 self.save_callback(self.template_path)
                 
+            print("[DEBUG] Template save completed successfully")
             self.accept()
             
         except Exception as e:
+            print(f"[ERROR] Failed to save template: {str(e)}")
+            import traceback
+            traceback.print_exc()
             QMessageBox.critical(self, "Error", f"Failed to save template: {str(e)}")
             return
 

@@ -151,67 +151,39 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
             return False
 
     def save_custom_structure(self, name, structure):
-        """
-        Save a custom folder structure.
+        """Save a custom structure to disk"""
+        print(f"\n[DEBUG] TemplateManager.save_custom_structure: Starting save for '{name}'")
         
-        Args:
-            name (str): Name of the structure (internal name with Template_ prefix if appropriate)
-            structure (list): List of structure items (folders and files)
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        if not name:
-            print(f"[DEBUG] StructureOps: Cannot save structure with empty name")
-            return False
-            
-        # Ensure we have a custom_structures dictionary
-        if not hasattr(self, 'custom_structures'):
-            self.custom_structures = {}  # Initialize as a dictionary
-        
-        # Extract display name (without Template_ prefix) for UI display
-        display_name = name
-        if name.startswith("Template_"):
-            display_name = name[9:]  # Remove "Template_" prefix for display
-        
-        # Check if we're updating an existing structure (look for the file)
-        is_update = False
-        existing_path = None
-        
-        # Try to find an existing structure file to update
-        if hasattr(self, '_get_structure_path'):
-            existing_path = self._get_structure_path(name)
-            if existing_path:
-                is_update = True
-                print(f"[DEBUG] StructureOps: Updating existing structure file at {existing_path}")
-                
-        # The structure object should be stored directly with the name as the key
         try:
-            # Ensure structure is a list, not a dict
-            if isinstance(structure, dict):
-                # If we somehow got a dict with structure data instead of the actual structure list
-                if 'directories' in structure:
-                    structure = structure.get('directories', [])
-                    print(f"[DEBUG] StructureOps: Extracted directories from structure dict")
-                else:
-                    # Otherwise wrap it in a list as a folder
-                    structure = [structure]
-                    print(f"[DEBUG] StructureOps: Wrapped dict in list to make valid structure")
-                    
-            # Normalize the structure format to ensure consistent handling of folders and template variables
-            normalized_structure = self._normalize_structure_format(structure) if structure else []
+            # Ensure the custom structures directory exists
+            os.makedirs(self.paths["custom_structures_dir"], exist_ok=True)
             
-            # Create the structure data to store
+            # Check if we're updating an existing structure
+            existing_path = None
+            is_update = False
+            
+            # Look for existing file with this name
+            for filename in os.listdir(self.paths["custom_structures_dir"]):
+                if filename.startswith(name.replace(" ", "_")) and filename.endswith(".json"):
+                    existing_path = os.path.join(self.paths["custom_structures_dir"], filename)
+                    is_update = True
+                    print(f"[DEBUG] Found existing structure file: {existing_path}")
+                    break
+            
+            # Create structure data
             structure_data = {
                 "name": name,
-                "display_name": display_name,
-                "directories": normalized_structure,
+                "type": "custom",
+                "directories": structure,
                 "created": datetime.datetime.now().isoformat()
             }
+            
+            print(f"[DEBUG] Structure data prepared: {structure_data}")
             
             # If we're updating an existing file, read it to preserve metadata
             if is_update and existing_path:
                 try:
+                    print("[DEBUG] Reading existing structure to preserve metadata")
                     with open(existing_path, 'r') as f:
                         existing_data = json.load(f)
                         
@@ -227,13 +199,14 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
                     # Add modified timestamp
                     structure_data['modified'] = datetime.datetime.now().isoformat()
                     
-                    print(f"[DEBUG] StructureOps: Preserved metadata from existing structure")
+                    print("[DEBUG] Preserved metadata from existing structure")
                 except Exception as e:
-                    print(f"[DEBUG] StructureOps: Error reading existing structure: {e}")
+                    print(f"[ERROR] Error reading existing structure: {e}")
                     # Continue with saving as new if read fails
             
             # Store in memory - important to store the whole structure_data object
             self.custom_structures[name] = structure_data
+            print(f"[DEBUG] Updated in-memory structure cache")
             
             # Determine file path - use existing path if updating, otherwise create new
             if is_update and existing_path:
@@ -243,17 +216,22 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
                 filename = name.replace(" ", "_").replace("/", "-").replace("\\", "-")
                 file_path = os.path.join(self.paths["custom_structures_dir"], f"{filename}.json")
             
+            print(f"[DEBUG] Saving structure to: {file_path}")
+            
             # Make sure the directory exists
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
-            # Save to file
+            # Write the structure file
             with open(file_path, 'w') as f:
                 json.dump(structure_data, f, indent=2)
                 
-            print(f"[DEBUG] StructureOps: Successfully saved custom structure '{name}' with display name '{display_name}'")
+            print("[DEBUG] Structure saved successfully")
             return True
+            
         except Exception as e:
-            print(f"[DEBUG] StructureOps: Error saving structure: {e}")
+            print(f"[ERROR] Failed to save structure: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def _normalize_structure_format(self, structure_items):
