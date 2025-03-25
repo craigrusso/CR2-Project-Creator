@@ -118,6 +118,8 @@ class FileOperations:
         Returns:
             QTreeWidgetItem or list of QTreeWidgetItems: The created file item(s)
         """
+        print(f"🔹 ADD_FILE: Called with parent_item={parent_item}, file_name={file_name}, file_type={file_type}")
+        
         # Get reference to the tree widget
         if not hasattr(self, 'tree'):
             if hasattr(self.editor, 'tree'):
@@ -133,13 +135,16 @@ class FileOperations:
         if not parent_item:
             if self.tree.topLevelItemCount() > 0:
                 parent_item = self.tree.topLevelItem(0)
+                print(f"🔹 ADD_FILE: Using first top level item as parent: {parent_item.text(0)}")
             else:
                 parent_item = QTreeWidgetItem(self.tree)
                 parent_item.setText(0, "Project Root")
                 parent_item.setData(0, Qt.UserRole, {"type": "folder", "name": "Project Root"})
+                print(f"🔹 ADD_FILE: Created new root item as parent: Project Root")
     
         # If file_name is a list or tuple, add multiple files
         if isinstance(file_name, (list, tuple)):
+            print(f"🔹 ADD_FILE: Adding multiple files: {file_name}")
             added_items = []
             for name in file_name:
                 added_item = self._add_file_item(parent_item, name, file_type)
@@ -157,10 +162,12 @@ class FileOperations:
             )
             
             if not file_path:
+                print("🔹 ADD_FILE: User cancelled file selection")
                 return None
             
             # Get file name from path
             file_name = os.path.basename(file_path)
+            print(f"🔹 ADD_FILE: User selected file: {file_path}, using name: {file_name}")
             
             # Add file with original path
             file_item = self._add_file_item(parent_item, file_name)
@@ -192,6 +199,8 @@ class FileOperations:
                 file_data['relative_path'] = relative_path
                 file_data['template_name'] = template_name
                 
+                print(f"🔹 ADD_FILE: Created file data: {file_data}")
+                
                 # Update file data in the tree item
                 file_item.setData(0, Qt.UserRole, file_data)
                 
@@ -202,6 +211,9 @@ class FileOperations:
                         "relative_path": relative_path,
                         "template_name": template_name
                     }
+                    print(f"🔹 ADD_FILE: Added to files_to_cache with key {relative_path}")
+                else:
+                    print("🔹 ADD_FILE: Warning - editor does not have files_to_cache attribute")
                     
                 # Add visual indicator that file is tracked but not yet cached
                 from PyQt5.QtGui import QBrush, QColor
@@ -214,6 +226,7 @@ class FileOperations:
             return file_item
         
         # If file name is provided, just add a single file
+        print(f"🔹 ADD_FILE: Adding single file with name: {file_name}")
         return self._add_file_item(parent_item, file_name, file_type)
     
     def _add_file_item(self, parent_item, file_name, file_type=None, original_path=None):
@@ -229,6 +242,8 @@ class FileOperations:
         Returns:
             QTreeWidgetItem: The created file item
         """
+        print(f"🔹 _ADD_FILE_ITEM: Creating file item: {file_name}, parent: {parent_item.text(0) if parent_item else 'None'}")
+        
         # Make sure we have a parent
         if not parent_item:
             parent_item = self.tree.invisibleRootItem()
@@ -249,33 +264,32 @@ class FileOperations:
         
         # Check if it's a binary file if we have a path
         if original_path and os.path.exists(original_path):
+            from app.utils.binary_file_handler import BinaryFileHandler
             is_binary = BinaryFileHandler.is_binary_file(original_path)
-        else:
-            # Guess based on extension
-            is_binary = self.is_binary_file(file_name)
         
-        # Create item data dictionary
-        item_data = {
-            "type": "file",
-            "name": file_name,
-            "is_binary": is_binary
+        # Create file data entry
+        file_data = {
+            'name': file_name,
+            'type': 'file',
+            'path': original_path or ""
         }
         
-        # Add original path if provided
+        # Add original_path explicitly in the file data
         if original_path:
-            item_data["path"] = original_path
+            file_data['original_path'] = original_path
         
-        # Set the data
-        file_item.setData(0, Qt.UserRole, item_data)
+        # Add file type if specified
+        if file_type:
+            file_data['file_type'] = file_type
         
-        # Visual indicator for binary files
+        # Set binary flag if known
         if is_binary:
-            file_item.setForeground(0, QBrush(QColor("#8C9EFF")))  # Light purple for binary files
+            file_data['is_binary'] = True
         
-        # Expand parent and select new item
-        parent_item.setExpanded(True)
-        if hasattr(self.tree, 'setCurrentItem'):
-            self.tree.setCurrentItem(file_item)
+        # Store file data in the item
+        file_item.setData(0, Qt.UserRole, file_data)
+        
+        print(f"🔹 _ADD_FILE_ITEM: Set file data: {file_data}")
         
         return file_item
     

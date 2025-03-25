@@ -873,25 +873,38 @@ class StructureConverter:
                     }
                     
                     # Include any other useful file metadata from the item_user_data
-                    for key in ['path', 'is_binary', 'cached_path', 'original_name', 'original_extension']:
+                    for key in ['path', 'original_path', 'is_binary', 'cached_path', 'original_name', 'original_extension']:
                         if key in item_user_data:
                             file_item[key] = item_user_data[key]
                     
+                    # Ensure original_path is set if path is available but original_path isn't
+                    if 'path' in item_user_data and item_user_data['path'] and 'original_path' not in file_item:
+                        file_item['original_path'] = item_user_data['path']
+                    
                     return file_item
-            else:
-                # Regular file without placeholder
-                file_item = {
-                    'name': name,
-                    'type': 'file'
-                }
-                
-                # Include any other useful file metadata from the item_user_data
-                if isinstance(item_user_data, dict):
-                    for key in ['path', 'is_binary', 'cached_path', 'rename_flag', 'uses_project_name', 'original_name', 'original_extension']:
-                        if key in item_user_data:
-                            file_item[key] = item_user_data[key]
-                
-                return file_item
+            
+            # Regular file without placeholder
+            file_item = {
+                'name': name,
+                'type': 'file'
+            }
+            
+            # Include any other useful file metadata from the item_user_data
+            if isinstance(item_user_data, dict):
+                for key in ['path', 'original_path', 'is_binary', 'cached_path', 'rename_flag', 'uses_project_name', 
+                           'original_name', 'original_extension']:
+                    if key in item_user_data:
+                        file_item[key] = item_user_data[key]
+                        
+                # Ensure original_path is set if path is available but original_path isn't
+                if 'path' in item_user_data and item_user_data['path'] and 'original_path' not in file_item:
+                    file_item['original_path'] = item_user_data['path']
+            
+            # If we have the original_path, add it directly to the structure
+            if 'original_path' in file_item and file_item['original_path']:
+                print(f"DEBUG: File {name} has original_path: {file_item['original_path']}")
+            
+            return file_item
 
     def _normalize_structure_format(self, structure):
         """

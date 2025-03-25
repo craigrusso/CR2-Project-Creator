@@ -302,14 +302,21 @@ def show_batch_results(app, results):
             else:
                 results_text += f"<b style='color: #FFA07A;'>✗ {name}</b><br>"
                 results_text += f"&nbsp;&nbsp;&nbsp;Error: {path}<br><br>"
+        
+        total_count = len(results)
     else:
-        # Handle legacy format or custom format
-        for result in results:
+        # Handle dictionary format - remove "summary" from the count
+        actual_projects = [k for k in results.keys() if k != "summary"]
+        total_count = len(actual_projects)
+        
+        # Process each project result
+        for project_name in actual_projects:
+            result = results[project_name]
             if isinstance(result, dict):
-                project_name = result.get('name', 'Unknown')
                 success = result.get('success', False)
-                path = result.get('path', 'Not created')
+                path = result.get('directory', result.get('path', 'Not created'))
                 error = result.get('error', '')
+                message = result.get('message', '')
                 
                 if success:
                     success_count += 1
@@ -317,10 +324,9 @@ def show_batch_results(app, results):
                     results_text += f"&nbsp;&nbsp;&nbsp;Created at: {path}<br><br>"
                 else:
                     results_text += f"<b style='color: #FFA07A;'>✗ {project_name}</b><br>"
-                    results_text += f"&nbsp;&nbsp;&nbsp;Error: {error}<br><br>"
+                    results_text += f"&nbsp;&nbsp;&nbsp;Error: {error or message}<br><br>"
     
     # Add summary
-    total_count = len(results)
     summary = f"<b>Summary:</b> {success_count} of {total_count} projects created successfully."
     results_text = f"{summary}<br><br>{results_text}"
     
@@ -338,16 +344,17 @@ def show_batch_results(app, results):
         output_dir = None
         
         # Check which format we're dealing with
-        if isinstance(results[0], tuple):
+        if isinstance(results, list) and len(results) > 0 and isinstance(results[0], tuple):
             for name, success, path in results:
                 if success:
                     import os
                     output_dir = os.path.dirname(path)
                     break
         else:
-            for result in results:
-                if result.get('success', False):
-                    path = result.get('path', '')
+            for project_name in actual_projects:
+                result = results[project_name]
+                if isinstance(result, dict) and result.get('success', False):
+                    path = result.get('directory', result.get('path', ''))
                     import os
                     output_dir = os.path.dirname(path)
                     break

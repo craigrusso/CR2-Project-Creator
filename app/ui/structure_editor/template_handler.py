@@ -333,6 +333,16 @@ class TemplateHandler:
         Returns:
             None (modifies structure in place)
         """
+        print(f"🔄 FILE_CACHING: Processing files for '{template_name}'")
+        
+        # Check if files_to_cache is available in editor
+        if hasattr(self.editor, 'files_to_cache'):
+            print(f"🔄 FILE_CACHING: Editor has {len(self.editor.files_to_cache)} files in files_to_cache")
+            for rel_path, file_data in self.editor.files_to_cache.items():
+                print(f"🔄 FILE_CACHING: files_to_cache entry: {rel_path} -> {file_data.get('original_path')}")
+        else:
+            print("🔄 FILE_CACHING: Editor does not have files_to_cache attribute")
+        
         try:
             # Import cache manager if needed
             from app.utils.file_cache_manager import FileCacheManager
@@ -341,20 +351,21 @@ class TemplateHandler:
             # Check if caching is enabled
             cache_prefs = CachePreferences()
             if not cache_prefs.should_cache_files():
-                print("File caching is disabled in preferences")
+                print("🔄 FILE_CACHING: File caching is disabled in preferences")
                 return
             
             # Initialize cache manager
             cache_manager = FileCacheManager(cache_prefs.get_cache_location())
+            print(f"🔄 FILE_CACHING: Using cache location: {cache_prefs.get_cache_location()}")
             
             # Process the structure recursively
             self._process_structure_for_caching(structure, template_name, cache_manager)
             
         except ImportError:
-            print("Cache manager not available, skipping file caching")
+            print("🔄 FILE_CACHING: Cache manager not available, skipping file caching")
         except Exception as e:
             import traceback
-            print(f"Error processing files for caching: {e}")
+            print(f"🔄 FILE_CACHING ERROR: {e}")
             traceback.print_exc()
     
     def _process_structure_for_caching(self, structure_item, template_name, cache_manager, path=""):
@@ -370,17 +381,67 @@ class TemplateHandler:
         Returns:
             None (modifies structure_item in place)
         """
-        # Check if this is a list of items
+        # Check structure type
         if isinstance(structure_item, list):
+            print(f"🔄 STRUCTURE_CACHING: Processing list with {len(structure_item)} items at path '{path}'")
+            
+            # Look for string items (directly added files)
+            string_items = [item for item in structure_item if isinstance(item, str)]
+            if string_items:
+                print(f"🔄 STRUCTURE_CACHING: Found {len(string_items)} string items at path '{path}': {string_items}")
+                
+                # Check if we have files_to_cache to resolve these string items
+                if hasattr(self.editor, 'files_to_cache'):
+                    for string_item in string_items:
+                        # Try to find this file in files_to_cache
+                        found = False
+                        for rel_path, file_data in self.editor.files_to_cache.items():
+                            if os.path.basename(rel_path) == string_item or os.path.basename(file_data.get('original_path', '')) == string_item:
+                                print(f"🔄 STRUCTURE_CACHING: Found matching file for '{string_item}' in files_to_cache: {file_data}")
+                                found = True
+                                
+                                # We found a match, now we need to create a proper file entry
+                                original_path = file_data.get('original_path')
+                                if original_path and os.path.exists(original_path):
+                                    print(f"🔄 STRUCTURE_CACHING: Caching file '{string_item}' from '{original_path}'")
+                                    
+                                    # Cache the file
+                                    cache_info = cache_manager.cache_file(
+                                        original_path,
+                                        template_name,
+                                        os.path.join(path, string_item)
+                                    )
+                                    
+                                    if cache_info:
+                                        print(f"🔄 STRUCTURE_CACHING: Successfully cached: {cache_info}")
+                                        
+                                        # Replace the string item with a proper file object
+                                        idx = structure_item.index(string_item)
+                                        structure_item[idx] = {
+                                            'type': 'file',
+                                            'name': string_item,
+                                            'original_path': original_path,
+                                            'cache_path': cache_info['cache_path'],
+                                            'file_hash': cache_info.get('file_hash', '')
+                                        }
+                                        print(f"🔄 STRUCTURE_CACHING: Replaced string item with file object at index {idx}")
+                                break
+                        
+                        if not found:
+                            print(f"🔄 STRUCTURE_CACHING: Could not find original path for '{string_item}' in files_to_cache")
+            
+            # Process all items in the list
             for item in structure_item:
                 self._process_structure_for_caching(item, template_name, cache_manager, path)
-                
+            
         # Check if this is a dictionary (folder or normalized item)
         elif isinstance(structure_item, dict):
             # Check if this is a normalized format item
             if 'type' in structure_item and 'name' in structure_item:
                 item_type = structure_item.get('type')
                 item_name = structure_item.get('name')
+                
+                print(f"🔄 STRUCTURE_CACHING: Processing {item_type} item '{item_name}' at path '{path}'")
                 
                 # Handle folder
                 if item_type == 'folder' or item_type == 'directory':
@@ -396,6 +457,8 @@ class TemplateHandler:
                         # Determine the relative path in template
                         relative_path = os.path.join(path, item_name)
                         
+                        print(f"🔄 STRUCTURE_CACHING: Caching file '{item_name}' from '{structure_item['original_path']}'")
+                        
                         # Cache the file
                         file_info = cache_manager.cache_file(
                             structure_item['original_path'], 
@@ -407,12 +470,36 @@ class TemplateHandler:
                             # Update structure with cache info
                             structure_item['cache_path'] = file_info['cache_path']
                             structure_item['file_hash'] = file_info['file_hash']
-                            print(f"Cached file: {item_name} -> {file_info['cache_path']}")
+                            print(f"🔄 STRUCTURE_CACHING: Cached file: {item_name} -> {file_info['cache_path']}")
+                    else:
+                        print(f"🔄 STRUCTURE_CACHING: File '{item_name}' has no original_path or path doesn't exist")
             
             # Check if it's a traditional folder structure {folder_name: [children]}
             else:
                 for key, value in structure_item.items():
+                    print(f"🔄 STRUCTURE_CACHING: Processing folder '{key}' with {len(value) if isinstance(value, list) else 'non-list'} children")
                     # The key is the folder name and value should be a list of children
                     if isinstance(value, list):
                         new_path = os.path.join(path, key)
-                        self._process_structure_for_caching(value, template_name, cache_manager, new_path) 
+                        self._process_structure_for_caching(value, template_name, cache_manager, new_path)
+        elif isinstance(structure_item, str):
+            print(f"🔄 STRUCTURE_CACHING: Found direct string item '{structure_item}' at path '{path}'")
+            
+            # Try to find this string in files_to_cache
+            if hasattr(self.editor, 'files_to_cache'):
+                for rel_path, file_data in self.editor.files_to_cache.items():
+                    if (os.path.basename(rel_path) == structure_item or 
+                        os.path.basename(file_data.get('original_path', '')) == structure_item):
+                        print(f"🔄 STRUCTURE_CACHING: Found matching file for '{structure_item}' in files_to_cache: {file_data}")
+                        
+                        # We found a match, cache the file
+                        original_path = file_data.get('original_path')
+                        if original_path and os.path.exists(original_path):
+                            cache_info = cache_manager.cache_file(
+                                original_path,
+                                template_name,
+                                os.path.join(path, structure_item)
+                            )
+                            if cache_info:
+                                print(f"🔄 STRUCTURE_CACHING: Cached direct string file: {structure_item} -> {cache_info['cache_path']}")
+                        break 
