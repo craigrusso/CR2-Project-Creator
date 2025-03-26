@@ -1623,27 +1623,35 @@ class UIBuilder:
             while parent and not hasattr(parent, 'structure_manager'):
                 parent = parent.parent()
             
-            if parent and hasattr(parent, 'structure_manager'):
-                success = parent.structure_manager.save_preset(
-                    preset_name, 
-                    structure, 
-                    preset_category
-                )
-                
-                if success:
-                    QMessageBox.information(
-                        self.editor,
-                        "Save Preset",
-                        f"Preset '{preset_name}' saved successfully."
+            if parent and hasattr(parent, 'structure_manager') and parent.structure_manager is not None:
+                # Check if save_preset method exists and is callable
+                if hasattr(parent.structure_manager, 'save_preset') and callable(parent.structure_manager.save_preset):
+                    success = parent.structure_manager.save_preset(
+                        preset_name, 
+                        structure, 
+                        preset_category
                     )
                     
-                    # Add the preset to the dropdown
-                    self.predefined_combo.addItem(preset_name, preset_name)
+                    if success:
+                        QMessageBox.information(
+                            self.editor,
+                            "Save Preset",
+                            f"Preset '{preset_name}' saved successfully."
+                        )
+                        
+                        # Add the preset to the dropdown
+                        self.predefined_combo.addItem(preset_name, preset_name)
+                    else:
+                        QMessageBox.warning(
+                            self.editor,
+                            "Save Preset",
+                            f"Failed to save preset '{preset_name}'."
+                        )
                 else:
                     QMessageBox.warning(
                         self.editor,
                         "Save Preset",
-                        f"Failed to save preset '{preset_name}'."
+                        "The save_preset method is not available in the structure manager."
                     )
             else:
                 QMessageBox.warning(
