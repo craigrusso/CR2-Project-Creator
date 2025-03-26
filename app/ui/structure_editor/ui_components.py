@@ -1576,7 +1576,14 @@ class UIBuilder:
         # Get the current structure from the tree
         structure = None
         if hasattr(self.editor, 'structure_converter'):
-            structure = self.editor.structure_converter.create_structure_from_tree()
+            try:
+                # Use get_structure method instead of create_structure_from_tree
+                # This method has been tested and works properly with the current tree
+                structure = self.editor.structure_converter.get_structure()
+            except Exception as e:
+                print(f"ERROR getting structure for preset: {e}")
+                import traceback
+                traceback.print_exc()
         
         if not structure:
             QMessageBox.warning(
