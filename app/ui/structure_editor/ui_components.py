@@ -426,46 +426,25 @@ class UIBuilder:
         main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(10)
         
-        # Create splitter for resizable sections
-        splitter = QSplitter(Qt.Vertical)
-        splitter.setChildrenCollapsible(False)
-        splitter.setHandleWidth(8)
-        splitter.setStyleSheet(f"""
-            QSplitter::handle {{
-                background-color: {colors['border']};
-            }}
-            QSplitter::handle:hover {{
-                background-color: {colors['accent']};
-            }}
-        """)
-        
-        # Create top section with template info
-        top_widget = QWidget()
-        top_layout = QVBoxLayout(top_widget)
-        top_layout.setContentsMargins(5, 5, 5, 5)
+        # Create template information panel
+        info_panel = QWidget()
+        info_layout = QVBoxLayout(info_panel)
+        info_layout.setContentsMargins(5, 5, 5, 5)
         
         # Create header label
         header_label = QLabel("Template Information")
         header_label.setFont(QFont(header_label.font().family(), 12, QFont.Bold))
         header_label.setStyleSheet(f"color: {colors['text']}; padding-bottom: 5px;")
-        top_layout.addWidget(header_label)
+        info_layout.addWidget(header_label)
         
-        # Create a styled frame for form elements
-        form_frame = QFrame()
-        form_frame.setFrameShape(QFrame.StyledPanel)
-        form_frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: {colors['card_bg']};
-                border: 1px solid {colors['border']};
-                border-radius: 4px;
-            }}
-        """)
-        form_layout = QFormLayout(form_frame)
-        form_layout.setContentsMargins(10, 10, 10, 10)
-        form_layout.setSpacing(12)
+        # Create form layout
+        form_layout = QFormLayout()
+        form_layout.setContentsMargins(0, 0, 0, 0)
+        form_layout.setSpacing(10)
+        form_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         form_layout.setLabelAlignment(Qt.AlignRight)
         
-        # Create styled label function
+        # Helper function to create labels with consistent styling
         def create_label(text):
             label = QLabel(text)
             label.setStyleSheet(f"color: {colors['text']}; font-weight: bold;")
@@ -474,202 +453,182 @@ class UIBuilder:
         # Template name field
         self.template_name_field = QLineEdit()
         self.template_name_field.setPlaceholderText("Enter template name")
-
-        # Set the template name, handling Template_ prefix properly
-        if self.structure_name:
-            # If the name starts with Template_, remove it for display
-            display_name = self.structure_name
-            if display_name.startswith("Template_"):
-                display_name = display_name[9:]
-            self.template_name_field.setText(display_name)
-        elif hasattr(self.editor, "structure_name") and self.editor.structure_name:
-            # If the name starts with Template_, remove it for display
-            display_name = self.editor.structure_name
-            if display_name.startswith("Template_"):
-                display_name = display_name[9:]
-            self.template_name_field.setText(display_name)
-        # Log the value set in the field
-        print(f"DEBUG: Template name field set to '{self.template_name_field.text()}'")
+        self.template_name_field.setText(self.structure_name)
+        self.template_name_field.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                padding: 5px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {colors['accent']};
+            }}
+        """)
+        
+        # Connect template name change signal if the editor has a method for it
+        if hasattr(self.editor, '_on_template_name_changed'):
+            self.template_name_field.textChanged.connect(self.editor._on_template_name_changed)
+        
         form_layout.addRow(create_label("Template Name:"), self.template_name_field)
         
         # Template category field
         self.template_category_field = QComboBox()
         self.template_category_field.addItems(self.categories)
+        self.template_category_field.setCurrentIndex(0)  # Default to "Custom"
+        self.template_category_field.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                padding: 5px;
+                padding-right: 20px;  /* Make space for the dropdown arrow */
+                min-width: 120px;
+            }}
+            QComboBox:hover {{
+                border: 1px solid {colors['accent']};
+            }}
+            QComboBox::drop-down {{
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 20px;
+                border-left: 1px solid {colors['border']};
+            }}
+            QComboBox::down-arrow {{
+                image: url(app/assets/css/dropdown_arrow.svg);
+                width: 16px;
+                height: 16px;
+            }}
+            QComboBox::down-arrow:on {{
+                image: url(app/assets/css/dropdown_arrow_up.svg);
+            }}
+        """)
         
-        # Create a layout for category field and manage button
-        category_layout = QHBoxLayout()
-        category_layout.addWidget(self.template_category_field)
-        
-        # Add manage categories button
-        manage_categories_btn = QPushButton("Manage Categories")
-        manage_categories_btn.clicked.connect(self._manage_categories)
-        manage_categories_btn.setIcon(QIcon.fromTheme("document-properties"))
-        manage_categories_btn.setStyleSheet(self._get_button_style())
-        category_layout.addWidget(manage_categories_btn)
-        
-        # Add the category layout to the form
-        form_layout.addRow(create_label("Category:"), category_layout)
+        form_layout.addRow(create_label("Category:"), self.template_category_field)
         
         # Template description field
         self.template_info_field = QTextEdit()
         self.template_info_field.setPlaceholderText("Enter template description")
-        self.template_info_field.setMaximumHeight(100)
+        self.template_info_field.setMaximumHeight(60)
+        self.template_info_field.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                padding: 5px;
+            }}
+            QTextEdit:focus {{
+                border: 1px solid {colors['accent']};
+            }}
+        """)
+        
         form_layout.addRow(create_label("Description:"), self.template_info_field)
         
-        # Add form to layout
-        top_layout.addWidget(form_frame)
+        # Add predefined structure selection
+        self.predefined_label = QLabel("Predefined:")
+        self.predefined_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold;")
         
-        # Add predefined structures section
-        predefined_widget = QWidget()
-        predefined_layout = QHBoxLayout(predefined_widget)
-        predefined_layout.setContentsMargins(0, 5, 0, 5)
-        
-        # Create label for predefined structures
-        predefined_label = QLabel("Predefined:")
-        predefined_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold;")
-        predefined_layout.addWidget(predefined_label)
-        
-        # Create dropdown for predefined structures
         self.predefined_combo = QComboBox()
-        self.predefined_combo.addItem("Custom Structure", None)
-        self.predefined_combo.addItem("Basic Project", "basic")
-        self.predefined_combo.addItem("Web Application", "webapp")
-        self.predefined_combo.addItem("Mobile App", "mobile")
-        self.predefined_combo.addItem("Documentation", "docs")
-        self.predefined_combo.addItem("Library/Package", "library")
+        self.predefined_combo.addItem("Custom")
+        self.predefined_combo.addItem("Basic")
+        self.predefined_combo.addItem("Web App")
+        self.predefined_combo.addItem("Mobile App")
+        self.predefined_combo.addItem("Documentation")
+        self.predefined_combo.addItem("Library")
+        self.predefined_combo.setCurrentIndex(0)
         self.predefined_combo.currentIndexChanged.connect(self._load_predefined_structure)
-        predefined_layout.addWidget(self.predefined_combo)
+        self.predefined_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                padding: 5px;
+                padding-right: 20px;  /* Make space for the dropdown arrow */
+                min-width: 120px;
+            }}
+            QComboBox:hover {{
+                border: 1px solid {colors['accent']};
+            }}
+            QComboBox::drop-down {{
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 20px;
+                border-left: 1px solid {colors['border']};
+            }}
+            QComboBox::down-arrow {{
+                image: url(app/assets/css/dropdown_arrow.svg);
+                width: 16px;
+                height: 16px;
+            }}
+            QComboBox::down-arrow:on {{
+                image: url(app/assets/css/dropdown_arrow_up.svg);
+            }}
+        """)
         
-        # Add management button
-        manage_btn = QPushButton("Manage Structures")
-        manage_btn.clicked.connect(self._manage_structures)
-        manage_btn.setIcon(QIcon.fromTheme("document-properties"))
-        manage_btn.setStyleSheet(self._get_button_style())
-        predefined_layout.addWidget(manage_btn)
+        predef_layout = QHBoxLayout()
+        predef_layout.addWidget(self.predefined_combo)
         
-        # Add stretcher to push buttons to the right
-        predefined_layout.addStretch()
+        # Add save-as-preset button
+        save_preset_btn = QPushButton("Save as Preset")
+        save_preset_btn.clicked.connect(self._save_as_preset)
+        save_preset_btn.setStyleSheet(self._get_button_style('action'))
+        predef_layout.addWidget(save_preset_btn)
         
-        # Add button for creating new presets
-        add_preset_btn = QPushButton("Save as Preset")
-        add_preset_btn.clicked.connect(self._save_as_preset)
-        add_preset_btn.setIcon(QIcon.fromTheme("document-save-as"))
-        add_preset_btn.setStyleSheet(self._get_button_style())
-        predefined_layout.addWidget(add_preset_btn)
+        form_layout.addRow(self.predefined_label, predef_layout)
         
-        # Add predefined section to top layout
-        top_layout.addWidget(predefined_widget)
-        
-        # Add search box
-        search_layout = QHBoxLayout()
+        # Add search field for filtering
         search_label = QLabel("Search:")
         search_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold;")
+        
+        search_layout = QHBoxLayout()
         self.search_field = QLineEdit()
-        self.search_field.setPlaceholderText("Search in structure...")
+        self.search_field.setPlaceholderText("Filter structure...")
+        self.search_field.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                padding: 5px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {colors['accent']};
+            }}
+        """)
         self.search_field.textChanged.connect(self._filter_structure)
-        search_layout.addWidget(search_label)
+        
+        clear_search_btn = QPushButton("Clear")
+        clear_search_btn.clicked.connect(self._clear_search)
+        clear_search_btn.setStyleSheet(self._get_button_style('action'))
+        
         search_layout.addWidget(self.search_field)
-        top_layout.addLayout(search_layout)
+        search_layout.addWidget(clear_search_btn)
         
-        # Add the top widget to the splitter
-        splitter.addWidget(top_widget)
+        form_layout.addRow(search_label, search_layout)
         
-        # Create bottom section with tree and buttons
-        bottom_widget = QWidget()
-        bottom_layout = QVBoxLayout(bottom_widget)
-        bottom_layout.setContentsMargins(5, 5, 5, 5)
+        # Add form layout to info layout
+        info_layout.addLayout(form_layout)
         
-        # Create tree section
-        tree_header = QLabel("Structure Contents")
-        tree_header.setFont(QFont(tree_header.font().family(), 12, QFont.Bold))
-        tree_header.setStyleSheet(f"color: {colors['text']}; padding-bottom: 5px;")
-        bottom_layout.addWidget(tree_header)
+        # ------------------- Project Structure Section --------------------- #
+        # Create project structure header and controls
+        structure_header = QLabel("Project Structure")
+        structure_header.setFont(QFont(structure_header.font().family(), 12, QFont.Bold))
+        structure_header.setStyleSheet(f"color: {colors['text']}; padding-top: 15px; padding-bottom: 5px;")
+        info_layout.addWidget(structure_header)
         
-        # Create container for the tree widget
-        tree_container = QWidget()
-        tree_layout = QVBoxLayout(tree_container)
-        tree_layout.setContentsMargins(0, 0, 0, 0)
+        # Add helpful instruction text
+        instruction_text = QLabel("Create and organize your project structure by adding files and folders. Drag items to rearrange.")
+        instruction_text.setWordWrap(True)
+        instruction_text.setStyleSheet(f"color: {colors['secondary_text']}; font-style: italic; margin-bottom: 8px;")
+        info_layout.addWidget(instruction_text)
         
-        # Use the tree from the editor if it exists, otherwise create a new one
-        if hasattr(self.editor, 'tree') and self.editor.tree:
-            self.tree = self.editor.tree
-            print("DEBUG: Using existing tree widget")
-        else:
-            # Create a new tree widget
-            self.tree = StructureEditorTree()
-            self.tree.setHeaderLabel("Structure")
-            self.tree.setMinimumWidth(400)
-            self.tree.setSelectionMode(QTreeWidget.ExtendedSelection)
-            self.tree.setDragEnabled(True)
-            self.tree.setAcceptDrops(True)
-            self.tree.setDropIndicatorShown(True)
-            self.tree.setDragDropMode(QTreeWidget.InternalMove)
-            self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
-            self.tree.setAlternatingRowColors(True)
-            self.tree.setAnimated(True)
-            self.tree.setIndentation(20)
-            
-            # Set tree on editor for other components to access
-            self.editor.tree = self.tree
-        
-        # Configure tree header
-        self.tree.header().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.tree.header().setStyleSheet(f"""
-            QHeaderView::section {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                padding: 5px;
-                border: 1px solid {colors['border']};
-                font-weight: bold;
-            }}
-        """)
-        
-        # Apply tree styling
-        self.tree.setStyleSheet(f"""
-            QTreeWidget {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                outline: none;
-                alternate-background-color: #2A2A2A;
-            }}
-            QTreeWidget::item {{
-                padding: 5px;
-                border-bottom: 1px solid {colors['border']};
-                border: none;
-                outline: none;
-            }}
-            QTreeWidget::item:hover {{
-                background-color: {colors['hover_bg']};
-            }}
-            QTreeWidget::item:selected {{
-                background-color: {colors['highlight_bg']};
-                color: {colors['highlight_text']};
-                border: none;
-                outline: none;
-            }}
-            QTreeWidget::branch {{
-                border: none;
-                outline: none;
-            }}
-            QTreeWidget::branch:has-siblings:!adjoins-item {{
-                border-image: url(vline.png) 0;
-            }}
-            QTreeWidget::branch:has-siblings:adjoins-item {{
-                border-image: url(branch-more.png) 0;
-            }}
-            QTreeWidget::branch:!has-children:!has-siblings:adjoins-item {{
-                border-image: url(branch-end.png) 0;
-            }}
-        """)
-        
-        # Add tree to layout
-        tree_layout.addWidget(self.tree)
-        bottom_layout.addWidget(tree_container)
-        
-        # Create button section
+        # Add structure operation buttons
         button_layout = QHBoxLayout()
-        button_layout.setContentsMargins(0, 10, 0, 0)
+        button_layout.setContentsMargins(0, 0, 0, 10)
         
         # Create structure buttons
         add_file_btn = QPushButton("Add File")
@@ -692,28 +651,113 @@ class UIBuilder:
         button_layout.addWidget(add_folder_btn)
         button_layout.addWidget(delete_btn)
         
-        # Add import/export buttons
-        import_btn = QPushButton("Import Structure")
-        import_btn.clicked.connect(self._import_structure)
-        import_btn.setStyleSheet(self._get_button_style())
-        
         # Add spacer
         button_layout.addStretch()
         
-        # Add buttons to bottom layout
-        bottom_layout.addLayout(button_layout)
+        info_layout.addLayout(button_layout)
         
-        # Add bottom widget to splitter
-        splitter.addWidget(bottom_widget)
+        # Use the tree from the editor if it exists, otherwise create a new one
+        if hasattr(self.editor, 'tree') and self.editor.tree:
+            self.tree = self.editor.tree
+            print("DEBUG: Using existing tree widget")
+        else:
+            # Create a new tree widget
+            self.tree = StructureEditorTree()
+            self.tree.setMinimumWidth(400)
+            self.tree.setSelectionMode(QTreeWidget.ExtendedSelection)
+            self.tree.setDragEnabled(True)
+            self.tree.setAcceptDrops(True)
+            self.tree.setDropIndicatorShown(True)
+            self.tree.setDragDropMode(QTreeWidget.InternalMove)
+            self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+            self.tree.setAlternatingRowColors(True)
+            self.tree.setAnimated(True)
+            self.tree.setIndentation(20)
+            
+            # Set tree on editor for other components to access
+            self.editor.tree = self.tree
         
-        # Set initial sizes
-        splitter.setSizes([200, 400])
+        # Configure tree widget
+        self.tree.setHeaderHidden(True)  # Hide the header completely
         
-        # Add splitter to main layout
-        main_layout.addWidget(splitter)
+        # Set icon size for better visibility
+        self.tree.setIconSize(QSize(18, 18))
+        
+        # Ensure branch indicators are visible
+        self.tree.setRootIsDecorated(True)
+        self.tree.setItemsExpandable(True)
+        
+        # Apply enhanced tree styling using our centralized function
+        try:
+            from app.ui.tree_styling import apply_enhanced_tree_styling
+            apply_enhanced_tree_styling(self.tree)
+            print("DEBUG: Applied enhanced tree styling")
+        except ImportError:
+            # Fallback styling if the import fails
+            self.tree.setStyleSheet(f"""
+                QTreeWidget {{
+                    background-color: {colors['card_bg']};
+                    color: {colors['text']};
+                    border: 1px solid {colors['border']};
+                    outline: none;
+                    alternate-background-color: #2A2A2A;
+                }}
+                QTreeWidget::item {{
+                    padding: 5px;
+                    border-bottom: 1px solid {colors['border']};
+                    min-height: 22px;
+                }}
+                QTreeWidget::item:hover {{
+                    background-color: {colors['hover_bg']};
+                }}
+                QTreeWidget::item:selected {{
+                    background-color: {colors['highlight_bg']};
+                    color: {colors['highlight_text']};
+                }}
+                
+                /* Style branch indicators to ensure they're visible */
+                QTreeWidget::branch {{
+                    background-color: transparent;
+                }}
+                QTreeWidget::branch:has-children:!has-siblings:closed,
+                QTreeWidget::branch:closed:has-children:has-siblings {{
+                    image: url(app/assets/css/branch-closed.svg);
+                    width: 15px;
+                    height: 15px;
+                }}
+                QTreeWidget::branch:open:has-children:!has-siblings,
+                QTreeWidget::branch:open:has-children:has-siblings {{
+                    image: url(app/assets/css/branch-open.svg);
+                    width: 15px;
+                    height: 15px;
+                }}
+                
+                /* Style for folder and file display */
+                QTreeWidget::item:has-children {{
+                    font-weight: bold;
+                }}
+            """)
+        
+        # Add tree directly to info panel
+        info_layout.addWidget(self.tree, 1)  # Give the tree a stretch factor of 1 to fill available space
+        
+        # Add status bar with structure statistics
+        self.status_bar = QLabel("No items in structure")
+        self.status_bar.setStyleSheet(f"color: {colors['secondary_text']}; font-style: italic; padding: 5px;")
+        info_layout.addWidget(self.status_bar)
+        
+        # Connect tree signals to update status bar
+        self.tree.model().rowsInserted.connect(self._update_structure_stats)
+        self.tree.model().rowsRemoved.connect(self._update_structure_stats)
+        
+        # Add info panel to main layout
+        main_layout.addWidget(info_panel)
         
         # Apply styling
         self._apply_styling()
+        
+        # Initial update of structure stats
+        self._update_structure_stats()
         
         return main_layout
     
@@ -799,6 +843,7 @@ class UIBuilder:
                     border: 1px solid {colors['border']};
                     border-radius: 3px;
                     padding: 5px;
+                    padding-right: 20px;  /* Make space for the dropdown arrow */
                     min-width: 100px;
                 }}
                 QComboBox:hover {{
@@ -809,6 +854,14 @@ class UIBuilder:
                     subcontrol-position: top right;
                     width: 20px;
                     border-left: 1px solid {colors['border']};
+                }}
+                QComboBox::down-arrow {{
+                    image: url(app/assets/css/dropdown_arrow.svg);
+                    width: 16px;
+                    height: 16px;
+                }}
+                QComboBox::down-arrow:on {{
+                    image: url(app/assets/css/dropdown_arrow_up.svg);
                 }}
                 QComboBox QAbstractItemView {{
                     background-color: {colors['card_bg']};
@@ -851,44 +904,14 @@ class UIBuilder:
                 }}
             """)
         
+        # Use the centralized enhanced styling for the tree widget
         if self.tree:
-            self.tree.setStyleSheet(f"""
-                QTreeWidget {{
-                    background-color: {colors['card_bg']};
-                    color: {colors['text']};
-                    border: 1px solid {colors['border']};
-                    outline: none;
-                    alternate-background-color: #2A2A2A;
-                }}
-                QTreeWidget::item {{
-                    padding: 5px;
-                    border-bottom: 1px solid {colors['border']};
-                    border: none;
-                    outline: none;
-                }}
-                QTreeWidget::item:hover {{
-                    background-color: {colors['hover_bg']};
-                }}
-                QTreeWidget::item:selected {{
-                    background-color: {colors['highlight_bg']};
-                    color: {colors['highlight_text']};
-                    border: none;
-                    outline: none;
-                }}
-                QTreeWidget::branch {{
-                    border: none;
-                    outline: none;
-                }}
-                QTreeWidget::branch:has-siblings:!adjoins-item {{
-                    border-image: url(vline.png) 0;
-                }}
-                QTreeWidget::branch:has-siblings:adjoins-item {{
-                    border-image: url(branch-more.png) 0;
-                }}
-                QTreeWidget::branch:!has-children:!has-siblings:adjoins-item {{
-                    border-image: url(branch-end.png) 0;
-                }}
-            """)
+            try:
+                from app.ui.tree_styling import apply_enhanced_tree_styling
+                apply_enhanced_tree_styling(self.tree)
+            except ImportError:
+                # Fallback to the styling defined in the init_ui method
+                pass
     
     def _filter_structure(self, text):
         """Filter tree items based on search text"""
@@ -1717,4 +1740,45 @@ class UIBuilder:
             
         # Set template info
         if self.template_info_field and 'description' in values:
-            self.template_info_field.setPlainText(values['description']) 
+            self.template_info_field.setPlainText(values['description'])
+        
+    def _update_structure_stats(self):
+        """Update the status bar with structure statistics"""
+        if not hasattr(self, 'tree') or not self.tree:
+            return
+            
+        # Count total items
+        total_items = 0
+        folders = 0
+        files = 0
+        
+        # Get root item
+        root = self.tree.invisibleRootItem()
+        
+        # Recursive function to count items
+        def count_items(item):
+            nonlocal total_items, folders, files
+            
+            # Process all children
+            for i in range(item.childCount()):
+                child = item.child(i)
+                total_items += 1
+                
+                # Determine if it's a file or folder based on icon
+                if child.childCount() > 0 or (hasattr(child, 'data') and child.data(0, Qt.UserRole) and 
+                   isinstance(child.data(0, Qt.UserRole), dict) and child.data(0, Qt.UserRole).get('type') == 'folder'):
+                    folders += 1
+                else:
+                    files += 1
+                    
+                # Process children recursively
+                count_items(child)
+        
+        # Count items
+        count_items(root)
+        
+        # Update status bar
+        if total_items == 0:
+            self.status_bar.setText("No items in structure")
+        else:
+            self.status_bar.setText(f"Total: {total_items} items ({folders} folders, {files} files)") 

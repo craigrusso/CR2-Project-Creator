@@ -104,7 +104,7 @@ COMBOBOX_STYLE = f"""
         background-color: {colors['card_bg']};
         color: {colors['text']};
         border: 1px solid {colors['border']};
-        padding: 5px 25px 5px 5px;
+        padding: 5px 25px 5px 5px;  /* Right padding for arrow */
         border-radius: 3px;
         min-height: 22px;
     }}
@@ -140,7 +140,7 @@ COMBOBOX_STYLE = f"""
     
     /* Arrow styling */
     QComboBox::down-arrow {{
-        image: url(app/assets/css/v_arrow.svg);
+        image: url(app/assets/css/dropdown_arrow.svg);
         width: 16px;
         height: 16px;
         border: none;
@@ -148,7 +148,7 @@ COMBOBOX_STYLE = f"""
     }}
     
     QComboBox::down-arrow:on {{
-        image: url(app/assets/css/v_arrow_up.svg);
+        image: url(app/assets/css/dropdown_arrow_up.svg);
     }}
     
     /* Popup widget styling */
@@ -168,7 +168,7 @@ COMBOBOX_STYLE = f"""
     
     /* Very direct styling for hover state */
     QComboBox QAbstractItemView::item:hover {{
-        background-color: {colors['accent']};  /* Use accent color for hover */
+        background-color: {colors['accent']};
         color: white;  /* White text on hover for maximum contrast */
         font-weight: bold;  /* Bold text on hover */
         border-left: 5px solid white;  /* White left border for emphasis */

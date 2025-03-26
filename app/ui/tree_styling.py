@@ -7,7 +7,8 @@ Provides centralized styling for tree widgets
 """
 
 import sys
-from PyQt5.QtWidgets import QTreeWidget, QWidget, QAbstractItemView
+import os
+from PyQt5.QtWidgets import QTreeWidget, QWidget, QAbstractItemView, QApplication
 from PyQt5.QtCore import Qt, QSize
 
 # Import the application color scheme
@@ -41,25 +42,54 @@ def apply_tree_styling(tree_widget):
     # Override indentation to improve visual hierarchy
     tree_widget.setIndentation(24)
     
-    # Set header labels if none exist
-    if tree_widget.headerItem().text(0) == "":
-        tree_widget.setHeaderLabels(["Name"])
+    # Hide header if it exists (common for structure editors)
+    tree_widget.setHeaderHidden(True)
+    
+    # Apply enhanced styling with visible branch indicators
+    apply_enhanced_tree_styling(tree_widget)
+
+def apply_enhanced_tree_styling(tree_widget):
+    """
+    Apply enhanced styling with visible branch indicators and folder styling
+    
+    Args:
+        tree_widget: The QTreeWidget to style
+    """
+    if not tree_widget or not isinstance(tree_widget, QTreeWidget):
+        return
+        
+    # Determine correct paths to SVG assets for branch indicators
+    # First check if the app is running from a packaged executable
+    if getattr(sys, 'frozen', False):
+        # Running in a bundled application
+        base_path = os.path.dirname(sys.executable)
+    else:
+        # Running in a normal Python environment
+        base_path = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+    
+    # Check if the branch icons exist
+    branch_closed_path = os.path.join(base_path, "app", "assets", "css", "branch-closed.svg")
+    branch_open_path = os.path.join(base_path, "app", "assets", "css", "branch-open.svg")
+    
+    # Use relative paths for styling to ensure they work in both development and production
+    branch_closed_url = "app/assets/css/branch-closed.svg"
+    branch_open_url = "app/assets/css/branch-open.svg"
     
     # Apply custom stylesheet for consistent appearance
     # Use the application color scheme for consistency
     tree_widget.setStyleSheet(f"""
         QTreeWidget {{
-            background-color: {APP_COLORS['bg']};
-            alternate-background-color: {APP_COLORS['card_bg']};
+            background-color: {APP_COLORS['card_bg']};
             color: {APP_COLORS['text']};
             border: 1px solid {APP_COLORS['border']};
             outline: none;
+            alternate-background-color: {APP_COLORS['card_bg_alt']};
             font-size: 13px;
         }}
         
         QTreeWidget::item {{
             border: none;
-            border-bottom: 1px solid transparent;
+            border-bottom: 1px solid {APP_COLORS['border']};
             padding: 4px 2px;
             min-height: 24px;
         }}
@@ -82,6 +112,26 @@ def apply_tree_styling(tree_widget):
         QTreeWidget::branch:selected {{
             background-color: {APP_COLORS['highlight_bg']};
         }}
+        
+        /* Style branch indicators to ensure they're visible */
+        QTreeWidget::branch:has-children:!has-siblings:closed,
+        QTreeWidget::branch:closed:has-children:has-siblings {{
+            image: url({branch_closed_url});
+            width: 15px;
+            height: 15px;
+        }}
+        
+        QTreeWidget::branch:open:has-children:!has-siblings,
+        QTreeWidget::branch:open:has-children:has-siblings {{
+            image: url({branch_open_url});
+            width: 15px;
+            height: 15px;
+        }}
+        
+        /* Style for folder items to make them stand out */
+        QTreeWidget::item:has-children {{
+            font-weight: bold;
+        }}
     """)
 
 def setup_tree_for_structure_editing(tree_widget):
@@ -96,8 +146,8 @@ def setup_tree_for_structure_editing(tree_widget):
     # Import custom delegate
     from app.ui.tree_item_delegate import TreeItemDelegate
     
-    # Apply base styling
-    apply_tree_styling(tree_widget)
+    # Apply enhanced styling with visible branch indicators
+    apply_enhanced_tree_styling(tree_widget)
     
     # Configure edit triggers - essential for editing to work properly
     # Setting all triggers to ensure maximum compatibility
@@ -128,6 +178,7 @@ def setup_tree_for_structure_editing(tree_widget):
         ensure_item_editable(root.child(i))
         
     print("DEBUG: Tree widget set up for structure editing with enhanced delegate")
+    print("DEBUG: Applied enhanced tree styling")
     
 def ensure_item_editable(item):
     """Make sure an item and all its children are editable"""
@@ -155,7 +206,13 @@ def apply_styling_to_all_tree_widgets(parent_widget=None):
     """
     from PyQt5.QtWidgets import QApplication
     from PyQt5.QtCore import Qt
-    from app.ui.tree_item_delegate import TreeItemDelegate
+    
+    try:
+        from app.ui.tree_item_delegate import TreeItemDelegate
+    except ImportError:
+        # If the custom delegate is not available, we'll continue without it
+        print("WARNING: TreeItemDelegate not available, using standard delegate")
+        TreeItemDelegate = None
     
     count = 0
     
@@ -169,10 +226,13 @@ def apply_styling_to_all_tree_widgets(parent_widget=None):
     for widget in widgets_to_process:
         # If this is a tree widget, style it and set up editing
         if isinstance(widget, QTreeWidget):
-            # Apply styling and set custom delegate
-            apply_tree_styling(widget)
-            delegate = TreeItemDelegate(widget)
-            widget.setItemDelegate(delegate)
+            # Apply enhanced styling
+            apply_enhanced_tree_styling(widget)
+            
+            # Apply custom delegate if available
+            if TreeItemDelegate:
+                delegate = TreeItemDelegate(widget)
+                widget.setItemDelegate(delegate)
             
             # Make sure existing items are editable
             root = widget.invisibleRootItem()
@@ -183,10 +243,13 @@ def apply_styling_to_all_tree_widgets(parent_widget=None):
         
         # Process all children recursively
         for child in widget.findChildren(QTreeWidget):
-            # Apply styling and set custom delegate
-            apply_tree_styling(child)
-            delegate = TreeItemDelegate(child)
-            child.setItemDelegate(delegate)
+            # Apply enhanced styling
+            apply_enhanced_tree_styling(child)
+            
+            # Apply custom delegate if available
+            if TreeItemDelegate:
+                delegate = TreeItemDelegate(child)
+                child.setItemDelegate(delegate)
             
             # Make sure existing items are editable
             root = child.invisibleRootItem()

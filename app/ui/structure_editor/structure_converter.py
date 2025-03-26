@@ -446,15 +446,50 @@ class StructureConverter:
                         tree_item = QTreeWidgetItem(parent_item)
                         print(f"DEBUG: Added file '{file_name}' as child of '{parent_item.text(0)}'")
                     
-                    tree_item.setText(0, file_name)
+                    # Check if this file uses the project name placeholder
+                    uses_project_name = item.get('uses_project_name', False) or item.get('rename_flag', False)
                     
-                    # Set user data
-                    file_data = {'type': 'file', 'name': file_name}
+                    # If using project name, display the placeholder instead of original name
+                    display_name = file_name
+                    if uses_project_name:
+                        # Extract extension if present
+                        extension = ""
+                        if '.' in file_name:
+                            extension = '.' + file_name.split('.')[-1]
+                        
+                        # Use the PROJECT_NAME placeholder for display
+                        display_name = f"${{PROJECT_NAME}}{extension}"
+                        print(f"DEBUG: Using placeholder display for file: {display_name} (original: {file_name})")
+                    
+                    # Set the display text
+                    tree_item.setText(0, display_name)
+                    
+                    # Set user data - include all properties from the original item
+                    file_data = item.copy()
+                    if 'name' not in file_data:
+                        file_data['name'] = file_name
+                    if 'type' not in file_data:
+                        file_data['type'] = 'file'
+                    
+                    # Store original name if using project name
+                    if uses_project_name and 'original_name' not in file_data:
+                        file_data['original_name'] = file_name
+                    
                     tree_item.setData(0, Qt.UserRole, file_data)
                     
                     # Set file icon
                     from .utils import get_file_icon_for_type
                     tree_item.setIcon(0, get_file_icon_for_type(file_name))
+                    
+                    # Apply styling for project name files
+                    if uses_project_name:
+                        font = tree_item.font(0)
+                        font.setItalic(True)
+                        tree_item.setFont(0, font)
+                        
+                        # Use a blue color for project name files
+                        from PyQt5.QtGui import QBrush, QColor
+                        tree_item.setForeground(0, QBrush(QColor("#4A9BFF")))
                     
                     result_item = tree_item
                 

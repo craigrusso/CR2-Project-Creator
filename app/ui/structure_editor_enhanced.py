@@ -93,77 +93,14 @@ class EnhancedStructureEditor(QDialog):
             layout.setContentsMargins(10, 10, 10, 10)
             layout.setSpacing(5)
             
-            # Create splitter for tree and options
-            splitter = QSplitter(Qt.Horizontal)
-            layout.addWidget(splitter)
-            
             # Init UI builder (creates the layout and form fields)
             self.ui_builder = UIBuilder(self, self.template_name)
-            
-            # Initialize the tree widget and add to layout
-            self.tree_widget = QTreeWidget()
-            self.tree_widget.setHeaderLabels(["Name"])
-            self.tree_widget.setMinimumWidth(300)
-            self.tree_widget.setDragEnabled(True)
-            self.tree_widget.setAcceptDrops(True)
-            self.tree_widget.setDropIndicatorShown(True)
-            self.tree_widget.setSelectionMode(QAbstractItemView.ExtendedSelection)
-            self.tree_widget.setContextMenuPolicy(Qt.CustomContextMenu)
-            self.tree_widget.customContextMenuRequested.connect(self._show_context_menu)
-            
-            # Apply styling for better appearance
-            self.tree_widget.setStyleSheet("""
-                QTreeWidget {
-                    background-color: #2A2A2A;
-                    color: #E0E0E0;
-                    border: 1px solid #3A3A3A;
-                    border-radius: 4px;
-                    padding: 5px;
-                    outline: none;
-                }
-                QTreeWidget::item {
-                    padding: 4px;
-                    border-bottom: 1px solid #3A3A3A;
-                    border: none;
-                    outline: none;
-                }
-                QTreeWidget::item:selected {
-                    background-color: #2C4F76;
-                    color: white;
-                    border-radius: 3px;
-                    border: none;
-                    outline: none;
-                }
-                QTreeWidget::item:hover {
-                    background-color: #3A3A3A;
-                    border-radius: 3px;
-                }
-                QTreeWidget::branch {
-                    border: none;
-                    outline: none;
-                }
-                /* Style the item editor (QLineEdit when editing) */
-                QTreeWidget QLineEdit {
-                    background-color: #404040;
-                    color: white;
-                    border: 1px solid #5080B0;
-                    border-radius: 3px;
-                    padding: 2px 4px;
-                    selection-background-color: #2C4F76;
-                    min-height: 22px;
-                    margin: 1px 1px;
-                }
-            """)
-            
-            # Store original keyPressEvent
-            self.tree_widget._old_keyPressEvent = self.tree_widget.keyPressEvent
-            # Override keyPressEvent
-            self.tree_widget.keyPressEvent = self._handle_key_press
             
             # Initialize file operations handler - Always initialize this before doing anything with the tree
             try:
                 from app.ui.structure_editor.file_operations import FileOperations
-                self.file_operations = FileOperations(tree_widget=self.tree_widget, editor=self)
+                self.tree_widget = None  # Will be created by UIBuilder
+                self.file_operations = FileOperations(tree_widget=None, editor=self)
                 self.have_file_ops = True
                 print("DEBUG: Initialized file operations handler")
             except Exception as e:
@@ -173,29 +110,39 @@ class EnhancedStructureEditor(QDialog):
                 self.file_operations = None
                 self.have_file_ops = False
             
-            # Initialize UI components
-            left_widget = QWidget()
-            left_layout = QVBoxLayout(left_widget)
-            left_widget.setLayout(left_layout)
-            
-            # Add tree widget
-            left_layout.addWidget(self.tree_widget)
-            
-            # Setup right panel with properties
-            right_widget = QWidget()
-            right_layout = QVBoxLayout(right_widget)
-            right_widget.setLayout(right_layout)
-            
-            # Add UI builder components - UIBuilder is not a QWidget
-            # So create a container widget and add the UI builder's layout to it
-            ui_container = QWidget()
+            # Create the UI using the UIBuilder's unified layout
             ui_layout = self.ui_builder.init_ui()
-            ui_container.setLayout(ui_layout)
-            right_layout.addWidget(ui_container)
             
-            # Add left and right to splitter
-            splitter.addWidget(left_widget)
-            splitter.addWidget(right_widget)
+            # Add the UIBuilder layout to the main layout
+            content_widget = QWidget()
+            content_widget.setLayout(ui_layout)
+            layout.addWidget(content_widget, 1)  # Give it stretch factor of 1
+            
+            # Get reference to the tree widget created by UIBuilder
+            self.tree_widget = self.ui_builder.tree
+            
+            # Ensure consistent styling with branch indicators and folder icons
+            try:
+                from app.ui.tree_styling import apply_enhanced_tree_styling
+                apply_enhanced_tree_styling(self.tree_widget)
+                print("DEBUG: Applied enhanced tree styling with branch indicators")
+            except Exception as e:
+                print(f"WARNING: Could not apply enhanced tree styling: {e}")
+            
+            # Connect tree widget signals
+            if self.tree_widget:
+                # Connect context menu
+                self.tree_widget.setContextMenuPolicy(Qt.CustomContextMenu)
+                self.tree_widget.customContextMenuRequested.connect(self._show_context_menu)
+                
+                # Store original keyPressEvent
+                self.tree_widget._old_keyPressEvent = self.tree_widget.keyPressEvent
+                # Override keyPressEvent
+                self.tree_widget.keyPressEvent = self._handle_key_press
+                
+                # Update file operations handler with the tree
+                if self.file_operations:
+                    self.file_operations.tree = self.tree_widget
             
             # Add buttons at the bottom - ONLY ONE SET OF BUTTONS
             button_layout = QHBoxLayout()
