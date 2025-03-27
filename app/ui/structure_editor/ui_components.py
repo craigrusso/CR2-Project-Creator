@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QMessageBox, QTextEdit, QComboBox, QCheckBox, QSplitter, QWidget, 
     QSizePolicy, QGroupBox, QFormLayout, QFrame, QTabWidget, QFileDialog, QInputDialog, QListWidget, QDialog, QApplication, QStyle
 )
-from PyQt5.QtCore import Qt, QSize, pyqtSignal
+from PyQt5.QtCore import Qt, QSize, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont, QIcon, QColor, QPalette
 
 # Import the main application colors
@@ -426,23 +426,24 @@ class UIBuilder:
         main_layout.setContentsMargins(10, 10, 10, 10)
         main_layout.setSpacing(10)
         
-        # Create template information panel
-        info_panel = QWidget()
-        info_layout = QVBoxLayout(info_panel)
-        info_layout.setContentsMargins(5, 5, 5, 5)
+        # Create a fixed area for the top part of the form (name, category, search)
+        fixed_info_panel = QWidget()
+        fixed_info_layout = QVBoxLayout(fixed_info_panel)
+        fixed_info_layout.setContentsMargins(5, 5, 5, 5)
+        fixed_info_layout.setSpacing(10)
         
         # Create header label
         header_label = QLabel("Template Information")
         header_label.setFont(QFont(header_label.font().family(), 12, QFont.Bold))
         header_label.setStyleSheet(f"color: {colors['text']}; padding-bottom: 5px;")
-        info_layout.addWidget(header_label)
+        fixed_info_layout.addWidget(header_label)
         
-        # Create form layout
-        form_layout = QFormLayout()
-        form_layout.setContentsMargins(0, 0, 0, 0)
-        form_layout.setSpacing(10)
-        form_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        form_layout.setLabelAlignment(Qt.AlignRight)
+        # Create a fixed form for name, category and search
+        fixed_form = QFormLayout()
+        fixed_form.setContentsMargins(0, 0, 0, 0)
+        fixed_form.setSpacing(10)
+        fixed_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        fixed_form.setLabelAlignment(Qt.AlignRight)
         
         # Helper function to create labels with consistent styling
         def create_label(text):
@@ -471,7 +472,7 @@ class UIBuilder:
         if hasattr(self.editor, '_on_template_name_changed'):
             self.template_name_field.textChanged.connect(self.editor._on_template_name_changed)
         
-        form_layout.addRow(create_label("Template Name:"), self.template_name_field)
+        fixed_form.addRow(create_label("Template Name:"), self.template_name_field)
         
         # Template category field
         self.template_category_field = QComboBox()
@@ -506,79 +507,20 @@ class UIBuilder:
             }}
         """)
         
-        form_layout.addRow(create_label("Category:"), self.template_category_field)
+        # Create a horizontal layout for category dropdown and manage button
+        category_layout = QHBoxLayout()
+        category_layout.setContentsMargins(0, 0, 0, 0)
+        category_layout.setSpacing(5)
+        category_layout.addWidget(self.template_category_field)
         
-        # Template description field
-        self.template_info_field = QTextEdit()
-        self.template_info_field.setPlaceholderText("Enter template description")
-        self.template_info_field.setMaximumHeight(60)
-        self.template_info_field.setStyleSheet(f"""
-            QTextEdit {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                border-radius: 3px;
-                padding: 5px;
-            }}
-            QTextEdit:focus {{
-                border: 1px solid {colors['accent']};
-            }}
-        """)
+        # Add manage categories button
+        manage_categories_btn = QPushButton("Manage")
+        manage_categories_btn.setFixedWidth(80)
+        manage_categories_btn.setStyleSheet(self._get_button_style('action'))
+        manage_categories_btn.clicked.connect(self._manage_categories)
+        category_layout.addWidget(manage_categories_btn)
         
-        form_layout.addRow(create_label("Description:"), self.template_info_field)
-        
-        # Add predefined structure selection
-        self.predefined_label = QLabel("Predefined:")
-        self.predefined_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold;")
-        
-        self.predefined_combo = QComboBox()
-        self.predefined_combo.addItem("Custom")
-        self.predefined_combo.addItem("Basic")
-        self.predefined_combo.addItem("Web App")
-        self.predefined_combo.addItem("Mobile App")
-        self.predefined_combo.addItem("Documentation")
-        self.predefined_combo.addItem("Library")
-        self.predefined_combo.setCurrentIndex(0)
-        self.predefined_combo.currentIndexChanged.connect(self._load_predefined_structure)
-        self.predefined_combo.setStyleSheet(f"""
-            QComboBox {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                border-radius: 3px;
-                padding: 5px;
-                padding-right: 20px;  /* Make space for the dropdown arrow */
-                min-width: 120px;
-            }}
-            QComboBox:hover {{
-                border: 1px solid {colors['accent']};
-            }}
-            QComboBox::drop-down {{
-                subcontrol-origin: padding;
-                subcontrol-position: top right;
-                width: 20px;
-                border-left: 1px solid {colors['border']};
-            }}
-            QComboBox::down-arrow {{
-                image: url(app/assets/css/dropdown_arrow.svg);
-                width: 16px;
-                height: 16px;
-            }}
-            QComboBox::down-arrow:on {{
-                image: url(app/assets/css/dropdown_arrow_up.svg);
-            }}
-        """)
-        
-        predef_layout = QHBoxLayout()
-        predef_layout.addWidget(self.predefined_combo)
-        
-        # Add save-as-preset button
-        save_preset_btn = QPushButton("Save as Preset")
-        save_preset_btn.clicked.connect(self._save_as_preset)
-        save_preset_btn.setStyleSheet(self._get_button_style('action'))
-        predef_layout.addWidget(save_preset_btn)
-        
-        form_layout.addRow(self.predefined_label, predef_layout)
+        fixed_form.addRow(create_label("Category:"), category_layout)
         
         # Add search field for filtering
         search_label = QLabel("Search:")
@@ -599,165 +541,170 @@ class UIBuilder:
                 border: 1px solid {colors['accent']};
             }}
         """)
+        
         self.search_field.textChanged.connect(self._filter_structure)
         
-        clear_search_btn = QPushButton("Clear")
-        clear_search_btn.clicked.connect(self._clear_search)
-        clear_search_btn.setStyleSheet(self._get_button_style('action'))
+        # Clear button for search field
+        clear_btn = QPushButton("Clear")
+        clear_btn.setStyleSheet(self._get_button_style('default'))
+        clear_btn.clicked.connect(self._clear_search)
         
         search_layout.addWidget(self.search_field)
-        search_layout.addWidget(clear_search_btn)
+        search_layout.addWidget(clear_btn)
         
-        form_layout.addRow(search_label, search_layout)
+        fixed_form.addRow(search_label, search_layout)
         
-        # Add form layout to info layout
-        info_layout.addLayout(form_layout)
+        fixed_info_layout.addLayout(fixed_form)
         
-        # ------------------- Project Structure Section --------------------- #
-        # Create project structure header and controls
+        # Create description panel with stretch
+        description_panel = QWidget()
+        description_panel.setObjectName("description_panel")  # Set object name for testing
+        description_layout = QVBoxLayout(description_panel)
+        description_layout.setContentsMargins(5, 0, 5, 5)
+        
+        # Template description field
+        self.template_info_field = QTextEdit()
+        self.template_info_field.setPlaceholderText("Enter template description")
+        self.template_info_field.setMinimumHeight(60)
+        self.template_info_field.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                padding: 5px;
+            }}
+            QTextEdit:focus {{
+                border: 1px solid {colors['accent']};
+            }}
+        """)
+        
+        # Description form layout
+        description_form = QFormLayout()
+        description_form.setContentsMargins(0, 0, 0, 0)
+        description_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        description_form.setLabelAlignment(Qt.AlignRight)
+        description_form.addRow(create_label("Description:"), self.template_info_field)
+        
+        description_layout.addLayout(description_form)
+        
+        # Create a container for both info panels
+        info_container = QWidget()
+        info_container_layout = QVBoxLayout(info_container)
+        info_container_layout.setContentsMargins(0, 0, 0, 0)
+        info_container_layout.setSpacing(0)
+        
+        # Add fixed panel and description panel to container
+        info_container_layout.addWidget(fixed_info_panel)
+        info_container_layout.addWidget(description_panel, 1)  # Give stretch to description panel
+        
+        # Create structure section
+        structure_layout = QVBoxLayout()
+        
+        # Create structure header
         structure_header = QLabel("Project Structure")
         structure_header.setFont(QFont(structure_header.font().family(), 12, QFont.Bold))
-        structure_header.setStyleSheet(f"color: {colors['text']}; padding-top: 15px; padding-bottom: 5px;")
-        info_layout.addWidget(structure_header)
+        structure_header.setStyleSheet(f"color: {colors['text']}; padding-top: 10px; padding-bottom: 5px;")
+        structure_layout.addWidget(structure_header)
         
-        # Add helpful instruction text
-        instruction_text = QLabel("Create and organize your project structure by adding files and folders. Drag items to rearrange.")
-        instruction_text.setWordWrap(True)
-        instruction_text.setStyleSheet(f"color: {colors['secondary_text']}; font-style: italic; margin-bottom: 8px;")
-        info_layout.addWidget(instruction_text)
+        # Create the structure tree widget
+        self.tree = StructureEditorTree()
+        self.tree.setStyleSheet(f"""
+            QTreeWidget {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                padding: 5px;
+                alternate-background-color: {colors['card_bg_alt']};
+            }}
+            QTreeWidget::item {{
+                color: {colors['text']};
+                padding: 5px;
+                margin: 2px 0px;
+            }}
+            QTreeWidget::item:selected {{
+                background-color: {colors['highlight_bg']};
+                color: {colors['highlight_text']};
+            }}
+        """)
         
-        # Add structure operation buttons
+        # Apply custom delegate to the tree
+        try:
+            from app.ui.tree_item_delegate import TreeItemDelegate
+            custom_delegate = TreeItemDelegate(self.tree)
+            self.tree.setItemDelegate(custom_delegate)
+            print("DEBUG: Applied custom tree item delegate")
+        except Exception as e:
+            print(f"ERROR: Could not apply custom delegate: {e}")
+        
+        # Set up text helper
+        self.tree.setHeaderHidden(False)
+        self.tree.setHeaderLabels(["Create and organize your project structure by adding files and folders. Drag items to rearrange."])
+        self.tree.header().setStyleSheet(f"""
+            QHeaderView::section {{
+                background-color: {colors['card_bg']};
+                color: {colors['secondary_text']};
+                border: none;
+                font-style: italic;
+                padding: 5px;
+                font-size: 12px;
+            }}
+        """)
+        
+        structure_layout.addWidget(self.tree, 1)  # Give tree a stretch factor of 1
+        
+        # Add button layout
         button_layout = QHBoxLayout()
-        button_layout.setContentsMargins(0, 0, 0, 10)
         
-        # Create structure buttons
+        # Add File button
         add_file_btn = QPushButton("Add File")
-        add_file_btn.clicked.connect(self.editor.add_file)
-        add_file_btn.setStyleSheet(self._get_button_style('action'))
-        add_file_btn.setIcon(QIcon.fromTheme("document-new"))
-        
-        add_folder_btn = QPushButton("Add Folder")
-        add_folder_btn.clicked.connect(self.editor.add_folder)
-        add_folder_btn.setStyleSheet(self._get_button_style('action'))
-        add_folder_btn.setIcon(QIcon.fromTheme("folder-new"))
-        
-        delete_btn = QPushButton("Delete")
-        delete_btn.clicked.connect(self.editor.delete_selected)
-        delete_btn.setStyleSheet(self._get_button_style('danger'))
-        delete_btn.setIcon(QIcon.fromTheme("edit-delete"))
-        
-        # Add structure buttons to layout
+        add_file_btn.setStyleSheet(self._get_button_style('default'))
+        add_file_btn.clicked.connect(lambda: self.editor.add_file() if hasattr(self.editor, 'add_file') else None)
         button_layout.addWidget(add_file_btn)
+        
+        # Add Folder button
+        add_folder_btn = QPushButton("Add Folder")
+        add_folder_btn.setStyleSheet(self._get_button_style('default'))
+        add_folder_btn.clicked.connect(lambda: self.editor.add_folder() if hasattr(self.editor, 'add_folder') else None)
         button_layout.addWidget(add_folder_btn)
+        
+        # Delete button
+        delete_btn = QPushButton("Delete")
+        delete_btn.setStyleSheet(self._get_button_style('danger'))
+        delete_btn.clicked.connect(lambda: self.editor.delete_selected() if hasattr(self.editor, 'delete_selected') else None)
         button_layout.addWidget(delete_btn)
         
-        # Add spacer
-        button_layout.addStretch()
+        # Add button layout to structure layout
+        structure_layout.addLayout(button_layout)
         
-        info_layout.addLayout(button_layout)
+        # Add structure stats display
+        self.stats_label = QLabel("0 items (0 files, 0 folders)")
+        self.stats_label.setStyleSheet(f"color: {colors['secondary_text']}; font-size: 11px; padding: 5px 0;")
+        structure_layout.addWidget(self.stats_label)
         
-        # Use the tree from the editor if it exists, otherwise create a new one
-        if hasattr(self.editor, 'tree') and self.editor.tree:
-            self.tree = self.editor.tree
-            print("DEBUG: Using existing tree widget")
-        else:
-            # Create a new tree widget
-            self.tree = StructureEditorTree()
-            self.tree.setMinimumWidth(400)
-            self.tree.setSelectionMode(QTreeWidget.ExtendedSelection)
-            self.tree.setDragEnabled(True)
-            self.tree.setAcceptDrops(True)
-            self.tree.setDropIndicatorShown(True)
-            self.tree.setDragDropMode(QTreeWidget.InternalMove)
-            self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
-            self.tree.setAlternatingRowColors(True)
-            self.tree.setAnimated(True)
-            self.tree.setIndentation(20)
-            
-            # Set tree on editor for other components to access
-            self.editor.tree = self.tree
+        # Create structure panel
+        structure_panel = QWidget()
+        structure_panel.setLayout(structure_layout)
         
-        # Configure tree widget
-        self.tree.setHeaderHidden(True)  # Hide the header completely
+        # Create a QSplitter to allow resizing of template info and structure sections
+        splitter = QSplitter(Qt.Vertical)
         
-        # Set icon size for better visibility
-        self.tree.setIconSize(QSize(18, 18))
+        # Add info container and structure panel to splitter
+        splitter.addWidget(info_container)
+        splitter.addWidget(structure_panel)
         
-        # Ensure branch indicators are visible
-        self.tree.setRootIsDecorated(True)
-        self.tree.setItemsExpandable(True)
+        # Set initial sizes to give more space to the structure section
+        splitter.setSizes([200, 400])  # Adjusted to give more space to structure section
         
-        # Apply enhanced tree styling using our centralized function
-        try:
-            from app.ui.tree_styling import apply_enhanced_tree_styling
-            apply_enhanced_tree_styling(self.tree)
-            print("DEBUG: Applied enhanced tree styling")
-        except ImportError:
-            # Fallback styling if the import fails
-            self.tree.setStyleSheet(f"""
-                QTreeWidget {{
-                    background-color: {colors['card_bg']};
-                    color: {colors['text']};
-                    border: 1px solid {colors['border']};
-                    outline: none;
-                    alternate-background-color: #2A2A2A;
-                }}
-                QTreeWidget::item {{
-                    padding: 5px;
-                    border-bottom: 1px solid {colors['border']};
-                    min-height: 22px;
-                }}
-                QTreeWidget::item:hover {{
-                    background-color: {colors['hover_bg']};
-                }}
-                QTreeWidget::item:selected {{
-                    background-color: {colors['highlight_bg']};
-                    color: {colors['highlight_text']};
-                }}
-                
-                /* Style branch indicators to ensure they're visible */
-                QTreeWidget::branch {{
-                    background-color: transparent;
-                }}
-                QTreeWidget::branch:has-children:!has-siblings:closed,
-                QTreeWidget::branch:closed:has-children:has-siblings {{
-                    image: url(app/assets/css/branch-closed.svg);
-                    width: 15px;
-                    height: 15px;
-                }}
-                QTreeWidget::branch:open:has-children:!has-siblings,
-                QTreeWidget::branch:open:has-children:has-siblings {{
-                    image: url(app/assets/css/branch-open.svg);
-                    width: 15px;
-                    height: 15px;
-                }}
-                
-                /* Style for folder and file display */
-                QTreeWidget::item:has-children {{
-                    font-weight: bold;
-                }}
-            """)
+        # Add splitter to main layout
+        main_layout.addWidget(splitter)
         
-        # Add tree directly to info panel
-        info_layout.addWidget(self.tree, 1)  # Give the tree a stretch factor of 1 to fill available space
+        # Connect selection changed signal to update stats
+        self.tree.itemSelectionChanged.connect(self._update_structure_stats)
         
-        # Add status bar with structure statistics
-        self.status_bar = QLabel("No items in structure")
-        self.status_bar.setStyleSheet(f"color: {colors['secondary_text']}; font-style: italic; padding: 5px;")
-        info_layout.addWidget(self.status_bar)
-        
-        # Connect tree signals to update status bar
-        self.tree.model().rowsInserted.connect(self._update_structure_stats)
-        self.tree.model().rowsRemoved.connect(self._update_structure_stats)
-        
-        # Add info panel to main layout
-        main_layout.addWidget(info_panel)
-        
-        # Apply styling
-        self._apply_styling()
-        
-        # Initial update of structure stats
-        self._update_structure_stats()
+        # Wait a moment before updating stats (let tree fully initialize)
+        QTimer.singleShot(100, self._update_structure_stats)
         
         return main_layout
     
@@ -975,788 +922,218 @@ class UIBuilder:
     
     def _show_context_menu(self, position):
         """
-        Show a context menu for the tree items
+        Show context menu for tree widget items
         
         Args:
-            position: The position to show the menu
+            position: Position where the context menu should be shown
         """
-        if not self.tree:
-            return
-            
-        # Get selected items
-        selected_items = self.tree.selectedItems()
-        
-        # Create menu
-        menu = QMenu()
-        
-        # Determine if we have selected items
-        if selected_items:
-            # Add options for selected items
-            add_file_action = QAction("Add File", self.editor)
-            add_file_action.triggered.connect(lambda: self.editor.add_file(selected_items[0]))
-            menu.addAction(add_file_action)
-            
-            add_folder_action = QAction("Add Folder", self.editor)
-            add_folder_action.triggered.connect(lambda: self.editor.add_folder(selected_items[0]))
-            menu.addAction(add_folder_action)
-            
-            menu.addSeparator()
-            
-            rename_action = QAction("Rename", self.editor)
-            rename_action.triggered.connect(lambda: self._rename_item(selected_items[0]))
-            menu.addAction(rename_action)
-            
-            menu.addSeparator()
-            
-            delete_action = QAction("Delete", self.editor)
-            delete_action.triggered.connect(self.editor.delete_selected)
-            menu.addAction(delete_action)
-        else:
-            # Add options for no selection (root level)
-            add_file_action = QAction("Add File", self.editor)
-            add_file_action.triggered.connect(lambda: self.editor.add_file())
-            menu.addAction(add_file_action)
-            
-            add_folder_action = QAction("Add Folder", self.editor)
-            add_folder_action.triggered.connect(lambda: self.editor.add_folder())
-            menu.addAction(add_folder_action)
-        
-        # Show the menu
-        menu.exec_(self.tree.mapToGlobal(position))
-    
-    def _rename_item(self, item):
-        """
-        Rename the selected item
-        
-        Args:
-            item: The item to rename
-        """
-        if not item:
-            return
-            
-        # Get the current name
-        current_name = item.text(0)
-        
-        # Get a new name using input dialog
-        new_name, ok = QInputDialog.getText(
-            self.editor,
-            "Rename Item",
-            "Enter new name:",
-            text=current_name
-        )
-        
-        if ok and new_name:
-            # Update the item text
-            item.setText(0, new_name)
-            
-            # Update the item data
-            item_data = item.data(0, Qt.UserRole)
-            if isinstance(item_data, dict):
-                item_data["name"] = new_name
-                item.setData(0, Qt.UserRole, item_data)
-    
-    def _import_structure(self):
-        """Import structure from file"""
-        if hasattr(self.editor, "structure_converter"):
-            # Get file path from dialog
-            file_path, _ = QFileDialog.getOpenFileName(
-                self.editor,
-                "Import Structure",
-                os.path.expanduser("~"),
-                "JSON Files (*.json);;All Files (*.*)"
-            )
-            
-            if file_path:
-                try:
-                    # Load structure from file
-                    with open(file_path, 'r') as f:
-                        structure = json.load(f)
-                    
-                    # Load structure into tree
-                    self.editor.structure_converter.load_structure(structure)
-                    
-                    # Show success message
-                    QMessageBox.information(
-                        self.editor,
-                        "Import Successful",
-                        "Structure imported successfully."
-                    )
-                except Exception as e:
-                    # Show error message
-                    QMessageBox.critical(
-                        self.editor,
-                        "Import Error",
-                        f"Failed to import structure: {str(e)}"
-                    )
-    
-    def _manage_structures(self):
-        """Show dialog to manage structure presets"""
         try:
-            # Import needed modules
-            from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-                                      QPushButton, QListWidget, QMessageBox, QInputDialog)
-            from PyQt5.QtCore import Qt
+            item = self.tree.itemAt(position)
             
-            # Create dialog
-            dialog = QDialog(self.editor)
-            dialog.setWindowTitle("Manage Structure Presets")
-            dialog.resize(500, 400)
-            
-            # Create layout
-            layout = QVBoxLayout(dialog)
-            layout.setContentsMargins(20, 20, 20, 20)
-            layout.setSpacing(15)
-            
-            # Add title
-            title = QLabel("Structure Presets")
-            title.setStyleSheet("font-size: 16px; font-weight: bold;")
-            layout.addWidget(title)
-            
-            # Add description
-            description = QLabel("Manage your saved structure presets.")
-            description.setWordWrap(True)
-            layout.addWidget(description)
-            
-            # Add list of structures
-            structures_list = QListWidget()
-            structures_list.setStyleSheet(f"""
-                QListWidget {{
+            # Create context menu
+            menu = QMenu()
+            menu.setStyleSheet(f"""
+                QMenu {{
                     background-color: {colors['card_bg']};
                     color: {colors['text']};
                     border: 1px solid {colors['border']};
-                    border-radius: 4px;
                     padding: 5px;
                 }}
-                QListWidget::item {{
-                    padding: 8px;
-                    border-bottom: 1px solid {colors['border']};
+                QMenu::item {{
+                    padding: 5px 15px;
+                    border-radius: 3px;
                 }}
-                QListWidget::item:selected {{
+                QMenu::item:selected {{
                     background-color: {colors['highlight_bg']};
                     color: {colors['highlight_text']};
                 }}
-                QListWidget::item:hover {{
-                    background-color: {colors['hover_bg']};
+                QMenu::separator {{
+                    height: 1px;
+                    background-color: {colors['border']};
+                    margin: 5px 2px;
                 }}
             """)
-            layout.addWidget(structures_list)
             
-            # Populate list with available structures
-            available_structures = self._get_available_structures()
-            for structure in available_structures:
-                structures_list.addItem(structure)
+            # Actions for selected item
+            if item:
+                add_file_here = menu.addAction("Add File Here")
+                add_folder_here = menu.addAction("Add Folder Here")
+                menu.addSeparator()
+                rename_item = menu.addAction("Rename")
+                
+                # Add project name option for files
+                if not item.childCount(): # It's a file (no children)
+                    menu.addSeparator()
+                    # Add options for file renaming with project name
+                    use_project_name = menu.addAction("Use Project Name for File")
+                    use_project_name.setCheckable(True)
+                    
+                    # Check if item has flag for using project name
+                    if item.data(0, Qt.UserRole) and 'uses_project_name' in item.data(0, Qt.UserRole):
+                        use_project_name.setChecked(item.data(0, Qt.UserRole)['uses_project_name'])
+                    
+                menu.addSeparator()
+                delete_item = menu.addAction("Delete")
+                
+                # Connect signals for item-related actions
+                add_file_here.triggered.connect(lambda: self.editor.add_file(item))
+                add_folder_here.triggered.connect(lambda: self.editor.add_folder(item))
+                rename_item.triggered.connect(lambda: self._rename_item(item))
+                delete_item.triggered.connect(lambda: self.editor._delete_item(item))
+                
+                # Connect project name action if it exists
+                if not item.childCount():
+                    use_project_name.triggered.connect(lambda: self._toggle_project_name_for_file(item))
+            else:
+                # Global actions
+                add_file = menu.addAction("Add File")
+                add_folder = menu.addAction("Add Folder")
+                menu.addSeparator()
+                import_structure = menu.addAction("Import Structure...")
+                
+                # Connect signals for global actions
+                add_file.triggered.connect(self.editor.add_file)
+                add_folder.triggered.connect(self.editor.add_folder)
+                import_structure.triggered.connect(self._import_structure)
             
-            # Add button row
-            button_layout = QHBoxLayout()
-            
-            # Add rename button
-            rename_btn = QPushButton("Rename")
-            rename_btn.setStyleSheet(self._get_button_style())
-            rename_btn.clicked.connect(lambda: self._rename_structure(structures_list, dialog))
-            
-            # Add delete button
-            delete_btn = QPushButton("Delete")
-            delete_btn.setStyleSheet(self._get_button_style('danger'))
-            delete_btn.clicked.connect(lambda: self._delete_structure(structures_list, dialog))
-            
-            # Add close button
-            close_btn = QPushButton("Close")
-            close_btn.setStyleSheet(self._get_button_style())
-            close_btn.clicked.connect(dialog.accept)
-            close_btn.setDefault(True)
-            
-            # Add buttons to layout
-            button_layout.addWidget(rename_btn)
-            button_layout.addWidget(delete_btn)
-            button_layout.addStretch()
-            button_layout.addWidget(close_btn)
-            layout.addLayout(button_layout)
-            
-            # Show dialog
-            dialog.exec_()
-            
-            # Refresh preset structures in combo box
-            self._refresh_presets()
+            # Show the menu at the cursor position
+            menu.exec_(self.tree.viewport().mapToGlobal(position))
             
         except Exception as e:
-            print(f"ERROR managing structures: {e}")
+            print(f"ERROR showing context menu: {e}")
             import traceback
             traceback.print_exc()
-    
-    def _get_available_structures(self):
-        """Get list of available structure presets"""
-        structures = []
+
+    def _rename_item(self, item):
+        """
+        Rename an item in the tree
         
-        # Try to get structures from template manager
+        Args:
+            item: The tree item to rename
+        """
+        if not item:
+            return
+        
+        # Edit the item
+        self.tree.editItem(item, 0)
+
+    def _import_structure(self):
+        """
+        Import structure from a file
+        
+        This allows importing structures from:
+        - JSON files (direct structure data)
+        - Structure files from other templates
+        """
         try:
-            from app.templates.template_manager import TemplateManager
-            template_manager = TemplateManager()
+            # Create file dialog
+            file_dialog = QFileDialog()
+            file_dialog.setWindowTitle("Import Structure")
+            file_dialog.setNameFilter("Structure Files (*.json);;All Files (*)")
+            file_dialog.setFileMode(QFileDialog.ExistingFile)
             
-            # Get all structures
-            all_structures = []
-            if hasattr(template_manager, 'get_structures'):
-                all_structures = template_manager.get_structures()
-            elif hasattr(template_manager, 'custom_structures'):
-                all_structures = list(template_manager.custom_structures.keys())
-            
-            # Filter and clean structure names
-            for structure_name in all_structures:
-                if structure_name.startswith("Template_"):
-                    display_name = structure_name[len("Template_"):]
-                    structures.append(display_name)
-                else:
-                    structures.append(structure_name)
-            
-            print(f"DEBUG: Found {len(structures)} available structures")
+            # Show dialog and get selected file
+            if file_dialog.exec_():
+                file_paths = file_dialog.selectedFiles()
+                if not file_paths:
+                    return
+                    
+                file_path = file_paths[0]
+                
+                # Try to load the structure from the file
+                try:
+                    with open(file_path, 'r') as f:
+                        data = json.load(f)
+                        
+                        # Extract structure data from various formats
+                        structure = None
+                        
+                        # Format 1: Direct structure array
+                        if isinstance(data, list):
+                            structure = data
+                        
+                        # Format 2: Structure in 'structure' field
+                        elif isinstance(data, dict) and 'structure' in data:
+                            structure = data['structure']
+                        
+                        # Format 3: Structure in 'directories' field (legacy)
+                        elif isinstance(data, dict) and 'directories' in data:
+                            structure = data['directories']
+                        
+                        # If we found a structure, confirm and load it
+                        if structure:
+                            reply = QMessageBox.question(
+                                self.editor,
+                                "Import Structure",
+                                "This will replace your current structure with the imported one. Continue?",
+                                QMessageBox.Yes | QMessageBox.No,
+                                QMessageBox.No
+                            )
+                            
+                            if reply == QMessageBox.Yes:
+                                # Load the structure
+                                if hasattr(self.editor, 'structure_converter'):
+                                    self.editor.structure_converter.load_structure(structure)
+                                    print(f"DEBUG: Imported structure from: {file_path}")
+                        else:
+                            QMessageBox.warning(
+                                self.editor,
+                                "Import Structure",
+                                "The selected file does not contain a valid structure."
+                            )
+                except Exception as e:
+                    QMessageBox.critical(
+                        self.editor,
+                        "Import Error",
+                        f"Error importing structure: {str(e)}"
+                    )
+                    import traceback
+                    traceback.print_exc()
         except Exception as e:
-            print(f"ERROR getting structures: {e}")
+            print(f"ERROR in _import_structure: {e}")
             import traceback
             traceback.print_exc()
-        
-        return sorted(structures)
-    
-    def _rename_structure(self, list_widget, parent_dialog):
-        """Rename selected structure"""
-        # Get selected structure
-        selected_items = list_widget.selectedItems()
-        if not selected_items:
-            QMessageBox.warning(parent_dialog, "Selection Required", "Please select a structure to rename")
-            return
-        
-        # Get structure name
-        structure_name = selected_items[0].text()
-        
-        # Ask for new name
-        new_name, ok = QInputDialog.getText(
-            parent_dialog, 
-            "Rename Structure", 
-            "Enter new name:",
-            text=structure_name
-        )
-        
-        if not ok or not new_name or new_name == structure_name:
-            return
-        
-        # Rename structure in template manager
-        try:
-            from app.templates.template_manager import TemplateManager
-            template_manager = TemplateManager()
-            
-            # Format names with Template_ prefix
-            old_name = f"Template_{structure_name}"
-            new_name_with_prefix = f"Template_{new_name}"
-            
-            # Perform rename
-            success = False
-            if hasattr(template_manager, 'rename_structure'):
-                success = template_manager.rename_structure(old_name, new_name_with_prefix)
-            elif hasattr(template_manager, 'rename_custom_structure'):
-                success = template_manager.rename_custom_structure(old_name, new_name_with_prefix)
-            
-            if success:
-                QMessageBox.information(parent_dialog, "Success", f"Structure renamed to '{new_name}'")
-                
-                # Update list
-                selected_items[0].setText(new_name)
-                
-                # Update the predefined combo
-                if hasattr(self, 'predefined_combo'):
-                    # Save current selection
-                    current_index = self.predefined_combo.currentIndex()
-                    current_data = self.predefined_combo.currentData()
-                    
-                    # Update dropdown
-                    self._refresh_presets()
-                    
-                    # Try to restore previous selection
-                    if current_data:
-                        index = self.predefined_combo.findData(current_data)
-                        if index >= 0:
-                            self.predefined_combo.setCurrentIndex(index)
-            else:
-                QMessageBox.warning(parent_dialog, "Error", f"Failed to rename structure")
-        except Exception as e:
-            QMessageBox.critical(parent_dialog, "Error", f"Error renaming structure: {str(e)}")
-    
-    def _delete_structure(self, list_widget, parent_dialog):
-        """Delete selected structure"""
-        # Get selected structure
-        selected_items = list_widget.selectedItems()
-        if not selected_items:
-            QMessageBox.warning(parent_dialog, "Selection Required", "Please select a structure to delete")
-            return
-        
-        # Get structure name
-        structure_name = selected_items[0].text()
-        
-        # Confirm deletion
-        reply = QMessageBox.question(
-            parent_dialog,
-            "Confirm Deletion",
-            f"Are you sure you want to delete the structure '{structure_name}'?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        
-        if reply != QMessageBox.Yes:
-            return
-        
-        # Delete structure in template manager
-        try:
-            from app.templates.template_manager import TemplateManager
-            template_manager = TemplateManager()
-            
-            # Format name with Template_ prefix
-            full_name = f"Template_{structure_name}"
-            
-            # Perform delete
-            success = False
-            if hasattr(template_manager, 'delete_structure'):
-                success = template_manager.delete_structure(full_name)
-            elif hasattr(template_manager, 'delete_custom_structure'):
-                success = template_manager.delete_custom_structure(full_name)
-            
-            if success:
-                QMessageBox.information(parent_dialog, "Success", f"Structure '{structure_name}' deleted")
-                
-                # Remove from list
-                row = list_widget.row(selected_items[0])
-                list_widget.takeItem(row)
-                
-                # Update the predefined combo
-                if hasattr(self, 'predefined_combo'):
-                    self._refresh_presets()
-            else:
-                QMessageBox.warning(parent_dialog, "Error", f"Failed to delete structure")
-        except Exception as e:
-            QMessageBox.critical(parent_dialog, "Error", f"Error deleting structure: {str(e)}")
 
     def _manage_categories(self):
-        """Show dialog to manage template categories"""
+        """
+        Show dialog to manage template categories
+        """
         try:
-            # Import the category manager
-            from app.ui.structure_editor.category_manager import manage_categories
+            # Import the category manager dialog
+            from app.ui.structure_editor.category_manager import CategoryManager
+            from app.templates.template_manager import TemplateManager
             
-            # Show the dialog and get updated categories
-            updated_categories = manage_categories(self.editor, self.categories)
+            # Get current categories
+            template_manager = TemplateManager()
+            categories = template_manager.get_categories() if hasattr(template_manager, 'get_categories') else ["General"]
             
-            # Update the categories if dialog was not canceled
-            if updated_categories:
-                self.categories = updated_categories
+            # Show the dialog
+            category_manager = CategoryManager(self.editor, categories)
+            result = category_manager.exec()
+            
+            # If dialog was accepted, refresh categories in combobox
+            if result == category_manager.Accepted and hasattr(self, 'template_category_field') and self.template_category_field:
+                # Store current category
+                current_category = self.template_category_field.currentText()
                 
-                # Update the category dropdown
-                if hasattr(self, 'template_category_field'):
-                    # Save current selection
-                    current = self.template_category_field.currentText()
-                    
-                    # Update dropdown
-                    self.template_category_field.clear()
-                    self.template_category_field.addItems(self.categories)
-                    
-                    # Try to restore current selection
-                    index = self.template_category_field.findText(current)
-                    if index >= 0:
-                        self.template_category_field.setCurrentIndex(index)
-                    else:
-                        # Default to first item
-                        self.template_category_field.setCurrentIndex(0)
+                # Get updated categories
+                updated_categories = category_manager.get_categories()
                 
-                print("DEBUG: Categories updated")
+                # Update combobox
+                self.template_category_field.clear()
+                self.template_category_field.addItems(updated_categories)
                 
-        except Exception as e:
-            print(f"ERROR managing categories: {e}")
-            import traceback
-            traceback.print_exc()
-    
-    def _refresh_presets(self):
-        """Refresh the preset structures from template manager"""
-        try:
-            # Skip if no preset combo exists
-            if not hasattr(self, 'preset_combo') or not self.preset_combo:
-                return
-                
-            # Clear existing items
-            self.preset_combo.clear()
-            
-            # Add "Select a preset" option
-            self.preset_combo.addItem("Select a preset...")
-            
-            # Import template manager to get structures
-            try:
-                from app.templates.template_manager import TemplateManager
-                template_manager = TemplateManager()
-                
-                # Get all structures
-                structures = []
-                if hasattr(template_manager, 'get_structures'):
-                    structures = template_manager.get_structures()
-                elif hasattr(template_manager, 'custom_structures'):
-                    structures = list(template_manager.custom_structures.keys())
-                
-                # Filter and sort structures
-                presets = []
-                for structure_name in structures:
-                    # Skip non-template structures and current structure
-                    if (not structure_name.startswith("Template_") or 
-                        structure_name == f"Template_{self.structure_name}"):
-                        continue
-                    
-                    # Add to presets list
-                    display_name = structure_name
-                    if structure_name.startswith("Template_"):
-                        display_name = structure_name[len("Template_"):]
-                        
-                    presets.append((display_name, structure_name))
-                
-                # Sort by display name
-                presets.sort(key=lambda x: x[0].lower())
-                
-                # Add to combo box
-                for display_name, structure_name in presets:
-                    self.preset_combo.addItem(display_name, structure_name)
-                    
-                print(f"DEBUG: Refreshed {len(presets)} preset structures")
-            except Exception as e:
-                print(f"ERROR refreshing presets: {e}")
-                import traceback
-                traceback.print_exc()
-        except Exception as e:
-            print(f"ERROR in _refresh_presets: {e}")
-            import traceback
-            traceback.print_exc()
-            
-    def _load_predefined_structure(self, index):
-        """Load a predefined structure from the dropdown"""
-        try:
-            # Get the structure identifier from the combo box
-            structure_id = self.predefined_combo.currentData()
-            
-            if not structure_id:
-                # Custom structure selected, do nothing
-                return
-            
-            # Confirm if the user wants to replace the current structure
-            reply = QMessageBox.question(
-                self.editor,
-                "Load Predefined Structure",
-                "This will replace your current structure with a predefined template. Continue?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            
-            if reply != QMessageBox.Yes:
-                # Reset combo to index 0 (Custom Structure)
-                self.predefined_combo.setCurrentIndex(0)
-                return
-            
-            # Load the predefined structure based on the identifier
-            if structure_id == "basic":
-                structure = [
-                    {"type": "folder", "name": "src", "children": [
-                        {"type": "file", "name": "main.py"},
-                        {"type": "file", "name": "utils.py"}
-                    ]},
-                    {"type": "folder", "name": "docs", "children": [
-                        {"type": "file", "name": "README.md"}
-                    ]},
-                    {"type": "file", "name": "config.json"}
-                ]
-            elif structure_id == "webapp":
-                structure = [
-                    {"type": "folder", "name": "src", "children": [
-                        {"type": "folder", "name": "components", "children": [
-                            {"type": "file", "name": "App.js"},
-                            {"type": "file", "name": "Header.js"},
-                            {"type": "file", "name": "Footer.js"}
-                        ]},
-                        {"type": "folder", "name": "styles", "children": [
-                            {"type": "file", "name": "main.css"}
-                        ]},
-                        {"type": "file", "name": "index.js"}
-                    ]},
-                    {"type": "folder", "name": "public", "children": [
-                        {"type": "file", "name": "index.html"},
-                        {"type": "file", "name": "favicon.ico"}
-                    ]},
-                    {"type": "file", "name": "package.json"},
-                    {"type": "file", "name": "README.md"}
-                ]
-            elif structure_id == "mobile":
-                structure = [
-                    {"type": "folder", "name": "app", "children": [
-                        {"type": "folder", "name": "src", "children": [
-                            {"type": "folder", "name": "screens", "children": [
-                                {"type": "file", "name": "HomeScreen.js"},
-                                {"type": "file", "name": "ProfileScreen.js"}
-                            ]},
-                            {"type": "folder", "name": "components", "children": [
-                                {"type": "file", "name": "Button.js"},
-                                {"type": "file", "name": "Card.js"}
-                            ]},
-                            {"type": "file", "name": "App.js"}
-                        ]},
-                        {"type": "folder", "name": "assets", "children": [
-                            {"type": "file", "name": "logo.png"}
-                        ]}
-                    ]},
-                    {"type": "file", "name": "package.json"},
-                    {"type": "file", "name": "app.json"}
-                ]
-            elif structure_id == "docs":
-                structure = [
-                    {"type": "folder", "name": "docs", "children": [
-                        {"type": "file", "name": "index.md"},
-                        {"type": "file", "name": "getting-started.md"},
-                        {"type": "file", "name": "api-reference.md"}
-                    ]},
-                    {"type": "folder", "name": "examples", "children": [
-                        {"type": "file", "name": "basic.md"},
-                        {"type": "file", "name": "advanced.md"}
-                    ]},
-                    {"type": "file", "name": "README.md"}
-                ]
-            elif structure_id == "library":
-                structure = [
-                    {"type": "folder", "name": "src", "children": [
-                        {"type": "file", "name": "index.js"},
-                        {"type": "file", "name": "core.js"}
-                    ]},
-                    {"type": "folder", "name": "tests", "children": [
-                        {"type": "file", "name": "index.test.js"}
-                    ]},
-                    {"type": "folder", "name": "docs", "children": [
-                        {"type": "file", "name": "API.md"}
-                    ]},
-                    {"type": "file", "name": "package.json"},
-                    {"type": "file", "name": "LICENSE"},
-                    {"type": "file", "name": "README.md"}
-                ]
-            else:
-                # Unknown structure ID, reset to custom
-                self.predefined_combo.setCurrentIndex(0)
-                return
-            
-            # Load the structure into the editor - safely
-            if hasattr(self.editor, 'structure_converter') and self.editor.structure_converter:
-                try:
-                    # Check if the tree widget is still valid
-                    if hasattr(self.editor.structure_converter, 'tree') and self.editor.structure_converter.tree:
-                        self.editor.structure_converter.load_structure(structure)
-                        print(f"DEBUG: Loaded predefined structure: {structure_id}")
-                    else:
-                        print("ERROR: Tree widget no longer available")
-                except Exception as e:
-                    import traceback
-                    print(f"ERROR loading structure: {e}")
-                    traceback.print_exc()
-            
-            # Update template category based on structure type
-            structure_categories = {
-                "basic": "General",
-                "webapp": "Web Development",
-                "mobile": "Mobile",
-                "docs": "Documentation",
-                "library": "Development"
-            }
-            
-            if structure_id in structure_categories:
-                # Find the category index
-                category = structure_categories[structure_id]
-                index = self.template_category_field.findText(category)
+                # Restore selection if possible, otherwise use first category
+                index = self.template_category_field.findText(current_category)
                 if index >= 0:
                     self.template_category_field.setCurrentIndex(index)
-        
+                elif self.template_category_field.count() > 0:
+                    self.template_category_field.setCurrentIndex(0)
         except Exception as e:
+            print(f"ERROR in _manage_categories: {e}")
             import traceback
-            print(f"ERROR in _load_predefined_structure: {e}")
             traceback.print_exc()
-
-    def _save_as_preset(self):
-        """Save the current structure as a new preset"""
-        # Get the current structure from the tree
-        structure = None
-        if hasattr(self.editor, 'structure_converter'):
-            try:
-                # Use get_structure method instead of create_structure_from_tree
-                # This method has been tested and works properly with the current tree
-                structure = self.editor.structure_converter.get_structure()
-            except Exception as e:
-                print(f"ERROR getting structure for preset: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        if not structure:
-            QMessageBox.warning(
-                self.editor,
-                "Save Preset",
-                "No structure available to save as preset."
-            )
-            return
-        
-        # Prompt for preset name
-        preset_name, ok = QInputDialog.getText(
-            self.editor,
-            "Save Preset",
-            "Enter a name for this preset:"
-        )
-        
-        if not ok or not preset_name:
-            return
-        
-        # Prompt for preset category
-        preset_category, ok = QInputDialog.getItem(
-            self.editor,
-            "Save Preset",
-            "Select a category for this preset:",
-            self.categories,
-            0,
-            False
-        )
-        
-        if not ok:
-            return
-        
-        # Save the preset using the structure manager
-        try:
-            # Find the parent application
-            parent = self.editor
-            while parent and not hasattr(parent, 'structure_manager'):
-                parent = parent.parent()
-            
-            if parent and hasattr(parent, 'structure_manager') and parent.structure_manager is not None:
-                # Check if save_preset method exists and is callable
-                if hasattr(parent.structure_manager, 'save_preset') and callable(parent.structure_manager.save_preset):
-                    success = parent.structure_manager.save_preset(
-                        preset_name, 
-                        structure, 
-                        preset_category
-                    )
-                    
-                    if success:
-                        QMessageBox.information(
-                            self.editor,
-                            "Save Preset",
-                            f"Preset '{preset_name}' saved successfully."
-                        )
-                        
-                        # Add the preset to the dropdown
-                        self.predefined_combo.addItem(preset_name, preset_name)
-                    else:
-                        QMessageBox.warning(
-                            self.editor,
-                            "Save Preset",
-                            f"Failed to save preset '{preset_name}'."
-                        )
-                else:
-                    QMessageBox.warning(
-                        self.editor,
-                        "Save Preset",
-                        "The save_preset method is not available in the structure manager."
-                    )
-            else:
-                QMessageBox.warning(
-                    self.editor,
-                    "Save Preset",
-                    "Structure manager not available."
-                )
-        except Exception as e:
-            QMessageBox.critical(
-                self.editor,
-                "Save Preset",
-                f"Error saving preset: {str(e)}"
-            )
     
-    def get_ui_values(self):
-        """
-        Get values from UI fields
-        
-        Returns:
-            dict: Dictionary of UI values
-        """
-        try:
-            values = {}
-            
-            # Get template name
-            if self.template_name_field:
-                template_name = self.template_name_field.text().strip()
-                values['template_name'] = template_name
-                print(f"DEBUG: get_ui_values template_name = '{template_name}'")
-            
-            # Get category
-            if self.template_category_field:
-                category = self.template_category_field.currentText()
-                values['category'] = category
-                print(f"DEBUG: get_ui_values category = '{category}'")
-            
-            # Get description
-            if self.template_info_field:
-                description = self.template_info_field.toPlainText().strip()
-                values['description'] = description
-            
-            return values
-        except Exception as e:
-            print(f"ERROR getting UI values: {e}")
-            import traceback
-            traceback.print_exc()
-            return {}
-    
-    def update_ui_values(self, values):
-        """
-        Update UI fields with new values
-        
-        Args:
-            values: Dictionary of values to update
-        """
-        try:
-            # Update template name field
-            if 'template_name' in values and self.template_name_field:
-                # Handle Template_ prefix - remove it for display
-                template_name = values['template_name']
-                if template_name.startswith('Template_'):
-                    template_name = template_name[9:]  # Remove Template_ prefix
-                
-                self.template_name_field.setText(template_name)
-                print(f"DEBUG: Updated template name field to '{template_name}'")
-            
-            # Update category field
-            if 'category' in values and self.template_category_field:
-                category = values['category']
-                index = self.template_category_field.findText(category)
-                if index >= 0:
-                    self.template_category_field.setCurrentIndex(index)
-                    print(f"DEBUG: Updated category field to '{category}'")
-            
-            # Update description field
-            if 'description' in values and self.template_info_field:
-                self.template_info_field.setPlainText(values['description'])
-                print(f"DEBUG: Updated description field")
-            
-        except Exception as e:
-            print(f"ERROR updating UI values: {e}")
-            import traceback
-            traceback.print_exc()
-
-    def set_ui_values(self, values):
-        """
-        Set values in UI fields
-        
-        Args:
-            values: Dictionary containing values to set
-        """
-        # Set template name
-        if self.template_name_field and 'template_name' in values:
-            self.template_name_field.setText(values['template_name'])
-            
-        # Set template category
-        if self.template_category_field and 'category' in values:
-            index = self.template_category_field.findText(values['category'])
-            if index >= 0:
-                self.template_category_field.setCurrentIndex(index)
-            
-        # Set template info
-        if self.template_info_field and 'description' in values:
-            self.template_info_field.setPlainText(values['description'])
-        
     def _update_structure_stats(self):
         """Update the status bar with structure statistics"""
         if not hasattr(self, 'tree') or not self.tree:
@@ -1794,6 +1171,6 @@ class UIBuilder:
         
         # Update status bar
         if total_items == 0:
-            self.status_bar.setText("No items in structure")
+            self.stats_label.setText("No items in structure")
         else:
-            self.status_bar.setText(f"Total: {total_items} items ({folders} folders, {files} files)") 
+            self.stats_label.setText(f"Total: {total_items} items ({folders} folders, {files} files)") 
