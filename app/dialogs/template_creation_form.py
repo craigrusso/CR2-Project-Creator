@@ -11,6 +11,8 @@ from PyQt5.QtGui import QIcon, QFont, QFontMetrics
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE
 from app.templates.template_manager import TemplateManager
 from app.templates.components import get_system_font, SYSTEM_FONT
+from app.utils.template_validator import TemplateValidator
+from PyQt5.QtWidgets import QApplication
 
 class TemplateCreationForm(QDialog):
     """
@@ -383,22 +385,31 @@ class TemplateCreationForm(QDialog):
         
     def save_template(self):
         """Save the template"""
+        from app.utils.template_validator import TemplateValidator
+        from PyQt5.QtWidgets import QMessageBox
+        
+        print("DEBUG: Starting save_template")
+        
+        # Get values from form
         name = self.name_edit.text().strip()
-        if not name:
-            QMessageBox.warning(self, "Input Error", "Template name is required.")
-            return
-            
         project_type = self.type_combo.currentText()
         description = self.desc_edit.toPlainText().strip()
         path = self.path_edit.text()
         
-        print(f"DEBUG: Template create - name='{name}', project_type='{project_type}', path='{path}'")
+        print(f"DEBUG: Initial values - name='{name}', type='{project_type}', path='{path}'")
         
-        if not path and not self.is_editing:
-            QMessageBox.warning(self, "Input Error", "Please select a source file or folder.")
-            return
-            
-        # Create or update the template
+        # Handle empty name before creating template data
+        if not name:
+            name = TemplateValidator.generate_default_name()
+            print(f"DEBUG: Generated default name: {name}")
+            QMessageBox.information(self, "Auto-generated Name", 
+                                  f"No template name was provided. Your template will be saved as '{name}'.\n\n"
+                                  "You can rename it later from the template gallery.")
+            self.name_edit.setText(name)
+            # Force UI update
+            QApplication.processEvents()
+        
+        # Create template data
         template = {
             "name": name,
             "type": project_type,
@@ -419,41 +430,56 @@ class TemplateCreationForm(QDialog):
         if self.is_editing and "created" in self.template:
             template["created"] = self.template["created"]
         
+        print(f"DEBUG: Template data before save: {template}")
+        
         # Save template through template manager
         success = False
-        if self.is_editing:
-            # Update existing template
-            if hasattr(self.template_manager, 'update_template'):
-                success = self.template_manager.update_template(template)
+        try:
+            if self.is_editing:
+                print("DEBUG: Updating existing template")
+                # Update existing template
+                if hasattr(self.template_manager, 'update_template'):
+                    success = self.template_manager.update_template(template)
+                else:
+                    # Fallback to save_template
+                    success = self.template_manager.save_template(
+                        name,
+                        path,
+                        project_type,
+                        description
+                    )
             else:
-                # Fallback to save_template
+                print("DEBUG: Creating new template")
+                # Create new template
                 success = self.template_manager.save_template(
                     name,
                     path,
                     project_type,
                     description
                 )
-        else:
-            # Create new template
-            success = self.template_manager.save_template(
-                name,
-                path,
-                project_type,
-                description
-            )
-            
-        if success:
-            if self.callback:
-                self.callback(template)
-            
-            if self.is_editing:
-                self.template_edited.emit(template)
-            else:
-                self.template_created.emit(template)
                 
-            self.accept()
-        else:
-            QMessageBox.critical(self, "Error", "Failed to save the template. Please try again.")
+            print(f"DEBUG: Save result - success={success}")
+            
+            if success:
+                if self.callback:
+                    print("DEBUG: Calling callback")
+                    self.callback(template)
+                
+                if self.is_editing:
+                    print("DEBUG: Emitting template_edited signal")
+                    self.template_edited.emit(template)
+                else:
+                    print("DEBUG: Emitting template_created signal")
+                    self.template_created.emit(template)
+                    
+                self.accept()
+            else:
+                QMessageBox.critical(self, "Error", "Failed to save the template. Please try again.")
+        except Exception as e:
+            print(f"ERROR saving template: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", f"Failed to save the template: {str(e)}")
 
 def show_template_creation_form(parent):
     """Show the enhanced template creation form"""

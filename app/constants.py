@@ -282,10 +282,15 @@ DEFAULT_STRUCTURES = {
 
 # Default template categories
 DEFAULT_TEMPLATE_CATEGORIES = [
+    "Custom",
     "Video Editing",
     "Motion Graphics",
     "VFX",
-    "Audio Production"
+    "Audio Production",
+    "Photography",
+    "Writing",
+    "Development",
+    "Graphics"
 ]
 
 # Project types

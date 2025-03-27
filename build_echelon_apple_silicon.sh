@@ -1,123 +1,198 @@
 #!/bin/bash
 # Script to build Echelon for Apple Silicon (ARM64), sign it with a developer certificate,
-# and create a DMG with Applications folder shortcut
+# create a DMG with Applications folder shortcut, and handle notarization
 
 # Exit on error
 set -e
 
+# Check if running on Apple Silicon
+if [[ $(uname -m) != "arm64" ]]; then
+    echo "This script must be run on Apple Silicon (M1/M2) Mac"
+    exit 1
+fi
+
+# Configuration
 APP_NAME="Echelon"
-APP_VERSION=$(python3 -c "import sys; sys.path.insert(0, '.'); from app.constants import APP_VERSION; print(APP_VERSION)" 2>/dev/null || echo "2.1.0")
-CERT_NAME="development.cer"
-ICNS_FILE="Echelon.icns"
-DMG_NAME="${APP_NAME}_${APP_VERSION}_AppleSilicon"
+APP_VERSION="0.081"
+APP_BUNDLE="$APP_NAME.app"
+APP_BUNDLE_PATH="dist/$APP_BUNDLE"
+DMG_NAME="$APP_NAME-$APP_VERSION.dmg"
+ICNS_FILE="ICONS/$APP_NAME.icns"
+ZIP_NAME="$APP_NAME.zip"
 
-echo "=== Building $APP_NAME $APP_VERSION for Apple Silicon ==="
+# Developer identity and notarization credentials
+DEVELOPER_ID="Developer ID Application: Craig Russo (5926DW86QY)"
+TEAM_ID="5926DW86QY"  # Your Team ID
+APPLE_ID="craig_russo@me.com"  # Your Apple ID
+APP_PASSWORD="oowc-uxos-pidi-qqli"  # Your app-specific password
 
-# Check if we're on Apple Silicon
-if [ "$(uname -m)" != "arm64" ]; then
-    echo "WARNING: You are not running on Apple Silicon."
-    echo "This script will still attempt to build, but for best results, run on an M1/M2/M3 Mac."
-    echo ""
-    echo "Press Enter to continue or Ctrl+C to abort..."
-    read
-fi
-
-# Check for PyInstaller
-if ! command -v pyinstaller &> /dev/null; then
-    echo "PyInstaller not found. Installing..."
-    python3 -m pip install pyinstaller
-fi
+# Check for required tools
+command -v python3 >/dev/null 2>&1 || { echo "Python 3 is required but not installed. Aborting." >&2; exit 1; }
+command -v pip3 >/dev/null 2>&1 || { echo "pip3 is required but not installed. Aborting." >&2; exit 1; }
+command -v pyinstaller >/dev/null 2>&1 || { echo "Installing PyInstaller..."; pip3 install pyinstaller; }
 
 # Check for create-dmg
-if ! command -v create-dmg &> /dev/null; then
-    echo "create-dmg not found. Do you want to install it via Homebrew? (y/n)"
-    read answer
-    if [[ $answer =~ ^[Yy]$ ]]; then
-        if ! command -v brew &> /dev/null; then
-            echo "Homebrew not found. Please install Homebrew first (https://brew.sh)"
-            exit 1
-        fi
-        brew install create-dmg
-    else
-        echo "create-dmg is required for this script. Please install it and try again."
-        exit 1
-    fi
+if ! command -v create-dmg >/dev/null 2>&1; then
+    echo "Installing create-dmg..."
+    brew install create-dmg
 fi
 
-# Check for certificate
-if [ ! -f "$CERT_NAME" ]; then
-    echo "Certificate $CERT_NAME not found. Please make sure it's in the current directory."
-    exit 1
-fi
-
-# Check for icon file
-if [ ! -f "$ICNS_FILE" ]; then
-    echo "Icon file $ICNS_FILE not found. Please make sure it's in the current directory."
-    exit 1
-fi
-
-# Clean up previous builds
-echo "Cleaning previous builds..."
-rm -rf build dist
+# Clean previous builds
+rm -rf build dist *.dmg *.zip
 
 # Install requirements
-echo "Installing requirements..."
-python3 -m pip install -r requirements.txt
+pip3 install -r requirements.txt
 
-# Build the application for Apple Silicon only
-echo "Building the application for Apple Silicon..."
-pyinstaller --target-architecture arm64 --clean --windowed \
-    --icon="$ICNS_FILE" \
-    --name="$APP_NAME" \
-    --osx-bundle-identifier="com.cr2creative.echelon" \
-    --add-data="app:app" \
-    --hidden-import=PyQt5.QtCore \
-    --hidden-import=PyQt5.QtGui \
-    --hidden-import=PyQt5.QtWidgets \
-    main.py
+# Create PyInstaller spec file
+cat > "$APP_NAME.spec" << EOL
+# -*- mode: python ; coding: utf-8 -*-
 
-# Modify Info.plist for high-resolution display
-echo "Updating Info.plist..."
-PLIST_PATH="dist/$APP_NAME.app/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Add :NSHighResolutionCapable bool true" "$PLIST_PATH" 2>/dev/null || \
-/usr/libexec/PlistBuddy -c "Set :NSHighResolutionCapable true" "$PLIST_PATH"
-/usr/libexec/PlistBuddy -c "Add :NSPrincipalClass string NSApplication" "$PLIST_PATH" 2>/dev/null || \
-/usr/libexec/PlistBuddy -c "Set :NSPrincipalClass NSApplication" "$PLIST_PATH"
-/usr/libexec/PlistBuddy -c "Add :NSHumanReadableCopyright string 'Copyright © 2023-present Craig P. Russo and CR2 Creative. All rights reserved.'" "$PLIST_PATH" 2>/dev/null || \
-/usr/libexec/PlistBuddy -c "Set :NSHumanReadableCopyright 'Copyright © 2023-present Craig P. Russo and CR2 Creative. All rights reserved.'" "$PLIST_PATH"
-/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $APP_VERSION" "$PLIST_PATH" 2>/dev/null || \
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $APP_VERSION" "$PLIST_PATH"
-/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $APP_VERSION" "$PLIST_PATH" 2>/dev/null || \
-/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $APP_VERSION" "$PLIST_PATH"
-/usr/libexec/PlistBuddy -c "Add :LSApplicationCategoryType string 'public.app-category.developer-tools'" "$PLIST_PATH" 2>/dev/null || \
-/usr/libexec/PlistBuddy -c "Set :LSApplicationCategoryType 'public.app-category.developer-tools'" "$PLIST_PATH"
+block_cipher = None
 
-# Sign the application with the developer certificate
-echo "Signing the application..."
-codesign --force --deep --options runtime --sign "$CERT_NAME" "dist/$APP_NAME.app"
+a = Analysis(['main.py'],
+             pathex=['.'],
+             binaries=[],
+             datas=[('ICONS/Echelon.icns', 'ICONS'),
+                    ('app/assets', 'app/assets'),
+                    ('app/templates', 'app/templates'),
+                    ('app/ui', 'app/ui')],
+             hiddenimports=['json', 'webbrowser'],
+             hookspath=[],
+             hooksconfig={},
+             runtime_hooks=[],
+             excludes=['PyQt5.QtBluetooth',
+                      'PyQt5.QtLocation',
+                      'PyQt5.QtMultimedia',
+                      'PyQt5.QtMultimediaWidgets',
+                      'PyQt5.QtNfc',
+                      'PyQt5.QtOpenGL',
+                      'PyQt5.QtPositioning',
+                      'PyQt5.QtSensors',
+                      'PyQt5.QtSerialPort',
+                      'PyQt5.QtWebChannel',
+                      'PyQt5.QtWebEngine',
+                      'PyQt5.QtWebEngineCore',
+                      'PyQt5.QtWebEngineWidgets',
+                      'PyQt5.QtWebKit',
+                      'PyQt5.QtWebKitWidgets',
+                      'PyQt5.QtWebSockets'],
+             win_no_prefer_redirects=False,
+             win_private_assemblies=False,
+             cipher=block_cipher,
+             noarchive=False)
 
-# Verify the signature
-echo "Verifying signature..."
-codesign -vvv --deep --strict "dist/$APP_NAME.app"
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-# Create DMG with Applications folder shortcut
-echo "Creating DMG with Applications folder shortcut..."
+exe = EXE(pyz,
+          a.scripts,
+          [],
+          exclude_binaries=True,
+          name='$APP_NAME',
+          debug=False,
+          bootloader_ignore_signals=False,
+          strip=False,
+          upx=False,
+          console=False,
+          disable_windowed_traceback=False,
+          target_arch='arm64',
+          codesign_identity=None,
+          entitlements_file=None)
+
+coll = COLLECT(exe,
+               a.binaries,
+               a.zipfiles,
+               a.datas,
+               strip=False,
+               upx=False,
+               upx_exclude=[],
+               name='$APP_NAME')
+
+app = BUNDLE(coll,
+            name='$APP_BUNDLE',
+            icon='$ICNS_FILE',
+            bundle_identifier='com.echelon.app',
+            version='$APP_VERSION',
+            info_plist={
+                'LSMinimumSystemVersion': '11.0',
+                'NSHighResolutionCapable': True,
+                'CFBundleShortVersionString': '$APP_VERSION',
+                'CFBundleVersion': '$APP_VERSION',
+                'NSRequiresAquaSystemAppearance': False,
+            })
+EOL
+
+# Create entitlements file
+cat > "entitlements.plist" << EOL
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+    <key>com.apple.security.get-task-allow</key>
+    <true/>
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+</dict>
+</plist>
+EOL
+
+# Build the application
+echo "Building $APP_NAME for Apple Silicon..."
+pyinstaller "$APP_NAME.spec" --clean --noconfirm
+
+# Sign the application with hardened runtime and entitlements
+echo "Signing $APP_NAME.app..."
+codesign --force --options runtime --deep --sign "$DEVELOPER_ID" \
+    --entitlements "entitlements.plist" \
+    --timestamp \
+    "$APP_BUNDLE_PATH"
+
+# Verify code signing
+echo "Verifying code signature..."
+codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE_PATH"
+
+# Create a DMG
+echo "Creating DMG..."
 create-dmg \
-  --volname "$APP_NAME $APP_VERSION" \
-  --volicon "$ICNS_FILE" \
-  --window-pos 200 120 \
-  --window-size 800 400 \
-  --icon-size 100 \
-  --icon "$APP_NAME.app" 200 190 \
-  --hide-extension "$APP_NAME.app" \
-  --app-drop-link 600 185 \
-  --no-internet-enable \
-  "dist/$DMG_NAME.dmg" \
-  "dist/$APP_NAME.app"
+    --volname "$APP_NAME" \
+    --volicon "$ICNS_FILE" \
+    --window-pos 200 120 \
+    --window-size 800 400 \
+    --icon-size 100 \
+    --icon "$APP_BUNDLE" 200 190 \
+    --hide-extension "$APP_BUNDLE" \
+    --app-drop-link 600 185 \
+    "$DMG_NAME" \
+    "$APP_BUNDLE_PATH"
 
-echo "=== Build Complete ==="
-echo "Application bundle: dist/$APP_NAME.app"
-echo "DMG package: dist/$DMG_NAME.dmg"
-echo ""
-echo "The DMG includes a shortcut to the Applications folder."
-echo "To install, open the DMG and drag the app to the Applications shortcut." 
+# Sign the DMG
+echo "Signing DMG..."
+codesign --force --sign "$DEVELOPER_ID" --timestamp "$DMG_NAME"
+
+# Create ZIP for notarization
+echo "Creating ZIP for notarization..."
+ditto -c -k --keepParent "$APP_BUNDLE_PATH" "$ZIP_NAME"
+
+# Submit for notarization
+echo "Submitting for notarization..."
+xcrun notarytool submit "$ZIP_NAME" \
+    --apple-id "$APPLE_ID" \
+    --password "$APP_PASSWORD" \
+    --team-id "$TEAM_ID" \
+    --wait
+
+# Staple the notarization ticket
+echo "Stapling notarization ticket..."
+xcrun stapler staple "$APP_BUNDLE_PATH"
+xcrun stapler staple "$DMG_NAME"
+
+echo "Build process complete!"
+echo "Application bundle: $APP_BUNDLE_PATH"
+echo "DMG file: $DMG_NAME" 

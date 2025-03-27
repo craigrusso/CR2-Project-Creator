@@ -331,11 +331,11 @@ class GalleryEvents:
     @staticmethod
     def _save_template_and_structure(gallery, data):
         """
-        Save template and its structure in one operation
+        Save a template and its associated structure
         
         Args:
-            gallery: Gallery instance
-            data: Data from the structure editor callback
+            gallery: The gallery instance
+            data (dict): Template and structure data
             
         Returns:
             bool: True if saved successfully, False otherwise
@@ -354,9 +354,17 @@ class GalleryEvents:
             is_rename = data.get('is_rename', False)
             original_name = data.get('original_name', '')
             
+            # Handle empty name by generating a default one
             if not template_name:
-                print("🔍 ERROR: Cannot save template - empty name")
-                return False
+                from app.utils.template_validator import TemplateValidator
+                template_name = TemplateValidator.generate_default_name()
+                data['name'] = template_name
+                print(f"🔍 INFO: Generated default name for empty template: {template_name}")
+                
+                # Update structure name to match
+                if not structure_name or not structure_name.startswith("Template_"):
+                    structure_name = f"Template_{template_name}"
+                    data['structure_name'] = structure_name
                 
             print(f"🔍 LISTENER: Saving template '{template_name}' with structure")
             

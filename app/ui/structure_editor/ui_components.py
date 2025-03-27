@@ -446,7 +446,31 @@ class UIBuilder:
         self.template_category_field = None
         self.template_info_field = None
         self.search_field = None
-        self.categories = ["Custom", "Audio", "Video", "Photography", "Graphics", "Writing", "Development", "Other"]
+        
+        # Get categories from template_manager if available
+        self.categories = self._get_categories()
+        print(f"UIBuilder: Initialized with {len(self.categories)} categories: {self.categories}")
+    
+    def _get_categories(self):
+        """Get categories from the application's template manager"""
+        # Try to get app reference from editor
+        app = None
+        if hasattr(self.editor, 'app'):
+            app = self.editor.app
+        elif hasattr(self.editor, 'parent') and callable(self.editor.parent) and hasattr(self.editor.parent(), 'app'):
+            app = self.editor.parent().app
+            
+        # Get template manager from app
+        if app and hasattr(app, 'template_manager') and hasattr(app.template_manager, 'get_categories'):
+            # Get categories from template manager (single source of truth)
+            categories = app.template_manager.get_categories()
+            print(f"UIBuilder: Retrieved {len(categories)} categories from template_manager")
+            return categories
+            
+        # Fallback to default categories
+        from app.constants import DEFAULT_TEMPLATE_CATEGORIES
+        print("UIBuilder: Using default categories from constants")
+        return list(DEFAULT_TEMPLATE_CATEGORIES)
     
     def init_ui(self):
         """
@@ -1172,34 +1196,60 @@ class UIBuilder:
         try:
             # Import the category manager dialog
             from app.ui.structure_editor.category_manager import CategoryManager
-            from app.templates.template_manager import TemplateManager
             
-            # Get current categories
-            template_manager = TemplateManager()
-            categories = template_manager.get_categories() if hasattr(template_manager, 'get_categories') else ["General"]
+            # Get app and template manager reference
+            app = None
+            if hasattr(self.editor, 'app'):
+                app = self.editor.app
+            elif hasattr(self.editor, 'parent') and callable(self.editor.parent) and hasattr(self.editor.parent(), 'app'):
+                app = self.editor.parent().app
+                
+            # Get template manager
+            template_manager = None
+            if app and hasattr(app, 'template_manager'):
+                template_manager = app.template_manager
             
-            # Show the dialog
+            # Get current categories - use template_manager as source of truth
+            if template_manager and hasattr(template_manager, 'get_categories'):
+                categories = template_manager.get_categories()
+                print(f"UIBuilder: Getting categories from app's template_manager: {categories}")
+            else:
+                # Try to create a template manager instance if needed
+                from app.templates.template_manager import TemplateManager
+                template_manager = TemplateManager()
+                categories = template_manager.get_categories() if hasattr(template_manager, 'get_categories') else ["Custom"]
+                print(f"UIBuilder: Created new template_manager instance to get categories: {categories}")
+            
+            # Show the dialog with the right parent
             category_manager = CategoryManager(self.editor, categories)
             result = category_manager.exec()
             
-            # If dialog was accepted, refresh categories in combobox
-            if result == category_manager.Accepted and hasattr(self, 'template_category_field') and self.template_category_field:
-                # Store current category
-                current_category = self.template_category_field.currentText()
-                
+            # If dialog was accepted, refresh categories
+            if result == category_manager.Accepted:
                 # Get updated categories
                 updated_categories = category_manager.get_categories()
+                print(f"UIBuilder: Categories updated in manager: {updated_categories}")
                 
-                # Update combobox
-                self.template_category_field.clear()
-                self.template_category_field.addItems(updated_categories)
+                # Update the categories in our builder
+                self.categories = updated_categories
                 
-                # Restore selection if possible, otherwise use first category
-                index = self.template_category_field.findText(current_category)
-                if index >= 0:
-                    self.template_category_field.setCurrentIndex(index)
-                elif self.template_category_field.count() > 0:
-                    self.template_category_field.setCurrentIndex(0)
+                # Refresh the category dropdown
+                if hasattr(self, 'template_category_field') and self.template_category_field:
+                    # Store current category
+                    current_category = self.template_category_field.currentText()
+                    
+                    # Update combobox
+                    self.template_category_field.clear()
+                    self.template_category_field.addItems(updated_categories)
+                    
+                    # Restore selection if possible, otherwise use first category
+                    index = self.template_category_field.findText(current_category)
+                    if index >= 0:
+                        self.template_category_field.setCurrentIndex(index)
+                    elif self.template_category_field.count() > 0:
+                        self.template_category_field.setCurrentIndex(0)
+                    
+                    print(f"UIBuilder: Updated category dropdown with {len(updated_categories)} items")
         except Exception as e:
             print(f"ERROR in _manage_categories: {e}")
             import traceback
@@ -1244,4 +1294,102 @@ class UIBuilder:
         if total_items == 0:
             self.stats_label.setText("No items in structure")
         else:
-            self.stats_label.setText(f"Total: {total_items} items ({folders} folders, {files} files)") 
+            self.stats_label.setText(f"Total: {total_items} items ({folders} folders, {files} files)")
+
+    def _init_category_dropdown(self):
+        """Initialize the category dropdown with project types from template_manager"""
+        # Always get fresh categories from the template manager
+        self.categories = self._get_categories()
+        print(f"UIBuilder: Initializing category dropdown with {len(self.categories)} categories: {self.categories}")
+        
+        # Create and configure the combo box
+        self.template_category_field = QComboBox()
+        self.template_category_field.setObjectName("template_category_field")  # Give it a name to identify later
+        
+        # Add categories to dropdown
+        for category in self.categories:
+            self.template_category_field.addItem(category)
+        
+        # Select "Custom" as the default if available
+        if "Custom" in self.categories:
+            self.template_category_field.setCurrentText("Custom")
+        
+        self.template_category_field.setStyleSheet(COMBOBOX_STYLE)
+        
+        # Connect the changed signal if available
+        if hasattr(self, 'on_category_changed'):
+            self.template_category_field.currentTextChanged.connect(self.on_category_changed)
+        
+        # Add to layout
+        self.form_layout.addRow("Category:", self.template_category_field)
+
+    def set_ui_values(self, template_info):
+        """
+        Set values in the UI from template information
+        
+        Args:
+            template_info: Dictionary of template information
+        """
+        if not template_info:
+            return
+            
+        # Set template name
+        if 'template_name' in template_info and self.template_name_field:
+            self.template_name_field.setText(template_info['template_name'])
+            
+        # Set template category
+        if self.template_category_field:
+            category = None
+            
+            # Check various possible keys for category information
+            if 'template_category' in template_info:
+                category = template_info['template_category']
+            elif 'category' in template_info:
+                category = template_info['category']
+            elif 'type' in template_info:  # Some templates use "type" for category
+                category = template_info['type']
+                
+            if category:
+                # Find and select the matching category
+                index = self.template_category_field.findText(category)
+                if index >= 0:
+                    print(f"Setting template category to '{category}' (index {index})")
+                    self.template_category_field.setCurrentIndex(index)
+                else:
+                    print(f"Category '{category}' not found in dropdown, adding it")
+                    # Add the category if it doesn't exist
+                    self.template_category_field.addItem(category)
+                    self.template_category_field.setCurrentText(category)
+            
+        # Set template description
+        if ('template_info' in template_info or 'description' in template_info) and self.template_info_field:
+            description = template_info.get('template_info', template_info.get('description', ''))
+            self.template_info_field.setText(description)
+
+    def get_ui_values(self):
+        """
+        Get values from the UI
+        
+        Returns:
+            dict: Dictionary of template information
+        """
+        template_info = {}
+        
+        # Get template name
+        if self.template_name_field:
+            template_info['template_name'] = self.template_name_field.text().strip()
+            
+        # Get template category
+        if self.template_category_field:
+            template_info['template_category'] = self.template_category_field.currentText()
+            # Also store as category for compatibility
+            template_info['category'] = self.template_category_field.currentText()
+            print(f"Getting template category from UI: {template_info['category']}")
+            
+        # Get template description
+        if self.template_info_field:
+            template_info['template_info'] = self.template_info_field.toPlainText().strip()
+            # Also store as description for compatibility
+            template_info['description'] = template_info['template_info']
+            
+        return template_info 

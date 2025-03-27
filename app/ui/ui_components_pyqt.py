@@ -1279,9 +1279,18 @@ class TemplateDirectoryEditor(QDialog):
         
         print(f"[DEBUG] Template info - name: {name}, category: {category}")
         
+        # Handle empty template name
         if not name:
-            QMessageBox.warning(self, "Validation Error", "Template name is required")
-            return
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            name = f"UNTITLED_{timestamp}"
+            # Inform user about auto-generated name
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Auto-generated Name", 
+                              f"No template name was provided. Your template will be saved as '{name}'.\n\n"
+                              "You can rename it later from the template gallery.")
+            # Update the name field with the generated name
+            self.name_input.setText(name)
             
         if not category:
             QMessageBox.warning(self, "Validation Error", "Category is required")

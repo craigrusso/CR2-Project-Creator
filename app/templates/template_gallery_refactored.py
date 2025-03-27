@@ -528,10 +528,23 @@ class TemplateGallery(QWidget):
         # Always add "All" as the first option
         self.category_combo.addItem("All")
         
-        # Get unique categories from template manager
-        if hasattr(self.app, 'template_manager') and hasattr(self.app.template_manager, 'templates'):
-            categories = set()
-            
+        # Get categories from project_type_manager (preferred way)
+        categories = set()
+        
+        if hasattr(self.app, 'template_manager'):
+            # Get categories from project type manager if available
+            if hasattr(self.app.template_manager, 'project_type_manager'):
+                project_types = self.app.template_manager.project_type_manager.get_all_project_types()
+                categories.update(project_types)
+                print(f"Found {len(project_types)} project types: {project_types}")
+            # Fallback to get_categories method
+            elif hasattr(self.app.template_manager, 'get_categories'):
+                category_list = self.app.template_manager.get_categories()
+                categories.update(category_list)
+                print(f"Found {len(category_list)} categories from get_categories")
+                
+        # If no categories found yet, extract from templates as last resort
+        if not categories and hasattr(self.app, 'template_manager') and hasattr(self.app.template_manager, 'templates'):
             templates = self.app.template_manager.templates
             
             # Handle templates as dict or list
@@ -544,9 +557,13 @@ class TemplateGallery(QWidget):
                     if isinstance(template, dict) and 'category' in template and template['category']:
                         categories.add(template['category'])
             
-            # Add categories to combo box
-            for category in sorted(categories):
-                self.category_combo.addItem(category)
+            print(f"Found {len(categories)} categories from templates")
+        
+        # Add categories to combo box
+        for category in sorted(categories):
+            self.category_combo.addItem(category)
+        
+        print(f"Updated category dropdown with {self.category_combo.count()} items")
         
         # Try to restore the previous selection or default to "All"
         index = self.category_combo.findText(current)

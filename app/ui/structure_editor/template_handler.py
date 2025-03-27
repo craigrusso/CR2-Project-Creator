@@ -9,6 +9,7 @@ Handles template loading, saving, and management
 import os
 import json
 from PyQt5.QtWidgets import QMessageBox
+import datetime
 
 from .utils import is_built_in_structure
 
@@ -72,10 +73,37 @@ class TemplateHandler:
         if not self.template_manager or not template_name:
             return None
             
-        # Try to get the structure from the template manager
+        # Try to get the template from the template manager
+        template_data = None
+        if hasattr(self.template_manager, 'get_template_by_name'):
+            template_data = self.template_manager.get_template_by_name(template_name)
+            if template_data:
+                print(f"Loaded template '{template_name}' with category '{template_data.get('category', template_data.get('type', 'Custom'))}'")
+                return template_data
+                
+        # If not found or no get_template_by_name, try get_structure
         if hasattr(self.template_manager, 'get_structure'):
-            return self.template_manager.get_structure(template_name)
-            
+            structure = self.template_manager.get_structure(template_name)
+            if structure:
+                # For backward compatibility, if structure is just an array, 
+                # wrap it in a dictionary with metadata
+                if isinstance(structure, list):
+                    category = 'Custom'  # Default category
+                    # Try to get category from project type manager
+                    if hasattr(self.template_manager, 'project_type_manager'):
+                        types = self.template_manager.project_type_manager.get_all_project_types()
+                        if template_name in types:
+                            category = template_name
+                            
+                    structure = {
+                        'name': template_name,
+                        'structure': structure,
+                        'category': category
+                    }
+                    print(f"Created metadata wrapper for structure '{template_name}' with category '{category}'")
+                
+                return structure
+                
         return None
     
     def save_structure(self, structure_name=None):
@@ -90,12 +118,12 @@ class TemplateHandler:
             bool: True if saved successfully, False otherwise
         """
         # Use provided structure name or get from UI
-        if not structure_name:
-            if self.ui_builder and hasattr(self.ui_builder, 'get_ui_values'):
-                template_info = self.ui_builder.get_ui_values()
-                structure_name = template_info.get('template_name')
-            else:
-                structure_name = self.structure_name
+        template_info = {}
+        if self.ui_builder and hasattr(self.ui_builder, 'get_ui_values'):
+            template_info = self.ui_builder.get_ui_values()
+            structure_name = template_info.get('template_name') if not structure_name else structure_name
+        else:
+            structure_name = structure_name or self.structure_name
         
         # If still no name, error
         if not structure_name:
@@ -114,6 +142,10 @@ class TemplateHandler:
             # Check if we're renaming
             is_rename = (self.original_template_name and 
                          structure_name != self.original_template_name)
+            
+            # Get category from UI or fallback to "Custom"
+            category = template_info.get('template_category', template_info.get('category', 'Custom'))
+            print(f"Saving template '{structure_name}' with category '{category}'")
                          
             try:
                 # Save to template manager if available
@@ -121,11 +153,40 @@ class TemplateHandler:
                     # First, process any files that need to be cached
                     self._process_files_for_caching(structure_name, structure)
                     
+                    # Add template metadata
+                    if isinstance(structure, list):
+                        # Convert to dictionary with metadata
+                        structure_dict = {
+                            'name': structure_name,
+                            'structure': structure,
+                            'category': category,
+                            'description': template_info.get('template_info', ''),
+                            'modified': datetime.datetime.now().timestamp()
+                        }
+                        # If we have an existing template, preserve its metadata
+                        if self.original_template_name:
+                            existing_template = self.get_template(self.original_template_name)
+                            if existing_template and isinstance(existing_template, dict):
+                                # Preserve created timestamp and other metadata
+                                for field in ['created', 'files']:
+                                    if field in existing_template:
+                                        structure_dict[field] = existing_template[field]
+                        structure = structure_dict
+                    elif isinstance(structure, dict):
+                        # Update metadata in dictionary
+                        structure['name'] = structure_name
+                        structure['category'] = category
+                        structure['modified'] = datetime.datetime.now().timestamp()
+                        if 'template_info' in template_info:
+                            structure['description'] = template_info.get('template_info', '')
+                        elif 'description' in template_info:
+                            structure['description'] = template_info.get('description', '')
+                    
                     # Now save the structure with the updated file paths
                     success = self.template_manager.save_structure(structure_name, structure)
                     
                     if success:
-                        print(f"Successfully saved structure '{structure_name}'")
+                        print(f"Successfully saved structure '{structure_name}' with category '{category}'")
                         
                         # If this was a rename, delete the old structure
                         if is_rename and hasattr(self.template_manager, 'delete_structure'):
@@ -136,13 +197,24 @@ class TemplateHandler:
                         self.structure_name = structure_name
                         
                         # Set the project type if available
-                        self._set_structure_project_type(structure_name)
+                        if category and category != 'Custom':
+                            self.project_type = category
+                            self._set_structure_project_type(structure_name)
                         
                         return True
                     else:
                         print(f"ERROR: Failed to save structure '{structure_name}'")
                 else:
                     # Direct file saving fallback if no template manager
+                    # Add metadata to structure before saving
+                    if isinstance(structure, list):
+                        structure = {
+                            'name': structure_name,
+                            'structure': structure,
+                            'category': category, 
+                            'description': template_info.get('template_info', '')
+                        }
+                    
                     success = self._save_to_file(structure_name, structure)
                     
                     if success:
@@ -238,12 +310,15 @@ class TemplateHandler:
         Returns:
             list: List of available categories
         """
-        # Try to get from template manager
-        if self.template_manager and hasattr(self.template_manager, 'get_categories'):
-            return self.template_manager.get_categories()
-            
-        # Default categories
-        return ["Custom", "Audio", "Video", "Photography", "Graphics", "Writing", "Development", "Other"]
+        if hasattr(self, 'app') and hasattr(self.app, 'template_manager'):
+            categories = self.app.template_manager.get_categories()
+            print(f"template_handler.get_template_categories: Retrieved {len(categories)} categories from template_manager: {categories}")
+            return categories
+        
+        # Fallback to default categories
+        fallback_categories = ["Custom", "Audio", "Video", "Photography", "Graphics", "Writing", "Development", "Other"]
+        print(f"template_handler.get_template_categories: Using fallback categories: {fallback_categories}")
+        return fallback_categories
         
     def get_template_by_category(self, category):
         """

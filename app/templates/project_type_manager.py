@@ -46,14 +46,23 @@ class ProjectTypeManager:
         """Get all available project types (including default categories)"""
         # Combine default categories with any used in templates
         project_types = set(DEFAULT_TEMPLATE_CATEGORIES)
+        print(f"ProjectTypeManager: Loading default categories: {project_types}")
         
         # Add custom project types
-        for project_type in self.custom_project_types.keys():
-            project_types.add(project_type)
+        if hasattr(self, 'custom_project_types') and self.custom_project_types:
+            # Make sure we have the latest from disk
+            self.load_custom_project_types()
+            
+            # Add custom types
+            for project_type in self.custom_project_types.keys():
+                # Validate it's a string and not empty
+                if project_type and isinstance(project_type, str):
+                    project_types.add(project_type)
         
-        # No longer need to add from templates since we're not storing categories anymore
-        
-        return sorted(list(project_types))
+        # Convert to list, sort and return
+        project_types_list = sorted(list(project_types))
+        print(f"ProjectTypeManager: Final project types ({len(project_types_list)} types): {project_types_list}")
+        return project_types_list
     
     def create_project_type(self, name, structure_name):
         """Create a new project type with associated structure"""
@@ -119,4 +128,9 @@ class ProjectTypeManager:
                     print(f"Error changing template project type: {e}")
                     return False
         
-        return False 
+        return False
+    
+    def sync_with_custom_categories(self):
+        """Sync project types with custom categories"""
+        # This method is no longer needed as we're only using project types
+        pass 

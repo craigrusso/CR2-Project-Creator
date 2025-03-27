@@ -31,7 +31,6 @@ from app.templates.refactored_template_gallery import (
 
 # Migration helper for upgrade path
 from app.templates.template_manager_migration import TemplateManagerMigration
-from app.templates.template_category_manager import TemplateCategoryManager
 
 # Use refactored template card
 from app.templates.components import TemplateCard

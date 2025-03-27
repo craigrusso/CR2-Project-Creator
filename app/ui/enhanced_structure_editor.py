@@ -18,6 +18,7 @@ from PyQt5.QtGui import QIcon
 from PyQt5 import QtCore
 
 from app.utils.file_operations import FileOperationsHandler
+from app.utils.template_validator import TemplateValidator
 
 class EnhancedStructureEditor(QDialog):
     """
@@ -499,23 +500,54 @@ class EnhancedStructureEditor(QDialog):
     
     def accept(self):
         """Handle dialog acceptance"""
-        # Validate the template name
-        if not self._template_name.strip():
-            QMessageBox.warning(self, "Validation Error", "Template name cannot be empty.")
+        from app.utils.template_validator import TemplateValidator
+        from PyQt5.QtWidgets import QMessageBox, QApplication
+        
+        print("DEBUG: Starting accept method")
+        
+        # Get values from form
+        template = {
+            "name": self.name_field.text().strip(),
+            "type": self.category_field.currentText(),
+            "description": self.description_field.toPlainText().strip(),
+            "path": self.get_current_path() if hasattr(self, 'get_current_path') else ""
+        }
+        
+        print(f"DEBUG: Initial template data: {template}")
+        
+        # Validate and fix template data
+        is_valid, fixed_template, messages = TemplateValidator.validate_and_fix_template(template)
+        
+        # If name was empty and auto-generated
+        if fixed_template["name"] != template["name"]:
+            print(f"DEBUG: Name was auto-generated: {fixed_template['name']}")
+            
+            # Update UI with new name
+            self.name_field.setText(fixed_template["name"])
+            QApplication.processEvents()
+            
+            # Update internal state
+            self._template_name = fixed_template["name"]
+            
+            # Inform user
+            QMessageBox.information(self, "Auto-generated Name", 
+                                  f"No template name was provided. Your template will be saved as '{fixed_template['name']}'.\n\n"
+                                  "You can rename it later from the template gallery.")
+        
+        # Show any other validation messages
+        if messages:
+            QMessageBox.information(self, "Template Validation", "\n".join(messages))
+        
+        # If not valid, show error and return
+        if not is_valid:
+            QMessageBox.critical(self, "Validation Error", "Please fix the following issues:\n\n" + "\n".join(messages))
             return
         
         # Check if this is a rename operation
-        if hasattr(self, 'original_template_name') and self.original_template_name and self.original_template_name != self._template_name:
-            print(f"DEBUG: This is a rename operation from '{self.original_template_name}' to '{self._template_name}'")
+        if hasattr(self, 'original_template_name') and self.original_template_name and self.original_template_name != fixed_template["name"]:
+            print(f"DEBUG: This is a rename operation from '{self.original_template_name}' to '{fixed_template['name']}'")
             # Emit signal again to ensure rename is processed
-            self.template_renamed.emit(self.original_template_name, self._template_name)
-        
-        # Get updated values from UI
-        ui_values = {
-            'template_name': self._template_name,
-            'description': self.description_field.toPlainText(),
-            'category': self.category_field.currentText()
-        }
+            self.template_renamed.emit(self.original_template_name, fixed_template["name"])
         
         # Get updated structure from tree
         updated_structure = self.get_structure()
@@ -523,9 +555,11 @@ class EnhancedStructureEditor(QDialog):
         # Generate complete structure data
         structure_data = {
             'name': self.get_structure_name(),
-            'display_name': self._template_name,
+            'display_name': fixed_template["name"],
             'directories': updated_structure
         }
+        
+        print(f"DEBUG: Final structure data: {structure_data}")
         
         # Accept the dialog
         super().accept() 

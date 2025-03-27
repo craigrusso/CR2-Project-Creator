@@ -105,7 +105,7 @@ class TemplateManagerCore(TemplateOperations):
                               if f.endswith('.json') and not f.startswith('.')]
             
             # Some system files we should never load as templates
-            excluded_files = ['preferences.json', 'folders.json', 'colors.json', 'settings.json', 'settings.json.bak']
+            excluded_files = ['preferences.json', 'folders.json', 'colors.json', 'settings.json', 'settings.json.bak', 'project_types.json']
             
             # Keep track of loaded template names to avoid duplicates
             loaded_templates = set()
@@ -245,7 +245,14 @@ class TemplateManagerCore(TemplateOperations):
                 print(f"DEBUG: Loading structures from {structures_dir}")
                 structure_files = [f for f in os.listdir(structures_dir) if f.endswith('.json')]
                 
+                # Files that should not be treated as structures
+                excluded_files = ['project_types.json']
+                
                 for filename in structure_files:
+                    if filename in excluded_files:
+                        print(f"DEBUG: Skipping {filename} - it's not a structure file")
+                        continue
+                        
                     try:
                         structure_path = os.path.join(structures_dir, filename)
                         with open(structure_path, 'r') as f:
@@ -310,17 +317,20 @@ class TemplateManagerCore(TemplateOperations):
     
     def init_managers(self):
         """Initialize additional managers"""
-        # Legacy attribute for backward compatibility, can be removed in future
-        self.category_manager = None
+        # We no longer use the category manager - only the project type manager
+        pass
     
     def get_categories(self):
         """
-        Get all used categories in templates
-        This is a deprecated method kept for backward compatibility
-        It now returns project types instead of categories
+        Get all available categories/project types
         """
-        # Delegate to project type manager
-        return self.project_type_manager.get_all_project_types()
+        # Get all categories from project_type_manager
+        if hasattr(self, 'project_type_manager'):
+            return self.project_type_manager.get_all_project_types()
+        
+        # Fallback to default categories if project_type_manager not available
+        from app.constants import DEFAULT_TEMPLATE_CATEGORIES
+        return list(DEFAULT_TEMPLATE_CATEGORIES)
         
     def get_all_templates(self):
         """Get all templates (both file and directory-based)"""
@@ -642,6 +652,10 @@ class TemplateManagerCore(TemplateOperations):
         if not isinstance(structure_data, dict):
             return False
             
+        # Skip project_types.json file - it's not meant to be a template
+        if structure_name == "project_types":
+            return False
+            
         # Skip if we already have a template with this name
         template_name = structure_name
         if structure_name.startswith("Template_"):
@@ -668,7 +682,7 @@ class TemplateManagerCore(TemplateOperations):
             'structure_name': structure_name,
             'type': 'custom',
             'tags': structure_data.get('tags', []),
-            'category': structure_data.get('category', 'General'),
+            'category': structure_data.get('category', 'Custom'),
             'created': structure_data.get('created', time.time()),
             'modified': structure_data.get('modified', time.time())
         }
@@ -684,3 +698,176 @@ class TemplateManagerCore(TemplateOperations):
             self.templates.append(template)
             
         return True 
+    
+    def save_structure(self, structure_name, structure_data):
+        """
+        Save a structure to the custom structures directory
+        
+        Args:
+            structure_name: Name of the structure
+            structure_data: Structure data to save (array of folders/files or object with structure property)
+            
+        Returns:
+            bool: True if saved successfully, False otherwise
+        """
+        print(f"DEBUG: Saving structure '{structure_name}'")
+        
+        # Normalize structure data by converting to dictionary if array
+        if isinstance(structure_data, list):
+            structure_data = {
+                'name': structure_name,
+                'structure': structure_data,
+                'created': datetime.datetime.now().timestamp(),
+                'modified': datetime.datetime.now().timestamp()
+            }
+        elif isinstance(structure_data, dict):
+            # Make sure required fields exist
+            if 'name' not in structure_data:
+                structure_data['name'] = structure_name
+                
+            if 'structure' not in structure_data and not any(k in structure_data for k in ['directories', 'layout']):
+                # If we have a dictionary with folder names as keys, convert to structure format
+                if any(isinstance(v, list) for v in structure_data.values()):
+                    # Format is {folder_name: [contents]}
+                    structure_list = []
+                    for folder, contents in structure_data.items():
+                        if isinstance(contents, list):
+                            structure_list.append({folder: contents})
+                    structure_data = {
+                        'name': structure_name,
+                        'structure': structure_list,
+                        'created': datetime.datetime.now().timestamp(),
+                        'modified': datetime.datetime.now().timestamp()
+                    }
+                else:
+                    # Not a recognizable structure format
+                    print(f"ERROR: Structure data is not in a valid format: {structure_data}")
+                    return False
+            
+            # Update timestamps
+            structure_data['modified'] = datetime.datetime.now().timestamp()
+            if 'created' not in structure_data:
+                structure_data['created'] = datetime.datetime.now().timestamp()
+        
+        # Make sure category information is preserved
+        if 'category' in structure_data and hasattr(self, 'project_type_manager'):
+            category = structure_data['category']
+            print(f"DEBUG: Structure has category '{category}', setting as project type")
+            self.project_type_manager.create_project_type(category, structure_name)
+        
+        # Generate filename
+        filename = structure_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+        if not filename.endswith('.json'):
+            filename += '.json'
+            
+        # Generate path
+        file_path = os.path.join(self.paths["custom_structures_dir"], filename)
+        
+        # Save the structure
+        try:
+            with open(file_path, 'w') as f:
+                json.dump(structure_data, f, indent=2)
+                
+            # Update in-memory structure
+            self.custom_structures[structure_name] = structure_data
+            if hasattr(self, 'structures'):
+                self.structures[structure_name] = structure_data
+                
+            print(f"DEBUG: Successfully saved structure '{structure_name}' to {file_path}")
+            
+            # Save as template for template gallery
+            self._save_as_template(structure_name, structure_data)
+            
+            return True
+        except Exception as e:
+            print(f"ERROR saving structure: {e}")
+            import traceback
+            traceback.print_exc()
+            return False 
+    
+    def _save_as_template(self, structure_name, structure_data):
+        """
+        Save a structure as a template in the templates directory
+        
+        Args:
+            structure_name: Name of the structure
+            structure_data: Structure data to save
+            
+        Returns:
+            bool: True if saved successfully, False otherwise
+        """
+        # Skip if structure data is invalid
+        if not structure_data:
+            print(f"TemplateManagerCore: Cannot save template - structure_data is invalid")
+            return False
+            
+        try:
+            # Create a template file path
+            filename = structure_name.replace(' ', '_')
+            if not filename.endswith('.json'):
+                filename += '.json'
+            template_file = os.path.join(self.paths["templates_dir"], filename)
+            
+            # Extract structure from the data
+            structure = None
+            if isinstance(structure_data, list):
+                structure = structure_data
+            elif isinstance(structure_data, dict):
+                structure = structure_data.get('structure', [])
+                
+            # Get the category from the structure data with detailed logging
+            # We support both 'category' and 'template_category' fields
+            category = None
+            if isinstance(structure_data, dict):
+                # Check all possible category field names in priority order
+                for field in ['category', 'template_category', 'type']:
+                    if field in structure_data and structure_data[field]:
+                        category = structure_data[field]
+                        print(f"TemplateManagerCore: Found category '{category}' in field '{field}'")
+                        break
+            
+            # Default to 'Custom' if no category found
+            if not category:
+                category = 'Custom'
+                print(f"TemplateManagerCore: No category found in structure_data, defaulting to 'Custom'")
+            
+            # Get valid categories
+            valid_categories = self.get_categories()
+            print(f"TemplateManagerCore: Validating category '{category}' against valid categories: {valid_categories}")
+            
+            # If the category is not valid, use 'Custom' but log a warning
+            if category not in valid_categories:
+                print(f"WARNING: Category '{category}' is not in valid categories, using 'Custom' instead")
+                category = 'Custom'
+                
+            # Create template data
+            template_data = {
+                'name': structure_name,
+                'description': structure_data.get('description', structure_data.get('template_info', '')),
+                'category': category,
+                'created': structure_data.get('created', time.time()),
+                'modified': time.time(),
+                'files': structure_data.get('files', [])
+            }
+            
+            # Add structure if we have it
+            if structure:
+                template_data['structure'] = structure
+                
+            # Save the template file
+            with open(template_file, 'w') as f:
+                json.dump(template_data, f, indent=2)
+                
+            print(f"TemplateManagerCore: Saved template '{structure_name}' with category '{category}' to {template_file}")
+            
+            # Add to project type manager if needed
+            if hasattr(self, 'project_type_manager'):
+                self.project_type_manager.create_project_type(category, "Video Editing - Standard")
+                print(f"TemplateManagerCore: Added category '{category}' to project_type_manager")
+                
+            return True
+        except Exception as e:
+            print(f"ERROR saving template: {e}")
+            import traceback
+            traceback.print_exc()
+            return False 
