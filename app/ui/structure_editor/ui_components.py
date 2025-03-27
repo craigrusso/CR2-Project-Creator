@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
     QSizePolicy, QGroupBox, QFormLayout, QFrame, QTabWidget, QFileDialog, QInputDialog, QListWidget, QDialog, QApplication, QStyle
 )
 from PyQt5.QtCore import Qt, QSize, pyqtSignal, QTimer
-from PyQt5.QtGui import QFont, QIcon, QColor, QPalette
+from PyQt5.QtGui import QFont, QIcon, QColor, QPalette, QPainter
 
 # Import the main application colors
 from app.ui.color_scheme_pyqt import APP_COLORS, BUTTON_STYLE, ACCENT_BUTTON_STYLE, CONTEXT_MENU_STYLE
@@ -34,6 +34,10 @@ class StructureEditorTree(QTreeWidget):
         self.setDragDropMode(QTreeWidget.InternalMove)
         self.setDropIndicatorShown(True)
         self.setIndentation(20)
+        
+        # Add placeholder text attribute
+        self.placeholder_text = "Drop Files and Folders Here"
+        self.placeholder_visible = True
         
         # Apply enhanced styling while ensuring branch indicators remain visible
         self.setStyleSheet(f"""
@@ -86,6 +90,33 @@ class StructureEditorTree(QTreeWidget):
         self.setEditTriggers(QTreeWidget.DoubleClicked | 
                              QTreeWidget.EditKeyPressed | 
                              QTreeWidget.SelectedClicked)
+    
+    def setPlaceholderText(self, text):
+        """Set the placeholder text to display when tree is empty"""
+        self.placeholder_text = text
+        self.update()
+    
+    def paintEvent(self, event):
+        """Override paint event to draw placeholder text when tree is empty"""
+        super().paintEvent(event)
+        
+        # Check if tree is empty (no root items)
+        if self.invisibleRootItem().childCount() == 0 and self.placeholder_text:
+            painter = QPainter(self.viewport())
+            painter.save()
+            
+            # Set up font and color for placeholder
+            font = painter.font()
+            font.setPointSize(14)  # Larger font
+            font.setItalic(True)
+            painter.setFont(font)
+            painter.setPen(QColor(colors.get('secondary_text', '#777777')))
+            
+            # Calculate text rectangle and draw centered text
+            rect = self.viewport().rect()
+            painter.drawText(rect, Qt.AlignCenter, self.placeholder_text)
+            
+            painter.restore()
 
 class StructureEditor(QDialog):
     """Dialog for editing project structure"""
@@ -139,6 +170,9 @@ class StructureEditor(QDialog):
         
         # Use our enhanced tree widget
         self.tree = StructureEditorTree(self)
+        
+        # Set a placeholder message for empty tree
+        self.tree.setPlaceholderText("Drop Files and Folders Here")
         
         # Add a root item
         self.root_item = QTreeWidgetItem(self.tree)
@@ -522,38 +556,6 @@ class UIBuilder:
         
         fixed_form.addRow(create_label("Category:"), category_layout)
         
-        # Add search field for filtering
-        search_label = QLabel("Search:")
-        search_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold;")
-        
-        search_layout = QHBoxLayout()
-        self.search_field = QLineEdit()
-        self.search_field.setPlaceholderText("Filter structure...")
-        self.search_field.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                border-radius: 3px;
-                padding: 5px;
-            }}
-            QLineEdit:focus {{
-                border: 1px solid {colors['accent']};
-            }}
-        """)
-        
-        self.search_field.textChanged.connect(self._filter_structure)
-        
-        # Clear button for search field
-        clear_btn = QPushButton("Clear")
-        clear_btn.setStyleSheet(self._get_button_style('default'))
-        clear_btn.clicked.connect(self._clear_search)
-        
-        search_layout.addWidget(self.search_field)
-        search_layout.addWidget(clear_btn)
-        
-        fixed_form.addRow(search_label, search_layout)
-        
         fixed_info_layout.addLayout(fixed_form)
         
         # Create description panel with stretch
@@ -601,14 +603,83 @@ class UIBuilder:
         # Create structure section
         structure_layout = QVBoxLayout()
         
-        # Create structure header
+        # Create structure header with search box
+        structure_header_layout = QHBoxLayout()
+        structure_header_layout.setContentsMargins(0, 0, 0, 0)
+        structure_header_layout.setSpacing(10)
+        
+        # Structure header label
         structure_header = QLabel("Project Structure")
         structure_header.setFont(QFont(structure_header.font().family(), 12, QFont.Bold))
         structure_header.setStyleSheet(f"color: {colors['text']}; padding-top: 10px; padding-bottom: 5px;")
-        structure_layout.addWidget(structure_header)
+        structure_header_layout.addWidget(structure_header)
+        
+        # Add stretch to push search to right side
+        structure_header_layout.addStretch(1)
+        
+        # Create search layout for structure section
+        search_structure_layout = QHBoxLayout()
+        search_structure_layout.setContentsMargins(0, 0, 0, 0)
+        search_structure_layout.setSpacing(5)
+        
+        # Add magnifying glass icon instead of "Search:" label
+        magnifying_glass = QLabel("🔍")
+        magnifying_glass.setStyleSheet(f"color: {colors['text']}; font-size: 16px;")
+        search_structure_layout.addWidget(magnifying_glass)
+        
+        # Create the search field
+        self.search_field = QLineEdit()
+        self.search_field.setPlaceholderText("Filter structure...")
+        self.search_field.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                padding: 5px;
+                min-width: 150px;
+                max-width: 200px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {colors['accent']};
+            }}
+        """)
+        self.search_field.textChanged.connect(self._filter_structure)
+        search_structure_layout.addWidget(self.search_field)
+        
+        # Clear button for search
+        clear_btn = QPushButton("×")
+        clear_btn.setToolTip("Clear search")
+        clear_btn.setFixedSize(30, 30)
+        clear_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {colors['text']};
+                border: none;
+                border-radius: 15px;
+                font-weight: bold;
+                font-size: 22px;
+            }}
+            QPushButton:hover {{
+                background-color: {colors['hover_bg']};
+                color: {colors['highlight_text']};
+            }}
+        """)
+        clear_btn.clicked.connect(self._clear_search)
+        search_structure_layout.addWidget(clear_btn)
+        
+        # Add search layout to header layout
+        structure_header_layout.addLayout(search_structure_layout)
+        
+        # Add the header layout to the main structure layout
+        structure_layout.addLayout(structure_header_layout)
         
         # Create the structure tree widget
         self.tree = StructureEditorTree()
+        
+        # Set a placeholder message for empty tree
+        self.tree.setPlaceholderText("Drop Files and Folders Here")
+        
         self.tree.setStyleSheet(f"""
             QTreeWidget {{
                 background-color: {colors['card_bg']};
