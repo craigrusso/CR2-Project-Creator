@@ -25,14 +25,14 @@ class GalleryUISetup:
         # Top bar with project type filter and search
         GalleryUISetup.setup_top_bar(gallery)
         
+        # Add spacing between search bar and folder header
+        spacer = QWidget()
+        spacer.setFixedHeight(15)  # Match the spacing between sections
+        spacer.setStyleSheet("background: transparent;")
+        gallery.layout.addWidget(spacer)
+        
         # Action bar with buttons
         GalleryUISetup.setup_action_bar(gallery)
-        
-        # Add a fixed margin frame between action bar and content
-        gallery.margin_frame = QFrame()
-        gallery.margin_frame.setFixedHeight(10)  # Fixed spacing
-        gallery.margin_frame.setStyleSheet("background-color: transparent;")
-        gallery.layout.addWidget(gallery.margin_frame)
         
         # Set up the gallery containers
         GalleryUISetup.setup_gallery_containers(gallery)
@@ -177,12 +177,8 @@ class GalleryUISetup:
         
         gallery.button_layout.addStretch(1)  # Push buttons to the right
         
-        # Folder management buttons
-        gallery.add_folder_button = QPushButton("New Folder")
-        gallery.add_folder_button.setStyleSheet(ACCENT_BUTTON_STYLE)
-        gallery.add_folder_button.clicked.connect(gallery._on_add_folder)
-        gallery.button_layout.addWidget(gallery.add_folder_button)
-        
+        # Folder management buttons - moved to folders header
+        # Rename folder button is kept for context menu/keyboard shortcut functionality
         gallery.rename_folder_button = QPushButton("Rename Folder")
         gallery.rename_folder_button.setStyleSheet(BUTTON_STYLE)
         gallery.rename_folder_button.clicked.connect(gallery._on_rename_folder)

@@ -3,11 +3,11 @@
 
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                             QFrame, QScrollArea, QGridLayout, QButtonGroup, 
-                            QToolButton, QSlider, QSizePolicy)
+                            QToolButton, QSlider, QSizePolicy, QPushButton)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
-from app.ui.color_scheme_pyqt import colors
+from app.ui.color_scheme_pyqt import colors, ACCENT_BUTTON_STYLE
 from .components.utils import SYSTEM_FONT
 from .components.template_folder_card import TemplateFolderCard, TemplateFolderListItem
 
@@ -37,7 +37,7 @@ class GalleryFoldersSetup:
         gallery.folders_label = QLabel("Folders")
         gallery.folders_label.setFont(QFont(SYSTEM_FONT, 14, QFont.Bold))
         gallery.folders_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold; background: transparent;")
-        gallery.folders_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        gallery.folders_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)  # Changed back to Expanding
         gallery.folders_header_layout.addWidget(gallery.folders_label, 1)  # Give stretch factor of 1
         
         # Folder size label and slider
@@ -73,6 +73,13 @@ class GalleryFoldersSetup:
             }
         """)
         gallery.folders_header_layout.addWidget(gallery.folder_size_slider)
+        
+        # Add New Folder button to the right side
+        gallery.add_folder_button = QPushButton("New Folder")
+        gallery.add_folder_button.setStyleSheet(ACCENT_BUTTON_STYLE)
+        gallery.add_folder_button.clicked.connect(gallery._on_add_folder)
+        gallery.add_folder_button.setFixedSize(120, 30)  # Match size with Add Template button
+        gallery.folders_header_layout.addWidget(gallery.add_folder_button)
         
         # Create view toggle buttons
         gallery.folder_grid_view_btn = QToolButton()
