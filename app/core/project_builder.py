@@ -329,6 +329,16 @@ class ProjectBuilder:
         if template_data and not template_result:
             template_result = template_data
             
+        # Determine the template name for cache lookup
+        template_name_for_cache = None
+        if isinstance(template_data, dict):
+            template_name_for_cache = template_data.get('name')
+        elif isinstance(template_file, str) and not isinstance(template_file, dict):
+            # If template_file was a path string and template_data didn't load a name
+            # Use the filename part of the path as the name
+            template_name_for_cache = os.path.splitext(os.path.basename(template_file))[0]
+        print(f"DEBUG: Determined template name for cache operations: {template_name_for_cache}")
+        
         # Create folders from structure
         if structure_data:
             try:
@@ -356,7 +366,13 @@ class ProjectBuilder:
                 }
                 
                 # Process files
-                copied_files = self._process_files_array(project_dir, files_array, placeholders, use_cached_files)
+                copied_files = self._process_files_array(
+                    project_dir, 
+                    files_array, 
+                    placeholders, 
+                    use_cached_files,
+                    template_name=template_name_for_cache
+                )
                 print(f"DEBUG: Copied {len(copied_files)} files from template")
             except Exception as e:
                 error_message = f"Failed to copy files: {str(e)}"
@@ -1325,9 +1341,15 @@ class ProjectBuilder:
                     print(f"Warning: Template file does not exist: {template_file}")
             
             # Create project
+            print(f"Creating project: {name} in {output_dir}")
+
+            # --- MODIFIED --- Pass template_data if available, otherwise template_name
+            template_input = selected_template if selected_template else template_file
+            # --- END MODIFIED ---
+
             success, project_dir = self.create_project(
                 name, output_dir, structure_name=structure_name,
-                template_file=template_file, use_cached_files=True
+                template_file=template_input, use_cached_files=True
             )
             
             results.append((name, success, project_dir))
@@ -1444,11 +1466,15 @@ class ProjectBuilder:
                 
                 print(f"Creating project: {project_name} in {project_dir}")
                 
+                # --- MODIFIED --- Pass template_data if available, otherwise template_name
+                template_input = template_data if template_data else template_name
+                # --- END MODIFIED ---
+
                 # Create the project
                 success, project_dir = self.create_project(
                     project_name=project_name,
                     output_dir=output_dir,
-                    template_file=template_name,
+                    template_file=template_input,
                     structure_name=structure_name,
                     use_cached_files=use_cached_files
                 )
@@ -1483,7 +1509,7 @@ class ProjectBuilder:
         print(f"Batch creation complete: {successful_projects} of {len(project_names)} projects created successfully")
         return results
 
-    def _process_files_array(self, project_dir, files_array, placeholders, use_cached_files=True):
+    def _process_files_array(self, project_dir, files_array, placeholders, use_cached_files=True, template_name=None):
         """
         Process the files array and copy files to the project
         
@@ -1492,125 +1518,173 @@ class ProjectBuilder:
             files_array: Array of file objects
             placeholders: Dictionary of placeholders for variable substitution
             use_cached_files: Whether to use cached files when available
+            template_name: Name of the template (used for cache lookup)
             
         Returns:
             list: Paths of copied files
         """
         copied_files = []
-        
+        # --- ADDED --- Access Cache Manager
+        cache_manager = None
+        if hasattr(self, 'template_manager') and hasattr(self.template_manager, 'file_cache_manager'):
+             cache_manager = self.template_manager.file_cache_manager
+        else:
+            print("WARNING: ProjectBuilder cannot access FileCacheManager via template_manager.")
+        # --- END ADDED ---
+
         if not files_array:
             return copied_files
-            
-        print(f"Processing {len(files_array)} files from files array")
-        
+
+        print(f"Processing {len(files_array)} files from files array for template: {template_name}")
+
         for file_data in files_array:
+            source_path_used = "None" # Debugging
+            source_path = None      # Reset for each file
+            cached_path_attempted = None # Debugging
+            original_path_attempted = None # Debugging
+
             try:
                 # Get file info
                 file_name = file_data.get('file_name')
                 original_path = file_data.get('original_path')
-                cached_path = file_data.get('cached_path')
                 folder = file_data.get('folder', '')
                 rename_flag = file_data.get('rename_flag', False)
-                uses_project_name = file_data.get('uses_project_name', False)  # Added check for uses_project_name
+                uses_project_name = file_data.get('uses_project_name', False)
                 file_type = file_data.get('file_type', 'other')
-                
+
                 if not file_name:
                     print(f"WARNING: File data missing file_name: {file_data}")
                     continue
                 
+                original_filename_for_debug = file_name # Store before potential rename
+
                 # Print debug info for renaming
-                print(f"🔍 RENAMING DEBUG: Processing file '{file_name}' with rename_flag={rename_flag}, uses_project_name={uses_project_name}")
-                
+                # print(f"🔍 RENAMING DEBUG: Processing file '{file_name}' with rename_flag={rename_flag}, uses_project_name={uses_project_name}")
+
                 # First check if the filename contains a placeholder
                 if "${PROJECT_NAME}" in file_name:
                     # Apply placeholder replacement directly
                     file_name = self._replace_placeholders(file_name, placeholders)
-                    print(f"Applied placeholder to filename: {file_data.get('file_name')} -> {file_name}")
+                    # print(f"Applied placeholder to filename: {original_filename_for_debug} -> {file_name}")
                 # Apply placeholders to file name if either flag is set
-                elif rename_flag or uses_project_name:  # Check for either flag
-                    # Get the project name
+                elif rename_flag or uses_project_name:
                     project_name = placeholders.get("PROJECT_NAME", "Unknown")
-                    
-                    # Extract file extension
                     name_parts = os.path.splitext(file_name)
                     if len(name_parts) == 2:
                         base_name, ext = name_parts
-                        # Replace base name with project name
                         file_name = f"{project_name}{ext}"
                     else:
-                        # No extension, use project name directly
                         file_name = project_name
-                    
-                    print(f"Renamed file: {file_data.get('file_name')} -> {file_name}")
-                
+                    # print(f"Renamed file: {original_filename_for_debug} -> {file_name}")
+
                 # Apply placeholders to folder path
                 folder = self._replace_placeholders(folder, placeholders)
-                
+
                 # Create folder structure if it doesn't exist
                 folder_path = os.path.join(project_dir, folder)
                 os.makedirs(folder_path, exist_ok=True)
-                
+
                 # Determine destination path
                 dest_path = os.path.join(folder_path, file_name)
-                
-                # Debug info for file paths
-                print(f"🔍 RENAMING DEBUG: Original name: {file_data.get('file_name')}")
-                print(f"🔍 RENAMING DEBUG: Output name: {file_name}")
-                print(f"🔍 RENAMING DEBUG: Full output path: {dest_path}")
-                
-                # Determine source path (cached or original)
-                source_path = None
-                
-                # Try cached path first
-                if use_cached_files and cached_path and os.path.exists(cached_path):
-                    source_path = cached_path
-                    print(f"Using cached file: {source_path}")
-                
-                # Fall back to original path
-                if not source_path and original_path and os.path.exists(original_path):
-                    source_path = original_path
-                    print(f"Using original file: {source_path}")
-                
-                # Skip if no valid source path
+
+                # --- MODIFIED --- Source Path Determination Logic
+                print(f"DEBUG: Determining source path for: {original_filename_for_debug} (output: {file_name})")
+
+                # 1. Try cache first
+                if use_cached_files and template_name and cache_manager:
+                    try:
+                        # Use original_path as the key to find the file in the specific template's cache metadata
+                        # --- MODIFIED --- get_cached_file returns a dict, not just a path
+                        file_info_from_cache = cache_manager.get_cached_file(template_name, file_path=original_path)
+                        cached_path = None
+                        if file_info_from_cache:
+                            cached_path = file_info_from_cache.get('cached_path')
+                        # --- END MODIFIED ---
+                        
+                        cached_path_attempted = cached_path # Store for logging
+                        
+                        # --- MODIFIED --- Check if the extracted cached_path exists
+                        if cached_path and os.path.exists(cached_path):
+                        # --- END MODIFIED ---
+                            source_path = cached_path
+                            source_path_used = "Cache"
+                            print(f"  ✅ Using CACHED file: {source_path}")
+                            if hasattr(cache_manager, 'cache_stats'): cache_manager.cache_stats['hits'] += 1
+                        elif cached_path:
+                            print(f"  ⚠️ Cache path found ({cached_path}) but file does not exist.")
+                        # else:
+                            # print(f"  ℹ️ File not found in cache metadata for template '{template_name}' using original_path '{original_path}'.")
+                    except Exception as cache_err:
+                        print(f"  ⚠️ Error looking up file in cache: {cache_err}")
+                        cached_path_attempted = f"Error: {cache_err}" # Store error for logging
+
+                # 2. Fall back to original path
+                if not source_path and original_path:
+                    original_path_attempted = original_path # Store for logging
+                    if os.path.exists(original_path):
+                        source_path = original_path
+                        source_path_used = "Original"
+                        print(f"  ✅ Using ORIGINAL file: {source_path}")
+                        if cache_manager and hasattr(cache_manager, 'cache_stats'): cache_manager.cache_stats['misses'] += 1
+                    else:
+                        print(f"  ⚠️ Original path ({original_path}) does not exist.")
+                elif not source_path:
+                    print(f"  ℹ️ Original path was not provided in template data.")
+                    
+
+                # 3. Skip if no valid source path found
                 if not source_path:
-                    print(f"WARNING: No valid source path for file {file_name}")
+                    print(f"  ❌ ERROR: No valid source path found for file '{original_filename_for_debug}'.")
+                    print(f"      Attempted Cache Path: {cached_path_attempted}")
+                    print(f"      Attempted Original Path: {original_path_attempted}")
                     continue
-                
+
+                # --- END MODIFIED ---
+
                 # Copy the file
+                print(f"  ⚙️ Attempting copy: '{source_path}' ({source_path_used}) -> '{dest_path}'")
                 try:
                     shutil.copy2(source_path, dest_path)
                     copied_files.append(dest_path)
-                    print(f"Copied file: {source_path} -> {dest_path}")
-                    
+                    print(f"  ✅ Copied file successfully.")
+
                     # Log successful renaming
-                    if file_name != file_data.get('file_name'):
-                        print(f"✅ Successfully renamed file: {file_data.get('file_name')} -> {file_name}")
-                    
+                    if file_name != original_filename_for_debug:
+                        print(f"  ℹ️ File renamed during copy: '{original_filename_for_debug}' -> '{file_name}'")
+
                     # Replace placeholders in text files only, not in binary files
                     is_binary = file_data.get('is_binary', False)
-                    
+
                     if not is_binary and placeholders and self._might_contain_placeholders(source_path):
                         try:
-                            # Read the file
                             with open(dest_path, 'r', encoding='utf-8', errors='replace') as f:
                                 content = f.read()
-                                
-                            # Replace placeholders
                             content = self._replace_placeholders(content, placeholders)
-                            
-                            # Write back the modified content
                             with open(dest_path, 'w', encoding='utf-8') as f:
                                 f.write(content)
-                                
-                            print(f"Replaced placeholders in file: {dest_path}")
+                            print(f"  ✅ Replaced placeholders in: {dest_path}")
                         except Exception as e:
-                            print(f"WARNING: Error replacing placeholders in {dest_path}: {str(e)}")
+                            print(f"  ⚠️ WARNING: Error replacing placeholders in {dest_path}: {str(e)}")
                 except Exception as e:
-                    print(f"ERROR: Failed to copy file {source_path} to {dest_path}: {str(e)}")
-                    
+                    # --- MODIFIED --- More specific copy error logging
+                    print(f"  ❌ ERROR: Failed to copy file using {source_path_used} path.")
+                    print(f"      Source: {source_path}")
+                    print(f"      Destination: {dest_path}")
+                    print(f"      Error Details: {str(e)}") # THIS IS WHERE USER'S ERROR MESSAGE IS NEEDED FOR CONTEXT
+                    import traceback
+                    traceback.print_exc() # Keep traceback for detailed debugging if needed
+                    # --- END MODIFIED ---
+
             except Exception as e:
-                print(f"ERROR processing file: {str(e)}")
-                
+                print(f"ERROR processing file data block: {file_data}. Error: {str(e)}")
+                import traceback
+                traceback.print_exc()
+
+        # --- ADDED --- Save cache stats after processing
+        if cache_manager:
+            cache_manager._save_stats()
+        # --- END ADDED ---
+
         return copied_files
         
     def _might_contain_placeholders(self, file_path):

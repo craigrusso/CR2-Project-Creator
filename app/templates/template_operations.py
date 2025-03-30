@@ -321,43 +321,126 @@ class TemplateOperations:
     def save_template(self, template_name, structure, category=None, description="", tags=None, template_type="Standard", original_name=None):
         """Saves a template JSON file with structure, metadata, and derived file info."""
         print(f"DEBUG: Starting save_template for '{template_name}'")
-        
-        if tags is None:
-            tags = []
-            
-        # Ensure structure is not None
-        if structure is None:
-            print("ERROR: Structure cannot be None when saving a template.")
-            return False
-            
-        # Derive files_array from the final structure
-        print(f"DEBUG: Deriving files_array from final structure for '{template_name}'")
-        files_array = [] # Initialize an empty list
-        try:
-            # Call the correct method, passing the list to populate
-            self._extract_files_from_structure(structure, files_array)
-            print(f"DEBUG: Derived {len(files_array)} files from structure")
-        except Exception as e:
-            print(f"ERROR deriving files from structure: {e}")
-            import traceback
-            traceback.print_exc()
-            # Decide if we should proceed with an empty files array or fail
-            # For now, let's proceed but log the error
-            files_array = [] 
 
-        # Prepare template data
-        timestamp = time.time()
+        # --- Validation --- 
+        if not template_name:
+            print("ERROR: Cannot save template without a name.")
+            return False, "Template name is required."
+        if not structure:
+             print("ERROR: Cannot save template without a structure.")
+             return False, "Template structure cannot be empty."
+        # --- END Validation ---
+
+        # --- MOVED: Ensure sanitized_name is defined early ---
+        sanitized_name = self.sanitize_filename(template_name)
+        if not sanitized_name:
+            print(f"ERROR: Template name '{template_name}' resulted in an empty sanitized name.")
+            return False, "Invalid template name after sanitization."
+        # --- END MOVED ---
+        
+        # Sanitize original name if provided
+        original_sanitized_name = self.sanitize_filename(original_name) if original_name else None
+        
+        # Handle template rename or deletion if original_name is provided
+        if original_name and original_sanitized_name and original_sanitized_name != sanitized_name:
+            print(f"DEBUG: Renaming template from '{original_sanitized_name}' to '{sanitized_name}'")
+            # Delete the old template file
+            old_file_path = os.path.join(self.paths["templates_dir"], f"{original_sanitized_name}.json")
+            if os.path.exists(old_file_path):
+                try:
+                    os.remove(old_file_path)
+                    print(f"DEBUG: Removed old template file: {old_file_path}")
+                except Exception as e:
+                    print(f"ERROR: Failed to remove old template file '{old_file_path}': {e}")
+            
+            # Also delete the old cache directory if it exists
+            if self.file_cache_manager and hasattr(self.file_cache_manager, 'cache_dir'):
+                old_template_cache_path = os.path.join(self.file_cache_manager.cache_dir, original_sanitized_name)
+                if os.path.isdir(old_template_cache_path):
+                    try:
+                        shutil.rmtree(old_template_cache_path)
+                        print(f"DEBUG: Removed old template cache directory: {old_template_cache_path}")
+                    except Exception as e:
+                        print(f"ERROR: Failed to remove old template cache directory '{old_template_cache_path}': {e}")
+                elif not self.file_cache_manager:
+                    print("WARN: File cache manager not available, cannot clear old cache.")
+
+        # Extract files from structure
+        files_array = []
+        if structure:
+            self._extract_files_from_structure(structure, files_array)
+        
+        print(f"DEBUG: Extracted {len(files_array)} file entries from structure before caching.")
+
+        # --- ADDED: Cache files and update files_array with cached_path ---
+        updated_files_array = []
+        if self.file_cache_manager:
+            print(f"DEBUG: Caching files for template '{sanitized_name}'")
+            for file_info in files_array:
+                # Make a copy to avoid modifying the original dict if skipping
+                current_file_info = file_info.copy()
+                original_path = current_file_info.get('original_path')
+                
+                # Only process entries that look like files with an original path
+                if original_path: 
+                    if os.path.exists(original_path):
+                        folder = current_file_info.get('folder', '')
+                        rename_flag = current_file_info.get('rename_flag', False)
+                        # Pass existing info as file_metadata
+                        file_metadata_to_pass = current_file_info 
+
+                        print(f"  Attempting to cache: {original_path} for template: {sanitized_name}")
+                        
+                        # Call cache_file 
+                        cached_path = self.file_cache_manager.cache_file(
+                            file_path=original_path, 
+                            template_name=sanitized_name, # Use the sanitized template name for the cache folder
+                            folder_path=folder, # Pass folder path for metadata consistency
+                            rename_flag=rename_flag,
+                            file_metadata=file_metadata_to_pass
+                        )
+                        
+                        if cached_path:
+                            print(f"  Successfully cached '{original_path}' to '{cached_path}'")
+                            # *** ADD cached_path to the file_info dictionary ***
+                            current_file_info['cached_path'] = cached_path 
+                            updated_files_array.append(current_file_info) # Add the updated info
+                        else:
+                            print(f"  WARN: Failed to cache '{original_path}'. Skipping this file in the final template.")
+                            # Skip files that failed to cache
+                            
+                    else: # Original path provided but doesn't exist
+                        print(f"  WARN: Skipping file entry, source file not found: {original_path}")
+                        # Skip files that don't exist
+
+                else: # No original_path found, likely a folder or placeholder
+                    print(f"  DEBUG: Skipping entry, no original_path: {current_file_info.get('name', 'N/A')}")
+                    # Keep folder structure definitions or other non-file entries
+                    updated_files_array.append(current_file_info) 
+                
+        else: # No file cache manager
+            print("WARN: File cache manager not available. Cannot cache files. Using files directly from structure.")
+            updated_files_array = files_array # Use original array if cache manager is missing
+
+        # Use the updated array with cached paths (or original if caching failed/skipped)
+        files_array_for_json = updated_files_array 
+        print(f"DEBUG: Final files_array count for JSON: {len(files_array_for_json)}")
+        # --- END ADDED ---
+
+        # Prepare template data dictionary
         template_data = {
-            "name": template_name,
-            "structure_name": f"Template_{template_name.replace(' ', '_')}", # Assume structure name matches template name
-            "structure": structure, 
-            "category": category or "",
-            "description": description or "",
-            "created": timestamp, 
-            "modified": timestamp,
-            "tags": tags or [],
-            "files": files_array, # Use derived files_array
-            "type": template_type or "Standard" # Ensure type is set
+            'name': template_name,
+            'structure_name': self.sanitize_filename(template_name), # Use sanitized name for consistency
+            'structure': structure,
+            'category': category or "Uncategorized",
+            'description': description,
+            'created': datetime.datetime.now().timestamp(),
+            'modified': datetime.datetime.now().timestamp(),
+            'tags': tags or [],
+            # --- MODIFIED --- Use the array possibly updated with cached_path
+            'files': files_array_for_json, 
+            # --- END MODIFIED ---
+            'type': template_type
         }
 
         # Sanitize template name for filename
@@ -410,36 +493,6 @@ class TemplateOperations:
                 except Exception as e:
                     print(f"WARN: Could not read existing template file '{file_path}' to preserve creation time: {e}")
 
-        # Cache any binary files associated with the template
-        if self.file_cache_manager:
-            print(f"DEBUG: Caching {len(files_array)} files for template '{sanitized_name}'")
-            # Iterate through derived files and cache each one individually
-            for file_info in files_array:
-                original_path = file_info.get('original_path')
-                folder_path = file_info.get('folder', '') # Relative folder within template
-                
-                if original_path and os.path.exists(original_path):
-                    try:
-                        # Call cache_file for each file
-                        cached_path = self.file_cache_manager.cache_file(
-                            file_path=original_path,
-                            template_name=sanitized_name, # Use the sanitized template name for the cache folder
-                            folder_path=folder_path # Pass the relative folder path
-                            # Optional: Add rename_flag or file_metadata if needed based on file_info
-                        )
-                        # if cached_path:
-                        #     print(f"DEBUG: Successfully cached '{original_path}' to '{cached_path}'")
-                        # else:
-                        #     print(f"WARN: Failed to cache '{original_path}'")
-                    except Exception as e:
-                        print(f"ERROR during caching file '{original_path}': {e}")
-                        import traceback
-                        traceback.print_exc()
-                elif not original_path:
-                     print(f"WARN: Skipping cache for file entry with no original_path: {file_info.get('file_name')}")
-                else: # original_path exists but file doesn't
-                     print(f"WARN: Skipping cache, source file not found: {original_path}")
-        
         # Save the template JSON file
         try:
             save_json_file(file_path, template_data)
@@ -805,469 +858,6 @@ class TemplateOperations:
             return "unnamed_template"
             
         return sanitized
-    
-    def _clean_structure_data(self, structure):
-        """
-        Clean structure data to remove empty arrays and ensure all item names are strings
-        
-        Args:
-            structure (dict): Structure data
-            
-        Returns:
-            dict: Cleaned structure data
-        """
-        if not isinstance(structure, dict):
-            return structure
-            
-        cleaned = {}
-        for key, value in structure.items():
-            # Skip empty arrays
-            if isinstance(value, list) and not value:
-                continue
-                
-            # Convert arrays to strings
-            if isinstance(key, list):
-                if not key:  # Skip empty arrays as keys
-                    continue
-                key = str(key)
-            
-            # Skip empty keys
-            if not key or key.strip() == "" or key == "[]":
-                continue
-                
-            # Clean nested structures recursively
-            if isinstance(value, dict):
-                cleaned_value = self._clean_structure_data(value)
-                if cleaned_value:  # Only add if the cleaned value is not empty
-                    cleaned[key] = cleaned_value
-            elif isinstance(value, list):
-                # Handle list values - typically for directories with children
-                if value:  # Only process non-empty lists
-                    cleaned_list = []
-                    for item in value:
-                        if isinstance(item, dict):
-                            cleaned_item = self._clean_structure_data(item)
-                            if cleaned_item:  # Only add if the cleaned item is not empty
-                                cleaned_list.append(cleaned_item)
-                        else:
-                            # For non-dict items in lists (string, etc), keep them if not empty
-                            if item:
-                                cleaned_list.append(item)
-                    
-                    if cleaned_list:  # Only add if the cleaned list is not empty
-                        cleaned[key] = cleaned_list
-            else:
-                # For non-dict, non-list values (string, bool, etc), keep them
-                cleaned[key] = value
-                
-        return cleaned
-    
-    def _cache_template_files(self, template_name, template_path, structure_data, save_to_storage=True):
-        """Cache all template files in the structure data"""
-        # Cache all files in the structure data
-        # This will be called when the template is loaded/updated
-        
-        import time
-        start_time = time.time()
-        
-        if not template_name or not template_path:
-            return structure_data
-        
-        # Ensure cache paths exist
-        if "templates_cache_dir" not in self.paths:
-            from app.utils.cache_preferences import CachePreferences
-            cache_prefs = CachePreferences()
-            self.paths["templates_cache_dir"] = cache_prefs.get_cache_location()
-            print(f"DEBUG: Missing templates_cache_dir, setting to: {self.paths['templates_cache_dir']}")
-            
-        cache_dir = os.path.join(self.paths["templates_cache_dir"], template_name)
-        print(f"DEBUG: Using cache directory: {cache_dir}")
-        
-        # Create cache directory
-        os.makedirs(cache_dir, exist_ok=True)
-        files_dir = os.path.join(cache_dir, "files")
-        os.makedirs(files_dir, exist_ok=True)
-        
-        # Initialize files array to store file metadata
-        files_array = []
-        
-        # Update all cache paths in the structure data and collect file metadata
-        structure_data, new_files = self._update_cache_paths_and_collect_files(
-            template_name, template_path, structure_data, files_dir, files_array
-        )
-        
-        # Save the updated structure data if requested
-        if save_to_storage:
-            template_data = self.get_template(template_name)
-            
-            # Check if template_data is valid (not None or a string)
-            if template_data and isinstance(template_data, dict):
-                # Update the cache_path in the template data
-                template_data["cache_path"] = cache_dir
-                
-                # Add files array to template data
-                if new_files:
-                    template_data["files"] = new_files
-                
-                # Save the metadata
-                metadata_path = os.path.join(cache_dir, "metadata.json")
-                metadata = {
-                    "cached_at": datetime.datetime.now().isoformat(),
-                    "template_name": template_name,
-                    "template_path": template_path,
-                    "files_count": len(new_files) if new_files else self._count_files_in_structure(structure_data),
-                }
-                save_json_file(metadata_path, metadata)
-                print(f"DEBUG: Saved cache metadata to {metadata_path}")
-                
-                # Save the template with updated cache path
-                self.save_template(template_name, template_data)
-            else:
-                print(f"WARNING: Cannot update template cache - invalid template data for {template_name}")
-            
-        # Calculate and log the time taken
-        end_time = time.time()
-        print(f"DEBUG: Template caching took {end_time - start_time:.2f} seconds")
-        
-        return structure_data
-        
-    def _update_cache_paths_and_collect_files(self, template_name, template_path, structure_data, files_dir, files_array=None, current_folder=""):
-        """
-        Update cache paths in a structure and collect file metadata
-        
-        Args:
-            template_name: Template name
-            template_path: Path to the template
-            structure_data: Structure data
-            files_dir: Cache directory for files
-            files_array: List to collect file metadata
-            current_folder: Current folder path within the structure
-            
-        Returns:
-            Tuple of (structure_data with updated cache paths, files array)
-        """
-        if files_array is None:
-            files_array = []
-            
-        # Handle string (file path)
-        if isinstance(structure_data, str):
-            # Check if it's a file path
-            if os.path.isabs(structure_data) and os.path.exists(structure_data):
-                # Cache the file and return the cache path
-                cache_path = self._cache_file(structure_data, files_dir)
-                if cache_path:
-                    # Add file metadata to files array
-                    file_name = os.path.basename(structure_data)
-                    files_array.append({
-                        "file_name": file_name,
-                        "original_path": structure_data,
-                        "cached_path": cache_path,
-                        "rename_flag": False,
-                        "folder": current_folder,
-                        "file_type": self._get_file_type(structure_data),
-                        "size": os.path.getsize(structure_data),
-                        "last_modified": datetime.datetime.fromtimestamp(os.path.getmtime(structure_data)).isoformat()
-                    })
-                    return cache_path, files_array
-            # If caching failed, keep original string
-        
-        # Handle file dictionary format
-        elif isinstance(structure_data, dict) and structure_data.get('type') == 'file' and 'path' in structure_data:
-            file_path = structure_data['path']
-            if os.path.exists(file_path):
-                # Cache the file
-                cache_path = self._cache_file(file_path, files_dir)
-                if cache_path:
-                    # Update cache_path but preserve the original path
-                    structure_data['cache_path'] = cache_path
-                    
-                    # Add file metadata to files array
-                    file_name = structure_data.get('name', os.path.basename(file_path))
-                    rename_flag = '$' in file_name or '${' in file_name  # Check if file should be renamed with project name
-                    
-                    files_array.append({
-                        "file_name": file_name,
-                        "original_path": file_path,
-                        "cached_path": cache_path,
-                        "rename_flag": rename_flag,
-                        "folder": current_folder,
-                        "file_type": self._get_file_type(file_path),
-                        "size": os.path.getsize(file_path),
-                        "last_modified": datetime.datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat()
-                    })
-            return structure_data, files_array
-        
-        # Handle folder format
-        elif isinstance(structure_data, dict) and structure_data.get('type') == 'folder' and 'name' in structure_data:
-            folder_name = structure_data['name']
-            new_current_folder = os.path.join(current_folder, folder_name) if current_folder else folder_name
-            
-            # Process children if any
-            if 'children' in structure_data and isinstance(structure_data['children'], list):
-                for i, child in enumerate(structure_data['children']):
-                    result, files_array = self._update_cache_paths_and_collect_files(
-                        template_name, template_path, child, files_dir, files_array, new_current_folder
-                    )
-                    structure_data['children'][i] = result
-                    
-            return structure_data, files_array
-        
-        elif isinstance(structure_data, list):
-            # Process a list of items
-            for i, item in enumerate(structure_data):
-                result, files_array = self._update_cache_paths_and_collect_files(
-                    template_name, template_path, item, files_dir, files_array, current_folder
-                )
-                structure_data[i] = result
-                
-            return structure_data, files_array
-        
-        return structure_data, files_array
-    
-    def _get_file_type(self, file_path):
-        """Determine the file type based on extension"""
-        _, ext = os.path.splitext(file_path)
-        ext = ext.lower()
-        
-        # Video extensions
-        if ext in ['.mp4', '.mov', '.avi', '.mkv', '.prproj', '.aep']:
-            return 'video'
-        # Audio extensions
-        elif ext in ['.mp3', '.wav', '.aac', '.flac']:
-            return 'audio'
-        # Image extensions
-        elif ext in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.psd']:
-            return 'image'
-        # Document extensions
-        elif ext in ['.doc', '.docx', '.pdf', '.txt', '.rtf', '.csv', '.xls', '.xlsx']:
-            return 'document'
-        # Code extensions
-        elif ext in ['.py', '.js', '.html', '.css', '.json', '.xml']:
-            return 'code'
-        else:
-            return 'other'
-
-    def _cache_file(self, file_path, files_dir):
-        """
-        Cache a file and return the cache path
-        
-        Args:
-            file_path: Path to the file to cache
-            files_dir: Directory to cache the file in
-            
-        Returns:
-            str: Path to the cached file, or None if caching failed
-        """
-        if not file_path or not os.path.exists(file_path):
-            print(f"ERROR: Cannot cache file - path does not exist: {file_path}")
-            return None
-        
-        try:
-            # Get the file name and extension
-            file_name = os.path.basename(file_path)
-            
-            # Create a unique file hash based on path and modification time
-            file_stats = os.stat(file_path)
-            file_hash = f"{hash(file_path)}_{file_stats.st_mtime}"
-            
-            # Cache the file with its original name
-            cache_path = os.path.join(files_dir, file_name)
-            
-            # Create the cache directory if it doesn't exist
-            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-            
-            # Check if the file is already cached and up to date
-            if os.path.exists(cache_path):
-                # If the file is already cached, check if it's the same
-                try:
-                    cached_stats = os.stat(cache_path)
-                    if cached_stats.st_size == file_stats.st_size and cached_stats.st_mtime >= file_stats.st_mtime:
-                        print(f"DEBUG: File already cached and up to date: {file_name}")
-                        return cache_path
-                except Exception as e:
-                    print(f"ERROR: Failed to check cached file stats: {str(e)}")
-            
-            # Copy the file to the cache
-            try:
-                shutil.copy2(file_path, cache_path)
-                print(f"DEBUG: Cached file {file_path} to {cache_path}")
-                
-                # Get the metadata file path - store it at the template level, not in each directory
-                root_cache_dir = os.path.dirname(files_dir)
-                metadata_path = os.path.join(root_cache_dir, "metadata.json")
-                
-                # Load existing metadata if it exists
-                metadata = {}
-                if os.path.exists(metadata_path):
-                    try:
-                        with open(metadata_path, 'r') as f:
-                            metadata = json.load(f)
-                    except Exception as e:
-                        print(f"ERROR: Failed to load metadata: {str(e)}")
-                        metadata = {}
-                
-                # Ensure files dictionary exists
-                if "files" not in metadata:
-                    metadata["files"] = {}
-                
-                # Get relative path from files_dir to cache_path
-                relative_to_cache = os.path.relpath(cache_path, os.path.dirname(files_dir))
-                
-                # Store file metadata
-                metadata["files"][relative_to_cache] = {
-                    "original_path": file_path,
-                    "cache_path": cache_path,
-                    "relative_path": os.path.dirname(relative_to_cache),
-                    "file_name": file_name,
-                    "size": file_stats.st_size,
-                    "hash": hashlib.sha256(file_path.encode()).hexdigest(),
-                    "cached_date": time.time()
-                }
-                
-                # Update last_updated timestamp
-                metadata["last_updated"] = time.time()
-                
-                # Create created timestamp if it doesn't exist
-                if "created" not in metadata:
-                    metadata["created"] = time.time()
-                
-                # Save the metadata
-                try:
-                    with open(metadata_path, 'w') as f:
-                        json.dump(metadata, f, indent=2)
-                except Exception as e:
-                    print(f"ERROR: Failed to save metadata: {str(e)}")
-                
-                return cache_path
-            except Exception as e:
-                print(f"Error caching file: {str(e)}")
-                return None
-        except Exception as e:
-            print(f"Error caching file: {str(e)}")
-            return None
-            
-    def _count_files_in_structure(self, structure_data):
-        """Count the number of files in a structure"""
-        count = 0
-        
-        if isinstance(structure_data, dict):
-            if structure_data.get("type") == "file":
-                count += 1
-            else:
-                # Process all children
-                for key, value in structure_data.items():
-                    if isinstance(value, (dict, list)):
-                        count += self._count_files_in_structure(value)
-        elif isinstance(structure_data, list):
-            for item in structure_data:
-                count += self._count_files_in_structure(item)
-                
-        return count
-    
-    def _contains_template_variables(self, file_path, filename):
-        """
-        Check if a file contains template variables like {{PROJECT_NAME}}
-        
-        Args:
-            file_path: Path to the file
-            filename: Name of the file
-            
-        Returns:
-            bool: True if file contains template variables, False otherwise
-        """
-        print(f"DEBUG: Checking for template variables in file: {filename}")
-        
-        # Check if filename contains template variables
-        if "{{" in filename and "}}" in filename:
-            print(f"DEBUG: Filename contains template variables: {filename}")
-            return True
-            
-        # Check if it's a text file that might contain template variables
-        if self._is_text_file(file_path):
-            print(f"DEBUG: File appears to be a text file, checking content: {filename}")
-            try:
-                # Only check the first portion of the file (for large files)
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read(10240)  # Read first 10KB
-                    has_variables = "{{" in content and "}}" in content
-                    
-                    if has_variables:
-                        print(f"DEBUG: File content contains template variables: {filename}")
-                        
-                        # Find and log the template variables for debugging
-                        import re
-                        template_vars = re.findall(r"{{(.*?)}}", content)
-                        if template_vars:
-                            print(f"DEBUG: Found template variables: {', '.join(template_vars)}")
-                    else:
-                        print(f"DEBUG: File content does not contain template variables: {filename}")
-                        
-                    return has_variables
-            except Exception as e:
-                print(f"ERROR: Failed to check file content for template variables: {e}")
-                
-        print(f"DEBUG: File is not a text file or doesn't contain template variables: {filename}")
-        return False
-        
-    def _is_text_file(self, file_path):
-        """Check if a file is a text file"""
-        text_extensions = ['.txt', '.html', '.css', '.js', '.json', '.xml', '.md', '.csv', '.yml', '.yaml', 
-                          '.ini', '.cfg', '.conf', '.py', '.sh', '.bat', '.ps1', '.php', '.rb', '.java', 
-                          '.c', '.cpp', '.h', '.cs', '.swift', '.go', '.ts', '.jsx', '.tsx']
-        
-        # Get the file extension                  
-        _, ext = os.path.splitext(file_path.lower())
-        
-        print(f"DEBUG: Checking if file is text file: {file_path}, extension: {ext}")
-        
-        # Known text extensions
-        if ext in text_extensions:
-            print(f"DEBUG: File has a known text extension: {ext}")
-            return True
-            
-        # Try to detect text files without extensions
-        if os.path.exists(file_path):
-            print(f"DEBUG: File doesn't have a known text extension, testing content...")
-            try:
-                # Try to open and read a few bytes
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    sample = f.read(1024)
-                    # If we can read it as text, it's likely a text file
-                    is_text = '\0' not in sample  # Binary files often contain null bytes
-                    print(f"DEBUG: Content-based detection result: {'text file' if is_text else 'binary file'}")
-                    return is_text
-            except Exception as e:
-                print(f"DEBUG: Failed to read file for text detection: {e}")
-                
-        print(f"DEBUG: File is not a text file: {file_path}")
-        return False
-    
-    def import_template_file(self, file_path, name=None, structure_type=None):
-        """Import a template from a file"""
-        # Check if the file exists
-        if not os.path.exists(file_path):
-            print(f"Error: Template file does not exist: {file_path}")
-            return False
-            
-        # Determine name from file path if not provided
-        if not name:
-            name = os.path.splitext(os.path.basename(file_path))[0].replace("_", " ")
-            
-        # Determine structure type from file extension if not provided
-        if not structure_type:
-            ext = os.path.splitext(file_path)[1].lower()
-            
-            if ext in (".prproj", ".xml"):
-                structure_type = "Video Editing"
-            elif ext in (".aep", ".aet"):
-                structure_type = "Motion Graphics"
-            elif ext in (".psd", ".ai", ".indd"):
-                structure_type = "Design"
-            else:
-                structure_type = "Custom"
-            
-        # Save the template
-        return self.save_template(name, file_path, structure_type)
     
     def delete_template(self, template_name):
         """
