@@ -427,6 +427,20 @@ class TemplateOperations:
         print(f"DEBUG: Final files_array count for JSON: {len(files_array_for_json)}")
         # --- END ADDED ---
 
+        # --- ADDED: Get the template cache directory path ---
+        template_cache_directory = None
+        if self.file_cache_manager:
+            try:
+                # CORRECTED: Construct the path manually using cache_dir and sanitized_name
+                if hasattr(self.file_cache_manager, 'cache_dir') and self.file_cache_manager.cache_dir:
+                    template_cache_directory = os.path.join(self.file_cache_manager.cache_dir, sanitized_name)
+                    print(f"DEBUG: Determined template cache directory: {template_cache_directory}")
+                else:
+                    print("WARN: FileCacheManager exists but has no cache_dir attribute.")
+            except Exception as e:
+                print(f"WARN: Failed to get template cache directory path: {e}")
+        # --- END ADDED ---
+
         # Prepare template data dictionary
         template_data = {
             'name': template_name,
@@ -437,10 +451,10 @@ class TemplateOperations:
             'created': datetime.datetime.now().timestamp(),
             'modified': datetime.datetime.now().timestamp(),
             'tags': tags or [],
-            # --- MODIFIED --- Use the array possibly updated with cached_path
             'files': files_array_for_json, 
-            # --- END MODIFIED ---
-            'type': template_type
+            'type': template_type,
+            # --- ADDED: Store the template cache directory path ---
+            'cached_path': template_cache_directory 
         }
 
         # Sanitize template name for filename
@@ -1477,16 +1491,42 @@ class TemplateOperations:
                     original_name = file_name[:-5]  # Remove .json extension
                 print(f"[DEBUG] TemplateOperations: Updating template {template_name}, original file: {original_name}")
             
-            # Use save_template to ensure consistent handling of file caching
+            # --- CORRECTED CALL TO save_template ---
+            # Extract required arguments from the input template dictionary
+            structure = template.get('structure')
+            category = template.get('category')
+            description = template.get('description')
+            tags = template.get('tags')
+            template_type = template.get('type', 'Standard') # Use 'type' key, fallback to 'Standard'
+            
+            # Check if 'files' key exists, needed by save_template logic indirectly
+            # Even if cache_files=True isn't passed, save_template extracts files from structure
+            if 'files' not in template:
+                 template['files'] = [] # Ensure files key exists
+
+            # Call save_template with extracted keyword arguments
             return self.save_template(
                 template_name=template_name,
                 structure=structure,
-                template_data=template,
-                source_files=source_files,
-                cache_files=True,  # Always cache files during update
-                is_update=True,    # Mark this as an update
-                original_name=original_name  # Pass the original name for file path consistency
+                category=category,
+                description=description,
+                tags=tags,
+                template_type=template_type,
+                original_name=original_name # Pass original name for rename handling
             )
+            # --- END CORRECTION ---
+            
+            # --- REMOVED INCORRECT CALL ---
+            # return self.save_template(
+            #     template_name=template_name,
+            #     structure=structure,
+            #     template_data=template,  # Incorrect argument
+            #     source_files=source_files, # Incorrect argument
+            #     cache_files=True,  # Incorrect argument
+            #     is_update=True,    # Incorrect argument
+            #     original_name=original_name  # Pass the original name for file path consistency
+            # )
+            # --- END REMOVAL ---
     
     def update_directory_template(self, template):
         """Update a directory-based template's metadata"""

@@ -38,7 +38,7 @@ class UIOperations:
         try:
             # Import here to avoid circular imports
             from app.dialogs.dialog_windows_pyqt import show_edit_template
-            from app.ui.structure_editor_enhanced import show_enhanced_structure_editor
+            from app.ui.structure_editor_functions import show_enhanced_structure_editor
             
             # Create a new template with default values but no name yet
             new_template = {
@@ -53,7 +53,7 @@ class UIOperations:
             }
             
             # Show the enhanced structure editor directly
-            success, structure, structure_name = show_enhanced_structure_editor(
+            success, structure, structure_name, _, _, _, _ = show_enhanced_structure_editor(
                 parent, 
                 structure_name="",  # Empty structure name initially
                 structure=[],
@@ -123,10 +123,10 @@ class UIOperations:
             
         try:
             # Import here to avoid circular imports
-            from app.ui.structure_editor_enhanced import show_enhanced_structure_editor
+            from app.ui.structure_editor_functions import show_enhanced_structure_editor
             
             # Show the enhanced structure editor directly
-            success, structure, structure_name = show_enhanced_structure_editor(
+            success, structure, structure_name, _, _, _, _ = show_enhanced_structure_editor(
                 None, 
                 structure_name=template.get('structure_name', f"Template_{template.get('name', 'Unknown')}"),
                 structure=template.get('structure', []),

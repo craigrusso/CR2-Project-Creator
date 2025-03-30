@@ -60,7 +60,7 @@ def main():
     if platform.system() == "Windows":
         try:
             import ctypes
-            myappid = 'cr2creative.echelon.0.081'
+            myappid = 'cr2creative.echelon.0.95'
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
             print("DEBUG: Windows app ID set")
         except Exception as e:

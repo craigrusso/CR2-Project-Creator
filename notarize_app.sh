@@ -6,8 +6,9 @@ set -e
 
 # Configuration
 APP_NAME="Echelon"
-APP_VERSION="0.081"
-DMG_NAME="Echelon_0.081_AppleSilicon.dmg"
+APP_VERSION="0.95"
+DMG_NAME="Echelon_0.95_AppleSilicon.dmg"
+DEVELOPER_ID="Developer ID Application: Craig Russo (XXXXXXXXXX)" # Replace with your actual Developer ID
 BUNDLE_ID="com.cr2creative.echelon"
 TEAM_ID="5926DW86QY"
 

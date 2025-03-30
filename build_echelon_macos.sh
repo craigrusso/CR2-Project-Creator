@@ -16,9 +16,11 @@ if [ "$CURRENT_ARCH" != "arm64" ]; then
     echo "   The build will produce an app optimized for your current architecture."
 fi
 
-# Set variables
+# Configuration
 APP_NAME="Echelon"
-APP_VERSION="0.081"
+APP_VERSION="0.95"
+APP_BUNDLE="$APP_NAME.app"
+APP_BUNDLE_PATH="dist/$APP_BUNDLE"
 DMG_NAME="${APP_NAME}_${APP_VERSION}_AppleSilicon.dmg"
 
 # Clean up previous builds

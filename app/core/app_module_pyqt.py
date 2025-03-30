@@ -37,6 +37,7 @@ from app.utils.utils import (load_recent_projects, save_recent_projects,
 from app.templates.template_gallery_ui_pyqt import create_template_gallery
 from app.dialogs.template_creation_form import show_template_creation_form
 from app.templates.components.utils import get_system_font, SYSTEM_FONT
+from app.core.import_export_manager import import_template
 
 class ProjectCreatorApp(QMainWindow):
     """Main application class for CR2 Creative Pro using PyQt"""
@@ -333,10 +334,10 @@ class ProjectCreatorApp(QMainWindow):
         
         file_menu.addSeparator()
         
-        # Import template action
-        import_template_action = QAction("Import Template...", self)
-        import_template_action.triggered.connect(lambda: self.template_manager.import_template_ui(self))
-        file_menu.addAction(import_template_action)
+        # Import Template Package action (ZIP import)
+        import_template_package_action = QAction("Import Template...", self)
+        import_template_package_action.triggered.connect(lambda: import_template(self))
+        file_menu.addAction(import_template_package_action)
         
         # Export/Import Settings section
         file_menu.addSeparator()
@@ -348,11 +349,6 @@ class ProjectCreatorApp(QMainWindow):
         export_all_action = QAction("All Settings and Templates...", self)
         export_all_action.triggered.connect(self._export_all)
         export_menu.addAction(export_all_action)
-        
-        # Export templates only
-        export_templates_action = QAction("Templates Only...", self)
-        export_templates_action.triggered.connect(self._export_templates)
-        export_menu.addAction(export_templates_action)
         
         # Export settings only
         export_settings_action = QAction("Settings Only...", self)
@@ -369,11 +365,6 @@ class ProjectCreatorApp(QMainWindow):
         import_all_action = QAction("All Settings and Templates...", self)
         import_all_action.triggered.connect(self._import_all)
         import_menu.addAction(import_all_action)
-        
-        # Import templates only
-        import_templates_action = QAction("Templates Only...", self)
-        import_templates_action.triggered.connect(self._import_templates)
-        import_menu.addAction(import_templates_action)
         
         # Import settings only
         import_settings_action = QAction("Settings Only...", self)
@@ -904,11 +895,6 @@ class ProjectCreatorApp(QMainWindow):
         from app.core.import_export_manager import export_package
         export_package(self, include_settings=True, include_templates=True)
     
-    def _export_templates(self):
-        """Export templates only"""
-        from app.core.import_export_manager import export_package
-        export_package(self, include_settings=False, include_templates=True)
-    
     def _export_settings(self):
         """Export settings only"""
         from app.core.import_export_manager import export_package
@@ -918,11 +904,6 @@ class ProjectCreatorApp(QMainWindow):
         """Import all settings and templates"""
         from app.core.import_export_manager import import_package
         import_package(self, import_settings=True, import_templates=True)
-    
-    def _import_templates(self):
-        """Import templates only"""
-        from app.core.import_export_manager import import_package
-        import_package(self, import_settings=False, import_templates=True)
     
     def _import_settings(self):
         """Import settings only"""

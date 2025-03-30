@@ -13,12 +13,14 @@ fi
 
 # Configuration
 APP_NAME="Echelon"
-APP_VERSION="0.081"
+APP_VERSION="0.95"
 APP_BUNDLE="$APP_NAME.app"
 APP_BUNDLE_PATH="dist/$APP_BUNDLE"
 DMG_NAME="$APP_NAME-$APP_VERSION.dmg"
 ICNS_FILE="ICONS/$APP_NAME.icns"
 ZIP_NAME="$APP_NAME.zip"
+ENTRY_POINT="main.py"
+ICON_FILE="assets/icons/echelon_logo.icns"
 
 # Developer identity and notarization credentials
 DEVELOPER_ID="Developer ID Application: Craig Russo (5926DW86QY)"

@@ -2,7 +2,7 @@
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
 from PyQt5.QtWidgets import QDesktopWidget, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QComboBox, \
-     QPushButton, QLineEdit, QFrame, QGridLayout, QMessageBox, QApplication, QSizePolicy, QTabWidget, QMainWindow, QDockWidget, QToolButton, QButtonGroup
+     QPushButton, QLineEdit, QFrame, QGridLayout, QMessageBox, QApplication, QSizePolicy, QTabWidget, QMainWindow, QDockWidget, QToolButton, QButtonGroup, QMenu, QAction
 from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSignal, QPoint
 
 # Import modular components
@@ -10,6 +10,7 @@ from .gallery_ui_setup import GalleryUISetup
 from .gallery_folders import GalleryFoldersSetup
 from .gallery_templates import GalleryTemplatesSetup
 from .gallery_events import GalleryEvents
+from app.core.import_export_manager import import_template
 
 class TemplateGallery(QWidget):
     """Main widget for displaying and managing templates"""
@@ -56,6 +57,10 @@ class TemplateGallery(QWidget):
         
         # Set up the UI
         GalleryUISetup.setup_ui(self)
+        
+        # Set up the context menu
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_gallery_context_menu)
         
         # Populate the gallery initially - do this after UI setup
         self.populate_gallery()
@@ -823,11 +828,51 @@ class TemplateGallery(QWidget):
         QWidget.mouseReleaseEvent(self, event)
         
     def resizeEvent(self, event):
-        """Handle window resize events"""
-        # Start/restart the resize timer to avoid excessive updates
+        """Handle resize events to trigger layout updates"""
         self.resize_timer.start()
         super().resizeEvent(event)
-    
+
+    # Context Menu Method
+    def _show_gallery_context_menu(self, position):
+        """Show context menu when right-clicking the gallery background"""
+        # Determine if the click was on an item or background
+        # In grid view, check if click is outside any card bounding box (simplification: assume background if not on a known card area)
+        # In list view, check template_list_widget.itemAt(position)
+        # For simplicity, we'll initially assume right-click on the container is background
+        # (A more robust check would involve iterating items/cards and their geometry)
+        
+        # Check if the click is on a specific item (folder or template)
+        item_clicked = False
+        # Check folder cards
+        for card in self.folder_cards:
+            if card.geometry().contains(self.mapFromGlobal(self.mapToGlobal(position))):
+                item_clicked = True
+                break
+        # Check template cards
+        if not item_clicked:
+            for card in self.template_cards:
+                 if card.geometry().contains(self.mapFromGlobal(self.mapToGlobal(position))):
+                     item_clicked = True
+                     break
+                     
+        # TODO: Add check for list view items if list view is active
+
+        # Only show the 'Import Template' menu if clicking on the background
+        if not item_clicked:
+            menu = QMenu(self)
+            import_action = QAction("Import Template...", self)
+            # Ensure self.app exists and is valid
+            if hasattr(self, 'app') and self.app:
+                import_action.triggered.connect(lambda: import_template(self.app))
+            else:
+                print("[WARNING] Gallery context menu: Cannot connect import action, self.app is not available.")
+                import_action.setEnabled(False)
+            
+            menu.addAction(import_action)
+            menu.exec_(self.mapToGlobal(position))
+        # If an item was clicked, let the item's own context menu handle it (if it has one)
+        # Otherwise, do nothing for right-clicks on items without specific context menus.
+
     def _on_sort_column(self, field):
         """Sort the templates list by the given field"""
         if not hasattr(self, 'current_sort_field'):
