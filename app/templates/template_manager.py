@@ -150,9 +150,9 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
             traceback.print_exc()
             return False
 
-    def save_custom_structure(self, name, structure):
-        """Save a custom structure to disk"""
-        print(f"\n[DEBUG] TemplateManager.save_custom_structure: Starting save for '{name}'")
+    def save_custom_structure(self, name, structure, category="General", description=None):
+        """Save a custom structure to disk, now including category and description."""
+        print(f"\n[DEBUG] TemplateManager.save_custom_structure: Starting save for '{name}' with received category '{category}'")
         
         try:
             # Ensure the custom structures directory exists
@@ -162,74 +162,79 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
             existing_path = None
             is_update = False
             
-            # Look for existing file with this name
+            # Look for existing file with this name (handle spaces/underscores)
+            clean_name = name.replace(" ", "_")
             for filename in os.listdir(self.paths["custom_structures_dir"]):
-                if filename.startswith(name.replace(" ", "_")) and filename.endswith(".json"):
+                if filename.startswith(clean_name) and filename.endswith(".json"):
                     existing_path = os.path.join(self.paths["custom_structures_dir"], filename)
                     is_update = True
                     print(f"[DEBUG] Found existing structure file: {existing_path}")
                     break
             
-            # Create structure data
+            # Create base structure data
             structure_data = {
-                "name": name,
+                "name": name, # Use the original name (with spaces) here
                 "type": "custom",
+                "category": category, # Add the received category
+                "description": description if description is not None else f"Custom template: {name}", # Add description or default
                 "directories": structure,
                 "created": datetime.datetime.now().isoformat()
             }
             
-            print(f"[DEBUG] Structure data prepared: {structure_data}")
+            print(f"[DEBUG] Initial structure_data prepared with category: '{structure_data.get('category')}'")
             
             # If we're updating an existing file, read it to preserve metadata
             if is_update and existing_path:
                 try:
-                    print("[DEBUG] Reading existing structure to preserve metadata")
+                    print(f"[DEBUG] Reading existing structure '{existing_path}' to preserve metadata")
                     with open(existing_path, 'r') as f:
                         existing_data = json.load(f)
+                        print(f"[DEBUG] Existing data loaded. Existing category: '{existing_data.get('category')}'")
                         
-                    # Preserve creation timestamp and other metadata
+                    # Preserve creation timestamp if it exists
                     if 'created' in existing_data:
                         structure_data['created'] = existing_data['created']
                     
                     # Preserve any other metadata fields that aren't being explicitly updated
+                    # (like tags, potentially other future fields)
+                    preserved_keys = []
                     for key, value in existing_data.items():
-                        if key not in structure_data and key != 'directories':
+                        if key not in ['name', 'type', 'category', 'description', 'directories', 'created', 'modified']:
                             structure_data[key] = value
-                            
-                    # Add modified timestamp
-                    structure_data['modified'] = datetime.datetime.now().isoformat()
+                            preserved_keys.append(key)
+                    if preserved_keys:
+                        print(f"[DEBUG] Preserved existing metadata keys: {preserved_keys}")
                     
-                    print("[DEBUG] Preserved metadata from existing structure")
+                    # Add/Update modified timestamp
+                    structure_data['modified'] = datetime.datetime.now().isoformat()
+                    print(f"[DEBUG] Preserved metadata and added/updated modified timestamp. Current category in structure_data: '{structure_data.get('category')}'")
                 except Exception as e:
-                    print(f"[ERROR] Error reading existing structure: {e}")
-                    # Continue with saving as new if read fails
+                    print(f"[ERROR] Error reading existing structure for metadata preservation: {e}")
+                    # Continue with saving as new if read fails, but log the error
             
             # Store in memory - important to store the whole structure_data object
+            # Use the structure name (which starts with Template_) as the key
             self.custom_structures[name] = structure_data
-            print(f"[DEBUG] Updated in-memory structure cache")
+            print(f"[DEBUG] Updated in-memory structure cache for key '{name}'")
             
             # Determine file path - use existing path if updating, otherwise create new
             if is_update and existing_path:
                 file_path = existing_path
             else:
-                # Create a clean filename
-                filename = name.replace(" ", "_").replace("/", "-").replace("\\", "-")
+                # Create a filename safe name (using underscores)
+                filename = clean_name.replace("/", "-").replace("\\", "-")
                 file_path = os.path.join(self.paths["custom_structures_dir"], f"{filename}.json")
             
-            print(f"[DEBUG] Saving structure to: {file_path}")
-            
-            # Make sure the directory exists
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            
+            print(f"[DEBUG] Final structure_data before saving. Category: '{structure_data.get('category')}'")
             # Write the structure file
             with open(file_path, 'w') as f:
                 json.dump(structure_data, f, indent=2)
                 
-            print("[DEBUG] Structure saved successfully")
+            print(f"[DEBUG] Structure file saved successfully to {file_path}")
             return True
             
         except Exception as e:
-            print(f"[ERROR] Failed to save structure: {str(e)}")
+            print(f"[ERROR] Failed to save structure '{name}': {str(e)}")
             import traceback
             traceback.print_exc()
             return False

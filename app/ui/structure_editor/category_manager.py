@@ -212,12 +212,6 @@ class CategoryManager(QDialog):
             structure_mapping = {}
             if hasattr(self.template_manager, 'constants') and hasattr(self.template_manager.constants, 'PROJECT_TYPE_TO_STRUCTURE'):
                 structure_mapping = self.template_manager.constants.PROJECT_TYPE_TO_STRUCTURE
-            else:
-                # Use constants directly
-                from app.constants import PROJECT_TYPE_TO_STRUCTURE
-                structure_mapping = PROJECT_TYPE_TO_STRUCTURE
-                
-            print(f"Structure mapping: {structure_mapping}")
             
             # Add each category as a project type if not already present
             for category in self.result_categories:

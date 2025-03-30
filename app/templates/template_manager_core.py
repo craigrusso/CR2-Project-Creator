@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from app.utils.utils import load_json_file, save_json_file, get_config_paths
-from app.constants import DEFAULT_STRUCTURES, PROJECT_TYPE_TO_STRUCTURE, DEFAULT_TEMPLATE_CATEGORIES, APP_VERSION
+from app.constants import DEFAULT_TEMPLATE_CATEGORIES, APP_VERSION
 from app.templates.folder_operations import FolderOperations
 from app.templates.structure_operations import StructureOperations
 from app.templates.template_operations import TemplateOperations
@@ -32,12 +32,12 @@ class TemplateManagerCore(TemplateOperations):
         # Initialize template storage
         self.templates = []
         self.template_directories = []
-        self.custom_structures = {}  # Dictionary mapping structure name to structure data
         self.selected_template = None
         self.folders = {}  # Map of folder name to list of template names
-        self.preferences = {}  # User preferences
+        self.preferences = {}
         
-        # Add the cache_location path from CachePreferences
+        # Get config paths including cache location
+        self.paths = get_config_paths() # Ensure paths are loaded early
         cache_prefs = CachePreferences()
         self.paths["templates_cache_dir"] = cache_prefs.get_cache_location()
         print(f"DEBUG: Set templates_cache_dir path to: {self.paths['templates_cache_dir']}")
@@ -45,42 +45,22 @@ class TemplateManagerCore(TemplateOperations):
         # Create template directory if it doesn't exist
         self._ensure_directories_exist()
         
-        # Load templates, structures, and folders
-        self.load_template_directories()
+        # Load ONLY from the templates directory
         self.load_templates()
         
-        # Load custom structures and ensure they're properly stored
-        if not hasattr(self, 'custom_structures'):
-            self.custom_structures = {}
-        
-        self.load_custom_structures()
-        
-        # Make sure structures reference the same dictionary as custom_structures for backward compatibility
-        if not hasattr(self, 'structures'):
-            self.structures = self.custom_structures
-        else:
-            # Update structures with custom_structures values
-            for key, value in self.custom_structures.items():
-                self.structures[key] = value
-        
-        # Load folders
+        # Load folders (folder organization data)
         self.load_folders()
         
         # Load user preferences
         self.load_preferences()
         
-        # Clean up any problematic templates
+        # Clean up any problematic templates (e.g., duplicates based on name)
         self.cleanup_templates()
         
-        # Initialize additional managers
-        self.init_managers()
-        
-        # For project types (replacing categories)
+        # Initialize additional managers (like ProjectTypeManager)
         self.project_type_manager = ProjectTypeManager(self)
         
-        # Debug check to make sure structures are properly loaded
-        print(f"DEBUG: After initialization: {len(self.custom_structures)} custom structures available")
-        print(f"DEBUG: Structure keys: {list(self.custom_structures.keys())}")
+        print(f"DEBUG: TemplateManagerCore Initialized. Loaded {len(self.templates)} templates.")
     
     def _ensure_directories_exist(self):
         """Ensure all required directories exist"""
@@ -203,7 +183,7 @@ class TemplateManagerCore(TemplateOperations):
             traceback.print_exc()
         
         # Also load structures as templates for seamless integration
-        self.load_structures_as_templates()
+        # self.load_structures_as_templates() # REMOVED: Structures should not automatically become templates here.
     
     def load_template_directories(self):
         """Load all template directories"""
@@ -488,112 +468,15 @@ class TemplateManagerCore(TemplateOperations):
             self.save_preferences()
     
     def get_structure_types(self):
-        """Get all available structure types from built-in and custom structures"""
-        # Get structure types from DEFAULT_STRUCTURES
-        structure_types = list(DEFAULT_STRUCTURES.keys())
-        
-        # Add structure types from PROJECT_TYPE_TO_STRUCTURE
-        for project_type, structure_name in PROJECT_TYPE_TO_STRUCTURE.items():
-            if project_type not in structure_types:
-                structure_types.append(project_type)
-        
-        # Custom structures - access as a dictionary
-        if hasattr(self, 'custom_structures'):
-            for name in self.custom_structures.keys():
-                if name not in structure_types:
-                    structure_types.append(name)
-        
-        # Return sorted list
-        return sorted(structure_types)
-        
-    def map_project_type_to_structure(self, project_type):
-        """Map a project type to its corresponding structure name"""
-        print(f"DEBUG: map_project_type_to_structure called with project_type='{project_type}'")
-        
-        # First check direct match in DEFAULT_STRUCTURES
-        if project_type in DEFAULT_STRUCTURES:
-            print(f"DEBUG: Found direct match in DEFAULT_STRUCTURES: {project_type}")
-            return project_type
-            
-        # Next check PROJECT_TYPE_TO_STRUCTURE mapping
-        if project_type in PROJECT_TYPE_TO_STRUCTURE:
-            structure_name = PROJECT_TYPE_TO_STRUCTURE[project_type]
-            print(f"DEBUG: Found mapping in PROJECT_TYPE_TO_STRUCTURE: {project_type} -> {structure_name}")
-            return structure_name
-            
-        # Try different naming conventions (with or without spaces)
-        names_to_try = [
-            project_type, 
-            f"Template_{project_type}", 
-            f"Template {project_type}"
-        ]
-        print(f"DEBUG: Trying structure names: {names_to_try}")
-        
-        for name in names_to_try:
-            if name in DEFAULT_STRUCTURES:
-                print(f"DEBUG: Found structure with alternative name: {name}")
-                return name
-        
-        # Default fallback to a standard structure
-        print(f"DEBUG: Structure not found: {project_type}")
-        return "Video Editing - Standard"
-    
-    def save_preferences(self):
-        """Save user preferences"""
-        prefs_path = os.path.join(self.paths["templates_dir"], "preferences.json")
-        
-        try:
-            with open(prefs_path, 'w') as f:
-                json.dump(self.preferences, f, indent=2)
-            return True
-        except Exception as e:
-            print(f"Error saving preferences: {e}")
-            return False 
-    
-    def diagnose_templates(self):
-        """
-        Run diagnostics on templates and structures to help with debugging
-        """
-        print("\n===== Template Diagnostics =====")
-        print(f"Total templates: {len(self.templates)}")
-        print(f"Total directory templates: {len(self.template_directories)}")
-        print(f"Total custom structures: {len(self.custom_structures)}")
-        print(f"Total folders: {len(self.folders)}")
-        
-        # Check templates for structure data
-        templates_with_structure = 0
-        for template in self.templates + self.template_directories:
-            if "structure" in template:
-                templates_with_structure += 1
-                structure_size = self._count_structure_items(template["structure"]) if hasattr(self, '_count_structure_items') else "unknown"
-                print(f"Template '{template.get('name')}' has structure with {structure_size} items")
-                
-        print(f"Templates with attached structures: {templates_with_structure}")
-        
-        # Check custom structures
-        for structure in self.custom_structures:
-            structure_size = "unknown"
-            if hasattr(self, '_count_structure_items') and "structure" in structure:
-                structure_size = self._count_structure_items(structure["structure"])
-            print(f"Custom structure '{structure.get('name')}' has {structure_size} items")
-            
-        print("===== End Diagnostics =====\n")
-    
-    def _count_structure_items(self, structure):
-        """Count items in a structure to help with debugging"""
-        if not structure or not isinstance(structure, list):
-            return 0
-            
-        count = 0
-        for item in structure:
-            if isinstance(item, dict):
-                count += len(item)
-                # Count nested items
-                for key, value in item.items():
-                    if isinstance(value, list):
-                        count += self._count_structure_items(value)
-        
-        return count 
+        """Get a list of available structure types (project types)"""
+        # This method might be deprecated or changed based on how project types are managed
+        if hasattr(self, 'project_type_manager') and self.project_type_manager:
+            return self.project_type_manager.get_project_types()
+        else:
+            # Fallback if project type manager is not available
+            # Consider removing this fallback if project types are central
+            print("WARNING: Project type manager not available, returning empty list for structure types")
+            return []
     
     def load_structures_as_templates(self):
         """Load custom structures as templates if they don't exist as templates"""
@@ -870,4 +753,15 @@ class TemplateManagerCore(TemplateOperations):
             print(f"ERROR saving template: {e}")
             import traceback
             traceback.print_exc()
+            return False 
+    
+    def save_preferences(self):
+        """Save user preferences to disk"""
+        try:
+            prefs_path = os.path.join(self.paths["templates_dir"], "preferences.json")
+            with open(prefs_path, 'w') as f:
+                json.dump(self.preferences, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"Error saving preferences: {e}")
             return False 

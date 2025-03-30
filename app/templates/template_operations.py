@@ -8,14 +8,15 @@ import shutil
 import time
 import hashlib
 import re
+import uuid
 
-from app.utils.utils import save_json_file, get_config_paths
+from app.utils.utils import save_json_file, get_config_paths, load_json_file
 from app.utils.file_cache_manager import FileCacheManager
-from app.constants import PROJECT_TYPE_TO_STRUCTURE
 
 class TemplateOperations:
     """
-    Operations for managing templates (create, read, update, delete)
+    Core operations for managing template data (loading, saving, structures, files)
+    Intended to be inherited by TemplateManagerCore.
     """
     
     def __init__(self):
@@ -23,7 +24,7 @@ class TemplateOperations:
         self.paths = get_config_paths()
         
         # Initialize templates list
-        self.templates = {}
+        self.templates = []
         
         # Add flag for auto-creating structure files (default to false)
         self.auto_create_structure = False
@@ -85,19 +86,14 @@ class TemplateOperations:
     
     def get_structure(self, structure_name):
         """Get the folder structure for a template."""
-        from app.constants import DEFAULT_STRUCTURES
+        
         print(f"DEBUG: get_structure called with structure_name='{structure_name}'")
         
         if not structure_name:
             print("DEBUG: No structure name provided, returning empty structure")
             return []
         
-        # Check if it's a built-in structure
-        structure_name_lower = structure_name.lower()
-        for default_name in DEFAULT_STRUCTURES.keys():
-            if structure_name_lower == default_name.lower():
-                print(f"DEBUG: Found built-in structure: {default_name}")
-                return DEFAULT_STRUCTURES[default_name]
+      
         
         # Try with and without the Template_ prefix, and with spaces replaced by underscores
         structure_names_to_try = [structure_name]
@@ -166,30 +162,43 @@ class TemplateOperations:
             print(f"DEBUG: get_template called with empty name")
             return None
             
-        # Ensure templates is a list
-        if not isinstance(self.templates, list):
-            print(f"WARNING: self.templates is not a list, it's a {type(self.templates)}")
+        # Handle dictionary format (used by TemplateManagerCore)
+        if isinstance(self.templates, dict):
+            # Try exact match first
+            template = self.templates.get(template_name)
+            if template:
+                return template
+            # Try case-insensitive match
+            for key, value in self.templates.items():
+                if key.lower() == template_name.lower():
+                    return value
+            # If not found in dict, proceed to check list format (shouldn't happen with TemplateManagerCore)
+            # but keep as fallback
+
+        # Handle list format
+        elif isinstance(self.templates, list):
+            # Try to find the template by exact name
+            for template in self.templates:
+                # Make sure template is a dict before using get()
+                if not isinstance(template, dict):
+                    print(f"WARNING: Template item is not a dict, it's a {type(template)}: {template}")
+                    continue
+                    
+                if template.get("name") == template_name:
+                    return template
+                    
+            # If not found with exact match, try case-insensitive match
+            for template in self.templates:
+                # Make sure template is a dict before using get()
+                if not isinstance(template, dict):
+                    continue
+                    
+                if template.get("name", "").lower() == template_name.lower():
+                    return template
+        else:
+            print(f"WARNING: self.templates is neither a list nor a dict ({type(self.templates)}), cannot get template.")
             return None
             
-        # Try to find the template by exact name
-        for template in self.templates:
-            # Make sure template is a dict before using get()
-            if not isinstance(template, dict):
-                print(f"WARNING: Template item is not a dict, it's a {type(template)}: {template}")
-                continue
-                
-            if template.get("name") == template_name:
-                return template
-                
-        # If not found with exact match, try case-insensitive match
-        for template in self.templates:
-            # Make sure template is a dict before using get()
-            if not isinstance(template, dict):
-                continue
-                
-            if template.get("name", "").lower() == template_name.lower():
-                return template
-                
         print(f"DEBUG: Template not found: {template_name}")
         return None
         
@@ -309,283 +318,208 @@ class TemplateOperations:
         
         return False
         
-    def save_template(self, template_name, structure=None, template_data=None, source_files=None, category="General", description="", cache_files=True, is_update=False, original_name=None):
-        """
-        Save a template to the templates directory
-        
-        Args:
-            template_name: Name of the template
-            structure: Template structure
-            template_data: Dictionary to use as base for the template data, if None, a new one is created
-            source_files: Dictionary with source files data like {file_id: {original_path: path, ...}}
-            category: Template category
-            description: Template description
-            cache_files: Whether to cache files for the template
-            is_update: Whether this is an update to an existing template
-            original_name: Original name of the template if being updated and renamed
-        
-        Returns:
-            bool: True if the template was saved successfully, False otherwise
-        """
-        # Create templates directory if it doesn't exist
-        templates_dir = self.get_templates_dir()
-        os.makedirs(templates_dir, exist_ok=True)
-        
+    def save_template(self, template_name, structure, category=None, description="", tags=None, template_type="Standard", original_name=None):
+        """Saves a template JSON file with structure, metadata, and derived file info."""
         print(f"DEBUG: Starting save_template for '{template_name}'")
         
-        # Normalize template name for the filename
-        normalized_name = self._sanitize_template_name(template_name)
-        template_file = os.path.join(templates_dir, f"{normalized_name}.json")
-        
-        # Check if this is an update and the template name has changed
-        if is_update and original_name and original_name != template_name:
-            # Delete old template file
-            original_file = os.path.join(templates_dir, f"{self._sanitize_template_name(original_name)}.json")
-            if os.path.exists(original_file):
-                print(f"DEBUG: Deleting old template file: {original_file}")
-                try:
-                    os.remove(original_file)
-                except Exception as e:
-                    print(f"DEBUG: Error deleting old template file: {str(e)}")
-        
-        # Initialize the template data
-        if template_data is None:
-            template_data = {}
-        
-        # Extract files from structure
-        files_array = []
-        
-        # First initialize the files_to_cache dictionary
-        files_to_cache = {}
-        
-        # Add files from template_data if they exist
-        if 'files' in template_data and isinstance(template_data['files'], list):
-            for file_data in template_data['files']:
-                if 'original_path' in file_data and file_data['original_path']:
-                    rel_path = file_data.get('folder', '') + file_data.get('file_name', '')
-                    files_to_cache[rel_path] = {'original_path': file_data['original_path']}
-        
-        # Add files from source_files if they exist
-        if source_files and isinstance(source_files, dict):
-            print(f"DEBUG: Adding {len(source_files)} source files to files_to_cache")
-            for file_id, file_data in source_files.items():
-                if isinstance(file_data, dict) and 'original_path' in file_data and file_data['original_path']:
-                    files_to_cache[file_id] = file_data
-                    
-                    # Also add directly to files_array
-                    original_path = file_data['original_path']
-                    if os.path.exists(original_path):
-                        file_name = os.path.basename(original_path)
-                        folder = file_data.get('relative_path', '') + '/' if 'relative_path' in file_data else ''
-                        
-                        file_info = {
-                            'file_name': file_name,
-                            'folder': folder,
-                            'original_path': original_path,
-                            'file_type': self._guess_file_type(file_name),
-                            'size': os.path.getsize(original_path),
-                            'is_binary': file_data.get('is_binary', False)
-                        }
-                        
-                        # Add rename flag if filename contains project name variable
-                        if '${PROJECT_NAME}' in file_name:
-                            file_info['rename_flag'] = True
-                            file_info['uses_project_name'] = True
-                            
-                        files_array.append(file_info)
-        
-        # Check for editor's files_to_cache (our most reliable source)
-        if hasattr(self, 'editor') and hasattr(self.editor, 'files_to_cache'):
-            editor_files = self.editor.files_to_cache
-            print(f"DEBUG: Editor has files_to_cache with {len(editor_files)} items")
+        if tags is None:
+            tags = []
             
-            # Debug: print all keys and file data
-            for key, val in editor_files.items():
-                print(f"DEBUG: files_to_cache[{key}] = {val}")
-            
-            # Process each file in the editor's cache and add it directly to files_array
-            for rel_path, file_data in editor_files.items():
-                if isinstance(file_data, dict) and 'original_path' in file_data and file_data['original_path']:
-                    original_path = file_data['original_path']
-                    if os.path.exists(original_path):
-                        file_name = os.path.basename(original_path)
-                        
-                        # Determine the folder for this file
-                        folder = ""
-                        if 'relative_path' in file_data:
-                            folder = file_data['relative_path'] + '/'
-                        elif '/' in rel_path:
-                            folder = os.path.dirname(rel_path) + '/'
-                        
-                        print(f"DEBUG: Adding file from editor's cache: {file_name} in folder {folder}")
-                        
-                        # Create file info
-                        file_info = {
-                            'file_name': file_name,
-                            'folder': folder,
-                            'original_path': original_path,
-                            'file_type': self._guess_file_type(file_name),
-                            'size': os.path.getsize(original_path),
-                            'is_binary': file_data.get('is_binary', False)
-                        }
-                        
-                        # Add rename flag if filename contains project name variable
-                        if '${PROJECT_NAME}' in file_name:
-                            file_info['rename_flag'] = True
-                            file_info['uses_project_name'] = True
-                            
-                        files_array.append(file_info)
-                            
-                    # Also add to files_to_cache for later processing
-                    if file_id not in files_to_cache:
-                        files_to_cache[rel_path] = file_data
-        
-        # Then extract files from structure (this may add some files that weren't in the cache)
-        if structure:
-            print(f"DEBUG: Extracting files from structure")
-            existing_file_paths = {f.get('original_path', '') for f in files_array}
-            structure_files = []
-            self._extract_files_from_structure(structure, structure_files)
-            
-            # Add files from structure that aren't already in files_array
-            for file_info in structure_files:
-                if file_info.get('original_path') and file_info.get('original_path') not in existing_file_paths:
-                    files_array.append(file_info)
-                    
-            print(f"DEBUG: Final files_array has {len(files_array)} files")
-        
-        # Process the extracted files
-        file_cache_manager = FileCacheManager()
-        processed_files = []
-        
-        for file_info in files_array:
-            file_path = file_info.get('original_path', '')
-            file_name = file_info.get('file_name', '')
-            
-            if not file_path or not file_name:
-                print(f"DEBUG: Skipping file with incomplete info: {file_info}")
-                continue
-            
-            # Check if the file exists - try alternative methods if it doesn't
-            if not os.path.exists(file_path):
-                print(f"DEBUG: Original path doesn't exist: {file_path}. Trying alternatives.")
-                
-                # Try alternative 1: Check if it's in files_to_cache
-                found = False
-                for rel_path, cache_data in files_to_cache.items():
-                    if os.path.basename(rel_path) == file_name:
-                        alternative_path = cache_data.get('original_path', '')
-                        if alternative_path and os.path.exists(alternative_path):
-                            print(f"DEBUG: Found alternative path in files_to_cache: {alternative_path}")
-                            file_path = alternative_path
-                            file_info['original_path'] = alternative_path
-                            found = True
-                            break
-                
-                # If still not found, check in folders named after file types
-                if not found:
-                    base_dir = os.path.dirname(os.path.dirname(file_path))
-                    file_type = file_info.get('file_type', '').lower()
-                    
-                    if file_type:
-                        type_folder = os.path.join(base_dir, file_type)
-                        if os.path.exists(type_folder):
-                            for root, _, files in os.walk(type_folder):
-                                if file_name in files:
-                                    alternative_path = os.path.join(root, file_name)
-                                    print(f"DEBUG: Found alternative path in type folder: {alternative_path}")
-                                    file_path = alternative_path
-                                    file_info['original_path'] = alternative_path
-                                    found = True
-                                    break
-            
-            # Cache the file if it exists and caching is enabled
-            if cache_files and os.path.exists(file_path):
-                print(f"DEBUG: Caching file: {file_name}")
-                try:
-                    rel_path = file_info.get('folder', '') + file_name
-                    # Use the correct parameter order for cache_file
-                    cache_result = file_cache_manager.cache_file(
-                        file_path,      # source_path 
-                        normalized_name,  # template_name
-                        rel_path        # relative_path
-                    )
-                    # Handle return value - could be a string path or a dict
-                    if isinstance(cache_result, dict):
-                        file_info['cached_path'] = cache_result.get('cached_path', '')
-                    elif isinstance(cache_result, str):
-                        file_info['cached_path'] = cache_result
-                except Exception as e:
-                    print(f"DEBUG: Error caching file {file_name}: {str(e)}")
-                    # Print exception traceback for debugging
-                    import traceback
-                    traceback.print_exc()
-            
-            # Add the processed file info to our final list
-            processed_files.append(file_info)
-        
-        # Create the template data
-        template = {
-            'name': template_name,
-            'description': description,
-            'category': category,
-            'created': template_data.get('created', datetime.datetime.now().isoformat()),
-            'modified': datetime.datetime.now().isoformat(),
-            'files': processed_files
-        }
-        
-        # Add structure if provided
-        if structure:
-            template['structure'] = structure
-        
-        # Save the template to file
-        try:
-            with open(template_file, 'w') as f:
-                json.dump(template, f, indent=4)
-            print(f"DEBUG: Template saved successfully to {template_file}")
-            
-            # Reload templates
-            self._reload_templates_after_save()
-            
-            return True
-        except Exception as e:
-            print(f"DEBUG: Error saving template to {template_file}: {str(e)}")
+        # Ensure structure is not None
+        if structure is None:
+            print("ERROR: Structure cannot be None when saving a template.")
             return False
             
-    def _reload_templates_after_save(self):
-        """
-        Reload templates after saving a template
-        """
-        print("DEBUG: Reloading templates after save")
+        # Derive files_array from the final structure
+        print(f"DEBUG: Deriving files_array from final structure for '{template_name}'")
+        files_array = [] # Initialize an empty list
+        try:
+            # Call the correct method, passing the list to populate
+            self._extract_files_from_structure(structure, files_array)
+            print(f"DEBUG: Derived {len(files_array)} files from structure")
+        except Exception as e:
+            print(f"ERROR deriving files from structure: {e}")
+            import traceback
+            traceback.print_exc()
+            # Decide if we should proceed with an empty files array or fail
+            # For now, let's proceed but log the error
+            files_array = [] 
+
+        # Prepare template data
+        timestamp = time.time()
+        template_data = {
+            "name": template_name,
+            "structure_name": f"Template_{template_name.replace(' ', '_')}", # Assume structure name matches template name
+            "structure": structure, 
+            "category": category or "",
+            "description": description or "",
+            "created": timestamp, 
+            "modified": timestamp,
+            "tags": tags or [],
+            "files": files_array, # Use derived files_array
+            "type": template_type or "Standard" # Ensure type is set
+        }
+
+        # Sanitize template name for filename
+        sanitized_name = self.sanitize_filename(template_name)
+        file_path = os.path.join(self.paths["templates_dir"], f"{sanitized_name}.json")
+        template_data['file_path'] = file_path # Store the intended file path
         
-        # Method 1: Try reload_templates
-        if hasattr(self, 'reload_templates'):
-            try:
-                self.reload_templates()
-                print("DEBUG: Reloaded templates using reload_templates()")
-                return
-            except Exception as e:
-                print(f"DEBUG: Error reloading templates with reload_templates(): {str(e)}")
+        # Check if this is a rename operation
+        if original_name and original_name != template_name:
+            original_sanitized_name = self.sanitize_filename(original_name)
+            original_file_path = os.path.join(self.paths["templates_dir"], f"{original_sanitized_name}.json")
+            # Preserve creation time if renaming
+            if os.path.exists(original_file_path):
+                try:
+                    original_data = load_json_file(original_file_path)
+                    if original_data and 'created' in original_data:
+                        template_data['created'] = original_data['created']
+                        print(f"DEBUG: Preserved creation time from original template '{original_name}'")
+                except Exception as e:
+                    print(f"WARN: Could not read original template file '{original_file_path}' to preserve creation time: {e}")
+            # Delete the old file
+            if os.path.exists(original_file_path):
+                try:
+                    os.remove(original_file_path)
+                    print(f"DEBUG: Removed old template file due to rename: {original_file_path}")
+                except OSError as e:
+                    print(f"ERROR: Could not remove old template file '{original_file_path}': {e}")
+                    # Decide if we should proceed or return False. Proceeding might leave orphans.
+                    # For now, let's proceed but log the error.
+            # Also delete the old cache directory if it exists
+            if self.file_cache_manager and hasattr(self.file_cache_manager, 'cache_dir'):
+                old_template_cache_path = os.path.join(self.file_cache_manager.cache_dir, original_sanitized_name)
+                if os.path.isdir(old_template_cache_path):
+                    try:
+                        shutil.rmtree(old_template_cache_path)
+                        print(f"DEBUG: Removed old template cache directory: {old_template_cache_path}")
+                    except Exception as e:
+                        print(f"ERROR: Failed to remove old template cache directory '{old_template_cache_path}': {e}")
+                else:
+                    print(f"DEBUG: Old template cache directory not found, skipping removal: {old_template_cache_path}")
+            elif not self.file_cache_manager:
+                 print("WARN: File cache manager not available, cannot clear old cache.")
+        else:
+            # If not renaming, but the file exists, preserve creation time
+            if os.path.exists(file_path):
+                try:
+                    existing_data = load_json_file(file_path)
+                    if existing_data and 'created' in existing_data:
+                        template_data['created'] = existing_data['created']
+                except Exception as e:
+                    print(f"WARN: Could not read existing template file '{file_path}' to preserve creation time: {e}")
+
+        # Cache any binary files associated with the template
+        if self.file_cache_manager:
+            print(f"DEBUG: Caching {len(files_array)} files for template '{sanitized_name}'")
+            # Iterate through derived files and cache each one individually
+            for file_info in files_array:
+                original_path = file_info.get('original_path')
+                folder_path = file_info.get('folder', '') # Relative folder within template
+                
+                if original_path and os.path.exists(original_path):
+                    try:
+                        # Call cache_file for each file
+                        cached_path = self.file_cache_manager.cache_file(
+                            file_path=original_path,
+                            template_name=sanitized_name, # Use the sanitized template name for the cache folder
+                            folder_path=folder_path # Pass the relative folder path
+                            # Optional: Add rename_flag or file_metadata if needed based on file_info
+                        )
+                        # if cached_path:
+                        #     print(f"DEBUG: Successfully cached '{original_path}' to '{cached_path}'")
+                        # else:
+                        #     print(f"WARN: Failed to cache '{original_path}'")
+                    except Exception as e:
+                        print(f"ERROR during caching file '{original_path}': {e}")
+                        import traceback
+                        traceback.print_exc()
+                elif not original_path:
+                     print(f"WARN: Skipping cache for file entry with no original_path: {file_info.get('file_name')}")
+                else: # original_path exists but file doesn't
+                     print(f"WARN: Skipping cache, source file not found: {original_path}")
         
-        # Method 2: Try load_templates
-        if hasattr(self, 'load_templates'):
-            try:
-                self.load_templates()
-                print("DEBUG: Reloaded templates using load_templates()")
-                return
-            except Exception as e:
-                print(f"DEBUG: Error reloading templates with load_templates(): {str(e)}")
-        
-        # Method 3: Try load_all_templates
-        if hasattr(self, 'load_all_templates'):
-            try:
-                self.load_all_templates()
-                print("DEBUG: Reloaded templates using load_all_templates()")
-                return
-            except Exception as e:
-                print(f"DEBUG: Error reloading templates with load_all_templates(): {str(e)}")
-        
-        print("DEBUG: No suitable method found to reload templates")
+        # Save the template JSON file
+        try:
+            save_json_file(file_path, template_data)
+            print(f"DEBUG: Template saved successfully to {file_path}")
+        except Exception as e:
+            print(f"ERROR: Failed to save template file '{file_path}': {e}")
+            return False
+
+        # ----- Update In-Memory Cache ----- 
+        # Update the in-memory cache (self.templates is a list of dicts)
+        updated = False
+        if original_name and original_name != template_name:  # Handle rename
+            # Find and remove the old template entry by original name
+            original_found = False
+            new_templates_list = []
+            for t in self.templates:
+                if isinstance(t, dict) and t.get('name') == original_name:
+                    original_found = True # Mark as found, but don't add to new list
+                else:
+                    new_templates_list.append(t) 
+            self.templates = new_templates_list
+            
+            if original_found:
+                 print(f"DEBUG: Removed old template '{original_name}' from memory.")
+            else:
+                print(f"WARN: Could not find original template '{original_name}' in memory to remove during rename.")
+                
+            # Add the new template data
+            self.templates.append(template_data)
+            updated = True
+            print(f"DEBUG: Appended renamed template '{template_name}' to memory.")
+
+        else: # Handle update or new template
+            index_to_update = -1
+            for i, t in enumerate(self.templates):
+                if isinstance(t, dict) and t.get('name') == template_name:
+                    index_to_update = i
+                    break
+            
+            if index_to_update != -1:
+                # Update existing template in place
+                self.templates[index_to_update] = template_data
+                updated = True
+                print(f"DEBUG: Updated template in memory: '{template_name}'")
+            else:
+                # Append new template if not found
+                self.templates.append(template_data)
+                updated = True
+                print(f"DEBUG: Appended new template to memory: '{template_name}'")
+
+        if not updated:
+             # This case should ideally not be reached with the logic above
+             print(f"WARN: Template '{template_name}' was not updated or added in memory list during save. State might be inconsistent.")
+        # ----- End In-Memory Cache Update -----
+            
+        # Optionally trigger a signal or callback if needed for UI updates
+        # We should emit a signal *after* the in-memory list is updated.
+        # Example:
+        # if hasattr(self, 'templates_updated_signal') and callable(getattr(self, 'templates_updated_signal', None)):
+        #     # Check if the signal exists and is callable (like a QSignal) 
+        #     try:
+        #         self.templates_updated_signal.emit() # Assuming it takes no arguments
+        #         print(f"DEBUG: Emitted templates_updated_signal after saving '{template_name}'")
+        #     except Exception as e:
+        #         print(f"WARN: Failed to emit templates_updated_signal: {e}")
+        # elif hasattr(self, 'parent_gallery') and hasattr(self.parent_gallery, 'populate_gallery'):
+        #     print("DEBUG: Calling parent gallery populate_gallery directly")
+        #     self.parent_gallery.populate_gallery() # Example of direct call if signal not available
+
+        # --- Reloading vs Direct Update --- 
+        # The direct update logic above *should* keep the list in sync.
+        # Reloading (self.load_templates()) is safer as it reads fresh from disk,
+        # but less efficient. Let's stick with the direct update for now and test.
+        # If inconsistencies appear, uncommenting self.load_templates() is the fallback.
+        # print(f"DEBUG: Reloading templates after save to ensure consistency.")
+        # self.load_templates() 
+        # --- End Reloading Section ---
+            
+        print(f"✅ Successfully saved template \'{template_name}\'")
+        return True
     
     def _extract_files_from_structure(self, structure, files_array, parent_path=""):
         """
@@ -1578,51 +1512,72 @@ class TemplateOperations:
         
         # Remove from templates list if found
         if template_index is not None:
-            del self.templates[template_index]
-            print(f"[DEBUG] TemplateOps: Removed template '{template_name}' from templates list")
-        
-        # Also check and remove from self.templates if it's a dictionary (TemplateManagerCore)
-        if hasattr(self, 'templates') and isinstance(self.templates, dict):
-            if template_name in self.templates:
-                del self.templates[template_name]
-                print(f"[DEBUG] TemplateOps: Removed template '{template_name}' from templates dictionary")
-        
-        # Clean shared template caches in various managers
-        self._clean_template_caches(template_name, normalized_name)
-        
-        # Force reload templates to ensure it doesn't reappear
-        if hasattr(self, 'reload_templates'):
-            self.reload_templates()
-            print(f"[DEBUG] TemplateOps: Forced reload_templates() after deletion")
-        elif hasattr(self, 'load_templates'):
-            self.load_templates()
-            print(f"[DEBUG] TemplateOps: Forced load_templates() after deletion")
-            
-        # Force refresh UI components that display templates
-        try:
-            # Try to refresh the gallery if available
-            if hasattr(self, 'app') and self.app:
-                print(f"[DEBUG] TemplateOps: Have app reference, attempting UI updates")
+            try:
+                del self.templates[template_index]
+                print(f"[DEBUG] TemplateOps: Removed template \'{template_name}\' from in-memory list.")
                 
-                # Refresh template gallery
-                if hasattr(self.app, 'refresh_template_gallery'):
-                    self.app.refresh_template_gallery()
-                    print(f"[DEBUG] TemplateOps: Called app.refresh_template_gallery()")
-                elif hasattr(self.app, 'template_gallery') and hasattr(self.app.template_gallery, 'refresh'):
-                    self.app.template_gallery.refresh()
-                    print(f"[DEBUG] TemplateOps: Called app.template_gallery.refresh()")
-                    
-                # Update template UI components
-                if hasattr(self.app, 'update_template_ui'):
-                    self.app.update_template_ui()
-                    print(f"[DEBUG] TemplateOps: Called app.update_template_ui()")
-                    
-                # Update recent templates if needed
-                if hasattr(self.app, 'update_recent_templates_menu'):
-                    self.app.update_recent_templates_menu()
-                    print(f"[DEBUG] TemplateOps: Called app.update_recent_templates_menu()")
-        except Exception as e:
-            print(f"[WARNING] TemplateOps: Error refreshing UI after template deletion: {e}")
+                # --- Start Logging Addition ---
+                print(f"[DEBUG] TemplateOps (Delete): State AFTER removal: {len(self.templates)} templates.")
+                if template_name in [t.get('name') for t in self.templates if isinstance(t, dict)]:
+                     print(f"[WARNING] TemplateOps (Delete): Template '{template_name}' still found in list after deletion attempt!")
+                # --- End Logging Addition ---
+                
+            except IndexError:
+                print(f"[ERROR] TemplateOps: Index {template_index} out of range when deleting \'{template_name}\'")
+        else:
+            # Also attempt removal by name if index not found
+            initial_len = len(self.templates)
+            self.templates = [t for t in self.templates if not (isinstance(t, dict) and t.get('name') == template_name)]
+            if len(self.templates) < initial_len:
+                print(f"[DEBUG] TemplateOps: Removed template \'{template_name}\' from in-memory list by name match.")
+                
+                # --- Start Logging Addition ---
+                print(f"[DEBUG] TemplateOps (Delete): State AFTER removal by name: {len(self.templates)} templates.")
+                # --- End Logging Addition ---
+                
+            else:
+                 print(f"[WARNING] TemplateOps: Template \'{template_name}\' not found in in-memory list for deletion.")
+                 
+        # --- Start Logging Addition ---
+        # Log state before reloading
+        print(f"[DEBUG] TemplateOps (Delete): State BEFORE reloading templates: {len(self.templates)} templates.")
+        # --- End Logging Addition ---
+
+        # Reload templates from disk to reflect the change
+        # Use reload_templates if available, otherwise fallback to load_templates
+        if hasattr(self, 'reload_templates') and callable(self.reload_templates):
+            self.reload_templates()
+            print(f"[DEBUG] TemplateOps: Called reload_templates()")
+        elif hasattr(self, 'load_templates') and callable(self.load_templates):
+            self.load_templates()
+            print(f"[DEBUG] TemplateOps: Called load_templates() as fallback")
+        else:
+            print(f"[WARNING] TemplateOps: No reload_templates or load_templates method found!")
+        
+        # --- Start Logging Addition ---
+        # Log state after reloading
+        print(f"[DEBUG] TemplateOps (Delete): State AFTER reloading templates: {len(self.templates)} templates.")
+        if template_name in [t.get('name') for t in self.templates if isinstance(t, dict)]:
+             print(f"[ERROR] TemplateOps (Delete): Template '{template_name}' STILL found in list after reload!")
+        else:
+             print(f"[DEBUG] TemplateOps (Delete): Template '{template_name}' confirmed removed after reload.")
+        # --- End Logging Addition ---
+
+        # Get template path and structure name
+        template_path = None
+        structure_name = None
+        structured_format = False
+        
+        if template_data:
+            template_path = template_data.get('path') or template_data.get('file_path')
+            structure_name = template_data.get('structure_name')
+            structured_format = 'structure' in template_data or structure_name
+            
+            # Print debug info on what we're deleting
+            print(f"[DEBUG] TemplateOps: Deleting template '{template_name}'")
+            print(f"[DEBUG] TemplateOps: Template path: {template_path}")
+            print(f"[DEBUG] TemplateOps: Structure name: {structure_name}")
+            print(f"[DEBUG] TemplateOps: Structured format: {structured_format}")
         
         # Mark as successful even if we couldn't find the template in memory
         # Since we still attempted to delete from filesystem

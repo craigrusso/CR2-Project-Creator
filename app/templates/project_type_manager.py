@@ -3,7 +3,7 @@
 
 import os
 import json
-from app.constants import PROJECT_TYPE_TO_STRUCTURE, DEFAULT_TEMPLATE_CATEGORIES
+from app.constants import DEFAULT_TEMPLATE_CATEGORIES
 
 class ProjectTypeManager:
     """
@@ -99,12 +99,21 @@ class ProjectTypeManager:
         if project_type in self.custom_project_types:
             return self.custom_project_types[project_type].get("structure_name")
         
-        # Check default mapping
-        if project_type in PROJECT_TYPE_TO_STRUCTURE:
-            return PROJECT_TYPE_TO_STRUCTURE[project_type]
+        # PROJECT_TYPE_TO_STRUCTURE mapping removed, as it depended on obsolete constants
+        # Maybe add logic here to find a structure matching the project type name?
+        # For now, default to a generic name or None
+        print(f"ProjectTypeManager: No custom structure found for project type '{project_type}'. Falling back.")
         
-        # Default to standard
-        return "standard"
+        # Fallback: Look for a structure with the same name as the project type
+        # This might need access to the structure list from template_manager
+        if hasattr(self.template_manager, 'get_structure'):
+            structure = self.template_manager.get_structure(project_type)
+            if structure:
+                # Found a structure with matching name
+                return project_type
+        
+        # Default to standard (or perhaps None is safer?)
+        return None # Return None instead of "standard" if no mapping exists
     
     def change_template_project_type(self, template_name, new_project_type):
         """Change the project type of a template"""

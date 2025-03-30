@@ -31,7 +31,10 @@ class EnhancedStructureEditor(QDialog):
     # Add signals for important events
     template_renamed = pyqtSignal(str, str)  # old_name, new_name
     
-    def __init__(self, parent=None, structure_name="", is_new=True, structure=None, project_type=None):
+    # Signal emitted when the structure is saved
+    structureSaved = pyqtSignal(dict) 
+    
+    def __init__(self, parent=None, structure_name="", is_new=True, structure=None, project_type=None, template_manager=None, template_data=None):
         """
         Initialize the enhanced structure editor
         
@@ -41,8 +44,14 @@ class EnhancedStructureEditor(QDialog):
             is_new: Whether this is a new structure
             structure: Structure data to load (optional)
             project_type: Associated project type (optional)
+            template_manager: Template manager instance (optional)
+            template_data: Pre-fetched template data (optional)
         """
         super(EnhancedStructureEditor, self).__init__(parent)
+        
+        # Store template manager instance
+        self.template_manager = template_manager
+        self.template_data = template_data # Store passed template data
         
         # Reset state
         self.tree_widget = None
@@ -197,63 +206,51 @@ class EnhancedStructureEditor(QDialog):
             from app.ui.structure_editor.structure_converter import StructureConverter
             self.structure_converter = StructureConverter(self.tree_widget)
             
-            # Create empty structure for new templates
-            if self.is_new:
-                # For new templates, if a structure was provided, use it
-                if hasattr(self, 'initial_structure') and self.initial_structure:
-                    print(f"DEBUG: Loading provided initial structure with {len(self.initial_structure)} items")
-                    self.structure_converter.load_structure(self.initial_structure)
-                else:
-                    # Otherwise, create an empty structure
-                    self.structure_converter.create_empty_structure()
+            # Load initial structure if provided
+            if self.initial_structure is not None:
+                print(f"DEBUG: Loading provided initial structure: {type(self.initial_structure)}")
+                try:
+                    # Load structure into the tree
+                    self.load_structure(self.initial_structure)
+                    print("DEBUG: Initial structure loaded into tree")
+                except Exception as e:
+                    print(f"ERROR loading initial structure: {e}")
+                    QMessageBox.warning(self, "Load Error", f"Failed to load initial structure: {e}")
+
+            # --- Use Passed Template Info and Set UI ---
+            if not self.is_new and self.template_data:
+                self.ui_builder.set_ui_values(self.template_data)
             else:
-                # For existing templates, attempt to load the structure
-                # First, check if a structure was provided directly
-                if hasattr(self, 'initial_structure') and self.initial_structure:
-                    print(f"DEBUG: Loading provided structure with {len(self.initial_structure)} items")
-                    self.structure_converter.load_structure(self.initial_structure)
-                else:
-                    # Attempt to load the structure from the template manager
-                    from app.templates.template_manager import TemplateManager
-                    template_manager = TemplateManager()
-                    
-                    # Try to get the structure - support both with and without Template_ prefix
-                    structure = None
-                    try:
-                        # Try the original name first
-                        structure = template_manager.get_structure(self.original_structure_name)
-                        if not structure and self.original_structure_name.startswith("Template_"):
-                            # Try without prefix
-                            clean_name = self.original_structure_name[len("Template_"):]
-                            structure = template_manager.get_structure(clean_name)
-                        elif not structure and not self.original_structure_name.startswith("Template_"):
-                            # Try with prefix
-                            prefixed_name = f"Template_{self.original_structure_name}"
-                            structure = template_manager.get_structure(prefixed_name)
-                    except Exception as e:
-                        print(f"ERROR: Failed to get structure: {e}")
-                        import traceback
-                        traceback.print_exc()
-                    
-                    if structure:
-                        print(f"DEBUG: Loading structure for {self.original_structure_name} with {len(structure)} items")
-                        self.structure_converter.load_structure(structure)
-                    else:
-                        print(f"WARNING: No structure found for {self.original_structure_name}")
-                        # Create an empty structure as fallback
-                        self.structure_converter.create_empty_structure()
-            
-            # Connect template name field to handler
-            if hasattr(self.ui_builder, 'template_name_field'):
-                self.ui_builder.template_name_field.textChanged.connect(self._on_template_name_changed)
+                print(f"DEBUG: Setting name field to: {self.template_name}")
+                self.ui_builder.template_name_field.setText(self.template_name)
+                # Explicitly set dropdown to 'No Category' for new templates
+                if self.is_new:
+                    no_cat_index = self.ui_builder.template_category_field.findText("No Category")
+                    if no_cat_index >= 0:
+                        self.ui_builder.template_category_field.setCurrentIndex(no_cat_index)
+
+            # Set initial focus
+            if self.ui_builder and self.ui_builder.template_name_field:
+                self.ui_builder.template_name_field.setFocus()
+                self.ui_builder.template_name_field.selectAll()
+                print("DEBUG: Set focus to template name field")
             
             self._components_initialized = True
-            print("DEBUG: Structure editor initialization complete")
+            print("DEBUG: Structure editor components initialized")
             
         except Exception as e:
+            print(f"CRITICAL ERROR during structure editor creation: {e}")
             import traceback
-            print(f"ERROR creating structure editor: {e}")
             traceback.print_exc()
+            # Ensure dialog still exists for error message
+            if not self.parent(): # Check if parent exists before showing message box
+                app = QApplication.instance()
+                if app: # Check if QApplication instance exists
+                    QMessageBox.critical(None, "Editor Error", f"Failed to create structure editor: {e}")
+            else:
+                QMessageBox.critical(self.parent(), "Editor Error", f"Failed to create structure editor: {e}")
+            # Optionally, close the dialog automatically on critical failure
+            # self.reject() # or self.close()
             
     def _connect_signals(self):
         """Connect UI signals to their handlers"""
@@ -858,71 +855,118 @@ class EnhancedStructureEditor(QDialog):
             # Continue with cleanup anyway 
 
     def accept(self):
-        """Dialog accepted - save data and close"""
+        """Handle the dialog acceptance (Save)"""
+        print("\n[DEBUG] EnhancedStructureEditor.accept called")
+
+        # --- 1. Get UI Data ---
         try:
-            # Get the template name from the UI
-            template_name = ""
-            structure_name = ""
-            if hasattr(self, 'ui_builder') and hasattr(self.ui_builder, 'template_name_field'):
-                template_name = self.ui_builder.template_name_field.text()
-                
-                # Use UI structure name if available
-                if hasattr(self, 'structure_name'):
-                    structure_name = self.structure_name
-                else:
-                    # Derive structure name from template name
-                    if not template_name.startswith("Template_"):
-                        structure_name = f"Template_{template_name}"
-                    else:
-                        structure_name = template_name
-            else:
-                # Use stored structure name
-                if hasattr(self, 'template_name') and self.template_name:
-                    template_name = self.template_name
-                if hasattr(self, 'structure_name') and self.structure_name:
-                    structure_name = self.structure_name
-            
-            print(f"DEBUG: Template name: {template_name}, Structure name: {structure_name}")
-            
-            # Get the structure data from the editor
-            structure = []
-            if hasattr(self, 'structure_converter') and self.structure_converter:
-                structure = self.structure_converter.get_structure()
-                
-            print(f"DEBUG: Structure has {len(structure)} items")
-            
-            # Store the UI values in the result data
-            ui_values = {}
-            if hasattr(self, 'ui_builder') and hasattr(self.ui_builder, 'get_ui_values'):
-                ui_values = self.ui_builder.get_ui_values()
-            
-            # Store data for return
-            self.result_data = {
-                'result': True,
-                'template_name': template_name,
-                'structure_name': structure_name,
-                'structure': structure,
-                'ui_values': ui_values,
-                'is_rename': hasattr(self, 'is_rename_operation') and self.is_rename_operation
-            }
-            
-            # If this is a rename operation, add the old name
-            if hasattr(self, 'is_rename_operation') and self.is_rename_operation:
-                self.result_data['old_template_name'] = self.old_template_name
-                self.result_data['new_template_name'] = self.new_template_name
-                print(f"DEBUG: This is a rename operation from '{self.old_template_name}' to '{self.new_template_name}'")
-                
-                # Emit the template_renamed signal if it's defined
-                if hasattr(self, 'template_renamed'):
-                    self.template_renamed.emit(self.old_template_name, self.new_template_name)
-            
-            # Close the dialog
-            super().accept()
+            ui_values = self.ui_builder.get_ui_values()
+            updated_template_name = ui_values.get('template_name')
+            selected_category = ui_values.get('category', 'General') # Get category, default to 'General'
+            template_description = ui_values.get('description', '')
+            print(f"[DEBUG] UI Values retrieved: Name='{updated_template_name}', Category='{selected_category}'")
         except Exception as e:
-            print(f"ERROR in accept: {e}")
+            print(f"[ERROR] Failed to get UI values: {e}")
+            QMessageBox.warning(self, "Error", "Could not retrieve template details from form.")
+            return
+
+        # Check if template name is empty
+        if not updated_template_name:
+            QMessageBox.warning(self, "Missing Name", "Please enter a name for the template.")
+            if self.ui_builder and self.ui_builder.template_name_field:
+                self.ui_builder.template_name_field.setFocus()
+            return
+
+        # --- 2. Get Structure Data ---
+        try:
+            if not self.structure_converter:
+                raise ValueError("Structure converter is not initialized")
+            updated_structure = self.structure_converter.get_structure()
+            print(f"[DEBUG] Structure retrieved from tree: {len(updated_structure)} items")
+        except Exception as e:
+            print(f"[ERROR] Failed to get structure from tree: {e}")
+            QMessageBox.warning(self, "Error", f"Could not retrieve structure from tree: {e}")
+            return
+
+        # --- 3. Construct Structure Name ---
+        # Ensure structure name always starts with "Template_"
+        if updated_template_name.startswith("Template_"):
+            updated_structure_name = updated_template_name
+        else:
+            updated_structure_name = f"Template_{updated_template_name}"
+
+        # --- 4. Determine if Renaming ---
+        is_rename = not self.is_new and self.original_structure_name and updated_structure_name != self.original_structure_name
+        print(f"[DEBUG] Is Rename: {is_rename} (Original: '{self.original_structure_name}', New: '{updated_structure_name}')")
+
+        # --- 5. Save Structure ---
+        try:
+            # Check if template manager is available
+            # Use self.template_manager if it was passed during initialization
+            # or attempt to get it from the parent if not directly available.
+            template_manager_instance = None
+            if hasattr(self, 'template_manager') and self.template_manager:
+                template_manager_instance = self.template_manager
+            elif hasattr(self.parent(), 'template_manager'):
+                template_manager_instance = self.parent().template_manager
+                print("[DEBUG] Acquired template_manager from parent")
+            
+            if not template_manager_instance:
+                raise AttributeError("Template manager instance is not available.")
+
+            print(f"[DEBUG] Attempting to save structure: Name='{updated_structure_name}', TemplateName='{updated_template_name}'")
+            # Pass the category to the save function
+            # NOTE: We will modify save_custom_structure to accept 'category'
+            success = template_manager_instance.save_custom_structure(
+                name=updated_structure_name,
+                structure=updated_structure,
+                category=selected_category # Pass the category
+            )
+
+            if not success:
+                raise RuntimeError("Failed to save the structure via Template Manager.")
+            print(f"[DEBUG] Structure saved successfully for '{updated_structure_name}'")
+
+            # After successfully saving the structure and template data, refresh the gallery
+            # Check if the parent object (likely the gallery or main app) has a refresh method
+            parent_widget = self.parent()
+            if parent_widget and hasattr(parent_widget, 'refresh_gallery'):
+                print(f"[DEBUG] Calling parent widget's refresh_gallery method")
+                parent_widget.refresh_gallery()
+            elif parent_widget and hasattr(parent_widget, 'populate_gallery'): # Alternative refresh method
+                print(f"[DEBUG] Calling parent widget's populate_gallery method")
+                parent_widget.populate_gallery(force_refresh=True)
+            elif hasattr(self, 'template_manager') and self.template_manager and hasattr(self.template_manager, 'load_templates'):
+                # Fallback: Reload templates in the manager if direct refresh isn't found
+                print(f"[DEBUG] Refresh method not found on parent, reloading templates in manager")
+                self.template_manager.load_templates()
+
+        except Exception as e:
+            print(f"[ERROR] Failed to save structure: {e}")
             import traceback
             traceback.print_exc()
-            super().reject() 
+            QMessageBox.critical(self, "Save Failed", f"Could not save the template structure: {e}")
+            return # Important: Do not accept the dialog if save fails
+
+        # --- 6. Handle Rename (if applicable) ---
+        if is_rename:
+            print(f"[DEBUG] Handling rename from '{self.original_structure_name}' to '{updated_structure_name}'")
+            # Perform rename logic if needed, maybe in template manager?
+            # Currently, save_custom_structure handles creating new/updating existing
+            # We might need to explicitly delete the old file if the name format changes filename
+            # Example: If old name was "My Template" -> Template_My_Template.json
+            # And new name is "My Renamed Template" -> Template_My_Renamed_Template.json
+            # We need to ensure the old file is removed.
+            # TemplateManager.rename_template might be better suited here?
+            # For now, assume save handles the update correctly.
+
+            # Emit signal for rename
+            self.template_renamed.emit(self.original_structure_name.replace("Template_", ""), updated_template_name)
+
+        # --- 7. Cleanup and Accept ---
+        self._cleanup()
+        super(EnhancedStructureEditor, self).accept()
+        print("[DEBUG] EnhancedStructureEditor accepted successfully")
 
     def load_structure(self, structure):
         """Load a structure into the editor

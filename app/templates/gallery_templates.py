@@ -191,131 +191,80 @@ def handle_template_edit(gallery, template=None, selected_template=None, name=No
         # Show the structure editor
         print(f"🔷 GALLERY LISTENER: Opening structure editor - structure_name: {template.get('structure_name') or template.get('name')}, is_new: {is_new}")
         
-        # Use the enhanced structure editor
-        structure_result = show_enhanced_structure_editor(
+        # Use the enhanced structure editor - Capture category and description
+        success, updated_structure, updated_structure_name, _, updated_template_name, saved_category, saved_description = show_enhanced_structure_editor(
             parent=gallery if isinstance(gallery, QWidget) else None,
             structure_name=template.get('structure_name', f"Template_{template.get('name', '')}"),
             structure=template.get('structure', []),
-            is_new=is_new
+            is_new=is_new,
+            template_name=template.get('name'), # Pass current template name
+            template_manager=gallery.app.template_manager if hasattr(gallery, 'app') else None # Pass template manager
         )
         
-        # Unpack the result with support for expanded return values
-        if len(structure_result) >= 5:  # New format with 5 return values
-            success, updated_structure, updated_structure_name, original_template_name, updated_template_name = structure_result
-        elif len(structure_result) == 3:  # Legacy format with 3 return values
-            success, updated_structure, updated_structure_name = structure_result
-            original_template_name = None
-            updated_template_name = None
-        else:  # Minimal format with 2 return values
-            success, updated_structure_name = structure_result
-            updated_structure = None
-            original_template_name = None
-            updated_template_name = None
+        # Check if the editor was successful and returned valid data
+        if success and updated_template_name:
+            print(f"🔷 GALLERY LISTENER: Editor returned success. Template='{updated_template_name}', Category='{saved_category}', Desc='{saved_description}'")
             
-        if success and updated_structure_name:
-            # Get updated name without Template_ prefix
-            updated_name = updated_structure_name
-            if updated_structure_name.startswith("Template_"):
-                updated_name = updated_structure_name[9:]
+            # Determine if it was a rename operation
+            is_rename = original_template_name and updated_template_name != original_template_name
             
-            # Use the template name from expanded return if available
-            if updated_template_name:
-                updated_name = updated_template_name
+            # Get the template manager instance
+            template_manager = gallery.app.template_manager if hasattr(gallery, 'app') else None
+            if not template_manager:
+                print("❌ GALLERY LISTENER: Template manager not available")
+                return False
             
-            # Use the updated structure if available
-            if updated_structure is not None:
-                # Update the template with new values
-                template['name'] = updated_name
-                template['structure_name'] = updated_structure_name
-                template['structure'] = updated_structure
+            # --- Save structure (using save_custom_structure) ---
+            # Ensure structure name always starts with Template_
+            if not updated_structure_name.startswith("Template_"):
+                updated_structure_name = f"Template_{updated_template_name}"
+                
+            print(f"🔷 GALLERY LISTENER: Saving structure: Name='{updated_structure_name}', Category='{saved_category}'")
+            structure_save_success = template_manager.save_custom_structure(
+                name=updated_structure_name,
+                structure=updated_structure,
+                category=saved_category,  # Use category from editor
+                description=saved_description # Use description from editor
+            )
+            
+            if not structure_save_success:
+                print(f"❌ GALLERY LISTENER: Failed to save structure for template '{updated_template_name}'")
+                QMessageBox.warning(gallery, "Save Error", f"Could not save the template structure for {updated_template_name}. The structure might be saved, but the template list may be inconsistent.")
+                return False
+            
+            # --- Save main template file (using save_template) ---
+            print(f"🔷 GALLERY LISTENER: Saving main template file: Name='{updated_template_name}', Category='{saved_category}'")
+            # Pass arguments directly to save_template based on its new signature
+            template_save_success = template_manager.save_template(
+                template_name=updated_template_name,
+                structure=updated_structure, # Pass the structure directly
+                category=saved_category, 
+                description=saved_description, 
+                tags=template.get('tags'), # Pass existing tags if available
+                template_type=template.get('type', 'Standard'), # Pass existing type or default
+                original_name=original_template_name if is_rename else None # Pass original name only if renamed
+            )
+            
+            if template_save_success:
+                print(f"✅ GALLERY LISTENER: Successfully saved template '{updated_template_name}'")
+                # Refresh gallery needs to happen here after successful save
+                if hasattr(gallery, 'populate_gallery'):
+                    print(f"🔄 GALLERY LISTENER: Refreshing gallery after successful edit.")
+                    gallery.populate_gallery(force_refresh=True)
+                return True # Indicate success
             else:
-                # Legacy handling if structure wasn't returned
-                template['name'] = updated_name
-                template['structure_name'] = updated_structure_name
-            
-            # Save the template if it was edited successfully
-            if hasattr(gallery, 'app') and hasattr(gallery.app, 'template_manager'):
-                # Use original_template_name from expanded return value if available
-                if not original_template_name:
-                    if isinstance(selected_template, str) and selected_template:
-                        original_template_name = selected_template
-                    elif isinstance(selected_template, dict) and 'name' in selected_template:
-                        original_template_name = selected_template.get('name')
-                    elif hasattr(gallery, 'selected_template') and gallery.selected_template:
-                        if isinstance(gallery.selected_template, str):
-                            original_template_name = gallery.selected_template
-                        elif isinstance(gallery.selected_template, dict) and 'name' in gallery.selected_template:
-                            original_template_name = gallery.selected_template.get('name')
-                
-                # Print detailed debug info
-                print(f"🔷 GALLERY LISTENER: Name comparison: old_name='{original_template_name}', updated_name='{updated_name}'")
-                
-                # Explicit rename detection
-                is_rename = original_template_name and original_template_name != updated_name
-                print(f"🔷 GALLERY LISTENER: is_rename={is_rename}")
-                
-                # Always use the rename_template method for template name changes
-                if is_rename:
-                    print(f"🔷 GALLERY LISTENER: Template renamed from '{original_template_name}' to '{updated_name}'")
-                    # Rename the template
-                    rename_success = gallery.app.template_manager.rename_template(original_template_name, updated_name)
-                    print(f"🔷 GALLERY LISTENER: Template rename result: {rename_success}")
-                else:
-                    # For non-rename operations, use save_template with the updated name
-                    print(f"🔷 GALLERY LISTENER: Template wasn't renamed, just updating: {updated_name}")
-                    name = updated_name
-                    file_path = template.get('path', '')
-                    structure_type = template.get('type', 'Standard')
-                    description = template.get('description', '')
-                    
-                    # Log the parameters we're using
-                    print(f"🔷 GALLERY LISTENER: Saving template '{name}' with path='{file_path}', type='{structure_type}'")
-                    
-                    # Save the template with required parameters
-                    if name:
-                        # Create template data dictionary
-                        template_data = {
-                            'name': name,
-                            'description': description,
-                            'type': structure_type,
-                            'category': template.get('category', 'Custom'),
-                            'created': template.get('created', time.time()),
-                            'modified': time.time(),
-                            'tags': template.get('tags', [])
-                        }
-                        
-                        # Get structure from template if it exists
-                        structure = template.get('structure', None)
-                        
-                        # Call save_template with the new parameter format
-                        save_success = gallery.app.template_manager.save_template(
-                            template_name=name,
-                            template_data=template_data,
-                            structure=structure,
-                            category=template.get('category', 'Custom'),
-                            is_update=True,
-                            original_name=original_template_name if original_template_name != name else None
-                        )
-                        print(f"🔷 GALLERY LISTENER: Template save result: {save_success}")
-                    else:
-                        print("🔍 ERROR: Cannot save template - empty name")
-            
-            # Force refresh of gallery
-            gallery.templates_loaded = False
-            gallery.populate_gallery(force_refresh=True)
-            
-            # Process pending events to ensure UI is updated
-            QApplication.processEvents()
-            
-            # Select the edited template
-            QTimer.singleShot(500, lambda: gallery.select_template(updated_name))
-        
-        return True
+                print(f"❌ GALLERY LISTENER: Failed to save main template file for '{updated_template_name}'")
+                QMessageBox.warning(gallery, "Save Error", f"Could not save the main template file for {updated_template_name}. The structure might be saved, but the template list may be inconsistent.")
+                return False # Indicate failure
+        else:
+            print(f"🔷 GALLERY LISTENER: Editor cancelled or failed. Success={success}, Name='{updated_template_name}'")
+            return False # Indicate cancellation or failure
     
     except Exception as e:
-        print(f"🔷 GALLERY LISTENER: Error in direct template edit: {e}")
         import traceback
+        print(f"❌ GALLERY LISTENER: Error during template edit: {e}")
         traceback.print_exc()
+        QMessageBox.critical(gallery, "Edit Error", f"An unexpected error occurred while editing the template: {e}")
         return False
 
 def select_template_after_rename(gallery, new_name, old_name):
@@ -904,6 +853,7 @@ class GalleryTemplatesSetup:
                 template_data = {"name": name, "category": "Custom", "description": ""}
                 print(f"[DEBUG] Gallery: Creating template card from name only '{name}'")
             
+            print(f"DEBUG (Card): Populating card with data: {template_data}")
             template_card = TemplateCard(gallery, template=template_data, app=gallery.app)
             
             # Connect all signals using the common helper

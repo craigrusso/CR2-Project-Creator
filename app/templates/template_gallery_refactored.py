@@ -68,8 +68,21 @@ class TemplateGallery(QWidget):
             return
             
         # Skip if already loaded unless forced
-        if self.templates_loaded and not force_refresh:
-            return
+        # Commenting this out temporarily to ensure refresh happens for testing
+        # if self.templates_loaded and not force_refresh:
+        #     return
+        
+        # Explicitly reload templates from disk right before populating
+        # This guarantees we have the latest data, even if less efficient
+        print(f"[DEBUG] Gallery: Forcing template reload before populating...")
+        try:
+            if hasattr(self.app, 'template_manager') and hasattr(self.app.template_manager, 'load_templates'):
+                self.app.template_manager.load_templates()
+                print(f"[DEBUG] Gallery: Templates reloaded.")
+            else:
+                print(f"[WARNING] Gallery: Cannot reload templates - template_manager or load_templates missing.")
+        except Exception as e:
+            print(f"[ERROR] Gallery: Failed during explicit template reload: {e}")
             
         # Always reset multi-selection when refreshing gallery
         self.multi_selected_templates = []
@@ -80,11 +93,35 @@ class TemplateGallery(QWidget):
         # Check if we have a template_manager attribute in the app
         if hasattr(self.app, 'template_manager'):
             # Use template_manager if available
-            if hasattr(self.app.template_manager, 'templates'):
-                templates = self.app.template_manager.templates
-            else:
+            # Always fetch fresh templates using the getter method
+            print(f"[DEBUG] Gallery: Fetching templates using get_all_templates()...")
+            if hasattr(self.app.template_manager, 'get_all_templates'):
+                templates_list = self.app.template_manager.get_all_templates() # Use getter method
+                print(f"[DEBUG] Gallery (Populate): Received {len(templates_list)} templates from get_all_templates(). Names: {[t.get('name', 'N/A') for t in templates_list if isinstance(t, dict)]}")
+                # Convert list to dict for processing, ensuring no duplicates overwrite
                 templates = {}
-                
+                for t in templates_list:
+                    if isinstance(t, dict) and 'name' in t:
+                        if t['name'] not in templates:
+                            templates[t['name']] = t
+                        else:
+                             print(f"[WARNING] Gallery: Duplicate template name '{t['name']}' found during fetch. Skipping.")
+                    else:
+                         print(f"[WARNING] Gallery: Invalid template format found: {t}")
+                print(f"[DEBUG] Gallery: Fetched {len(templates)} unique templates.")
+            else:
+                print("[WARNING] Gallery: template_manager missing get_all_templates method. Falling back.")
+                templates = getattr(self.app.template_manager, 'templates', {}) # Fallback
+                if isinstance(templates, list): # Handle list fallback
+                    temp_dict = {}
+                    for t in templates:
+                         if isinstance(t, dict) and 'name' in t:
+                              if t['name'] not in temp_dict:
+                                   temp_dict[t['name']] = t
+                         else:
+                              print(f"[WARNING] Gallery: Invalid template format found in fallback list: {t}")
+                    templates = temp_dict
+
             if hasattr(self.app.template_manager, 'get_folders'):
                 folders = self.app.template_manager.get_folders()
             else:
@@ -226,7 +263,9 @@ class TemplateGallery(QWidget):
                 for i in range(count-1, -1, -1):  # Loop backwards to avoid index issues
                     item = self.templates_grid.takeAt(i)
                     if item and item.widget():
-                        item.widget().deleteLater()
+                        widget = item.widget()
+                        widget.setParent(None)
+                        widget.deleteLater()
             except (RuntimeError, AttributeError):
                 # Handle case where grid has been deleted
                 pass
@@ -239,7 +278,9 @@ class TemplateGallery(QWidget):
                 for i in range(count-1, -1, -1):  # Loop backwards to avoid index issues
                     item = self.folders_grid.takeAt(i)
                     if item and item.widget():
-                        item.widget().deleteLater()
+                        widget = item.widget()
+                        widget.setParent(None)
+                        widget.deleteLater()
             except (RuntimeError, AttributeError):
                 # Handle case where grid has been deleted
                 pass

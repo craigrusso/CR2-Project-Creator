@@ -46,7 +46,7 @@ def show_enhanced_structure_editor(
         callback: Optional callback function for when dialog is accepted
         
     Returns:
-        tuple: (success, updated_structure, updated_structure_name)
+        tuple: (success, updated_structure, updated_structure_name, category, description)
     """
     print(f"🔧 STRUCTURE EDITOR: Showing editor for '{structure_name}' (is_new={is_new})")
     
@@ -55,13 +55,26 @@ def show_enhanced_structure_editor(
         from app.ui.structure_editor_enhanced import EnhancedStructureEditor
         from app.ui.tree_styling import apply_styling_to_all_tree_widgets
         
-        # Create the editor instance
+        # Try to pre-fetch template data if editing an existing template
+        fetched_template_data = None
+        if not is_new and template_manager and template_name:
+            print(f"🔧 STRUCTURE EDITOR: Pre-fetching data for template '{template_name}'")
+            # Use get_template_by_name for robust matching
+            fetched_template_data = template_manager.get_template_by_name(template_name) 
+            if fetched_template_data:
+                print(f"🔧 STRUCTURE EDITOR: Successfully pre-fetched template data.")
+            else:
+                print(f"⚠️ STRUCTURE EDITOR: Failed to pre-fetch template data for '{template_name}'. Editor will use defaults.")
+
+        # Create the editor instance, passing pre-fetched data
         editor = EnhancedStructureEditor(
             parent=parent,
             structure_name=structure_name,
             is_new=is_new,
             structure=structure,
-            project_type=project_type
+            project_type=project_type,
+            template_manager=template_manager, # Pass manager instance
+            template_data=fetched_template_data # Pass fetched data
         )
         
         # If template_name is provided, set it explicitly
@@ -94,62 +107,67 @@ def show_enhanced_structure_editor(
         if result == editor.Accepted:
             print(f"🔧 STRUCTURE EDITOR: Dialog accepted")
             
-            # Get structure
-            if hasattr(editor, 'get_structure'):
-                updated_structure = editor.get_structure()
-            elif hasattr(editor, 'structure_converter') and editor.structure_converter:
+            # Get UI values (name, category, description)
+            try:
+                ui_values = editor.ui_builder.get_ui_values()
+                updated_template_name = ui_values.get('template_name')
+                selected_category = ui_values.get('category', 'General')
+                template_description = ui_values.get('description', '')
+                print(f"[DEBUG] Editor UI Values: Name='{updated_template_name}', Category='{selected_category}'")
+                
+                # Get structure data
+                if not editor.structure_converter:
+                    raise ValueError("Structure converter is not initialized")
                 updated_structure = editor.structure_converter.get_structure()
-            else:
-                updated_structure = []
+                print(f"[DEBUG] Structure retrieved from tree: {len(updated_structure)} items")
+                
+                # Get structure name (ensure Template_ prefix)
+                updated_structure_name = updated_template_name
+                if updated_structure_name and not updated_structure_name.startswith("Template_"):
+                    updated_structure_name = f"Template_{updated_template_name}"
+                print(f"[DEBUG] Final structure name: {updated_structure_name}")
+                
+            except Exception as e:
+                print(f"[ERROR] Failed to get data from editor: {e}")
+                QMessageBox.warning(parent, "Error", f"Could not retrieve template details from editor: {e}")
+                # Return failure, indicating no changes should be saved
+                return False, None, None, None, None, None, None # Added None for category/description
             
-            # Get structure name
-            if hasattr(editor, 'get_structure_name'):
-                updated_structure_name = editor.get_structure_name()
-            else:
-                # Construct the structure name based on template name
-                template_name = editor.template_name if hasattr(editor, 'template_name') else ""
-                if template_name and not template_name.startswith("Template_"):
-                    updated_structure_name = f"Template_{template_name}"
-                else:
-                    updated_structure_name = template_name or structure_name
+            # Check if template name is empty
+            if not updated_template_name:
+                QMessageBox.warning(editor, "Missing Name", "Please enter a name for the template.")
+                if editor.ui_builder and editor.ui_builder.template_name_field:
+                    editor.ui_builder.template_name_field.setFocus()
+                # Re-show dialog? Or just fail? For now, return failure.
+                return False, None, None, None, None, None, None # Added None for category/description
             
-            # Get template name
-            if hasattr(editor, 'get_template_name'):
-                updated_template_name = editor.get_template_name()
-            else:
-                updated_template_name = editor.template_name if hasattr(editor, 'template_name') else ""
-            
-            # Check if this was a rename operation
-            is_rename = original_template_name and updated_template_name and original_template_name != updated_template_name
-            
-            # Preserve existing structure name if this is an edit operation
-            # unless explicitly changed in the dialog
-            if not is_new and structure_name and updated_structure_name != structure_name:
-                print(f"🔧 STRUCTURE EDITOR: Structure name changed from '{structure_name}' to '{updated_structure_name}'")
-            
+            # Determine if it was a rename operation
+            is_rename = not is_new and original_template_name and updated_template_name != original_template_name
             if is_rename:
                 print(f"🔧 STRUCTURE EDITOR: Template renamed from '{original_template_name}' to '{updated_template_name}'")
             
-            # If we have a callback, call it with the updated structure
+            # If we have a callback, call it with all the updated data
             if callable(callback):
-                print(f"🔧 STRUCTURE EDITOR: Calling callback with updated structure")
+                print(f"🔧 STRUCTURE EDITOR: Calling callback with updated structure and info")
                 callback_result = callback({
                     'name': updated_template_name,
                     'original_name': original_template_name,
                     'structure_name': updated_structure_name,
                     'structure': updated_structure,
+                    'category': selected_category, # Pass category
+                    'description': template_description, # Pass description
                     'is_new': is_new,
                     'is_rename': is_rename
                 })
                 
-                # Return expanded information about the result
-                return callback_result, updated_structure, updated_structure_name, original_template_name, updated_template_name
-            
-            # Return expanded information about the result
-            return True, updated_structure, updated_structure_name, original_template_name, updated_template_name
+                # Return expanded information about the result, including category/description
+                return callback_result, updated_structure, updated_structure_name, original_template_name, updated_template_name, selected_category, template_description
+            else:
+                # If no callback, return the data directly
+                return True, updated_structure, updated_structure_name, original_template_name, updated_template_name, selected_category, template_description
         else:
             print(f"🔧 STRUCTURE EDITOR: Dialog cancelled")
-            return False, None, None, None, None
+            return False, None, None, None, None, None, None # Added None for category/description
     except Exception as e:
         print(f"ERROR showing enhanced structure editor: {e}")
         import traceback

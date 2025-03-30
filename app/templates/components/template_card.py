@@ -149,15 +149,17 @@ class TemplateCard(QFrame):
         self.name_label.setStyleSheet(f"color: {colors['text']};")
         text_layout.addWidget(self.name_label)
         
-        # Template type label
-        type_str = self.template.get("type", "")
-        self.type_label = QLabel(str(type_str), self)
-        self.type_label.setAlignment(Qt.AlignCenter)
+        # Template category label (changed from type_label)
+        category_str = self.template.get("category") # Read 'category'
+        # Display "No Category" if category is missing or empty
+        display_category = category_str if category_str else "No Category" 
+        self.category_label = QLabel(display_category, self) # Use display_category
+        self.category_label.setAlignment(Qt.AlignCenter)
         font = QFont(SYSTEM_FONT)
         font.setPointSize(8)
-        self.type_label.setFont(font)
-        self.type_label.setStyleSheet(f"color: {colors['secondary_text']};")
-        text_layout.addWidget(self.type_label)
+        self.category_label.setFont(font)
+        self.category_label.setStyleSheet(f"color: {colors['secondary_text']};")
+        text_layout.addWidget(self.category_label) # Add category_label
         
         layout.addWidget(text_container)
         
@@ -533,7 +535,7 @@ class TemplateCard(QFrame):
             
             # Text colors
             self.name_label.setStyleSheet("color: white; font-weight: bold; background-color: transparent;")
-            self.type_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
+            self.category_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
             self.icon_label.setStyleSheet("color: white; background-color: transparent;")
             
             print(f"⭐ Applied SELECTED style to {self.template_name()}")
@@ -581,7 +583,7 @@ class TemplateCard(QFrame):
             
             # Text colors
             self.name_label.setStyleSheet("color: white; font-weight: bold; background-color: transparent;")
-            self.type_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
+            self.category_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
             self.icon_label.setStyleSheet("color: white; background-color: transparent;")
         
         # Priority: multi-selected > selected > hover > normal
@@ -597,7 +599,7 @@ class TemplateCard(QFrame):
             
             # Text colors
             self.name_label.setStyleSheet("color: white; font-weight: bold; background-color: transparent;")
-            self.type_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
+            self.category_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
             self.icon_label.setStyleSheet("color: white; background-color: transparent;")
             
         elif self.selected:
@@ -615,7 +617,7 @@ class TemplateCard(QFrame):
             
             # Text colors
             self.name_label.setStyleSheet("color: white; font-weight: bold; background-color: transparent;")
-            self.type_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
+            self.category_label.setStyleSheet("color: rgba(255, 255, 255, 0.8); background-color: transparent;")
             self.icon_label.setStyleSheet("color: white; background-color: transparent;")
             
             # Debug - print style that was applied
@@ -633,7 +635,7 @@ class TemplateCard(QFrame):
             
             # Text colors for hover state
             self.name_label.setStyleSheet("color: white; background-color: transparent;")
-            self.type_label.setStyleSheet("color: #AAAAAA; background-color: transparent;")
+            self.category_label.setStyleSheet("color: #AAAAAA; background-color: transparent;")
             self.icon_label.setStyleSheet("color: white; background-color: transparent;")
         
         else:
@@ -648,7 +650,7 @@ class TemplateCard(QFrame):
             
             # Default text colors
             self.name_label.setStyleSheet("color: white; background-color: transparent;")
-            self.type_label.setStyleSheet("color: #AAAAAA; background-color: transparent;")
+            self.category_label.setStyleSheet("color: #AAAAAA; background-color: transparent;")
             self.icon_label.setStyleSheet("color: white; background-color: transparent;")
         
         # Force immediate update
