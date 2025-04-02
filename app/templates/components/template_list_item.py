@@ -11,10 +11,11 @@ import time
 import datetime
 import os
 from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QApplication, QMenu, QAction
-from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QMimeData
-from PyQt5.QtGui import QFont, QPalette, QColor, QDrag, QPixmap
+from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QMimeData, QSize
+from PyQt5.QtGui import QFont, QPalette, QColor, QDrag, QPixmap, QIcon
 
 from app.ui.color_scheme_pyqt import colors  # Add missing colors import
+from app.constants import get_resource_path # Added get_resource_path import
 
 # Simple, stable implementation with minimal dependencies
 class TemplateListItem(QFrame):
@@ -69,16 +70,52 @@ class TemplateListItem(QFrame):
         layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(8)
         
-        # Icon label (template icon)
-        self.icon_label = QLabel("📄")
-        self.icon_label.setFixedWidth(24)
+        # Icon label (template icon) - Load SVG
+        self.icon_label = QLabel()
+        self.icon_label.setAlignment(Qt.AlignCenter)
+        self.icon_label.setFixedSize(30, 30) # Keep fixed size for list view consistency
+        self.icon_label.setStyleSheet("background-color: transparent;") # Ensure background is transparent
+        
+        icon_path = get_resource_path(os.path.join(
+            "ICONS", "templates", "template_structure_icon.svg"))
+            
+        if os.path.exists(icon_path):
+            icon = QIcon(icon_path)
+            pixmap = icon.pixmap(QSize(24, 24)) # Use QSize, slightly smaller pixmap for padding within the 30x30 label
+            if not pixmap.isNull():
+                self.icon_label.setPixmap(pixmap)
+            else:
+                print(f"Warning: Failed to load SVG icon for list item: {icon_path}")
+                # Fallback to text icon if SVG loading fails
+                self.icon_label.setText("📄")
+                font = QFont()
+                font.setPointSize(14)
+                self.icon_label.setFont(font)
+                self.icon_label.setStyleSheet(f"color: {colors.get('accent', '#FFFFFF')}; background-color: transparent;") # Add color fallback
+        else:
+            print(f"Warning: SVG icon file not found for list item: {icon_path}")
+            # Fallback to text icon if file not found
+            self.icon_label.setText("📄")
+            font = QFont()
+            font.setPointSize(14)
+            self.icon_label.setFont(font)
+            self.icon_label.setStyleSheet(f"color: {colors.get('accent', '#FFFFFF')}; background-color: transparent;") # Add color fallback
+
         layout.addWidget(self.icon_label)
         
         # Name label
         template_name = template.get('name', 'Untitled Template') if isinstance(template, dict) else str(template)
         self.name_label = QLabel(template_name)
-        self.name_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        layout.addWidget(self.name_label, 1)
+        self.name_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        self.name_label.setFixedWidth(300)  # Set initial width
+        layout.addWidget(self.name_label)
+        
+        # Category label - new field
+        category_text = template.get('category', '') if isinstance(template, dict) else ''
+        self.category_label = QLabel(category_text)
+        self.category_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.category_label.setFixedWidth(150)  # Set initial width to match header
+        layout.addWidget(self.category_label)
         
         # Format timestamps safely
         created_timestamp = template.get('created', time.time()) if isinstance(template, dict) else time.time()
@@ -89,14 +126,14 @@ class TemplateListItem(QFrame):
         
         # Created date
         self.created_date_label = QLabel(created_date_str)
-        self.created_date_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.created_date_label.setFixedWidth(130)
+        self.created_date_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.created_date_label.setFixedWidth(150)  # Set initial width to match header
         layout.addWidget(self.created_date_label)
         
         # Modified date
         self.modified_date_label = QLabel(modified_date_str)
-        self.modified_date_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.modified_date_label.setFixedWidth(130)
+        self.modified_date_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.modified_date_label.setFixedWidth(150)  # Set initial width to match header
         layout.addWidget(self.modified_date_label)
         
         # Apply initial styling
@@ -463,6 +500,30 @@ class TemplateListItem(QFrame):
             
         except Exception as e:
             print(f"Error updating list item styling: {e}")
+
+    def setNameWidth(self, width):
+        """Set the width of the name column"""
+        if hasattr(self, 'name_label'):
+            self.name_label.setFixedWidth(width)
+            self.update()
+            
+    def setCategoryWidth(self, width):
+        """Set the width of the category column"""
+        if hasattr(self, 'category_label'):
+            self.category_label.setFixedWidth(width)
+            self.update()
+            
+    def setCreatedDateWidth(self, width):
+        """Set the width of the created date column"""
+        if hasattr(self, 'created_date_label'):
+            self.created_date_label.setFixedWidth(width)
+            self.update()
+            
+    def setModifiedDateWidth(self, width):
+        """Set the width of the modified date column"""
+        if hasattr(self, 'modified_date_label'):
+            self.modified_date_label.setFixedWidth(width)
+            self.update()
 
     def setSelected(self, selected):
         """Set the selected state of this list item"""

@@ -326,9 +326,7 @@ class TemplateOperations:
         if not template_name:
             print("ERROR: Cannot save template without a name.")
             return False, "Template name is required."
-        if not structure:
-             print("ERROR: Cannot save template without a structure.")
-             return False, "Template structure cannot be empty."
+        # --- REMOVED structure validation ---
         # --- END Validation ---
 
         # --- MOVED: Ensure sanitized_name is defined early ---

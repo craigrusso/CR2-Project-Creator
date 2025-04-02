@@ -18,7 +18,7 @@ from PyQt5.QtWidgets import (
     QFrame, QMenu, QMessageBox, QAction, QButtonGroup, QToolButton, QTableWidget, 
     QTableWidgetItem, QAbstractItemView, QHeaderView, QSpacerItem, QLineEdit, QCompleter,
     QListWidget, QListWidgetItem, QStyle, QStyledItemDelegate, QStyleOptionViewItem,
-    QStyleOptionFrame, QCheckBox, QDialog, QTreeWidget, QTreeWidgetItem
+    QStyleOptionFrame, QCheckBox, QDialog, QTreeWidget, QTreeWidgetItem, QSplitter
 )
 from PyQt5.QtGui import QIcon, QColor, QFont, QPixmap, QCursor, QPainter, QPalette, QPen, QBrush
 from PyQt5.QtCore import Qt, pyqtSignal, QSize, QPoint, QRect, QBuffer, QTimer, QEvent
@@ -53,17 +53,25 @@ def sort_templates(templates, sort_field='name', sort_order='asc'):
     # Make sure the sort is stable by using a tuple with name as secondary sort
     def sort_key(template):
         if isinstance(template, str):
-            return template.lower()
-        elif sort_field == 'date' or sort_field == 'created':
-            # Sort by date (created or modified)
-            date_value = template.get('date_modified', template.get('created', ''))
-            return (date_value, template.get('name', '').lower())
+            # If template is just a string (name), use it directly for sorting
+            return (template.lower(), '')
+        
+        # For dict templates, handle different sort fields
+        if sort_field == 'created' or sort_field == 'date':
+            # Sort by date (created timestamp)
+            created = template.get('created', 0)
+            return (created, template.get('name', '').lower())
+        elif sort_field == 'modified':
+            # Sort by modified timestamp
+            modified = template.get('modified', template.get('created', 0))
+            return (modified, template.get('name', '').lower())
         elif sort_field == 'category':
-            # Sort by category
-            return (template.get('category', '').lower(), template.get('name', '').lower())
+            # Sort by category, with empty categories at the end
+            category = template.get('category', '').lower()
+            return (category if category else 'zzz', template.get('name', '').lower())
         else:
             # Default sort by name
-            return template.get('name', '').lower()
+            return (template.get('name', '').lower(), '')
     
     return sorted(template_list, key=sort_key, reverse=reverse)
 
@@ -667,8 +675,18 @@ class GalleryTemplatesSetup:
             header_layout.setContentsMargins(10, 5, 10, 5)
             header_layout.setSpacing(5)
             
+            # Import additional required widgets
+            from PyQt5.QtWidgets import QSplitter
+            
+            # Create a splitter for resizable columns
+            header_splitter = QSplitter(Qt.Horizontal)
+            header_splitter.setObjectName("HeaderSplitter")
+            header_splitter.setChildrenCollapsible(False)
+            header_splitter.setHandleWidth(2)
+            
             # Determine sort indicators
             name_sort_indicator = ""
+            category_sort_indicator = ""
             created_sort_indicator = ""
             modified_sort_indicator = ""
             
@@ -677,38 +695,87 @@ class GalleryTemplatesSetup:
                 
                 if gallery.current_sort_field == "name":
                     name_sort_indicator = f" {sort_arrow}"
+                elif gallery.current_sort_field == "category":
+                    category_sort_indicator = f" {sort_arrow}"
                 elif gallery.current_sort_field == "created":
                     created_sort_indicator = f" {sort_arrow}"
                 elif gallery.current_sort_field == "modified":
                     modified_sort_indicator = f" {sort_arrow}"
+            
+            # Name header container
+            name_header_container = QWidget()
+            name_header_layout = QHBoxLayout(name_header_container)
+            name_header_layout.setContentsMargins(0, 0, 0, 0)
             
             # Column headers with click-to-sort functionality
             name_header = QLabel(f"Name{name_sort_indicator}")
             name_header.setStyleSheet(f"font-weight: bold; color: {'#4A86E8' if name_sort_indicator else colors['text']};")
             name_header.setCursor(Qt.PointingHandCursor)
             name_header.mousePressEvent = lambda e: GalleryTemplatesSetup.set_template_sort(gallery, 'name')
-            header_layout.addWidget(name_header)
+            name_header_layout.addWidget(name_header)
+            name_header_layout.addStretch(1)
             
-            # Add spacer
-            header_layout.addStretch(1)
+            # Category header container
+            category_header_container = QWidget()
+            category_header_layout = QHBoxLayout(category_header_container)
+            category_header_layout.setContentsMargins(0, 0, 0, 0)
+            
+            # Category header
+            category_header = QLabel(f"Category{category_sort_indicator}")
+            category_header.setStyleSheet(f"font-weight: bold; color: {'#4A86E8' if category_sort_indicator else colors['text']};")
+            category_header.setCursor(Qt.PointingHandCursor)
+            category_header.mousePressEvent = lambda e: GalleryTemplatesSetup.set_template_sort(gallery, 'category')
+            category_header_layout.addWidget(category_header)
+            category_header_layout.addStretch(1)
+            
+            # Created date header container
+            created_header_container = QWidget()
+            created_header_layout = QHBoxLayout(created_header_container)
+            created_header_layout.setContentsMargins(0, 0, 0, 0)
             
             # Created date header
             created_header = QLabel(f"Created{created_sort_indicator}")
             created_header.setStyleSheet(f"font-weight: bold; color: {'#4A86E8' if created_sort_indicator else colors['text']};")
-            created_header.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            created_header.setFixedWidth(130)
+            created_header.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             created_header.setCursor(Qt.PointingHandCursor)
             created_header.mousePressEvent = lambda e: GalleryTemplatesSetup.set_template_sort(gallery, 'created')
-            header_layout.addWidget(created_header)
+            created_header_layout.addWidget(created_header)
+            created_header_layout.addStretch(1)
+            
+            # Modified date header container
+            modified_header_container = QWidget()
+            modified_header_layout = QHBoxLayout(modified_header_container)
+            modified_header_layout.setContentsMargins(0, 0, 0, 0)
             
             # Modified date header
             modified_header = QLabel(f"Modified{modified_sort_indicator}")
             modified_header.setStyleSheet(f"font-weight: bold; color: {'#4A86E8' if modified_sort_indicator else colors['text']};")
-            modified_header.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            modified_header.setFixedWidth(130)
+            modified_header.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             modified_header.setCursor(Qt.PointingHandCursor)
             modified_header.mousePressEvent = lambda e: GalleryTemplatesSetup.set_template_sort(gallery, 'modified')
-            header_layout.addWidget(modified_header)
+            modified_header_layout.addWidget(modified_header)
+            modified_header_layout.addStretch(1)
+            
+            # Add all header containers to splitter
+            header_splitter.addWidget(name_header_container)
+            header_splitter.addWidget(category_header_container)
+            header_splitter.addWidget(created_header_container)
+            header_splitter.addWidget(modified_header_container)
+            
+            # Set initial sizes for the headers - more reasonable defaults
+            header_splitter.setSizes([300, 150, 150, 150])
+            
+            # Store the splitter in gallery for access later
+            gallery.header_splitter = header_splitter
+            
+            # Store initial sizes for persistence
+            gallery.header_sizes = [300, 150, 150, 150]
+            
+            # Connect splitter's splitterMoved signal
+            header_splitter.splitterMoved.connect(lambda pos, idx: GalleryTemplatesSetup._update_column_widths(gallery, pos, idx))
+            
+            # Add the splitter to the header layout
+            header_layout.addWidget(header_splitter)
             
             # Add header to main layout
             main_layout.addWidget(header_container)
@@ -806,6 +873,44 @@ class GalleryTemplatesSetup:
             print(f"Error populating templates list: {e}")
             traceback.print_exc()
 
+    @staticmethod
+    def _update_column_widths(gallery, position, index):
+        """Update column widths when splitter handles are moved"""
+        try:
+            # Get the new sizes from the splitter
+            if hasattr(gallery, 'header_splitter'):
+                sizes = gallery.header_splitter.sizes()
+                
+                # Only proceed if we have all sizes
+                if len(sizes) >= 4:
+                    # Apply reasonable constraints to prevent extreme resizing
+                    name_width = max(100, min(800, sizes[0]))  # Min 100px, max 800px
+                    category_width = max(80, min(400, sizes[1]))  # Min 80px, max 400px
+                    created_width = max(120, min(300, sizes[2]))  # Min 120px, max 300px
+                    modified_width = max(120, min(300, sizes[3]))  # Min 120px, max 300px
+                    
+                    # Apply the constrained sizes back to the splitter
+                    gallery.header_splitter.setSizes([name_width, category_width, created_width, modified_width])
+                    
+                    # Update all list items with the new column widths
+                    if hasattr(gallery, 'template_item_map'):
+                        for name, item in gallery.template_item_map.items():
+                            if hasattr(item, 'setNameWidth'):
+                                item.setNameWidth(name_width)
+                            if hasattr(item, 'setCategoryWidth'):
+                                item.setCategoryWidth(category_width)
+                            if hasattr(item, 'setCreatedDateWidth'):
+                                item.setCreatedDateWidth(created_width)
+                            if hasattr(item, 'setModifiedDateWidth'):
+                                item.setModifiedDateWidth(modified_width)
+                    
+                    # Store the sizes for persistence
+                    gallery.header_sizes = sizes
+                    
+                    print(f"[DEBUG] Updated column widths: Name={name_width}, Category={category_width}, Created={created_width}, Modified={modified_width}")
+        except Exception as e:
+            print(f"Error updating column widths: {e}")
+            
     @staticmethod
     def populate_templates_grid(gallery, templates_to_show):
         """Populate templates in grid view"""
@@ -1160,32 +1265,62 @@ class GalleryTemplatesSetup:
                 list_item.multiSelectRequested.connect(
                     lambda t: gallery.on_template_multi_select(t, True))
             
+            # Set initial column widths if they exist
+            if hasattr(gallery, 'header_sizes') and len(gallery.header_sizes) >= 4:
+                name_width, category_width, created_width, modified_width = gallery.header_sizes
+                
+                if hasattr(list_item, 'setNameWidth'):
+                    list_item.setNameWidth(name_width)
+                if hasattr(list_item, 'setCategoryWidth'):
+                    list_item.setCategoryWidth(category_width)
+                if hasattr(list_item, 'setCreatedDateWidth'):
+                    list_item.setCreatedDateWidth(created_width) 
+                if hasattr(list_item, 'setModifiedDateWidth'):
+                    list_item.setModifiedDateWidth(modified_width)
+            
             return list_item
         except Exception as e:
             # Provide a fallback in case of import errors
             print(f"Error creating template list item: {e}")
             from PyQt5.QtWidgets import QLabel
-            return QLabel(f"Template: {template_data.get('name', 'Unknown')}") 
+            return QLabel(f"Template: {template_data.get('name', 'Unknown')}")
 
     @staticmethod
     def set_template_sort(gallery, sort_field):
-        """Set the template sort field and order"""
-        # Toggle sort order if the same field is clicked again
-        if hasattr(gallery, 'current_sort_field') and gallery.current_sort_field == sort_field:
-            if hasattr(gallery, 'current_sort_order'):
-                gallery.current_sort_order = 'desc' if gallery.current_sort_order == 'asc' else 'asc'
-            else:
-                gallery.current_sort_order = 'desc'  # Default to desc if toggled
-        else:
-            gallery.current_sort_field = sort_field
-            gallery.current_sort_order = 'asc'  # Default to ascending
+        """Set the sort field for templates and update view"""
+        print(f"[DEBUG] Setting template sort to {sort_field}")
+        
+        if sort_field not in ["name", "created", "modified", "category"]:
+            sort_field = "name"  # Default sort field
             
-        # Print debug information
-        print(f"[DEBUG] List View: Sorting by {gallery.current_sort_field} ({gallery.current_sort_order})")
-
-        # Refresh the current view
-        if gallery.template_view_mode == "list":
-            gallery.populate_gallery(force_refresh=True) 
+        # Check if this is the current sort field
+        if hasattr(gallery, 'current_sort_field') and gallery.current_sort_field == sort_field:
+            # Toggle sort order
+            if hasattr(gallery, 'current_sort_order') and gallery.current_sort_order == "asc":
+                gallery.current_sort_order = "desc"
+            else:
+                gallery.current_sort_order = "asc"
+        else:
+            # New sort field, set default order
+            gallery.current_sort_field = sort_field
+            gallery.current_sort_order = "asc"
+            
+        # Update the view
+        current_templates = []
+        if hasattr(gallery, 'template_item_map'):
+            for name, item in gallery.template_item_map.items():
+                if hasattr(item, 'template'):
+                    current_templates.append(item.template)
+        
+        # Reapply current view mode
+        if hasattr(gallery, 'template_view_mode'):
+            if gallery.template_view_mode == "grid":
+                GalleryTemplatesSetup.populate_templates_grid(gallery, current_templates)
+            else:  # list mode
+                GalleryTemplatesSetup.populate_templates_list(gallery, current_templates)
+        else:
+            # Default to list mode
+            GalleryTemplatesSetup.populate_templates_list(gallery, current_templates)
 
     @staticmethod
     def clear_selections_with_ui_refresh(gallery):
@@ -1458,8 +1593,9 @@ def test_template_rename(gallery, template_name, new_name):
         
         # Step 4: Rename the template
         rename_success = template_manager.rename_template(template_name, new_name)
+        
         if rename_success:
-            print(f"TEST: Successfully renamed template from '{template_name}' to '{new_name}'")
+            print(f"TEST: Template successfully renamed")
             results['template_renamed'] = True
             results['steps_completed'].append('rename_template')
         else:

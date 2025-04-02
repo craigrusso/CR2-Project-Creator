@@ -11,46 +11,42 @@ import sys
 # Resource path helper
 def get_resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
-    try:
-        # When frozen, the base path should be the Resources directory
-        executable_dir = os.path.dirname(sys.executable)
-        base_path = os.path.normpath(os.path.join(executable_dir, '..', 'Resources'))
-        
-        # Standard path with app subdirectory
-        final_path = os.path.join(base_path, 'app', relative_path)
-        
-        # Check if file exists at standard path
-        if not os.path.exists(final_path):
-            # Try with duplicate Resources in path (PyInstaller quirk)
-            duplicate_resources_path = os.path.join(base_path, 'Resources', 'app', relative_path)
-            if os.path.exists(duplicate_resources_path):
-                print(f"DEBUG: Found resource at duplicate Resources path: {duplicate_resources_path}")
-                return duplicate_resources_path
-                
-            # Sanity check if _MEIPASS exists as a fallback
-            if hasattr(sys, '_MEIPASS') and sys._MEIPASS != base_path:
-                print(f"WARNING: Resource not found at standard path, falling back to _MEIPASS '{sys._MEIPASS}'")
-                meipass_path = os.path.join(sys._MEIPASS, 'app', relative_path)
-                if os.path.exists(meipass_path):
-                    return meipass_path
-        
-        print(f"DEBUG: Frozen Mode - Using base_path: {base_path}")
-        
-        # ***** CORRECTED PATH JOIN FOR FROZEN *****
-        # Assets are placed inside an 'app' folder within Resources by --add-data
-        return final_path
+    # Check if running as a PyInstaller bundle
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        # Running frozen/packaged
+        # Assets are usually placed relative to sys._MEIPASS
+        # Assume assets are copied into the root or a specific dir like 'assets' by PyInstaller spec
+        base_path = sys._MEIPASS
+        final_path = os.path.join(base_path, relative_path)
 
-    except Exception as e:
-        print(f"DEBUG: get_resource_path exception: {e}")
-        # Not frozen - running from source
-        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")) 
+        # Optional: Add checks here if your bundler places assets differently,
+        # e.g., inside an 'app' subdirectory within the bundle.
+        # Example:
+        # app_path = os.path.join(base_path, 'app', relative_path)
+        # if os.path.exists(app_path):
+        #     final_path = app_path
+        # else:
+        #    # Try root level if not in 'app'
+        #    root_path = os.path.join(base_path, relative_path)
+        #    if os.path.exists(root_path):
+        #        final_path = root_path
+
+        print(f"DEBUG: Frozen Mode - Using base_path: {base_path}")
+
+    else:
+        # Running from source (development mode)
+        # Base path is the project root (one level up from 'app' directory)
+        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        # Join the project root directly with the relative path provided
+        final_path = os.path.join(base_path, relative_path)
         print(f"DEBUG: Development Mode - Using base_path: {base_path}")
-        # In development, assets are usually relative to the project root (base_path)
-        # under the app directory. Adjust if structure differs.
-        final_path = os.path.join(base_path, 'app', relative_path)
-        
-    # Debug print
-    print(f"DEBUG get_resource_path: base='{base_path}', rel='{relative_path}', final='{final_path}'")
+
+    # Debug print for the determined path
+    print(f"DEBUG get_resource_path: relative='{relative_path}', final='{final_path}'")
+
+    # Check if the final path exists, provide warning if not
+    if not os.path.exists(final_path):
+         print(f"WARNING: Resource path does not exist: {final_path}")
 
     return final_path
 

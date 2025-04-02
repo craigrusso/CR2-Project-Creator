@@ -2,9 +2,9 @@
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
 import os
-from PyQt5.QtWidgets import QFileDialog, QMessageBox, QInputDialog, QFrame, QLabel, QVBoxLayout
-from PyQt5.QtCore import Qt, QByteArray
-from PyQt5.QtGui import QPixmap, QPainter, QIcon
+from PyQt5.QtWidgets import QFileDialog, QMessageBox, QInputDialog, QFrame, QLabel, QVBoxLayout, QHBoxLayout
+from PyQt5.QtCore import Qt, QByteArray, QEvent
+from PyQt5.QtGui import QPixmap, QPainter, QIcon, QFont
 
 # Import QtWidgets conditionally - for compatibility with different PyQt versions
 try:
@@ -177,7 +177,7 @@ class UIOperations:
         
         # Icon - use SVG icon if available, fallback to emoji
         icon_path = get_resource_path(os.path.join(
-            "assets", "icons", "template_structure_icon.svg"))
+            "ICONS", "templates", "template_structure_icon.svg"))
         print(f"DEBUG (Dialog Icon Path): {icon_path}") # Add debug print
         
         if os.path.exists(icon_path):
@@ -200,15 +200,71 @@ class UIOperations:
                     painter.end()
                     
                     icon_label = QLabel(card)
+                    icon_label.setObjectName("icon_label")
                     icon_label.setPixmap(pixmap)
-                    icon_label.setStyleSheet(f"background: {colors['card_bg']}")
-                    icon_label.pack(side=Qt.LeftToRight, padx=10, pady=10)
+                    icon_label.setStyleSheet(f"background: transparent;")
+                    icon_label.setAlignment(Qt.AlignCenter)
+                    icon_label.setFixedSize(40, 40)
                     
-                    # Make icon clickable too
+                    # Layout for icon and text
+                    hbox = QHBoxLayout(card)
+                    hbox.setContentsMargins(10, 5, 10, 5)
+                    hbox.setSpacing(10)
+                    
+                    hbox.addWidget(icon_label)
+                    
+                    # Info section (will be added next)
+                    info_frame = QFrame(card)
+                    info_frame.setObjectName("info_frame")
+                    info_layout = QVBoxLayout(info_frame)
+                    info_layout.setContentsMargins(0, 0, 0, 0)
+                    info_layout.setSpacing(2)
+
+                    # Name
+                    name_label = QLabel(template.get("name", "Unnamed Template"))
+                    name_label.setObjectName("name_label")
+                    name_font = QFont(SYSTEM_FONT, 11)
+                    name_font.setBold(True)
+                    name_label.setFont(name_font)
+                    name_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
+                    name_label.setWordWrap(True)
+                    name_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+                    info_layout.addWidget(name_label)
+                    
+                    # Category
+                    category_label = QLabel(template.get("category", "Custom"))
+                    category_label.setObjectName("category_label")
+                    category_font = QFont(SYSTEM_FONT, 9)
+                    category_label.setFont(category_font)
+                    category_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
+                    category_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+                    info_layout.addWidget(category_label)
+                    
+                    # Description
+                    desc_label = QLabel(template.get("description", ""))
+                    desc_label.setObjectName("desc_label")
+                    desc_font = QFont(SYSTEM_FONT, 9)
+                    desc_label.setFont(desc_font)
+                    desc_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
+                    desc_label.setWordWrap(True)
+                    desc_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+                    info_layout.addWidget(desc_label, 1)
+
+                    # Add info frame to hbox layout
+                    hbox.addWidget(info_frame, 1)
+                    
+                    # Make card and all labels clickable
                     if select_callback:
-                        icon_label.mousePressEvent = lambda e: select_callback(template)
-                        icon_label.enterEvent = lambda e: self._on_card_hover_enter(card)
-                        icon_label.leaveEvent = lambda e: self._on_card_hover_leave(card)
+                        # Connect press event for the card itself
+                        card.mousePressEvent = lambda e, tmpl=template: self._handle_card_click(e, tmpl, card, select_callback)
+                        
+                        # Use event filter for children to handle hover and clicks robustly
+                        for widget in [icon_label, name_label, category_label, desc_label, info_frame]:
+                            widget.installEventFilter(card)
+
+                    # Install event filter on the card itself for hover effects
+                    card.installEventFilter(card)
+                    card.setAttribute(Qt.WA_Hover)
                 else:
                     # Fallback to emoji if renderer is not valid
                     icon = template.get("icon", "📂")
@@ -247,85 +303,63 @@ class UIOperations:
                 icon_label.enterEvent = lambda e: self._on_card_hover_enter(card)
                 icon_label.leaveEvent = lambda e: self._on_card_hover_leave(card)
         
-        # Info section
-        info_frame = QFrame(card, bg=colors["card_bg"])
-        info_frame.pack(side=Qt.LeftToRight, fill=Qt.Expanding, expand=True, pady=10)
-        
-        # Name
-        name_label = QLabel(info_frame, text=template.get("name", "Unnamed Template"), 
-                               font=("Segoe UI", 11, "bold"),
-                               bg=colors["card_bg"], fg=colors["text"], anchor="w")
-        name_label.pack(fill=Qt.Expanding)
-        
-        # Category
-        category_label = QLabel(info_frame, text=template.get("category", "Custom"), 
-                                   font=("Segoe UI", 9),
-                                   bg=colors["card_bg"], fg=colors["secondary_text"], anchor="w")
-        category_label.pack(fill=Qt.Expanding)
-        
-        # Description
-        desc_label = QLabel(info_frame, text=template.get("description", ""), 
-                               font=("Segoe UI", 9),
-                               bg=colors["card_bg"], fg=colors["text"], 
-                               anchor="w", justify=Qt.Left, wrapLength=350)
-        desc_label.pack(fill=Qt.Expanding)
-        
-        # Make all labels clickable
-        if select_callback:
-            for label in [name_label, category_label, desc_label]:
-                label.mousePressEvent = lambda e: select_callback(template)
-                label.enterEvent = lambda e: self._on_card_hover_enter(card)
-                label.leaveEvent = lambda e: self._on_card_hover_leave(card)
-        
         return card
         
+    def eventFilter(self, watched, event):
+        """Event filter to handle hover and clicks for card and children."""
+        if watched.parent() == self and event.type() == QEvent.MouseButtonPress:
+             # Propagate click from child to parent card's handler
+             self.mousePressEvent(event)
+             return True # Event handled
+
+        if watched == self: # Check if the event is for the card itself
+            if event.type() == QEvent.HoverEnter:
+                self._on_card_hover_enter(self)
+                return True
+            elif event.type() == QEvent.HoverLeave:
+                 self._on_card_hover_leave(self)
+                 return True
+
+        return super(UIOperations, self).eventFilter(watched, event) # Call base class filter
+
+    def _handle_card_click(self, event, template, card, select_callback):
+         """Centralized handler for card clicks."""
+         if event.button() == Qt.LeftButton:
+             select_callback(template)
+             # We don't need to explicitly call hover enter/leave here usually
+             # Selection change should trigger style updates
+
     def _on_card_hover_enter(self, card):
         """Handle hover enter for template card"""
-        # Skip if card is already highlighted
+        # Skip if card is already highlighted (selected)
         if hasattr(card, 'is_highlighted') and card.is_highlighted:
             return
-            
-        # Light grey hover effect
-        hover_bg = "#303030"  # Slightly lighter than card_bg
         
-        # Update the card and all its children - border should match background (no blue outline)
-        card.setStyleSheet(f"background-color: {hover_bg}; border: 1px solid {hover_bg};")
-        icon_label = card.findChild(QLabel, "icon_label")
-        icon_label.setStyleSheet(f"background-color: {hover_bg};")
-        info_frame = card.findChild(QFrame, "info_frame")
-        info_frame.setStyleSheet(f"background-color: {hover_bg};")
-        
-        # Update all info frame widgets
-        for widget in info_frame.findChildren(QLabel):
-            widget.setStyleSheet(f"background-color: {hover_bg};")
-        
-        # Set cursor
+        # Apply hover style using the style sheet for consistency
+        card.setProperty("hovering", True)
+        self._refresh_style(card)
         card.setCursor(Qt.PointingHandCursor)
-    
+
     def _on_card_hover_leave(self, card):
         """Handle hover leave for template card"""
-        # Skip if card is highlighted
+        # Skip if card is highlighted (selected)
         if hasattr(card, 'is_highlighted') and card.is_highlighted:
-            return
-            
-        # Reset to card background
-        card.setStyleSheet(f"background-color: {colors['card_bg']}; border: 1px solid {colors['card_bg']};")
-        icon_label = card.findChild(QLabel, "icon_label")
-        icon_label.setStyleSheet(f"background-color: {colors['card_bg']};")
-        info_frame = card.findChild(QFrame, "info_frame")
-        info_frame.setStyleSheet(f"background-color: {colors['card_bg']};")
-        
-        # Reset all info frame widgets with appropriate colors
-        name_label = info_frame.findChild(QLabel, "name_label")
-        name_label.setStyleSheet(f"background-color: {colors['card_bg']}; color: {colors['text']};")
-        category_label = info_frame.findChild(QLabel, "category_label")
-        category_label.setStyleSheet(f"background-color: {colors['card_bg']}; color: {colors['secondary_text']};")
-        desc_label = info_frame.findChild(QLabel, "desc_label")
-        desc_label.setStyleSheet(f"background-color: {colors['card_bg']}; color: {colors['text']};")
-        
-        # Reset cursor
+            # If leaving while selected, ensure selected style remains
+            card.setProperty("hovering", False)
+            self._refresh_style(card) # Refresh to apply selected style if needed
+            return # Keep pointing hand if selected? Or reset? Let's reset for now.
+
+        # Apply normal style
+        card.setProperty("hovering", False)
+        self._refresh_style(card)
         card.setCursor(Qt.ArrowCursor)
-    
+
+    def _refresh_style(self, card):
+         """Refreshes the stylesheet of the card based on its state."""
+         card.style().unpolish(card)
+         card.style().polish(card)
+         card.update()
+
     def update_ui_folder_dropdown(self, app):
         """Update the folder dropdown in the UI"""
         # Skip if app doesn't have the dropdown
@@ -762,15 +796,14 @@ class UIOperations:
             return False 
 
 def get_template_icon(template_type=None):
-    """Returns the QIcon for a given template type"""
+    """Get the QIcon for a given template type (placeholder)."""
+    # Placeholder: Correct the path for the default icon
     icon_path = get_resource_path(os.path.join(
-        "assets", "icons", "template_structure_icon.svg"))
-    print(f"DEBUG (Dialog Icon Path): {icon_path}") # Add debug print
-
-    if not os.path.exists(icon_path):
+        "ICONS", "templates", "template_structure_icon.svg")) # Corrected path
+    
+    if os.path.exists(icon_path):
+        return QIcon(icon_path)
+    else:
         print(f"Warning: Default template icon not found at {icon_path}")
-        return QIcon()  # Return empty icon if default is not found
-
-    # Add logic here if you have different icons for different template_type
-    # For now, just return the default icon
-    return QIcon(icon_path) 
+        # Return an empty QIcon or a placeholder if needed
+        return QIcon() # Return empty icon 

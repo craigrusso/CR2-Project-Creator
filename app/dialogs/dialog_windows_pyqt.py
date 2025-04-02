@@ -17,10 +17,177 @@ from PyQt5.QtCore import Qt, QSize, QByteArray, QUrl, QRegExp, QCoreApplication,
 from PyQt5.QtGui import QFont, QPixmap, QMovie, QIcon, QRegExpValidator, QDragEnterEvent, QDragMoveEvent, QDropEvent
 
 from app.core.app_config import APP_NAME, APP_VERSION
-from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
+from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE
 from app.utils.utils import get_config_paths, load_config, save_config
 from app.ui.structure_editor_enhanced import EnhancedStructureEditor
 from app.ui.structure_editor_functions import show_enhanced_structure_editor
+# Import UI_FONT which might be needed for some styles
+try:
+    from app.ui.ui_components_pyqt import UI_FONT
+except ImportError:
+    UI_FONT = "Arial" # Fallback font
+
+# Define missing styles using the colors dictionary
+# These should ideally be in color_scheme_pyqt.py but defining here for now
+LABEL_STYLE = f"""
+    QLabel {{
+        color: {colors['text']};
+        background-color: transparent; /* Ensure labels have transparent background */
+    }}
+"""
+
+SECONDARY_LABEL_STYLE = f"""
+    QLabel {{
+        color: {colors['secondary_text']};
+        background-color: transparent;
+    }}
+"""
+
+LINEEDIT_STYLE = f"""
+    QLineEdit {{
+        background-color: {colors['card_bg']};
+        color: {colors['text']};
+        border: 1px solid {colors['border']};
+        padding: 5px;
+        border-radius: 3px;
+    }}
+    QLineEdit:focus {{
+        border: 1px solid {colors['accent']};
+        background-color: {colors['hover_bg']};
+    }}
+    QLineEdit:read-only {{
+        background-color: {colors['bg']}; /* Slightly different bg for read-only */
+        color: {colors['secondary_text']};
+    }}
+"""
+
+CHECKBOX_STYLE = f"""
+    QCheckBox {{
+        color: {colors['text']};
+        spacing: 5px; /* Space between indicator and text */
+    }}
+    QCheckBox::indicator {{
+        width: 15px;
+        height: 15px;
+        background-color: {colors['card_bg']};
+        border: 1px solid {colors['border']};
+        border-radius: 3px;
+    }}
+    QCheckBox::indicator:hover {{
+        border: 1px solid {colors['accent']};
+    }}
+    QCheckBox::indicator:checked {{
+        background-color: {colors['accent']};
+        image: url(app/assets/icons/checkmark.svg); /* Optional: Add a checkmark icon */
+    }}
+    QCheckBox::indicator:checked:hover {{
+        background-color: {colors['accent_hover']};
+    }}
+    QCheckBox:disabled {{
+        color: {colors['secondary_text']};
+    }}
+    QCheckBox::indicator:disabled {{
+        background-color: {colors['border']};
+    }}
+"""
+
+GROUPBOX_STYLE = f"""
+    QGroupBox {{
+        color: {colors['text']};
+        background-color: {colors['bg']}; /* Match dialog background */
+        border: 1px solid {colors['border']};
+        border-radius: 5px;
+        margin-top: 10px; /* Space above the group box */
+        padding-top: 15px; /* Space for the title */
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-bottom: 10px;
+    }}
+    QGroupBox::title {{
+        subcontrol-origin: margin;
+        subcontrol-position: top left;
+        left: 10px;
+        padding: 0 3px 0 3px;
+        color: {colors['accent']}; /* Use accent color for title */
+        font-weight: bold;
+    }}
+"""
+
+SPINBOX_STYLE = f"""
+    QSpinBox {{
+        background-color: {colors['card_bg']};
+        color: {colors['text']};
+        border: 1px solid {colors['border']};
+        padding: 5px;
+        border-radius: 3px;
+    }}
+    QSpinBox:focus {{
+        border: 1px solid {colors['accent']};
+        background-color: {colors['hover_bg']};
+    }}
+    /* Style the up/down buttons */
+    QSpinBox::up-button, QSpinBox::down-button {{
+        subcontrol-origin: border;
+        background-color: {colors['card_bg']};
+        border: none;
+        width: 16px;
+    }}
+    QSpinBox::up-button {{
+        subcontrol-position: top right; /* position at the top right corner */
+        border-bottom: 1px solid {colors['border']}; /* Separator line */
+    }}
+    QSpinBox::down-button {{
+        subcontrol-position: bottom right; /* position at bottom right corner */
+    }}
+    QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
+        background-color: {colors['hover_bg']};
+    }}
+    QSpinBox::up-arrow, QSpinBox::down-arrow {{
+        width: 10px;
+        height: 10px;
+        /* Consider adding arrow icons here */
+        /* image: url(...); */
+    }}
+"""
+
+TABWIDGET_STYLE = f"""
+    QTabWidget::pane {{ /* The tab widget frame */
+        border: 1px solid {colors['border']};
+        border-radius: 5px;
+        background-color: {colors['bg']};
+        margin-top: -1px; /* Align pane top with tab bottom */
+    }}
+
+    QTabBar::tab {{
+        background: {colors['card_bg']};
+        color: {colors['secondary_text']};
+        border: 1px solid {colors['border']};
+        border-bottom: none; /* Hide bottom border for non-selected */
+        border-top-left-radius: 5px;
+        border-top-right-radius: 5px;
+        padding: 8px 15px;
+        margin-right: 2px; /* Space between tabs */
+    }}
+
+    QTabBar::tab:hover {{
+        background: {colors['hover_bg']};
+        color: {colors['text']};
+    }}
+
+    QTabBar::tab:selected {{
+        background: {colors['bg']}; /* Match pane background */
+        color: {colors['text']};
+        border-color: {colors['border']};
+        border-bottom-color: {colors['bg']}; /* Make bottom border match background */
+        font-weight: bold;
+    }}
+
+    /* Style the content widgets within tabs */
+    QTabWidget QWidget {{
+        background-color: {colors['bg']};
+        color: {colors['text']};
+    }}
+"""
 
 def preview_structure(app, structure):
     """Show a preview of the project structure"""
@@ -495,14 +662,17 @@ def show_preferences(app):
     dialog = QDialog(app)
     dialog.setWindowTitle("Preferences")
     dialog.resize(600, 450)
-    
+    # Apply base styling to the dialog
+    dialog.setStyleSheet(f"QDialog {{ background-color: {colors['bg']}; color: {colors['text']}; }}")
+
     main_layout = QVBoxLayout(dialog)
     main_layout.setContentsMargins(15, 15, 15, 15)
     main_layout.setSpacing(10)
-    
+
     # Create tab widget for different preference categories
     tabs = QTabWidget()
-    
+    tabs.setStyleSheet(TABWIDGET_STYLE) # Apply tab styling
+
     # Get current configuration and paths
     config = load_config()
     paths = get_config_paths()
@@ -513,12 +683,15 @@ def show_preferences(app):
     
     # User Interface Group
     ui_group = QGroupBox("User Interface")
+    ui_group.setStyleSheet(GROUPBOX_STYLE) # Apply group box styling
     ui_layout = QVBoxLayout(ui_group)
     
     # Dark mode option (placeholder for future implementation)
-    dark_mode_check = QCheckBox("Use Dark Mode")
+    dark_mode_check = QCheckBox("Use Dark Mode (Requires Restart)")
+    dark_mode_check.setStyleSheet(CHECKBOX_STYLE) # Apply checkbox styling
     dark_mode_check.setChecked(True)  # Default to checked
     dark_mode_check.setEnabled(False)  # Disabled for now
+    dark_mode_check.setToolTip("Theme settings will be available in a future update.")
     ui_layout.addWidget(dark_mode_check)
     
     general_layout.addWidget(ui_group)
@@ -533,16 +706,19 @@ def show_preferences(app):
     def add_location_row(row, label_text, path_key, path_value):
         # Label
         label = QLabel(label_text)
+        label.setStyleSheet(LABEL_STYLE) # Apply label styling
         storage_layout.addWidget(label, row, 0)
         
         # Path field
         path_field = QLineEdit()
         path_field.setText(path_value)
         path_field.setReadOnly(True)
+        path_field.setStyleSheet(LINEEDIT_STYLE) # Apply line edit styling
         storage_layout.addWidget(path_field, row, 1)
         
         # Browse button
         browse_btn = QPushButton("Change...")
+        browse_btn.setStyleSheet(BUTTON_STYLE) # Apply button styling
         
         def browse_for_directory():
             dir_path = QFileDialog.getExistingDirectory(
@@ -558,6 +734,7 @@ def show_preferences(app):
         
         # Open button
         open_btn = QPushButton("Open")
+        open_btn.setStyleSheet(BUTTON_STYLE) # Apply button styling
         
         def open_directory():
             from app.utils.utils import open_folder
@@ -584,6 +761,7 @@ def show_preferences(app):
     # Add note about restarting
     row += 1
     note_label = QLabel("Note: Some location changes may require restarting the application.")
+    # Use secondary text style and make it italic
     note_label.setStyleSheet(f"color: {colors['secondary_text']}; font-style: italic;")
     storage_layout.addWidget(note_label, row, 0, 1, 4)
     
@@ -609,16 +787,19 @@ def show_preferences(app):
         
         # Enable file caching group
         caching_group = QGroupBox("File Caching Settings")
+        caching_group.setStyleSheet(GROUPBOX_STYLE) # Apply group box styling
         caching_layout = QVBoxLayout(caching_group)
         
         # Enable caching checkbox
         enable_caching_check = QCheckBox("Enable file caching")
+        enable_caching_check.setStyleSheet(CHECKBOX_STYLE) # Apply checkbox styling
         enable_caching_check.setChecked(cache_prefs.should_cache_files())
         enable_caching_check.setToolTip("Cache files used in templates for better performance")
         caching_layout.addWidget(enable_caching_check)
         
         # Auto-clean cache
         auto_clean_check = QCheckBox("Automatically clean cache periodically")
+        auto_clean_check.setStyleSheet(CHECKBOX_STYLE) # Apply checkbox styling
         auto_clean_check.setChecked(cache_prefs.should_clean_cache())
         auto_clean_check.setToolTip("Remove old and unused cached files")
         caching_layout.addWidget(auto_clean_check)
@@ -628,14 +809,17 @@ def show_preferences(app):
         
         # Cache location
         cache_location_label = QLabel("Cache Location:")
+        cache_location_label.setStyleSheet(LABEL_STYLE) # Apply label styling
         params_layout.addWidget(cache_location_label, 0, 0)
         
         cache_location_field = QLineEdit()
         cache_location_field.setText(cache_prefs.get_cache_location())
         cache_location_field.setReadOnly(True)
+        cache_location_field.setStyleSheet(LINEEDIT_STYLE) # Apply line edit styling
         params_layout.addWidget(cache_location_field, 0, 1)
         
         cache_browse_btn = QPushButton("Change...")
+        cache_browse_btn.setStyleSheet(BUTTON_STYLE) # Apply button styling
         def browse_cache_location():
             dir_path = QFileDialog.getExistingDirectory(
                 dialog, "Select Cache Directory", cache_location_field.text())
@@ -645,6 +829,7 @@ def show_preferences(app):
         params_layout.addWidget(cache_browse_btn, 0, 2)
         
         cache_open_btn = QPushButton("Open")
+        cache_open_btn.setStyleSheet(BUTTON_STYLE) # Apply button styling
         def open_cache_location():
             from app.utils.utils import open_folder
             open_folder(cache_location_field.text())
@@ -653,6 +838,7 @@ def show_preferences(app):
         
         # Maximum cache size
         max_size_label = QLabel("Maximum Cache Size (MB):")
+        max_size_label.setStyleSheet(LABEL_STYLE) # Apply label styling
         params_layout.addWidget(max_size_label, 1, 0)
         
         max_size_field = QSpinBox()
@@ -660,10 +846,12 @@ def show_preferences(app):
         max_size_field.setMaximum(10000)  # 10GB maximum
         max_size_field.setValue(cache_prefs.get_preference("max_cache_size_mb", 1000))
         max_size_field.setSingleStep(100)
+        max_size_field.setStyleSheet(SPINBOX_STYLE) # Apply spinbox styling
         params_layout.addWidget(max_size_field, 1, 1)
         
         # Maximum cache age
         max_age_label = QLabel("Maximum Cache Age (days):")
+        max_age_label.setStyleSheet(LABEL_STYLE) # Apply label styling
         params_layout.addWidget(max_age_label, 2, 0)
         
         max_age_field = QSpinBox()
@@ -671,12 +859,14 @@ def show_preferences(app):
         max_age_field.setMaximum(365)  # 1 year maximum
         max_age_field.setValue(cache_prefs.get_preference("max_cache_age_days", 30))
         max_age_field.setSingleStep(1)
+        max_age_field.setStyleSheet(SPINBOX_STYLE) # Apply spinbox styling
         params_layout.addWidget(max_age_field, 2, 1)
         
         caching_layout.addLayout(params_layout)
         
         # Cache statistics group
         stats_group = QGroupBox("Cache Statistics")
+        stats_group.setStyleSheet(GROUPBOX_STYLE) # Apply group box styling
         stats_layout = QVBoxLayout(stats_group)
         
         # Get cache statistics
@@ -685,25 +875,47 @@ def show_preferences(app):
         
         # Display statistics in a grid
         stats_grid = QGridLayout()
-        
-        stats_grid.addWidget(QLabel("Total Files:"), 0, 0)
-        stats_grid.addWidget(QLabel(str(cache_stats.get("cached_files", 0))), 0, 1)
-        
-        stats_grid.addWidget(QLabel("Total Size:"), 1, 0)
-        stats_grid.addWidget(QLabel(cache_manager._human_readable_size(cache_stats.get("total_size", 0))), 1, 1)
-        
-        stats_grid.addWidget(QLabel("Cache Hits:"), 2, 0)
-        stats_grid.addWidget(QLabel(str(cache_stats.get("hits", 0))), 2, 1)
-        
-        stats_grid.addWidget(QLabel("Cache Misses:"), 3, 0)
-        stats_grid.addWidget(QLabel(str(cache_stats.get("misses", 0))), 3, 1)
-        
+
+        # Apply label styling to stats labels
+        total_files_label = QLabel("Total Files:")
+        total_files_label.setStyleSheet(LABEL_STYLE)
+        stats_grid.addWidget(total_files_label, 0, 0)
+
+        total_files_value = QLabel(str(cache_stats.get("cached_files", 0)))
+        total_files_value.setStyleSheet(LABEL_STYLE)
+        stats_grid.addWidget(total_files_value, 0, 1)
+
+        total_size_label = QLabel("Total Size:")
+        total_size_label.setStyleSheet(LABEL_STYLE)
+        stats_grid.addWidget(total_size_label, 1, 0)
+
+        total_size_value = QLabel(cache_manager._human_readable_size(cache_stats.get("total_size", 0)))
+        total_size_value.setStyleSheet(LABEL_STYLE)
+        stats_grid.addWidget(total_size_value, 1, 1)
+
+        cache_hits_label = QLabel("Cache Hits:")
+        cache_hits_label.setStyleSheet(LABEL_STYLE)
+        stats_grid.addWidget(cache_hits_label, 2, 0)
+
+        cache_hits_value = QLabel(str(cache_stats.get("hits", 0)))
+        cache_hits_value.setStyleSheet(LABEL_STYLE)
+        stats_grid.addWidget(cache_hits_value, 2, 1)
+
+        cache_misses_label = QLabel("Cache Misses:")
+        cache_misses_label.setStyleSheet(LABEL_STYLE)
+        stats_grid.addWidget(cache_misses_label, 3, 0)
+
+        cache_misses_value = QLabel(str(cache_stats.get("misses", 0)))
+        cache_misses_value.setStyleSheet(LABEL_STYLE)
+        stats_grid.addWidget(cache_misses_value, 3, 1)
+
         stats_layout.addLayout(stats_grid)
         
         # Cache maintenance buttons
         maintenance_layout = QHBoxLayout()
         
         clean_cache_btn = QPushButton("Clean Cache Now")
+        clean_cache_btn.setStyleSheet(BUTTON_STYLE) # Apply button styling
         def clean_cache():
             from PyQt5.QtWidgets import QMessageBox
             result = QMessageBox.question(dialog, "Clean Cache", 
@@ -722,10 +934,11 @@ def show_preferences(app):
                     # (This is a simple implementation - in a full version, we'd update the labels)
                 except Exception as e:
                     QMessageBox.warning(dialog, "Error", f"Error cleaning cache: {e}")
-        clean_cache_btn.clicked.connect(clean_cache)
         maintenance_layout.addWidget(clean_cache_btn)
         
         clear_cache_btn = QPushButton("Clear All Cache")
+        # Use a different style for potentially destructive action (optional)
+        clear_cache_btn.setStyleSheet(BUTTON_STYLE) # Or create a specific DANGER_BUTTON_STYLE
         def clear_cache():
             from PyQt5.QtWidgets import QMessageBox
             result = QMessageBox.warning(dialog, "Clear Cache", 
@@ -738,7 +951,6 @@ def show_preferences(app):
                     # (This is a simple implementation - in a full version, we'd update the labels)
                 except Exception as e:
                     QMessageBox.warning(dialog, "Error", f"Error clearing cache: {e}")
-        clear_cache_btn.clicked.connect(clear_cache)
         maintenance_layout.addWidget(clear_cache_btn)
         
         stats_layout.addLayout(maintenance_layout)
@@ -760,8 +972,9 @@ def show_preferences(app):
     except ImportError as e:
         # If cache modules aren't available, show a message
         warning_label = QLabel("Cache management features are not available.")
+        warning_label.setStyleSheet(LABEL_STYLE) # Apply label styling
         warning_details = QLabel(f"Error: {e}")
-        warning_details.setStyleSheet("color: red;")
+        warning_details.setStyleSheet(f"color: {colors['error']};") # Use theme error color
         cache_layout.addWidget(warning_label)
         cache_layout.addWidget(warning_details)
         cache_layout.addStretch()
@@ -781,11 +994,13 @@ def show_preferences(app):
     
     # Cancel button
     cancel_button = QPushButton("Cancel")
+    cancel_button.setStyleSheet(BUTTON_STYLE) # Apply button styling
     cancel_button.clicked.connect(dialog.reject)
     
     # Save button
     save_button = QPushButton("Save")
     save_button.setDefault(True)
+    save_button.setStyleSheet(ACCENT_BUTTON_STYLE) # Apply accent button styling
     
     def save_preferences():
         # Save any changes to configuration
