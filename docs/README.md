@@ -1,71 +1,92 @@
-# Echelon – Smart Folder Templates & Batch File Organizer
+# Template File Caching System
 
-Create, save, and apply custom folder structures with ease! Echelon is the ultimate tool for organizing projects, renaming files in bulk, and setting up consistent directory templates for video editing, photography, music production, software development, and more.
-
-## Key Features
-
-✅ Save & Reuse Folder Structures – Create and store custom folder templates.
-✅ Batch Naming & Organization – Select a template, choose a name (or multiple names), and auto-generate the structured folders.
-✅ File Insertion & Renaming – Insert default files into new projects and rename them automatically.
-✅ Fast & Efficient Workflow – Perfect for video editors, photographers, designers, musicians, and professionals who need structured project setups.
-
-Stop wasting time manually setting up folders—Echelon does it for you in seconds. Get organized today!
-
-## Recent UX Improvements
-
-### Template File Selection Streamlined
-
-The application has been updated to improve the user experience by:
-
-1. **Removing redundant template file selection**: Previously, users needed to select both a template and a separate template file, which was redundant. Now, templates directly include their files.
-
-2. **Simplified workflow**: Now you simply:
-   - Enter a project name
-   - Select an output directory
-   - Select a template from the gallery
-   - Click "Create Project"
-
-3. **Better template management**: Templates now properly include their file structure, making it easier to manage and use templates.
+This module provides a robust file caching system for template files, ensuring that template files remain accessible even if the original source is removed or changed.
 
 ## Features
 
-- Modern, dark-themed interface
-- Template gallery with categories and search
-- Custom folder structures
-- File placeholders with project name substitution
-- Batch project creation
-- Recent projects and templates tracking
+- Caches template files in a central location
+- Maintains metadata about cached files including original paths
+- Provides statistics about cache usage
+- Configurable cache settings (size limits, age limits, etc.)
+- Automatic cache pruning to remove old or unused files
+- Supports binary and text files
+- Handles nested directory structures
 
-## Setup
+## Components
 
-1. Ensure you have Python 3.6+ installed
-2. Install required dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
-3. Run the application:
-   ```
-   python main.py
-   ```
+### FileCacheManager
 
-## Creating Templates
+The `FileCacheManager` class provides the core functionality for caching files:
 
-Templates can be easily created and managed through the built-in template editor. Templates include:
+- Caching files with their original paths
+- Retrieving cached files
+- Managing cache metadata
+- Providing cache statistics
+- Pruning the cache based on age and size
 
-- Template name and description
-- Associated files (which will be automatically copied to new projects)
-- Folder structure (optional)
-- Category assignment
+### CachePreferences
 
-## Development
+The `CachePreferences` class manages user preferences for the caching system:
 
-This application is built using:
-- Python 3
-- PyQt5 for the user interface
-- Custom template management system
+- Enable/disable caching
+- Maximum cache size
+- Maximum cache age
+- Cache location
+- Automatic cache cleaning
 
-## License
+## Integration
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+The file caching system is integrated with:
 
-Copyright (c) 2023-present Craig P. Russo and CR2 Creative
+1. **Structure Editor** - When adding files to the template structure, the original file paths are stored and files are cached
+2. **Structure Converter** - When exporting the structure to JSON, file paths are included
+3. **Project Builder** - When creating a project, actual files are copied from the cache instead of creating empty files
+
+## Testing
+
+Use the `test_file_caching.py` script to test the file caching functionality:
+
+```bash
+python test_file_caching.py
+```
+
+The test script provides a GUI for testing various aspects of the file caching system:
+
+- Creating test files
+- Caching files
+- Viewing cache statistics
+- Creating a project from cached files
+- Cleaning up test files
+
+## Usage Example
+
+```python
+from app.utils.file_cache_manager import FileCacheManager
+from app.utils.cache_preferences import CachePreferences
+
+# Check if caching is enabled
+prefs = CachePreferences()
+if prefs.should_cache_files():
+    # Get cache location
+    cache_location = prefs.get_cache_location()
+    
+    # Create cache manager
+    cache_manager = FileCacheManager(cache_location)
+    
+    # Cache a file
+    result = cache_manager.cache_file(
+        file_path="/path/to/file.txt",
+        template_name="MyTemplate",
+        relative_path="folder"
+    )
+    
+    # Get cached file path
+    cached_file = cache_manager.get_cached_file(
+        template_name="MyTemplate",
+        original_path="/path/to/file.txt"
+    )
+    
+    # Use cached file path
+    if cached_file:
+        print(f"Cached file: {cached_file['cache_path']}")
+``` 

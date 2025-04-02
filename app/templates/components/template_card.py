@@ -2,7 +2,8 @@
 
 from PyQt5.QtWidgets import (
     QFrame, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QMenu, QAction, QMessageBox, 
-    QListWidget, QListWidgetItem, QAbstractItemView, QScrollArea, QSizePolicy, QApplication
+    QListWidget, QListWidgetItem, QAbstractItemView, QScrollArea, QSizePolicy, QApplication,
+    QPushButton
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QMimeData, QSize, QPoint, QRect, QByteArray, QTimer
 from PyQt5.QtGui import QPixmap, QFont, QDrag, QPainter, QColor, QBrush, QPen, QIcon, QCursor
@@ -11,6 +12,7 @@ from .utils import SYSTEM_FONT
 from .common_styles import CARD_NORMAL, CARD_HOVER, CARD_SELECTED, colors
 from app.ui.color_scheme_pyqt import MENU_DESTRUCTIVE_ITEM_STYLE, DELETE_TEXT_STYLE
 from app.templates.components.menu_actions import ContextMenu
+from app.constants import get_resource_path
 
 def template_icon_path(template_name=None):
     """Return the path to the template icon."""
@@ -78,55 +80,19 @@ class TemplateCard(QFrame):
         
         # Template icon
         self.icon_label = QLabel()
-        try:
-            icon_path = template_icon_path(template_name=self.template_name())
-            if icon_path.endswith('.svg'):
-                # Handle SVG files using QPixmap and QSvgRenderer
-                from PyQt5.QtSvg import QSvgRenderer
-                from PyQt5.QtCore import QByteArray, QSize
-                
-                # Create a renderer for the SVG
-                with open(icon_path, 'r') as f:
-                    svg_content = f.read()
-                
-                renderer = QSvgRenderer(QByteArray(svg_content.encode()))
-                if renderer.isValid():
-                    # Create a pixmap to render to
-                    pixmap = QPixmap(64, 64)
-                    pixmap.fill(Qt.transparent)  # Make the background transparent
-                    
-                    # Paint the SVG on the pixmap
-                    painter = QPainter(pixmap)
-                    renderer.render(painter)
-                    painter.end()
-                    
-                    self.icon_label.setPixmap(pixmap)
-                else:
-                    # Fallback to text
-                    self.icon_label.setText("📄")
-                    font = QFont(SYSTEM_FONT)
-                    font.setPointSize(24)
-                    self.icon_label.setFont(font)
+        icon_path = get_resource_path(os.path.join(
+            "assets", "icons", "template_structure_icon.svg"))
+        print(f"DEBUG (Card Icon Path): {icon_path}") # Add debug print for path
+        if os.path.exists(icon_path):
+            pixmap = QPixmap(icon_path)
+            if pixmap.isNull():
+                print(f"ERROR: Failed to load icon pixmap from: {icon_path}")
+                # Optionally set a default/fallback icon here
             else:
-                # Handle PNG or fallback
-                pixmap = QPixmap(icon_path)
-                if not pixmap.isNull():
-                    pixmap = pixmap.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    self.icon_label.setPixmap(pixmap)
-                else:
-                    # If pixmap is null, use text as a fallback
-                    self.icon_label.setText("📄")
-                    font = QFont(SYSTEM_FONT)
-                    font.setPointSize(24)
-                    self.icon_label.setFont(font)
-        except Exception as e:
-            print(f"ERROR: Failed to load template icon: {e}")
-            # Use text as a fallback
-            self.icon_label.setText("📄")
-            font = QFont(SYSTEM_FONT)
-            font.setPointSize(24)
-            self.icon_label.setFont(font)
-        
+                self.icon_label.setPixmap(pixmap.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        else:
+            print(f"ERROR: Icon file not found at: {icon_path}")
+            # Optionally set a default/fallback icon here
         self.icon_label.setAlignment(Qt.AlignCenter)
         icon_layout.addWidget(self.icon_label, 1, Qt.AlignCenter)
         layout.addWidget(icon_container)

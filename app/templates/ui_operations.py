@@ -4,7 +4,7 @@
 import os
 from PyQt5.QtWidgets import QFileDialog, QMessageBox, QInputDialog, QFrame, QLabel, QVBoxLayout
 from PyQt5.QtCore import Qt, QByteArray
-from PyQt5.QtGui import QPixmap, QPainter
+from PyQt5.QtGui import QPixmap, QPainter, QIcon
 
 # Import QtWidgets conditionally - for compatibility with different PyQt versions
 try:
@@ -27,6 +27,9 @@ except ImportError:
         "text": "#FFFFFF",
         "secondary_text": "#AAAAAA"
     }
+
+# Import from constants instead
+from app.constants import get_resource_path
 
 class UIOperations:
     """
@@ -173,8 +176,9 @@ class UIOperations:
             card.leaveEvent = lambda e: self._on_card_hover_leave(card)
         
         # Icon - use SVG icon if available, fallback to emoji
-        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
-                               "assets", "icons", "template_structure_icon.svg")
+        icon_path = get_resource_path(os.path.join(
+            "assets", "icons", "template_structure_icon.svg"))
+        print(f"DEBUG (Dialog Icon Path): {icon_path}") # Add debug print
         
         if os.path.exists(icon_path):
             try:
@@ -756,3 +760,17 @@ class UIOperations:
             import traceback
             traceback.print_exc()
             return False 
+
+def get_template_icon(template_type=None):
+    """Returns the QIcon for a given template type"""
+    icon_path = get_resource_path(os.path.join(
+        "assets", "icons", "template_structure_icon.svg"))
+    print(f"DEBUG (Dialog Icon Path): {icon_path}") # Add debug print
+
+    if not os.path.exists(icon_path):
+        print(f"Warning: Default template icon not found at {icon_path}")
+        return QIcon()  # Return empty icon if default is not found
+
+    # Add logic here if you have different icons for different template_type
+    # For now, just return the default icon
+    return QIcon(icon_path) 

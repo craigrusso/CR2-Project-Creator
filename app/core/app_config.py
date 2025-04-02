@@ -14,6 +14,8 @@ from app.constants import (
     DEFAULT_TEMPLATE_CATEGORIES
 )
 
+# Resource path helper removed - moved to app/utils.py
+
 # Config file locations
 def get_config_paths():
     """Get paths for configuration files and directories"""

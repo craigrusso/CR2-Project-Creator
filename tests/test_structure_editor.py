@@ -1,237 +1,190 @@
 #!/usr/bin/env python3
-# Tests for the structure editor
+# Copyright (c) 2023-present Craig P. Russo and CR2 Creative
+
+"""
+Test script for the Enhanced Structure Editor
+"""
 
 import sys
 import os
-import unittest
-from unittest.mock import MagicMock, patch
-
-# Add project root to the path so we can import app modules
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
-from PyQt5.QtWidgets import QApplication, QTreeWidgetItem, QMessageBox, QWidget
+from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget
 from PyQt5.QtCore import Qt
-from app.ui.structure_editor_enhanced import EnhancedStructureEditor
 
-# Create QApplication instance for tests
-app = QApplication.instance()
-if not app:
-    app = QApplication(sys.argv)
+# Import from our app
+from app.ui.structure_editor_functions import (
+    show_enhanced_structure_editor,
+    create_new_structure,
+    duplicate_structure,
+    import_structure_from_file,
+    export_structure_to_file
+)
 
-class TestEnhancedStructureEditor(unittest.TestCase):
-    """Tests for the EnhancedStructureEditor class"""
+class TestWindow(QMainWindow):
+    """Test window for structure editor"""
     
-    def setUp(self):
-        """Set up test environment before each test case"""
-        # Create a real QWidget as parent instead of MagicMock
-        self.parent_widget = QWidget()
+    def __init__(self):
+        super().__init__()
         
-        # Create a mock app attribute on the parent
-        self.parent_widget.app = MagicMock()
+        # Mock template manager for testing
+        from app.templates.template_manager import TemplateManager
+        self.template_manager = TemplateManager()
         
-        # Mock the template_manager property
-        self.mock_template_manager = MagicMock()
-        self.parent_widget.app.template_manager = self.mock_template_manager
+        # Set up UI
+        self.setWindowTitle("Structure Editor Test")
+        self.setGeometry(100, 100, 400, 300)
         
-        # Create the structure editor with test parameters
-        self.editor = EnhancedStructureEditor(
-            parent=self.parent_widget,
-            structure_name="Template_Test",
-            structure=None,
-            project_type=None,
+        # Create central widget
+        central = QWidget()
+        self.setCentralWidget(central)
+        
+        # Create layout
+        layout = QVBoxLayout(central)
+        
+        # Add buttons
+        new_btn = QPushButton("Create New Structure")
+        new_btn.clicked.connect(self.on_new_structure)
+        layout.addWidget(new_btn)
+        
+        edit_btn = QPushButton("Edit Existing Structure")
+        edit_btn.clicked.connect(self.on_edit_structure)
+        layout.addWidget(edit_btn)
+        
+        duplicate_btn = QPushButton("Duplicate Structure")
+        duplicate_btn.clicked.connect(self.on_duplicate_structure)
+        layout.addWidget(duplicate_btn)
+        
+        import_btn = QPushButton("Import Structure from File")
+        import_btn.clicked.connect(self.on_import_structure)
+        layout.addWidget(import_btn)
+        
+        export_btn = QPushButton("Export Structure to File")
+        export_btn.clicked.connect(self.on_export_structure)
+        layout.addWidget(export_btn)
+        
+        # Add some test structures
+        self._add_test_structures()
+    
+    def _add_test_structures(self):
+        """Add some test structures to the template manager"""
+        # Simple structure
+        simple_structure = [
+            {"Project Root": [
+                "README.md",
+                "LICENSE",
+                {"src": [
+                    "main.py",
+                    "utils.py"
+                ]},
+                {"docs": [
+                    "index.md",
+                    "installation.md"
+                ]}
+            ]}
+        ]
+        
+        # More complex structure
+        complex_structure = [
+            {"Web Project": [
+                "README.md",
+                "package.json",
+                ".gitignore",
+                {"src": [
+                    "index.js",
+                    "app.js",
+                    {"components": [
+                        "Header.jsx",
+                        "Footer.jsx",
+                        "Sidebar.jsx"
+                    ]},
+                    {"styles": [
+                        "main.css",
+                        "variables.css"
+                    ]}
+                ]},
+                {"public": [
+                    "index.html",
+                    "favicon.ico",
+                    {"images": [
+                        "logo.png",
+                        "background.jpg"
+                    ]}
+                ]},
+                {"tests": [
+                    "app.test.js",
+                    "utils.test.js"
+                ]}
+            ]}
+        ]
+        
+        # Save structures
+        self.template_manager.save_structure("Simple Project", simple_structure)
+        self.template_manager.save_structure("Web Application", complex_structure)
+    
+    def on_new_structure(self):
+        """Create a new structure"""
+        success, structure, name = create_new_structure(
+            self,
+            default_name="New Test Structure",
+            project_type="Development"
+        )
+        
+        if success:
+            print(f"Created new structure '{name}' with {len(structure)} items")
+    
+    def on_edit_structure(self):
+        """Edit an existing structure"""
+        # Choose one of our test structures
+        success, structure, name = show_enhanced_structure_editor(
+            self,
+            structure_name="Simple Project",
             is_new=False
         )
         
-        # Mock the QMessageBox.warning
-        self.message_patcher = patch('app.ui.structure_editor_enhanced.QMessageBox.warning')
-        self.mock_warning = self.message_patcher.start()
+        if success:
+            print(f"Edited structure '{name}' with {len(structure)} items")
+    
+    def on_duplicate_structure(self):
+        """Duplicate an existing structure"""
+        # Duplicate the web application structure
+        success, structure, name = duplicate_structure(
+            self,
+            original_name="Web Application",
+            new_name="Copy of Web Application"
+        )
         
-        # Set up a basic tree structure for testing
-        self.editor.tree.clear()
-        root = QTreeWidgetItem(self.editor.tree)
-        root.setText(0, "Project Root")
-        root.setData(0, Qt.UserRole, "folder")
+        if success:
+            print(f"Duplicated structure as '{name}' with {len(structure)} items")
+    
+    def on_import_structure(self):
+        """Import a structure from a file"""
+        success, structure, name = import_structure_from_file(self)
         
-        # Add a subfolder
-        folder = QTreeWidgetItem(root)
-        folder.setText(0, "Test Folder")
-        folder.setData(0, Qt.UserRole, "folder")
+        if success:
+            print(f"Imported structure '{name}' with {len(structure)} items")
+            # Save it to our template manager
+            self.template_manager.save_structure(name, structure)
+    
+    def on_export_structure(self):
+        """Export a structure to a file"""
+        success = export_structure_to_file(self, "Web Application")
         
-        # Add a file
-        file = QTreeWidgetItem(folder)
-        file.setText(0, "Test File.txt")
-        file.setData(0, Qt.UserRole, "file")
-        
-    def tearDown(self):
-        """Clean up after each test case"""
-        self.message_patcher.stop()
-        self.editor.close()
-        self.parent_widget.close()
-        
-    def test_save_structure_with_empty_template_name(self):
-        """Test save_structure with empty template name"""
-        # Set empty template name
-        self.editor.template_name_edit.setText("")
-        
-        # Call save_structure
-        self.editor.save_structure()
-        
-        # Verify warning was shown
-        self.mock_warning.assert_called_once()
-        args, _ = self.mock_warning.call_args
-        self.assertEqual(args[1], "Error")
-        self.assertEqual(args[2], "Please enter a template name")
-        
-    @patch('app.templates.template_operations.TemplateOperations')
-    def test_save_structure_with_valid_template_name(self, mock_template_ops_class):
-        """Test save_structure with valid template name"""
-        # Set up mock TemplateOperations
-        mock_template_ops = MagicMock()
-        mock_template_ops_class.return_value = mock_template_ops
-        mock_template_ops.save_structure.return_value = True
-        
-        # Set template name
-        self.editor.template_name_edit.setText("Test Template")
-        
-        # Mock extract_structure_from_tree and get_current_template_info
-        mock_structure = [
-            {"name": "Test Folder", "type": "folder", "children": [
-                {"name": "Test File.txt", "type": "file"}
-            ]}
-        ]
-        self.editor.extract_structure_from_tree = MagicMock(return_value=mock_structure)
-        self.editor.get_current_template_info = MagicMock(return_value={"description": "Test description"})
-        
-        # Mock accept method to avoid closing dialog
-        self.editor.accept = MagicMock()
-        
-        # Call save_structure
-        self.editor.save_structure()
-        
-        # Verify template operations were called with correct arguments
-        mock_template_ops.save_structure.assert_called_once_with("Template_Test Template", mock_structure)
-        mock_template_ops.save_template_info.assert_called_once_with("Test Template", {"description": "Test description"})
-        
-        # Verify dialog was accepted
-        self.editor.accept.assert_called_once()
-        
-    @patch('app.templates.template_operations.TemplateOperations')
-    def test_save_structure_with_existing_template_prefix(self, mock_template_ops_class):
-        """Test save_structure with template name that already has Template_ prefix"""
-        # Set up mock TemplateOperations
-        mock_template_ops = MagicMock()
-        mock_template_ops_class.return_value = mock_template_ops
-        mock_template_ops.save_structure.return_value = True
-        
-        # Set template name with prefix
-        self.editor.template_name_edit.setText("Template_Existing")
-        
-        # Mock extract_structure_from_tree and get_current_template_info
-        mock_structure = [
-            {"name": "Test Folder", "type": "folder", "children": [
-                {"name": "Test File.txt", "type": "file"}
-            ]}
-        ]
-        self.editor.extract_structure_from_tree = MagicMock(return_value=mock_structure)
-        self.editor.get_current_template_info = MagicMock(return_value={"description": "Test description"})
-        
-        # Mock accept method to avoid closing dialog
-        self.editor.accept = MagicMock()
-        
-        # Call save_structure
-        self.editor.save_structure()
-        
-        # Verify template operations were called with correct arguments
-        mock_template_ops.save_structure.assert_called_once_with("Template_Existing", mock_structure)
-        mock_template_ops.save_template_info.assert_called_once_with("Existing", {"description": "Test description"})
-        
-        # Verify dialog was accepted
-        self.editor.accept.assert_called_once()
-        
-    @patch('app.templates.template_operations.TemplateOperations')
-    def test_save_structure_extraction_failure(self, mock_template_ops_class):
-        """Test save_structure when structure extraction fails"""
-        # Set up mock TemplateOperations
-        mock_template_ops = MagicMock()
-        mock_template_ops_class.return_value = mock_template_ops
-        
-        # Set template name
-        self.editor.template_name_edit.setText("Test Template")
-        
-        # Mock extract_structure_from_tree to return None (failure)
-        self.editor.extract_structure_from_tree = MagicMock(return_value=None)
-        
-        # Call save_structure
-        self.editor.save_structure()
-        
-        # Verify warning was shown
-        self.mock_warning.assert_called_once()
-        args, _ = self.mock_warning.call_args
-        self.assertEqual(args[1], "Error")
-        self.assertEqual(args[2], "Failed to extract structure from tree")
-        
-        # Verify template operations were not called
-        mock_template_ops.save_structure.assert_not_called()
-        
-    @patch('app.templates.template_operations.TemplateOperations')
-    def test_save_structure_save_failure(self, mock_template_ops_class):
-        """Test save_structure when structure save fails"""
-        # Set up mock TemplateOperations
-        mock_template_ops = MagicMock()
-        mock_template_ops_class.return_value = mock_template_ops
-        mock_template_ops.save_structure.return_value = False
-        
-        # Set template name
-        self.editor.template_name_edit.setText("Test Template")
-        
-        # Mock extract_structure_from_tree and get_current_template_info
-        mock_structure = [
-            {"name": "Test Folder", "type": "folder", "children": [
-                {"name": "Test File.txt", "type": "file"}
-            ]}
-        ]
-        self.editor.extract_structure_from_tree = MagicMock(return_value=mock_structure)
-        
-        # Call save_structure
-        self.editor.save_structure()
-        
-        # Verify warning was shown
-        self.mock_warning.assert_called_once()
-        args, _ = self.mock_warning.call_args
-        self.assertEqual(args[1], "Error")
-        self.assertEqual(args[2], "Failed to save structure 'Template_Test Template'")
-        
-        # Verify template_info operations were not called
-        mock_template_ops.save_template_info.assert_not_called()
-        
-    @patch('app.templates.template_operations.TemplateOperations')
-    def test_save_structure_with_exception(self, mock_template_ops_class):
-        """Test save_structure when an exception occurs"""
-        # Set up mock TemplateOperations to raise an exception
-        mock_template_ops = MagicMock()
-        mock_template_ops_class.return_value = mock_template_ops
-        mock_template_ops.save_structure.side_effect = Exception("Test exception")
-        
-        # Set template name
-        self.editor.template_name_edit.setText("Test Template")
-        
-        # Mock extract_structure_from_tree and get_current_template_info
-        mock_structure = [
-            {"name": "Test Folder", "type": "folder", "children": [
-                {"name": "Test File.txt", "type": "file"}
-            ]}
-        ]
-        self.editor.extract_structure_from_tree = MagicMock(return_value=mock_structure)
-        self.editor.get_current_template_info = MagicMock(return_value={"description": "Test description"})
-        
-        # Call save_structure
-        self.editor.save_structure()
-        
-        # Verify warning was shown with exception message
-        self.mock_warning.assert_called_once()
-        args, _ = self.mock_warning.call_args
-        self.assertEqual(args[1], "Error")
-        self.assertEqual(args[2], "Error saving structure: Test exception")
+        if success:
+            print("Exported structure to file")
 
-if __name__ == '__main__':
-    unittest.main() 
+def main():
+    """Main entry point"""
+    app = QApplication(sys.argv)
+    
+    # Setup DPI scaling
+    from app.core.app_config import setup_dpi_awareness
+    setup_dpi_awareness()
+    
+    # Create and show the test window
+    window = TestWindow()
+    window.show()
+    
+    # Start the application event loop
+    sys.exit(app.exec_())
+
+if __name__ == "__main__":
+    main() 

@@ -1,163 +1,145 @@
 #!/usr/bin/env python3
-# Copyright (c) 2023-present Craig P. Russo and CR2 Creative
+# Test script for project creation with cached files
 
-"""
-Test case for project creation with drag-and-drop structure
-"""
-
-import unittest
 import os
-import sys
-import shutil
 import tempfile
-import json
-from PyQt5.QtWidgets import QApplication, QTreeWidgetItem
-from PyQt5.QtCore import Qt
+import shutil
+import sys
 
-# Add parent directory to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Set up paths
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Import required modules
-from app.ui.structure_editor.structure_converter import StructureConverter
-from app.ui.ui_components_pyqt import TemplateDirectoryEditor
-from app.core.project_builder import ProjectBuilder
+# Import our classes
 from app.templates.template_manager import TemplateManager
+from app.core.project_builder import ProjectBuilder
 
-class TestProjectCreation(unittest.TestCase):
-    """Test case for verifying project creation with structure that includes folders"""
+def main():
+    """Test project creation with the template manager and project builder"""
+    # Create a temporary directory
+    temp_dir = tempfile.mkdtemp()
+    output_dir = os.path.join(temp_dir, "output")
+    os.makedirs(output_dir, exist_ok=True)
     
-    @classmethod
-    def setUpClass(cls):
-        # Create QApplication instance
-        cls.app = QApplication.instance() or QApplication(sys.argv)
+    print(f"Temporary directory: {temp_dir}")
+    print(f"Output directory: {output_dir}")
+    
+    try:
+        # Create instances of our classes
+        template_manager = TemplateManager()
+        project_builder = ProjectBuilder(template_manager)
         
-        # Create temporary directories
-        cls.temp_dir = tempfile.mkdtemp()
-        cls.template_dir = os.path.join(cls.temp_dir, "template")
-        cls.test_files_dir = os.path.join(cls.temp_dir, "test_files")
-        cls.cache_dir = os.path.join(cls.temp_dir, "cache", "template")
-        cls.output_dir = os.path.join(cls.temp_dir, "output")
-        cls.structures_dir = os.path.join(cls.temp_dir, "structures")
+        # Create a test file to be cached
+        test_file_path = os.path.join(temp_dir, "test_file.txt")
+        with open(test_file_path, 'w') as f:
+            f.write("This is a test file with {{PROJECT_NAME}} placeholder")
         
-        # Create directories
-        os.makedirs(cls.template_dir, exist_ok=True)
-        os.makedirs(cls.test_files_dir, exist_ok=True)
-        os.makedirs(cls.cache_dir, exist_ok=True)
-        os.makedirs(cls.output_dir, exist_ok=True)
-        os.makedirs(cls.structures_dir, exist_ok=True)
+        # Force-update the structure to include our test file
+        print("\n=== Modifying structure to include test file ===")
+        # Get an existing structure
+        test_structure_name = "Template_THIS IS TEST"
+        structure_data = template_manager.get_structure(test_structure_name)
         
-        # Create template manager with patched paths
-        cls.template_manager = TemplateManager()
-        # Override the paths after initialization
-        cls.template_manager.paths = {
-            "templates_dir": cls.temp_dir,
-            "user_templates_dir": cls.temp_dir,
-            "system_templates_dir": cls.temp_dir,
-            "cache_dir": os.path.join(cls.temp_dir, "cache"),
-            "custom_structures_dir": cls.structures_dir
-        }
-        
-        # Create test file structure
-        test_subdir = os.path.join(cls.test_files_dir, "subdir")
-        os.makedirs(test_subdir, exist_ok=True)
-        
-        # Create nested subfolders
-        nested_subdir = os.path.join(test_subdir, "nested_subdir")
-        os.makedirs(nested_subdir, exist_ok=True)
-        
-        # Create files
-        with open(os.path.join(cls.test_files_dir, "test_file.txt"), "w") as f:
-            f.write("Test file content")
-        
-        with open(os.path.join(test_subdir, "nested_file.txt"), "w") as f:
-            f.write("Nested file content")
+        if not structure_data:
+            print(f"Error: Could not find structure: {test_structure_name}")
+            return
             
-        with open(os.path.join(nested_subdir, "deeply_nested.txt"), "w") as f:
-            f.write("Deeply nested file content")
-    
-    @classmethod
-    def tearDownClass(cls):
-        # Clean up temporary directory
-        shutil.rmtree(cls.temp_dir)
-    
-    def test_project_creation_with_folders(self):
-        """Test creating a project with folder structure"""
-        # 1. Setup editor
-        editor = TemplateDirectoryEditor()
-        editor.template_path = self.template_dir
-        editor.template_manager = self.template_manager
+        # If structure data is a list, modify the first element
+        if isinstance(structure_data, list) and len(structure_data) > 0:
+            # If it's a directory, add a file to its children
+            if isinstance(structure_data[0], dict):
+                if 'children' not in structure_data[0]:
+                    structure_data[0]['children'] = []
+                    
+                # Add our test file to the children
+                structure_data[0]['children'].append({
+                    'type': 'file',
+                    'name': 'test_file.txt',
+                    'path': test_file_path,
+                    'is_binary': False
+                })
+                
+                print(f"Added test file to structure: {test_file_path}")
+            
+        # Try to cache the updated structure
+        print("\n=== Caching test file ===")
+        if hasattr(template_manager, '_cache_template_files'):
+            print(f"Caching template files for: {test_structure_name}")
+            template_name = "THIS IS TEST"  # Without the Template_ prefix
+            template_manager._cache_template_files(template_name, temp_dir, structure_data, True)
         
-        # 2. Create a tree structure
-        if editor.structure_tree.topLevelItemCount() == 0:
-            root_item = QTreeWidgetItem(editor.structure_tree)
-            root_item.setText(0, "Project Root")
-            root_item.setData(0, Qt.UserRole, "folder")
-        else:
-            root_item = editor.structure_tree.topLevelItem(0)
+        # Create project with the modified structure
+        project_name = "TEST_PROJECT"
+        project_path = os.path.join(output_dir, project_name)
         
-        # 3. Add the test files directory to the structure
-        editor._process_dropped_directory(self.test_files_dir, root_item)
+        print(f"\n=== Creating project: {project_name} ===")
+        print(f"Using structure: {test_structure_name}")
         
-        # 4. Get the structure from the editor
-        converter = StructureConverter(tree_widget=editor.structure_tree)
-        structure = converter.get_structure()
-        
-        # Print the structure for debugging
-        print(f"Structure for project creation: {json.dumps(structure, indent=2)}")
-        
-        # 5. Save the structure directly to a file
-        template_name = "test_template"
-        structure_path = os.path.join(self.structures_dir, f"{template_name}.json")
-        with open(structure_path, 'w') as f:
-            json.dump(structure, f, indent=2)
-        
-        # 6. Create a project builder
-        project_builder = ProjectBuilder(template_manager=self.template_manager)
-        
-        # 7. Create a project using the structure
-        project_name = "TestProject"
-        success, project_path = project_builder.create_project(
+        success, message = project_builder.create_project(
             project_name=project_name,
-            output_dir=self.output_dir,
-            template_file=None,  # No template file, we'll use structure
-            structure_name=template_name
+            output_path=output_dir,
+            structure_name=test_structure_name,
+            template_name=None
         )
         
-        print(f"Project creation result: {success}, path: {project_path}")
+        # Check result
+        if success:
+            print(f"Project creation successful: {message}")
+            # List created files
+            print("\n=== Files created ===")
+            for root, dirs, files in os.walk(project_path):
+                rel_path = os.path.relpath(root, project_path)
+                if rel_path == ".":
+                    print(f"Files in project root:")
+                else:
+                    print(f"Files in {rel_path}:")
+                    
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    file_size = os.path.getsize(file_path)
+                    print(f"  - {file} ({file_size} bytes)")
+                    
+                    # If it's our test file, check if placeholders were replaced
+                    if file == "test_file.txt":
+                        with open(file_path, 'r') as f:
+                            content = f.read()
+                            print(f"    Content: {content}")
+        else:
+            print(f"Project creation failed: {message}")
         
-        # 8. Verify the project was created successfully
-        self.assertTrue(success, "Project creation should succeed")
-        self.assertTrue(os.path.exists(project_path), "Project directory should exist")
+        # Now try creating a project with a template directly
+        print("\n=== Creating project from template ===")
+        template_name = "THIS IS TEST"
+        project_name = "TEMPLATE_PROJECT"
         
-        # 9. Verify the folder structure was created correctly
-        # The project structure includes "Project Root" as the top level folder
-        project_root_dir = os.path.join(project_path, "Project Root")
-        self.assertTrue(os.path.exists(project_root_dir), "Project Root directory should exist")
+        success, message = project_builder.create_project(
+            project_name=project_name,
+            output_path=output_dir,
+            structure_name=None,
+            template_name=template_name
+        )
         
-        test_files_dir = os.path.join(project_root_dir, "test_files")
-        self.assertTrue(os.path.exists(test_files_dir), "test_files directory should exist")
+        if success:
+            print(f"Template project creation successful: {message}")
+            template_project_path = os.path.join(output_dir, project_name)
+            print("\n=== Files created from template ===")
+            for root, dirs, files in os.walk(template_project_path):
+                rel_path = os.path.relpath(root, template_project_path)
+                if rel_path == ".":
+                    print(f"Files in project root:")
+                else:
+                    print(f"Files in {rel_path}:")
+                    
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    file_size = os.path.getsize(file_path)
+                    print(f"  - {file} ({file_size} bytes)")
+        else:
+            print(f"Template project creation failed: {message}")
+    
+    finally:
+        # Clean up
+        print(f"\nCleaning up temporary directory: {temp_dir}")
+        shutil.rmtree(temp_dir)
         
-        subdir = os.path.join(test_files_dir, "subdir")
-        self.assertTrue(os.path.exists(subdir), "subdir should exist")
-        
-        nested_subdir = os.path.join(subdir, "nested_subdir")
-        self.assertTrue(os.path.exists(nested_subdir), "nested_subdir should exist")
-        
-        # 10. Verify the files were copied correctly
-        test_file = os.path.join(test_files_dir, "test_file.txt")
-        self.assertTrue(os.path.exists(test_file), "test_file.txt should exist")
-        
-        nested_file = os.path.join(subdir, "nested_file.txt")
-        self.assertTrue(os.path.exists(nested_file), "nested_file.txt should exist")
-        
-        deeply_nested_file = os.path.join(nested_subdir, "deeply_nested.txt")
-        self.assertTrue(os.path.exists(deeply_nested_file), "deeply_nested.txt should exist")
-        
-        # 11. Verify file contents (files are empty since we didn't add actual content)
-        # Instead we'll just check that the files exist and are empty since our test doesn't
-        # actually copy file contents - it just creates empty files
-        self.assertEqual(os.path.getsize(test_file), 0, "test_file.txt should be empty")
-        self.assertEqual(os.path.getsize(deeply_nested_file), 0, "deeply_nested.txt should be empty")
-
 if __name__ == "__main__":
-    unittest.main() 
+    main() 

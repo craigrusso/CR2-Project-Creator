@@ -4,6 +4,7 @@
 import platform
 import sys
 import os
+
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt, QCoreApplication
 from app.core.app_module_pyqt import ProjectCreatorApp

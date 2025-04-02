@@ -21,9 +21,9 @@ except ImportError as e:
 
 # Import gallery templates handling
 try:
-    from app.ui.gallery_templates import GalleryTemplates
+    from app.ui.gallery_templates import TemplatesGallery
 except ImportError as e:
-    print(f"Warning: Failed to import GalleryTemplates: {e}")
+    print(f"Warning: Failed to import TemplatesGallery: {e}")
 
 # Make all UI modules available for import
 __all__ = [
@@ -37,5 +37,5 @@ __all__ = [
     'TemplateFileCard',
     'show_enhanced_structure_editor',
     'EnhancedStructureEditor',
-    'GalleryTemplates'
+    'TemplatesGallery'
 ]
