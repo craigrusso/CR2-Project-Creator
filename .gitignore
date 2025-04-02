@@ -45,4 +45,9 @@ ehthumbs.db
 *.dmg 
 # Large files
 ICONS/Echelon.psd
+ICONS/Echelon_DMG_BG.psd
 Echelon.zip
+
+# Build directories
+build/
+dist/
