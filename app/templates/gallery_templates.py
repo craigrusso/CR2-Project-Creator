@@ -968,8 +968,8 @@ class GalleryTemplatesSetup:
                 # Populate the table view (using the refactored method)
                 # Get current templates displayed (might need adjustment based on filtering/folders)
                 # For now, assume we repopulate with all templates when switching
-                all_templates = self.template_manager.get_all_templates() if hasattr(self, 'template_manager') else [] # Safer fetch
-                GalleryTemplatesSetup.populate_templates_list(self, all_templates) 
+                all_templates = gallery.template_manager.get_all_templates() if hasattr(gallery, 'template_manager') else [] # Use 'gallery'
+                GalleryTemplatesSetup.populate_templates_list(gallery, all_templates)
             
             # Save preference
             if hasattr(gallery, 'app') and hasattr(gallery.app, 'preferences'):
