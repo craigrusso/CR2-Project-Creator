@@ -116,14 +116,15 @@ class TemplateListItem(QFrame):
         # Add warning indicator for templates without structure
         if not self.has_structure:
             self.warning_label = QLabel("!")
-            self.warning_label.setFixedSize(24, 24)
+            self.warning_label.setFixedSize(16, 16)
             self.warning_label.setAlignment(Qt.AlignCenter)
             self.warning_label.setStyleSheet(f"""
                 background-color: {colors.get('error', '#FF5252')};
                 color: white;
-                border-radius: 12px;
+                border-radius: 8px;
                 font-weight: bold;
                 border: 1px solid white;
+                font-size: 10px;
             """)
             layout.addWidget(self.warning_label)
             
@@ -132,7 +133,7 @@ class TemplateListItem(QFrame):
         else:
             # Add a spacer to keep alignment consistent
             self.spacer_label = QLabel()
-            self.spacer_label.setFixedSize(24, 24)
+            self.spacer_label.setFixedSize(16, 16)
             layout.addWidget(self.spacer_label)
         
         # Name label
