@@ -880,33 +880,35 @@ class GalleryTemplatesSetup:
             # Get the new sizes directly from the splitter
             if hasattr(gallery, 'header_splitter'):
                 sizes = gallery.header_splitter.sizes()
+                print(f"[DEBUG] Splitter moved. Sizes: {sizes}") # Debug print
                 
                 # Ensure we have the expected number of sizes
                 if len(sizes) == 4:
-                    # Apply constraints if needed (can be adjusted)
-                    name_width = max(100, min(800, sizes[0]))
-                    category_width = max(80, min(400, sizes[1]))
-                    created_width = max(120, min(300, sizes[2]))
-                    modified_width = max(120, min(300, sizes[3]))
+                    # No constraints for now, use raw sizes
+                    name_width = sizes[0]
+                    category_width = sizes[1]
+                    created_width = sizes[2]
+                    modified_width = sizes[3]
                     
-                    # Store the potentially constrained sizes
+                    # Store the raw sizes (or potentially constrained later)
                     gallery.header_sizes = [name_width, category_width, created_width, modified_width]
                     
-                    # Update the fixed width of labels in each list item
+                    # Update the fixed width of container widgets in each list item
                     if hasattr(gallery, 'template_item_map'):
                         for item in gallery.template_item_map.values():
-                            if item and hasattr(item, 'name_label'):
-                                item.name_label.setFixedWidth(name_width)
-                            if item and hasattr(item, 'category_label'):
-                                item.category_label.setFixedWidth(category_width)
-                            if item and hasattr(item, 'created_date_label'):
-                                item.created_date_label.setFixedWidth(created_width)
-                            if item and hasattr(item, 'modified_date_label'):
-                                item.modified_date_label.setFixedWidth(modified_width)
+                            if item and hasattr(item, 'name_container'):
+                                item.name_container.setFixedWidth(name_width)
+                            if item and hasattr(item, 'category_container'):
+                                item.category_container.setFixedWidth(category_width)
+                            if item and hasattr(item, 'created_container'):
+                                item.created_container.setFixedWidth(created_width)
+                            if item and hasattr(item, 'modified_container'):
+                                item.modified_container.setFixedWidth(modified_width)
                                 
-                        # Optional: Force an update on the container if needed, though resizing labels should trigger it
-                        # if gallery.templates_list_widget and gallery.templates_list_widget.widget():
-                        #     gallery.templates_list_widget.widget().updateGeometry()
+                        # Optional: Force an update on the container if needed
+                        if gallery.templates_list_widget and gallery.templates_list_widget.widget():
+                             gallery.templates_list_widget.widget().updateGeometry()
+                             gallery.templates_list_widget.widget().layout().update()
                     
                 else:
                     print(f"[WARN] Splitter returned unexpected number of sizes: {len(sizes)}")
