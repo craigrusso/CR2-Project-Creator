@@ -10,7 +10,7 @@ to avoid crashes from missing methods.
 import time
 import datetime
 import os
-from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QApplication, QMenu, QAction, QWidget
+from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QApplication, QMenu, QAction
 from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QMimeData, QSize
 from PyQt5.QtGui import QFont, QPalette, QColor, QDrag, QPixmap, QIcon
 
@@ -71,17 +71,16 @@ class TemplateListItem(QFrame):
         self.setFrameShape(QFrame.StyledPanel)
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedHeight(40)
+        
+        # Set size policy to expand horizontally
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         
-        # Main item layout
+        # Create layout
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(10, 0, 10, 0) # Adjusted margins slightly for vertical alignment
-        layout.setSpacing(0) # Let containers handle spacing if needed
+        layout.setContentsMargins(10, 6, 10, 6)
+        layout.setSpacing(8)
         
-        # --- Icon --- 
-        icon_container = QWidget()
-        icon_container_layout = QHBoxLayout(icon_container)
-        icon_container_layout.setContentsMargins(0, 0, 5, 0) # Add right margin for spacing
+        # Icon label (template icon) - Load SVG
         self.icon_label = QLabel()
         self.icon_label.setAlignment(Qt.AlignCenter)
         self.icon_label.setFixedSize(30, 30) # Keep fixed size for list view consistency
@@ -112,16 +111,12 @@ class TemplateListItem(QFrame):
             self.icon_label.setFont(font)
             self.icon_label.setStyleSheet(f"color: {colors.get('accent', '#FFFFFF')}; background-color: transparent;") # Add color fallback
 
-        icon_container_layout.addWidget(self.icon_label)
-        icon_container.setFixedWidth(35) # Fixed width for icon + right margin
-        layout.addWidget(icon_container)
-
-        # --- Warning/Spacer --- 
-        self.warning_spacer_container = QWidget()
-        warning_spacer_layout = QHBoxLayout(self.warning_spacer_container)
-        warning_spacer_layout.setContentsMargins(0, 0, 5, 0) # Right margin
+        layout.addWidget(self.icon_label)
+        
+        # Add warning indicator for templates without structure
         if not self.has_structure:
-            self.warning_label = QLabel("⚠") # Using the subtle triangle
+            self.warning_label = QLabel("⚠")
+            self.warning_label.setFixedSize(16, 16)
             self.warning_label.setAlignment(Qt.AlignCenter)
             self.warning_label.setStyleSheet(f"""
                 color: {colors.get('error', '#FF5252')};
@@ -129,67 +124,48 @@ class TemplateListItem(QFrame):
                 font-weight: bold;
                 font-size: 12px;
             """)
-            warning_spacer_layout.addWidget(self.warning_label)
+            layout.addWidget(self.warning_label)
+            
+            # Add tooltip to explain the warning
             self.setToolTip("This template has no folder structure defined")
         else:
-            # Add an empty label as a spacer if needed, or just rely on container width
-            pass 
-        self.warning_spacer_container.setFixedWidth(21) # Fixed width for warning/spacer area + margin
-        layout.addWidget(self.warning_spacer_container)
+            # Add a spacer to keep alignment consistent
+            self.spacer_label = QLabel()
+            self.spacer_label.setFixedSize(16, 16)
+            layout.addWidget(self.spacer_label)
         
-        # --- Name Column --- 
-        self.name_container = QWidget()
-        name_layout = QHBoxLayout(self.name_container)
-        name_layout.setContentsMargins(0, 0, 5, 0) # Right margin for splitter handle
+        # Name label
         template_name = template.get('name', 'Untitled Template') if isinstance(template, dict) else str(template)
         self.name_label = QLabel(template_name)
-        self.name_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        # Allow text to be truncated with ellipsis if too long
-        self.name_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        name_layout.addWidget(self.name_label, 1) # Add stretch factor like header
-        # Removed setFixedWidth here, will be applied to container
-        layout.addWidget(self.name_container)
+        self.name_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        self.name_label.setFixedWidth(300)  # Set initial width
+        layout.addWidget(self.name_label)
         
-        # --- Category Column --- 
-        self.category_container = QWidget()
-        category_layout = QHBoxLayout(self.category_container)
-        category_layout.setContentsMargins(5, 0, 5, 0) # Margins around splitter handle
+        # Category label - new field
         category_text = template.get('category', '') if isinstance(template, dict) else ''
         self.category_label = QLabel(category_text)
         self.category_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.category_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        category_layout.addWidget(self.category_label, 1)
-        # Removed setFixedWidth here
-        layout.addWidget(self.category_container)
+        self.category_label.setFixedWidth(150)  # Set initial width to match header
+        layout.addWidget(self.category_label)
         
-        # --- Created Column --- 
-        self.created_container = QWidget()
-        created_layout = QHBoxLayout(self.created_container)
-        created_layout.setContentsMargins(5, 0, 5, 0) # Margins around splitter handle
+        # Format timestamps safely
         created_timestamp = template.get('created', time.time()) if isinstance(template, dict) else time.time()
+        modified_timestamp = template.get('modified', created_timestamp) if isinstance(template, dict) else time.time()
+        
         created_date_str = self._format_date(created_timestamp)
+        modified_date_str = self._format_date(modified_timestamp)
+        
+        # Created date
         self.created_date_label = QLabel(created_date_str)
         self.created_date_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.created_date_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        created_layout.addWidget(self.created_date_label, 1)
-        # Removed setFixedWidth here
-        layout.addWidget(self.created_container)
+        self.created_date_label.setFixedWidth(150)  # Set initial width to match header
+        layout.addWidget(self.created_date_label)
         
-        # --- Modified Column --- 
-        self.modified_container = QWidget()
-        modified_layout = QHBoxLayout(self.modified_container)
-        modified_layout.setContentsMargins(5, 0, 0, 0) # Only left margin
-        modified_timestamp = template.get('modified', created_timestamp) if isinstance(template, dict) else time.time()
-        modified_date_str = self._format_date(modified_timestamp)
+        # Modified date
         self.modified_date_label = QLabel(modified_date_str)
         self.modified_date_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.modified_date_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        modified_layout.addWidget(self.modified_date_label, 1)
-        # Removed setFixedWidth here
-        layout.addWidget(self.modified_container)
-        
-        # Add final stretch to push columns left if needed (though splitter might handle this)
-        # layout.addStretch(1)
+        self.modified_date_label.setFixedWidth(150)  # Set initial width to match header
+        layout.addWidget(self.modified_date_label)
         
         # Apply initial styling
         self._update_styling()
@@ -558,26 +534,26 @@ class TemplateListItem(QFrame):
 
     def setNameWidth(self, width):
         """Set the width of the name column"""
-        if hasattr(self, 'name_container'):
-            self.name_container.setFixedWidth(width)
+        if hasattr(self, 'name_label'):
+            self.name_label.setFixedWidth(width)
             self.update()
             
     def setCategoryWidth(self, width):
         """Set the width of the category column"""
-        if hasattr(self, 'category_container'):
-            self.category_container.setFixedWidth(width)
+        if hasattr(self, 'category_label'):
+            self.category_label.setFixedWidth(width)
             self.update()
             
     def setCreatedDateWidth(self, width):
         """Set the width of the created date column"""
-        if hasattr(self, 'created_container'):
-            self.created_container.setFixedWidth(width)
+        if hasattr(self, 'created_date_label'):
+            self.created_date_label.setFixedWidth(width)
             self.update()
             
     def setModifiedDateWidth(self, width):
         """Set the width of the modified date column"""
-        if hasattr(self, 'modified_container'):
-            self.modified_container.setFixedWidth(width)
+        if hasattr(self, 'modified_date_label'):
+            self.modified_date_label.setFixedWidth(width)
             self.update()
 
     def setSelected(self, selected):
