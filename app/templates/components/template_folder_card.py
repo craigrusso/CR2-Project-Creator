@@ -137,40 +137,68 @@ class TemplateFolderCard(QFrame):
             self.doubleClicked.emit(self.folder_name)
 
     def dragEnterEvent(self, event):
-        if event.mimeData().hasText() or event.mimeData().hasFormat("application/json"):
-            text_data = event.mimeData().text() if event.mimeData().hasText() else "[json data]"
-            print(f"🔍 LISTENER: Drag entered folder '{self.folder_name}' with data: {text_data}")
-            event.acceptProposedAction()
+        """Handle drag enter event"""
+        if event.mimeData().hasText() or event.mimeData().hasFormat("application/x-template-multi-selection"):
             self.hover = True
             self._update_styling()
+            event.acceptProposedAction()
+        else:
+            event.ignore()
 
     def dragLeaveEvent(self, event):
-        print(f"🔍 LISTENER: Drag left folder '{self.folder_name}'")
+        """Handle drag leave event"""
         self.hover = False
         self._update_styling()
 
     def dropEvent(self, event):
-        if event.mimeData().hasText():
-            text_data = event.mimeData().text()
-            # Check if this contains multiple templates (newline or comma separated)
+        """Handle drop event"""
+        mime_data = event.mimeData()
+        template_names = []
+        
+        # Check for multi-selection MIME format first
+        if mime_data.hasFormat("application/x-template-multi-selection"):
+            try:
+                # Get JSON data with multi-selected templates
+                multi_data = mime_data.data("application/x-template-multi-selection").data()
+                import json
+                template_names = json.loads(multi_data.decode())
+                print(f"[DEBUG] FolderListItem: Processing multi-selection drop with {len(template_names)} templates")
+            except Exception as e:
+                print(f"Error processing multi-selection drop: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Fallback to text-based format
+        elif mime_data.hasText():
+            text_data = mime_data.text()
+            # Check if this contains multiple templates (newline separated)
             if '\n' in text_data:
                 template_names = text_data.strip().split('\n')
-                print(f"🔍 LISTENER: Dropped {len(template_names)} templates onto folder '{self.folder_name}': {', '.join(template_names)}")
-                
-                # Move each template to this folder
-                for template_name in template_names:
-                    if template_name.strip():  # Skip empty names
-                        print(f"🔍 LISTENER: Moving template '{template_name}' to folder '{self.folder_name}'")
-                        self.app.template_manager.move_template_to_folder(template_name, self.folder_name)
-                
-                # Show success message if available
-                if hasattr(self.app, 'show_status_message'):
-                    self.app.show_status_message(f"Moved {len(template_names)} templates to {self.folder_name}", "success")
+                print(f"[DEBUG] FolderListItem: Detected newline-separated drop with {len(template_names)} templates")
             else:
                 # Single template drop
                 template_name = text_data
-                print(f"🔍 LISTENER: Dropped single template '{template_name}' onto folder '{self.folder_name}'")
-                self.app.template_manager.move_template_to_folder(template_name, self.folder_name)
+                template_names = [template_name]
+                print(f"[DEBUG] FolderListItem: Detected single template drop: '{template_name}'")
+        
+        # Process all templates
+        if template_names:
+            success_count = 0
+            for template_name in template_names:
+                if template_name and template_name.strip():  # Skip empty names
+                    try:
+                        success = self.app.template_manager.move_template_to_folder(template_name, self.folder_name)
+                        if success:
+                            success_count += 1
+                    except Exception as e:
+                        print(f"Error moving template '{template_name}': {e}")
+            
+            # Show success message if available
+            if success_count > 0 and hasattr(self.app, 'show_status_message'):
+                if success_count == 1:
+                    self.app.show_status_message(f"Moved template to '{self.folder_name}'", "success")
+                else:
+                    self.app.show_status_message(f"Moved {success_count} templates to '{self.folder_name}'", "success")
             
             event.acceptProposedAction()
             self.hover = False
@@ -178,8 +206,9 @@ class TemplateFolderCard(QFrame):
             
             # Refresh the gallery to show the updated contents
             if hasattr(self.app, 'template_gallery') and self.app.template_gallery:
-                print(f"🔍 LISTENER: Refreshing gallery after drop onto folder '{self.folder_name}'")
                 self.app.template_gallery.populate_gallery(force_refresh=True)
+        else:
+            event.ignore()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton and not self.editing:
@@ -478,10 +507,12 @@ class TemplateFolderListItem(QFrame):
     
     def dragEnterEvent(self, event):
         """Handle drag enter event"""
-        if event.mimeData().hasText() or event.mimeData().hasFormat("application/json"):
-            event.acceptProposedAction()
+        if event.mimeData().hasText() or event.mimeData().hasFormat("application/x-template-multi-selection"):
             self.hover = True
             self._update_styling()
+            event.acceptProposedAction()
+        else:
+            event.ignore()
     
     def dragLeaveEvent(self, event):
         """Handle drag leave event"""
@@ -490,25 +521,53 @@ class TemplateFolderListItem(QFrame):
     
     def dropEvent(self, event):
         """Handle drop event"""
-        if event.mimeData().hasText():
-            text_data = event.mimeData().text()
-            # Check if this contains multiple templates (newline or comma separated)
+        mime_data = event.mimeData()
+        template_names = []
+        
+        # Check for multi-selection MIME format first
+        if mime_data.hasFormat("application/x-template-multi-selection"):
+            try:
+                # Get JSON data with multi-selected templates
+                multi_data = mime_data.data("application/x-template-multi-selection").data()
+                import json
+                template_names = json.loads(multi_data.decode())
+                print(f"[DEBUG] FolderListItem: Processing multi-selection drop with {len(template_names)} templates")
+            except Exception as e:
+                print(f"Error processing multi-selection drop: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Fallback to text-based format
+        elif mime_data.hasText():
+            text_data = mime_data.text()
+            # Check if this contains multiple templates (newline separated)
             if '\n' in text_data:
                 template_names = text_data.strip().split('\n')
-                print(f"[DEBUG] FolderListItem: Handling multi-template drop of {len(template_names)} templates to {self.folder_name}")
-                
-                # Move each template to this folder
-                for template_name in template_names:
-                    if template_name.strip():  # Skip empty names
-                        self.app.template_manager.move_template_to_folder(template_name, self.folder_name)
-                
-                # Show success message if available
-                if hasattr(self.app, 'show_status_message'):
-                    self.app.show_status_message(f"Moved {len(template_names)} templates to {self.folder_name}", "success")
+                print(f"[DEBUG] FolderListItem: Detected newline-separated drop with {len(template_names)} templates")
             else:
                 # Single template drop
                 template_name = text_data
-                self.app.template_manager.move_template_to_folder(template_name, self.folder_name)
+                template_names = [template_name]
+                print(f"[DEBUG] FolderListItem: Detected single template drop: '{template_name}'")
+        
+        # Process all templates
+        if template_names:
+            success_count = 0
+            for template_name in template_names:
+                if template_name and template_name.strip():  # Skip empty names
+                    try:
+                        success = self.app.template_manager.move_template_to_folder(template_name, self.folder_name)
+                        if success:
+                            success_count += 1
+                    except Exception as e:
+                        print(f"Error moving template '{template_name}': {e}")
+            
+            # Show success message if available
+            if success_count > 0 and hasattr(self.app, 'show_status_message'):
+                if success_count == 1:
+                    self.app.show_status_message(f"Moved template to '{self.folder_name}'", "success")
+                else:
+                    self.app.show_status_message(f"Moved {success_count} templates to '{self.folder_name}'", "success")
             
             event.acceptProposedAction()
             self.hover = False
@@ -517,6 +576,8 @@ class TemplateFolderListItem(QFrame):
             # Refresh the gallery to show the updated contents
             if hasattr(self.app, 'template_gallery') and self.app.template_gallery:
                 self.app.template_gallery.populate_gallery(force_refresh=True)
+        else:
+            event.ignore()
     
     def _start_rename(self):
         """Start inline renaming of folder"""

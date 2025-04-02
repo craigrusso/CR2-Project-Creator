@@ -173,19 +173,6 @@ class GalleryEvents:
         gallery.selected_folder = None  # Reset folder selection
         print(f"🔍 LISTENER: Template selection set to '{template_name}'")
         
-        # Clear any multi-selection
-        if hasattr(gallery, 'multi_selected_templates'):
-            # Temporarily store multi-selection to deselect items
-            items_to_deselect = gallery.multi_selected_templates.copy()
-            gallery.multi_selected_templates.clear()
-            
-            # Manually update styling for previously multi-selected items
-            if hasattr(gallery, 'template_cards'):
-                for card in gallery.template_cards:
-                    if hasattr(card, 'template') and card.template in items_to_deselect:
-                        if hasattr(card, 'set_multi_selected'):
-                            card.set_multi_selected(False)
-        
         # Update card styling for all cards - proper highlighting
         if hasattr(gallery, 'template_cards') and gallery.template_cards:
             card_count = len(gallery.template_cards)
@@ -890,69 +877,51 @@ class GalleryEvents:
         
         template_manager = gallery.app.template_manager
         
-        # Check if this is a multi-template operation (comma-separated list)
-        if ',' in template_name:
-            # Multi-template case
-            template_names = [name.strip() for name in template_name.split(',') if name.strip()]
-            
-            # If the gallery has a selected template that's not in this list, also include it
-            if hasattr(gallery, 'selected_template') and gallery.selected_template:
-                selected_name = gallery.selected_template.get('name', None)
-                if selected_name and selected_name not in template_names:
-                    template_names.insert(0, selected_name)
-                    print(f"🔍 LISTENER: Added main selected template '{selected_name}' to move operation")
-        else:
-            # Single template case
-            template_names = [template_name]
-        
-        # Process all template names
+        # Process the single template name received from the signal
         success_count = 0
+        single_template_name = template_name # Rename for clarity within this block
         
-        for single_template_name in template_names:
-            # Skip empty names
-            if not single_template_name:
-                continue
-                
-            # Check for special folder names
-            if folder_name == "Root" or folder_name == "Up a Level":
-                print(f"🔍 LISTENER: Moving template '{single_template_name}' to root (removing from folders)")
-                
-                # For Root, remove from all folders
-                has_changes = False
-                
-                # If we're in a folder, remove from current folder
-                if hasattr(gallery, 'current_folder') and gallery.current_folder:
-                    print(f"🔍 LISTENER: Removing template '{single_template_name}' from folder '{gallery.current_folder}'")
-                    result = template_manager.remove_from_folder(gallery.current_folder, single_template_name)
-                    has_changes = has_changes or result
-                else:
-                    # If not in a folder, find and remove from any folder it's in
-                    if hasattr(template_manager, 'folders'):
-                        for folder, templates in template_manager.folders.items():
-                            if single_template_name in templates:
-                                print(f"🔍 LISTENER: Removing template '{single_template_name}' from folder '{folder}'")
-                                result = template_manager.remove_from_folder(folder, single_template_name)
-                                has_changes = has_changes or result
-                
-                # Count successful operations
-                if has_changes:
-                    success_count += 1
+        # Skip empty names
+        if not single_template_name:
+            print(f"🔍 LISTENER: Invalid template name received: '{single_template_name}'")
+            return False
+            
+        # Check for special folder names ("Root" means move out of current folder)
+        # Note: folder_name comes directly from the signal emitter
+        # In _move_template_out_of_folder, it's always ""
+        if folder_name == "" or folder_name == "Root" or folder_name == "Up a Level":
+            print(f"🔍 LISTENER: Moving template '{single_template_name}' to root (removing from folders)")
+            
+            # Find which folder the template is currently in
+            current_folder_of_template = None
+            if hasattr(template_manager, 'folders'):
+                for folder, templates in template_manager.folders.items():
+                    if single_template_name in templates:
+                        current_folder_of_template = folder
+                        break
+            
+            # Remove from the folder it was found in
+            if current_folder_of_template:
+                print(f"🔍 LISTENER: Removing template '{single_template_name}' from folder '{current_folder_of_template}'")
+                result = template_manager.remove_from_folder(current_folder_of_template, single_template_name)
+                if result:
+                    success_count = 1 # Only one template processed per call
             else:
-                # Normal folder move
-                # Move template to folder
-                try:
-                    result = template_manager.move_template_to_folder(single_template_name, folder_name)
-                    if result:
-                        success_count += 1
-                except Exception as e:
-                    print(f"🔍 LISTENER: Error moving template to folder: {e}")
+                print(f"🔍 LISTENER: Template '{single_template_name}' not found in any folder, cannot move to root.")
+        else:
+            # Normal folder move (to a specific named folder)
+            print(f"🔍 LISTENER: Moving template '{single_template_name}' to specific folder '{folder_name}'")
+            try:
+                result = template_manager.move_template_to_folder(single_template_name, folder_name)
+                if result:
+                    success_count = 1 # Only one template processed per call
+            except Exception as e:
+                print(f"🔍 LISTENER: Error moving template '{single_template_name}' to folder '{folder_name}': {e}")
         
-        # Update UI based on the results
+        # Update UI only if the move was successful for this template
         if success_count > 0:
-            message = f"Template moved to {folder_name if folder_name not in ['Root', 'Up a Level'] else 'root'}"
-            if success_count > 1:
-                message = f"{success_count} templates moved to {folder_name if folder_name not in ['Root', 'Up a Level'] else 'root'}"
-                
+            target_display = "root" if folder_name == "" else folder_name
+            message = f"Template '{single_template_name}' moved to {target_display}"
             print(f"🔍 LISTENER: {message}")
             
             # Show success message
@@ -966,12 +935,12 @@ class GalleryEvents:
                 if hasattr(gallery, 'breadcrumb_label'):
                     gallery.breadcrumb_label.show()
             
-            # Force refresh the gallery
-            gallery.populate_gallery(force_refresh=True)
+            # Force refresh the gallery - Delay slightly to allow multiple moves to potentially complete
+            # before the full refresh happens. This might make the UI feel slightly smoother.
+            QTimer.singleShot(50, lambda: gallery.populate_gallery(force_refresh=True))
             return True
         else:
-            print(f"🔍 LISTENER: No templates were moved successfully")
-            return False 
+            print(f"🔍 LISTENER: Template '{single_template_name}' move failed or was unnecessary.")
 
     @staticmethod
     def _save_template_and_structure(gallery, data):

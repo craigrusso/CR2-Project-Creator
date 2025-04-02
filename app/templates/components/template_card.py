@@ -206,8 +206,9 @@ class TemplateCard(QFrame):
             modifiers = QApplication.keyboardModifiers()
             is_ctrl_or_cmd = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier))
             is_shift = bool(modifiers & Qt.ShiftModifier)
+            is_modifier_click = is_ctrl_or_cmd or is_shift
             
-            # Get gallery reference for multi-selection
+            # Get gallery reference
             gallery = None
             parent = self.parent()
             while parent:
@@ -218,143 +219,45 @@ class TemplateCard(QFrame):
             
             template_name = self.template.get('name', 'Unknown')
             print(f"🔍 LISTENER: Template card clicked for template: {template_name}")
-            print(f"🔍 LISTENER: Modifiers value: {int(modifiers)}, is_multi_select: {is_ctrl_or_cmd or is_shift}")
+            print(f"🔍 LISTENER: Modifiers value: {int(modifiers)}, is_modifier_click: {is_modifier_click}")
             
             # Check if this card is already multi-selected
             was_multi_selected = False
             if gallery and hasattr(gallery, 'multi_selected_templates'):
                 was_multi_selected = self.template in gallery.multi_selected_templates
                 
-            # CRITICAL: Track if we're clicking on an already selected item in multi-selection
+            # Track if clicking on an already selected item in multi-selection
             # This is key for allowing drag operations on multiple selections
             self.clicking_multi_selected = was_multi_selected and len(gallery.multi_selected_templates) > 1
             if self.clicking_multi_selected:
                 print(f"🔍 LISTENER: Clicking on already multi-selected item for potential drag")
             
-            # Always ensure the card's state is updated for immediate visual feedback
+            # Always visually select this card for immediate feedback
             self.set_selected(True)
             
             if gallery:
-                if is_ctrl_or_cmd:
-                    # Control/Command click - toggle multi-selection
-                    if hasattr(gallery, 'multi_selected_templates'):
-                        was_multi_selected = self.template in gallery.multi_selected_templates
-                        
-                        if was_multi_selected:
-                            # Remove from multi-selection
-                            gallery.multi_selected_templates.remove(self.template)
-                            print(f"🔍 LISTENER: Removing '{template_name}' from multi-selection")
-                        else:
-                            # Add to multi-selection
-                            gallery.multi_selected_templates.append(self.template)
-                            print(f"🔍 LISTENER: Adding '{template_name}' to multi-selection")
-                    
-                    # Add to primary selection WITHOUT clearing previous selections
-                    if hasattr(gallery, 'selected_template'):
-                        # Remember previous selection to maintain it in multi-selection
-                        prev_selection = gallery.selected_template
-                        
-                        # Only add previous selection to multi-selection if it's valid and not already there
-                        if prev_selection and prev_selection != self.template:
-                            if hasattr(gallery, 'multi_selected_templates') and prev_selection not in gallery.multi_selected_templates:
-                                gallery.multi_selected_templates.append(prev_selection)
-                                print(f"🔍 LISTENER: Adding previous primary selection to multi-selection")
-                        
-                        # Set new primary selection
-                        gallery.selected_template = self.template
-                        print(f"🔍 LISTENER: Setting '{template_name}' as primary selection")
-                        
-                        # Update app-level selected template if available
-                        if hasattr(gallery, 'app') and hasattr(gallery.app, 'selected_template'):
-                            gallery.app.selected_template = self.template
-                    
-                    # Mark that we're in multi-selection mode for the update
-                    if not hasattr(gallery, 'is_multi_selecting'):
-                        gallery.is_multi_selecting = True
-                    else:
-                        gallery.is_multi_selecting = True
-                        
-                    # Update styling for all cards EXCEPT don't deselect anything
-                    if hasattr(gallery, '_update_template_card_selection'):
-                        gallery._update_template_card_selection()
-                elif is_shift:
-                    # Shift click - select range
-                    if hasattr(gallery, 'selected_template') and gallery.selected_template:
-                        # Find the index of the last selected template
-                        last_selected_index = -1
-                        this_index = -1
-                        
-                        # Traverse the template_cards in gallery to find indexes
-                        if hasattr(gallery, 'template_cards'):
-                            for i, card in enumerate(gallery.template_cards):
-                                if hasattr(card, 'template'):
-                                    if card.template == gallery.selected_template:
-                                        last_selected_index = i
-                                    if card.template == self.template:
-                                        this_index = i
-                        
-                        # If we found both templates, select the range
-                        if last_selected_index >= 0 and this_index >= 0:
-                            start = min(last_selected_index, this_index)
-                            end = max(last_selected_index, this_index)
-                            
-                            # Initialize multi-selection list if needed
-                            if not hasattr(gallery, 'multi_selected_templates'):
-                                gallery.multi_selected_templates = []
-                            
-                            # Clear existing multi-selection
-                            gallery.multi_selected_templates.clear()
-                            
-                            # Add all templates in range to multi-selection
-                            for i in range(start, end + 1):
-                                if i < len(gallery.template_cards):
-                                    card = gallery.template_cards[i]
-                                    if hasattr(card, 'template'):
-                                        # Skip the primary selection to avoid duplicates
-                                        if card.template != gallery.selected_template:
-                                            gallery.multi_selected_templates.append(card.template)
-                                            
-                    # Set this template as the primary selection
-                    if hasattr(gallery, 'selected_template'):
-                        gallery.selected_template = self.template
-                        
-                        # Update app-level selected template if available
-                        if hasattr(gallery, 'app') and hasattr(gallery.app, 'selected_template'):
-                            gallery.app.selected_template = self.template
-                    
-                    # Mark that we're in multi-selection mode for the update
-                    if not hasattr(gallery, 'is_multi_selecting'):
-                        gallery.is_multi_selecting = True
-                    else:
-                        gallery.is_multi_selecting = True
-                        
-                    # Update all cards' visual state
-                    if hasattr(gallery, '_update_template_card_selection'):
-                        gallery._update_template_card_selection()
-                else:
-                    # Standard click - DON'T clear multi-selection yet in case this is start of drag
-                    # We'll handle clearing multi-selection in mouseReleaseEvent if this wasn't a drag
-                    
-                    # If clicking on a multi-selected item, don't clear yet - allow for drag operations
-                    if not self.clicking_multi_selected:
-                        # Only clear if not clicking on a multi-selected item
-                        if hasattr(gallery, 'is_multi_selecting'):
-                            gallery.is_multi_selecting = False
-                            
-                        # Set primary selection without clearing multi-selection yet
-                        if hasattr(gallery, 'selected_template'):
-                            gallery.selected_template = self.template
-                            
-                            # Update app-level selected template if available
-                            if hasattr(gallery, 'app') and hasattr(gallery.app, 'selected_template'):
-                                gallery.app.selected_template = self.template
-                                print(f"🔍 LISTENER: Updated app-level selected template to '{template_name}'")
-                        
-                        # Just visually highlight this card but don't clear others yet
-                        self.set_selected(True)
+                # Track if we used the unified handler
+                handled_by_unified_handler = False
                 
-                # Emit clicked signal with template data
-                self.clicked.emit(self.template)
+                # Use the unified handler if it exists
+                if hasattr(gallery, 'handle_template_item_press'):
+                    gallery.handle_template_item_press(self.template, is_modifier_click)
+                    print(f"🔍 LISTENER: Used unified handler for template card click")
+                    handled_by_unified_handler = True
+                else:
+                    # Fallback to legacy handling (should not happen)
+                    print(f"⚠️ WARNING: Gallery missing handle_template_item_press - falling back to legacy code")
+                    if hasattr(gallery, 'selected_template'):
+                        gallery.selected_template = self.template
+                        
+                        # Update app-level selected template if available
+                        if hasattr(gallery, 'app') and hasattr(gallery.app, 'selected_template'):
+                            gallery.app.selected_template = self.template
+                    
+                # Only emit clicked signal if we didn't use the unified handler
+                # Prevents duplicate selection processing
+                if not handled_by_unified_handler:
+                    self.clicked.emit(self.template)
             else:
                 # No gallery found, just emit the clicked signal
                 print(f"🔍 LISTENER: No gallery parent found, emitting clicked signal directly")
@@ -366,16 +269,20 @@ class TemplateCard(QFrame):
     def mouseReleaseEvent(self, event):
         """Handle mouse release after click or drag"""
         if event.button() == Qt.LeftButton:
+            # Reset pressed state
+            self.mouse_is_pressed = False
+            
             # Calculate the drag distance
             drag_occurred = False
             if self.mouse_press_pos:
                 drag_distance = (event.pos() - self.mouse_press_pos).manhattanLength()
                 drag_occurred = drag_distance >= 5  # Common threshold for drag detection
             
+            # Don't clear multi-selection if:
+            # 1. A drag occurred (meaning user intended to drag the selection)
+            # 2. Clicking on an already multi-selected item (allow for drag operations)
+            # 3. Modifier keys are still pressed
             if not drag_occurred and not self.clicking_multi_selected:
-                # Only clear other selections if this was a genuine click (not drag)
-                # and not clicking on an already multi-selected item
-                
                 # Get gallery reference
                 gallery = None
                 parent = self.parent()
@@ -387,21 +294,32 @@ class TemplateCard(QFrame):
                 
                 # Get keyboard modifiers - maintain multi-selection if modifier is still pressed
                 modifiers = QApplication.keyboardModifiers()
-                is_ctrl_or_cmd = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier))
-                is_shift = bool(modifiers & Qt.ShiftModifier)
+                is_modifier_pressed = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.ShiftModifier))
                 
-                # Only clear multi-selection if no modifiers are pressed
-                if not is_ctrl_or_cmd and not is_shift and gallery:
+                # Only clear multi-selection on release if no modifiers are pressed
+                if not is_modifier_pressed and gallery:
                     if hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
-                        # Now clear multi-selection since this is a regular click
-                        gallery.multi_selected_templates.clear()
-                        print(f"🔍 LISTENER: Cleared multi-selection on mouse release")
+                        # Don't clear if this was a multi-selected item (preserves ability to drag)
+                        if not self.clicking_multi_selected:
+                            gallery.multi_selected_templates.clear()
+                            print(f"🔍 LISTENER: Cleared multi-selection on mouse release - no modifiers")
                     
-                    # Update all card styling
-                    if hasattr(gallery, '_update_template_card_selection'):
+                    # Ensure this card remains selected as primary
+                    if hasattr(gallery, 'selected_template'):
+                        gallery.selected_template = self.template
+                        
+                        # Update app-level selected template if available
+                        if hasattr(gallery, 'app') and hasattr(gallery.app, 'selected_template'):
+                            gallery.app.selected_template = self.template
+                            print(f"🔍 LISTENER: Updated app-level selected template on mouse release")
+                    
+                    # Update selection state for all cards
+                    if hasattr(gallery, '_update_selection_visuals'):
+                        gallery._update_selection_visuals()
+                    elif hasattr(gallery, '_update_template_card_selection'):
                         gallery._update_template_card_selection()
             
-            # Reset state variables
+            # Reset press tracking
             self.mouse_press_pos = None
             self.clicking_multi_selected = False
         

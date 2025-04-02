@@ -1076,3 +1076,131 @@ class TemplateGallery(QWidget):
                                 break
         
         return selected 
+
+    # --------------------------------------------
+    # Selection Handling Logic (New Unified Method)
+    # --------------------------------------------
+    def handle_template_item_press(self, template, is_modifier_click):
+        """Unified handler for item clicks (normal or modifier-based)."""
+        print(f"\n--- Handle Item Press ---")
+        template_name = template.get('name', 'Unknown') if isinstance(template, dict) else str(template)
+        print(f"Item: {template_name}, Modifier Click: {is_modifier_click}")
+
+        # Ensure multi-select list exists
+        if not hasattr(self, 'multi_selected_templates'):
+            self.multi_selected_templates = []
+        
+        # Get current state BEFORE making changes
+        current_primary = getattr(self, 'selected_template', None)
+        
+        if not is_modifier_click:
+            # --- Normal Click --- 
+            print("Handling Normal Click")
+            # Set new primary selection
+            self.selected_template = template
+            # Clear previous multi-selection
+            self.multi_selected_templates.clear()
+            print("Cleared multi-selection list")
+            
+        else:
+            # --- Modifier Click (Ctrl/Cmd or Shift) ---
+            print("Handling Modifier Click")
+            # Ensure multi-selecting mode flag is set
+            self.is_multi_selecting = True
+            
+            # Check if clicking on the current primary selection
+            if current_primary == template:
+                # If clicking the primary selection with modifier:
+                # 1. Toggle it in the multi-selection list
+                if template in self.multi_selected_templates:
+                    self.multi_selected_templates.remove(template)
+                    print(f"Removed primary '{template_name}' from multi-select")
+                else:
+                    self.multi_selected_templates.append(template)
+                    print(f"Added primary '{template_name}' to multi-select")
+                # Leave it as the primary selection
+            else:
+                # Clicking on a non-primary item with modifier
+                
+                # First make sure current primary is in multi-select if it exists
+                if current_primary and current_primary not in self.multi_selected_templates:
+                    self.multi_selected_templates.append(current_primary)
+                    print(f"Added previous primary to multi-select")
+                
+                # Now toggle the clicked item's multi-selection state
+                if template in self.multi_selected_templates:
+                    # If removing from multi-selection
+                    self.multi_selected_templates.remove(template)
+                    print(f"Removed '{template_name}' from multi-select")
+                    
+                    # If removing the clicked item, DON'T make it the primary selection
+                    # but we still need a valid primary selection if possible
+                    if current_primary:
+                        # Keep current primary selection
+                        pass
+                    elif self.multi_selected_templates:
+                        # Use the first multi-selected item as primary
+                        self.selected_template = self.multi_selected_templates[0]
+                        print(f"Set first multi-selected item as new primary")
+                    else:
+                        # Nothing else selected, make this the primary even though unselected
+                        self.selected_template = template
+                        print(f"No other selections - '{template_name}' remains primary")
+                else:
+                    # Adding to multi-selection
+                    self.multi_selected_templates.append(template)
+                    print(f"Added '{template_name}' to multi-select")
+                    
+                    # Make this the new primary selection
+                    self.selected_template = template
+                    print(f"Set '{template_name}' as primary selection")
+
+        # --- Update Visuals --- 
+        self._update_selection_visuals()
+        print(f"Final Primary: {self.selected_template.get('name', 'Unknown') if self.selected_template else 'None'}")
+        print(f"Final Multi-Select: {[t.get('name', 'Unknown') for t in self.multi_selected_templates]}")
+        print("--- End Handle Item Press ---\n")
+        
+        # Emit signal for app-level updates (like property editor)
+        if hasattr(self, 'template_selected'):
+            self.template_selected.emit(self.selected_template)
+
+    def _update_selection_visuals(self):
+        """Unified method to update selection visuals for all items (grid and list)."""
+        print("Updating selection visuals...")
+        primary_selection = getattr(self, 'selected_template', None)
+        multi_selection = getattr(self, 'multi_selected_templates', [])
+
+        # Update Grid View Cards
+        if hasattr(self, 'template_cards'):
+            for card in self.template_cards:
+                if hasattr(card, 'template'):
+                    is_primary = (card.template == primary_selection)
+                    is_multi = (card.template in multi_selection)
+                    
+                    if hasattr(card, 'set_selected'):
+                        card.set_selected(is_primary)
+                    if hasattr(card, 'set_multi_selected'):
+                        # Ensure multi-selected state reflects list membership, even for primary
+                        card.set_multi_selected(is_multi) 
+
+        # Update List View Items
+        if hasattr(self, 'template_item_map') and self.template_item_map:
+            for item_name, list_item in self.template_item_map.items():
+                if hasattr(list_item, 'template'):
+                    is_primary = (list_item.template == primary_selection)
+                    is_multi = (list_item.template in multi_selection)
+                    
+                    if hasattr(list_item, 'setSelected'):
+                        list_item.setSelected(is_primary)
+                    if hasattr(list_item, 'setMultiSelected'):
+                        # Ensure multi-selected state reflects list membership, even for primary
+                        list_item.setMultiSelected(is_multi)
+        print("...Visuals updated")
+
+    # --------------------------------------------
+
+    # Additional methods and properties
+    # ... (keep the existing methods and properties)
+    # ...
+    # ... 
