@@ -524,6 +524,104 @@ class GalleryTemplatesSetup:
         
         # Initially hide the list widget (default to grid view)
         gallery.templates_list_widget.setVisible(False)
+        
+        # Scrollable area for GRID view templates
+        gallery.templates_scroll = QScrollArea()
+        gallery.templates_scroll.setWidgetResizable(True)
+        gallery.templates_scroll.setFrameShape(QFrame.NoFrame)
+        gallery.templates_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        gallery.templates_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        gallery.templates_scroll.setStyleSheet("background: transparent; border: none;")
+        
+        # Configure scroll area to expand horizontally and vertically
+        gallery.templates_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        
+        # Container for templates
+        gallery.templates_container = QWidget()
+        gallery.templates_container.setStyleSheet("background: transparent;")
+        
+        # Configure container to expand horizontally
+        gallery.templates_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        
+        # Use a grid layout for flexible positioning
+        gallery.templates_grid = QGridLayout(gallery.templates_container)
+        gallery.templates_grid.setContentsMargins(0, 0, 0, 0)
+        gallery.templates_grid.setHorizontalSpacing(6)
+        gallery.templates_grid.setVerticalSpacing(12)
+        gallery.templates_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        
+        # Set the templates container as the widget for the scroll area
+        gallery.templates_scroll.setWidget(gallery.templates_container)
+        
+        # Add the scroll area to the templates section layout
+        gallery.templates_section_layout.addWidget(gallery.templates_scroll)
+        
+        # << NEW: Table widget for LIST view >>
+        gallery.templates_table_widget = QTableWidget()
+        gallery.templates_table_widget.setObjectName("TemplatesTableWidget")
+        gallery.templates_table_widget.setColumnCount(4)
+        gallery.templates_table_widget.setHorizontalHeaderLabels(["Name", "Category", "Created", "Modified"])
+        gallery.templates_table_widget.setSelectionBehavior(QAbstractItemView.SelectRows)
+        gallery.templates_table_widget.setSelectionMode(QAbstractItemView.ExtendedSelection) # Allow multi-select
+        gallery.templates_table_widget.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        gallery.templates_table_widget.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        gallery.templates_table_widget.setShowGrid(False)
+        gallery.templates_table_widget.setAlternatingRowColors(True) # Use styling for this later
+        gallery.templates_table_widget.setFrameShape(QFrame.NoFrame)
+        gallery.templates_table_widget.setStyleSheet(f"""
+            QTableWidget {{
+                background-color: {colors.get('bg_dark', '#1E1E1E')};
+                color: {colors.get('text', '#FFFFFF')};
+                border: none;
+                gridline-color: transparent; /* No grid lines */
+            }}
+            QTableWidget::item {{
+                padding: 5px;
+                border-bottom: 1px solid {colors.get('border_subtle', '#3A3A3A')};
+            }}
+            QTableWidget::item:selected {{
+                background-color: {colors.get('selection', '#2C4F76')};
+                color: {colors.get('text_selected', '#FFFFFF')};
+            }}
+        """)
+        
+        # Configure Header
+        header = gallery.templates_table_widget.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Interactive) # User can resize
+        header.setStretchLastSection(False) # Don't stretch last section initially
+        header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        header.setStyleSheet(f"""
+            QHeaderView::section {{
+                background-color: {colors.get('card_bg', '#2A2A2A')};
+                color: {colors.get('text', '#CCCCCC')};
+                padding: 4px 8px;
+                border: none;
+                border-bottom: 1px solid {colors.get('border', '#3C3C3C')};
+                font-weight: bold;
+            }}
+            QHeaderView::section:hover {{
+                 background-color: {colors.get('hover', '#3A3A3A')};
+            }}
+            /* TODO: Add sort indicator styling */
+        """)
+        # Connect header click for sorting (implement handler later)
+        # header.sectionClicked.connect(gallery.on_header_clicked)
+        
+        # Hide vertical row numbers header
+        gallery.templates_table_widget.verticalHeader().setVisible(False)
+        gallery.templates_table_widget.verticalHeader().setDefaultSectionSize(40) # Match item height
+        
+        # Add table to layout
+        gallery.templates_section_layout.addWidget(gallery.templates_table_widget)
+        
+        # Set initial column widths (adjust as needed)
+        gallery.templates_table_widget.setColumnWidth(0, 350) # Name
+        gallery.templates_table_widget.setColumnWidth(1, 150) # Category
+        gallery.templates_table_widget.setColumnWidth(2, 150) # Created
+        gallery.templates_table_widget.setColumnWidth(3, 150) # Modified
+        
+        # Initially hide the TABLE widget (default to grid view)
+        gallery.templates_table_widget.setVisible(False)
     
     @staticmethod
     def setup_templates_header(gallery):
@@ -644,303 +742,128 @@ class GalleryTemplatesSetup:
 
     @staticmethod
     def populate_templates_list(gallery, templates_to_show):
-        """Populate the templates list with template items from the given templates list"""
-        print(f"[DEBUG] List View: Starting population")
+        """Populate the templates TABLE with template items."""
+        print(f"[DEBUG] Table View: Starting population")
         
         try:
-            # Clear existing items and widget if it exists
+            table_widget = gallery.templates_table_widget
+            table_widget.setSortingEnabled(False) # Disable sorting during population
+            table_widget.clearContents()
+            table_widget.setRowCount(0)
+            
+            # Clear the map used by the old list view (if it exists)
             if hasattr(gallery, 'template_item_map'):
                 gallery.template_item_map.clear()
-            if hasattr(gallery, 'templates_list_widget') and gallery.templates_list_widget:
-                if gallery.templates_list_widget.widget():
-                    old_widget = gallery.templates_list_widget.takeWidget()
-                    if old_widget:
-                        old_widget.setParent(None)
-                        old_widget.deleteLater()
-                
-            # Create a new container widget and layout for the entire list view
-            container = ListViewContainer(gallery)
-            main_layout = QVBoxLayout(container)
-            main_layout.setContentsMargins(0, 0, 0, 0)
-            main_layout.setSpacing(5)
-            
-            # Create a header row with sortable columns
-            header_container = QWidget()
-            header_container.setFixedHeight(30)
-            header_container.setStyleSheet(f"""
-                background-color: {colors['card_bg']};
-                border-bottom: 1px solid {colors['border']};
-            """)
-            header_layout = QHBoxLayout(header_container)
-            header_layout.setContentsMargins(10, 5, 10, 5)
-            header_layout.setSpacing(5)
-            
-            # Import additional required widgets
-            from PyQt5.QtWidgets import QSplitter
-            
-            # Create a splitter for resizable columns
-            header_splitter = QSplitter(Qt.Horizontal)
-            header_splitter.setObjectName("HeaderSplitter")
-            header_splitter.setChildrenCollapsible(False)
-            header_splitter.setHandleWidth(2)
-            header_splitter.setOpaqueResize(True) # Enable interactive resizing
-            
-            # Determine sort indicators
-            name_sort_indicator = ""
-            category_sort_indicator = ""
-            created_sort_indicator = ""
-            modified_sort_indicator = ""
-            
-            if hasattr(gallery, 'current_sort_field') and hasattr(gallery, 'current_sort_order'):
-                sort_arrow = "▼" if gallery.current_sort_order == "desc" else "▲"
-                
-                if gallery.current_sort_field == "name":
-                    name_sort_indicator = f" {sort_arrow}"
-                elif gallery.current_sort_field == "category":
-                    category_sort_indicator = f" {sort_arrow}"
-                elif gallery.current_sort_field == "created":
-                    created_sort_indicator = f" {sort_arrow}"
-                elif gallery.current_sort_field == "modified":
-                    modified_sort_indicator = f" {sort_arrow}"
-            
-            # Name header container
-            name_header_container = QWidget()
-            name_header_layout = QHBoxLayout(name_header_container)
-            name_header_layout.setContentsMargins(0, 0, 0, 0)
-            
-            # Column headers with click-to-sort functionality
-            name_header = QLabel(f"Name{name_sort_indicator}")
-            name_header.setStyleSheet(f"font-weight: bold; color: {'#4A86E8' if name_sort_indicator else colors['text']};")
-            name_header.setCursor(Qt.PointingHandCursor)
-            name_header.mousePressEvent = lambda e: GalleryTemplatesSetup.set_template_sort(gallery, 'name')
-            name_header_layout.addWidget(name_header)
-            name_header_layout.addStretch(1)
-            
-            # Category header container
-            category_header_container = QWidget()
-            category_header_layout = QHBoxLayout(category_header_container)
-            category_header_layout.setContentsMargins(0, 0, 0, 0)
-            
-            # Category header
-            category_header = QLabel(f"Category{category_sort_indicator}")
-            category_header.setStyleSheet(f"font-weight: bold; color: {'#4A86E8' if category_sort_indicator else colors['text']};")
-            category_header.setCursor(Qt.PointingHandCursor)
-            category_header.mousePressEvent = lambda e: GalleryTemplatesSetup.set_template_sort(gallery, 'category')
-            category_header_layout.addWidget(category_header)
-            category_header_layout.addStretch(1)
-            
-            # Created date header container
-            created_header_container = QWidget()
-            created_header_layout = QHBoxLayout(created_header_container)
-            created_header_layout.setContentsMargins(0, 0, 0, 0)
-            
-            # Created date header
-            created_header = QLabel(f"Created{created_sort_indicator}")
-            created_header.setStyleSheet(f"font-weight: bold; color: {'#4A86E8' if created_sort_indicator else colors['text']};")
-            created_header.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            created_header.setCursor(Qt.PointingHandCursor)
-            created_header.mousePressEvent = lambda e: GalleryTemplatesSetup.set_template_sort(gallery, 'created')
-            created_header_layout.addWidget(created_header)
-            created_header_layout.addStretch(1)
-            
-            # Modified date header container
-            modified_header_container = QWidget()
-            modified_header_layout = QHBoxLayout(modified_header_container)
-            modified_header_layout.setContentsMargins(0, 0, 0, 0)
-            
-            # Modified date header
-            modified_header = QLabel(f"Modified{modified_sort_indicator}")
-            modified_header.setStyleSheet(f"font-weight: bold; color: {'#4A86E8' if modified_sort_indicator else colors['text']};")
-            modified_header.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            modified_header.setCursor(Qt.PointingHandCursor)
-            modified_header.mousePressEvent = lambda e: GalleryTemplatesSetup.set_template_sort(gallery, 'modified')
-            modified_header_layout.addWidget(modified_header)
-            modified_header_layout.addStretch(1)
-            
-            # Add all header containers to splitter
-            header_splitter.addWidget(name_header_container)
-            header_splitter.addWidget(category_header_container)
-            header_splitter.addWidget(created_header_container)
-            header_splitter.addWidget(modified_header_container)
-            
-            # Set initial sizes for the headers - more reasonable defaults
-            header_splitter.setSizes([300, 150, 150, 150])
-            
-            # Store the splitter in gallery for access later
-            gallery.header_splitter = header_splitter
-            
-            # Store initial sizes for persistence
-            gallery.header_sizes = [300, 150, 150, 150]
-            
-            # Connect splitter's splitterMoved signal - pass handle index
-            header_splitter.splitterMoved.connect(
-                lambda pos, index: GalleryTemplatesSetup._update_column_widths(gallery, index)
-            )
-            
-            # Add the splitter to the header layout
-            header_layout.addWidget(header_splitter)
-            
-            # Add header to main layout
-            main_layout.addWidget(header_container)
-            
-            # Create items container
-            items_container = QWidget()
-            items_container.setObjectName("ItemsContainer")
-            gallery.list_container_layout = QVBoxLayout(items_container)
-            gallery.list_container_layout.setContentsMargins(0, 0, 0, 0)
-            gallery.list_container_layout.setSpacing(1)  # Minimal spacing between items
-            
+
             # Get templates to show
-            templates = templates_to_show if templates_to_show else []
-            print(f"[DEBUG] List View: Working with {len(templates)} templates")
-            
-            # Initialize/clear template item map
-            if not hasattr(gallery, 'template_item_map'):
-                gallery.template_item_map = {}
+            if templates_to_show is None:
+                 # If None, fetch all templates (handle dict vs list) 
+                 templates = gallery.template_manager.get_all_templates() if hasattr(gallery, 'template_manager') else []
+            elif isinstance(templates_to_show, dict):
+                 templates = list(templates_to_show.values()) # Convert dict to list if needed
             else:
-                gallery.template_item_map.clear()
+                 templates = templates_to_show
             
-            # Default sort by name
-            if not hasattr(gallery, 'current_sort_field'):
-                gallery.current_sort_field = 'name'
-            if not hasattr(gallery, 'current_sort_order'):
-                gallery.current_sort_order = 'asc'
+            print(f"[DEBUG] Table View: Working with {len(templates)} templates")
             
-            print(f"[DEBUG] List View: Current sort - {gallery.current_sort_field} ({gallery.current_sort_order})")
+            # Sort templates (use existing helper)
+            sort_field = getattr(gallery, 'current_sort_field', 'name')
+            sort_order = getattr(gallery, 'current_sort_order', 'asc')
+            sorted_templates = sort_templates(templates, sort_field, sort_order)
+            print(f"[DEBUG] Table View: Sorted {len(sorted_templates)} templates by {sort_field} {sort_order}")
             
-            # Sort templates
-            sorted_templates = sort_templates(templates, gallery.current_sort_field, gallery.current_sort_order)
-            print(f"[DEBUG] List View: Sorted {len(sorted_templates)} templates")
+            table_widget.setRowCount(len(sorted_templates))
             
-            # Temporarily block signals to prevent recursive updates
-            gallery.templates_list_widget.blockSignals(True)
-            
-            # Create a template list item for each template
-            for i, template in enumerate(sorted_templates):
-                # Handle both string templates and dictionary templates
-                if isinstance(template, str):
-                    template_name = template
-                    template_data = {"name": template_name}
-                    print(f"[DEBUG] List View: Creating item {i+1} - {template_name}")
+            for i, template_data in enumerate(sorted_templates):
+                if not isinstance(template_data, dict):
+                    print(f"[WARN] Skipping non-dict template data: {template_data}")
+                    continue
+                    
+                template_name = template_data.get('name', 'Unknown')
+                print(f"[DEBUG] Table View: Adding row {i} for template '{template_name}'")
+
+                # --- Column 0: Name + Icon + Warning --- 
+                cell_widget = QWidget()
+                cell_layout = QHBoxLayout(cell_widget)
+                cell_layout.setContentsMargins(5, 0, 5, 0)
+                cell_layout.setSpacing(5)
+
+                # Icon
+                icon_label = QLabel()
+                icon_label.setFixedSize(24, 24) # Smaller icon for table row
+                icon_label.setAlignment(Qt.AlignCenter)
+                icon_path = get_resource_path(os.path.join("ICONS", "templates", "template_structure_icon.svg"))
+                if os.path.exists(icon_path):
+                    icon = QIcon(icon_path)
+                    pixmap = icon.pixmap(QSize(20, 20))
+                    if not pixmap.isNull():
+                        icon_label.setPixmap(pixmap)
+                    else: icon_label.setText("📄") # Fallback
+                else: icon_label.setText("📄") # Fallback
+                cell_layout.addWidget(icon_label)
+
+                # Warning Indicator (if no structure)
+                has_structure = False
+                structure = template_data.get('structure')
+                if structure and isinstance(structure, list) and len(structure) > 0:
+                    has_structure = True
+                elif structure and isinstance(structure, dict) and structure.get('folders'): # Check old format too
+                    has_structure = True
+                    
+                if not has_structure:
+                    warning_label = QLabel("⚠")
+                    warning_label.setFixedSize(16, 16)
+                    warning_label.setAlignment(Qt.AlignCenter)
+                    warning_label.setStyleSheet(f"color: {colors.get('error', '#FF5252')}; background-color: transparent; font-weight: bold; font-size: 12px;")
+                    warning_label.setToolTip("This template has no folder structure defined")
+                    cell_layout.addWidget(warning_label)
                 else:
-                    template_name = template.get('name', 'Unknown')
-                    template_data = template
-                    print(f"[DEBUG] List View: Creating item {i+1} - {template_name}")
+                    # Add spacer to maintain alignment
+                    spacer = QWidget()
+                    spacer.setFixedSize(16, 16)
+                    cell_layout.addWidget(spacer)
+
+                # Name Label
+                name_label = QLabel(template_name)
+                name_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                # Allow name to expand and truncate
+                name_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                name_label.setStyleSheet("background-color: transparent;") 
+                cell_layout.addWidget(name_label, 1) # Give stretch factor
                 
-                list_item = TemplateListItem(template_data, gallery=gallery, row_index=i)
-                
-                # Connect all signals using the common helper
-                GalleryTemplatesSetup.connect_template_signals(gallery, list_item, template_data)
-                
-                # Store in template item map for later access
-                gallery.template_item_map[template_name] = list_item
-                
-                # Set initial selection state
-                if hasattr(gallery, 'selected_template') and gallery.selected_template:
-                    selected_name = gallery.selected_template.get('name', '') if isinstance(gallery.selected_template, dict) else gallery.selected_template
-                    if selected_name == template_name:
-                        list_item.setSelected(True)
-                        print(f"[DEBUG] Setting {template_name} as initially selected")
-                
-                # Set initial multi-selection state
-                if hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
-                    for sel_template in gallery.multi_selected_templates:
-                        sel_name = sel_template.get('name', '') if isinstance(sel_template, dict) else sel_template
-                        if sel_name == template_name:
-                            list_item.setMultiSelected(True)
-                            print(f"[DEBUG] Setting {template_name} as initially multi-selected")
-                            break
-                
-                # Add to layout
-                gallery.list_container_layout.addWidget(list_item)
-            
-            # Set stretch factor to push items to the top
-            gallery.list_container_layout.addStretch()
-            
-            # Add the items container to the main layout
-            main_layout.addWidget(items_container)
-            
-            # Set the container as the widget for the templates list
-            gallery.templates_list_widget.setWidget(container)
-            
-            # Unblock signals after setting up the widget
-            gallery.templates_list_widget.blockSignals(False)
-            
-            # Do a single update for the container
-            container.update()
-            
-            print(f"[DEBUG] List View: Added main container to list view")
+                cell_widget.template_data = template_data # Store data here!
+                table_widget.setCellWidget(i, 0, cell_widget)
+
+                # --- Column 1: Category --- 
+                category_text = template_data.get('category', '')
+                category_item = QTableWidgetItem(category_text)
+                category_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                # Store template data with item for easier access in signals
+                category_item.setData(Qt.UserRole, template_data) 
+                table_widget.setItem(i, 1, category_item)
+
+                # --- Column 2: Created --- 
+                created_timestamp = template_data.get('created', time.time())
+                created_date_str = datetime.fromtimestamp(created_timestamp).strftime("%Y-%m-%d %H:%M")
+                created_item = QTableWidgetItem(created_date_str)
+                created_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                created_item.setData(Qt.UserRole, template_data)
+                table_widget.setItem(i, 2, created_item)
+
+                # --- Column 3: Modified --- 
+                modified_timestamp = template_data.get('modified', created_timestamp)
+                modified_date_str = datetime.fromtimestamp(modified_timestamp).strftime("%Y-%m-%d %H:%M")
+                modified_item = QTableWidgetItem(modified_date_str)
+                modified_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                modified_item.setData(Qt.UserRole, template_data)
+                table_widget.setItem(i, 3, modified_item)
+
+            table_widget.setSortingEnabled(True) # Re-enable sorting
+            print(f"[DEBUG] Table View: Population complete.")
             
         except Exception as e:
             import traceback
-            print(f"Error populating templates list: {e}")
-            traceback.print_exc()
-
-    @staticmethod
-    def _update_column_widths(gallery, handle_index):
-        """Update column widths based on which handle was moved."""
-        try:
-            if not hasattr(gallery, 'header_splitter') or not hasattr(gallery, 'header_sizes'):
-                print("[WARN] Splitter or header_sizes not initialized.")
-                return
-
-            sizes = gallery.header_splitter.sizes()
-            if len(sizes) != 4 or len(gallery.header_sizes) != 4:
-                print(f"[WARN] Size array length mismatch. Splitter: {len(sizes)}, Stored: {len(gallery.header_sizes)}")
-                # Attempt to recover if possible, otherwise return
-                if len(sizes) == 4:
-                    gallery.header_sizes = list(sizes) # Reset stored sizes
-                else:
-                    return 
-
-            # The handle_index is the divider AFTER the column we want to primarily resize.
-            column_index_to_resize = handle_index
-
-            if 0 <= column_index_to_resize < 4:
-                # Get the new width for the column being resized from the splitter
-                new_width = sizes[column_index_to_resize]
-                
-                # Define constraints (can be made more dynamic if needed)
-                constraints = [
-                    (100, 800), # Name
-                    (80, 400),  # Category
-                    (120, 300), # Created
-                    (120, 300)  # Modified
-                ]
-                min_w, max_w = constraints[column_index_to_resize]
-                
-                # Apply constraints
-                constrained_width = max(min_w, min(max_w, new_width))
-                
-                # Update only the specific column's stored size
-                gallery.header_sizes[column_index_to_resize] = constrained_width
-                # print(f"[DEBUG] Resizing column {column_index_to_resize} to {constrained_width}")
-
-                # Now apply all potentially updated stored sizes to the items
-                if hasattr(gallery, 'template_item_map'):
-                    name_w, cat_w, created_w, mod_w = gallery.header_sizes
-                    for item in gallery.template_item_map.values():
-                        if item and hasattr(item, 'name_container'):
-                            item.name_container.setFixedWidth(name_w)
-                        if item and hasattr(item, 'category_container'):
-                            item.category_container.setFixedWidth(cat_w)
-                        if item and hasattr(item, 'created_container'):
-                            item.created_container.setFixedWidth(created_w)
-                        if item and hasattr(item, 'modified_container'):
-                            item.modified_container.setFixedWidth(mod_w)
-                            
-                    # Update layout may still be needed for smoothness
-                    if gallery.templates_list_widget and gallery.templates_list_widget.widget():
-                        items_container = gallery.templates_list_widget.widget().findChild(QWidget, "ItemsContainer")
-                        if items_container:
-                            items_container.layout().activate() # Try activate() instead of update()
-                            # items_container.updateGeometry() # Maybe not needed?
-            else:
-                 print(f"[WARN] Invalid handle_index received: {handle_index}")
-
-        except Exception as e:
-            import traceback
-            print(f"Error updating column widths: {e}")
+            print(f"Error populating templates table: {e}")
             traceback.print_exc()
 
     @staticmethod
@@ -1032,7 +955,7 @@ class GalleryTemplatesSetup:
             if mode == "grid":
                 # Show grid view
                 gallery.templates_scroll.setVisible(True)
-                gallery.templates_list_widget.setVisible(False)
+                gallery.templates_table_widget.setVisible(False) # Hide table
                 
                 # Force refresh if the grid is empty
                 if not hasattr(gallery, 'template_cards') or not gallery.template_cards:
@@ -1040,30 +963,13 @@ class GalleryTemplatesSetup:
             else:
                 # Show list view
                 gallery.templates_scroll.setVisible(False)
-                gallery.templates_list_widget.setVisible(True)
+                gallery.templates_table_widget.setVisible(True) # Show table
                 
-                # Show loading indicator
-                # TODO: Add loading indicator
-                
-                # Safely clear the list widget
-                if hasattr(gallery, 'templates_list_widget') and gallery.templates_list_widget:
-                    if gallery.templates_list_widget.widget():
-                        old_widget = gallery.templates_list_widget.takeWidget()
-                        if old_widget:
-                            old_widget.deleteLater()
-                
-                # Clear list items to avoid stale references
-                if hasattr(gallery, 'template_item_map'):
-                    gallery.template_item_map.clear()
-                
-                # Block signals during populate to prevent recursive updates
-                gallery.templates_list_widget.blockSignals(True)
-                
-                # Populate the list view
-                GalleryTemplatesSetup.populate_templates_list(gallery, None)
-                
-                # Unblock signals after populating
-                gallery.templates_list_widget.blockSignals(False)
+                # Populate the table view (using the refactored method)
+                # Get current templates displayed (might need adjustment based on filtering/folders)
+                # For now, assume we repopulate with all templates when switching
+                all_templates = self.template_manager.get_all_templates() if hasattr(self, 'template_manager') else [] # Safer fetch
+                GalleryTemplatesSetup.populate_templates_list(self, all_templates) 
             
             # Save preference
             if hasattr(gallery, 'app') and hasattr(gallery.app, 'preferences'):
