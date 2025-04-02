@@ -772,7 +772,7 @@ class GalleryTemplatesSetup:
             gallery.header_sizes = [300, 150, 150, 150]
             
             # Connect splitter's splitterMoved signal
-            header_splitter.splitterMoved.connect(lambda pos, idx: GalleryTemplatesSetup._update_column_widths(gallery, pos, idx))
+            header_splitter.splitterMoved.connect(lambda: GalleryTemplatesSetup._update_column_widths(gallery))
             
             # Add the splitter to the header layout
             header_layout.addWidget(header_splitter)
@@ -874,43 +874,50 @@ class GalleryTemplatesSetup:
             traceback.print_exc()
 
     @staticmethod
-    def _update_column_widths(gallery, position, index):
+    def _update_column_widths(gallery):
         """Update column widths when splitter handles are moved"""
         try:
-            # Get the new sizes from the splitter
+            # Get the new sizes directly from the splitter
             if hasattr(gallery, 'header_splitter'):
                 sizes = gallery.header_splitter.sizes()
                 
-                # Only proceed if we have all sizes
-                if len(sizes) >= 4:
-                    # Apply reasonable constraints to prevent extreme resizing
-                    name_width = max(100, min(800, sizes[0]))  # Min 100px, max 800px
-                    category_width = max(80, min(400, sizes[1]))  # Min 80px, max 400px
-                    created_width = max(120, min(300, sizes[2]))  # Min 120px, max 300px
-                    modified_width = max(120, min(300, sizes[3]))  # Min 120px, max 300px
+                # Ensure we have the expected number of sizes
+                if len(sizes) == 4:
+                    # Apply constraints if needed (can be adjusted)
+                    name_width = max(100, min(800, sizes[0]))
+                    category_width = max(80, min(400, sizes[1]))
+                    created_width = max(120, min(300, sizes[2]))
+                    modified_width = max(120, min(300, sizes[3]))
                     
-                    # Apply the constrained sizes back to the splitter
-                    gallery.header_splitter.setSizes([name_width, category_width, created_width, modified_width])
+                    # Store the potentially constrained sizes
+                    gallery.header_sizes = [name_width, category_width, created_width, modified_width]
                     
-                    # Update all list items with the new column widths
+                    # Update the fixed width of labels in each list item
                     if hasattr(gallery, 'template_item_map'):
-                        for name, item in gallery.template_item_map.items():
-                            if hasattr(item, 'setNameWidth'):
-                                item.setNameWidth(name_width)
-                            if hasattr(item, 'setCategoryWidth'):
-                                item.setCategoryWidth(category_width)
-                            if hasattr(item, 'setCreatedDateWidth'):
-                                item.setCreatedDateWidth(created_width)
-                            if hasattr(item, 'setModifiedDateWidth'):
-                                item.setModifiedDateWidth(modified_width)
+                        for item in gallery.template_item_map.values():
+                            if item and hasattr(item, 'name_label'):
+                                item.name_label.setFixedWidth(name_width)
+                            if item and hasattr(item, 'category_label'):
+                                item.category_label.setFixedWidth(category_width)
+                            if item and hasattr(item, 'created_date_label'):
+                                item.created_date_label.setFixedWidth(created_width)
+                            if item and hasattr(item, 'modified_date_label'):
+                                item.modified_date_label.setFixedWidth(modified_width)
+                                
+                        # Optional: Force an update on the container if needed, though resizing labels should trigger it
+                        # if gallery.templates_list_widget and gallery.templates_list_widget.widget():
+                        #     gallery.templates_list_widget.widget().updateGeometry()
                     
-                    # Store the sizes for persistence
-                    gallery.header_sizes = sizes
-                    
-                    print(f"[DEBUG] Updated column widths: Name={name_width}, Category={category_width}, Created={created_width}, Modified={modified_width}")
+                else:
+                    print(f"[WARN] Splitter returned unexpected number of sizes: {len(sizes)}")
+            else:
+                print("[WARN] Header splitter not found in gallery object")
+                
         except Exception as e:
+            import traceback
             print(f"Error updating column widths: {e}")
-            
+            traceback.print_exc()
+
     @staticmethod
     def populate_templates_grid(gallery, templates_to_show):
         """Populate templates in grid view"""
