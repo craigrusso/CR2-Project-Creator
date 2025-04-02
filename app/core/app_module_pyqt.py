@@ -109,10 +109,9 @@ class ProjectCreatorApp(QMainWindow):
         self.update_recent_menu()
         self.update_recent_templates_menu()
         
-        # Set up a timer to check for batch results
+        # Set up a timer to check for batch results, but don't start it yet
         self.batch_check_timer = QTimer(self)
         self.batch_check_timer.timeout.connect(self.check_batch_results)
-        self.batch_check_timer.start(500)  # Check every 500ms
         
         # Show app (make visible)
         self.show()
@@ -750,7 +749,8 @@ class ProjectCreatorApp(QMainWindow):
         """
         Check batch results and update UI accordingly
         """
-        print(f"Checking batch results: {self.batch_results}")
+        # Debug print only in development mode
+        # print(f"Checking batch results: {self.batch_results}")
         
         if not self.batch_results:
             return
@@ -760,6 +760,9 @@ class ProjectCreatorApp(QMainWindow):
         
         # Clear the batch results immediately to prevent duplicate dialogs
         self.batch_results = None
+        
+        # Stop the timer since we're processing the results now
+        self.batch_check_timer.stop()
             
         # Extract error message if present
         error_message = results.get("error", None)
@@ -909,6 +912,9 @@ class ProjectCreatorApp(QMainWindow):
         # Convert list of project names to a string for handle_batch_create
         projects_text = "\n".join(project_names)
         
+        # Start the batch check timer when we initiate batch creation
+        self.batch_check_timer.start(500)  # Check every 500ms
+        
         # Execute batch creation
         results = handle_batch_create(self, projects_text)
         
@@ -916,6 +922,9 @@ class ProjectCreatorApp(QMainWindow):
         if results and not isinstance(results, bool):
             self.batch_results = results
             self.check_batch_results()
+        else:
+            # If there are no results, stop the timer
+            self.batch_check_timer.stop()
 
     def _export_all(self):
         """Export all settings and templates"""
