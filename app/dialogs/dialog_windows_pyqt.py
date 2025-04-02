@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                            QInputDialog, QFileDialog, QApplication, QStyle,
                            QTabWidget, QGridLayout, QGroupBox, QRadioButton,
                            QButtonGroup, QComboBox, QSplitter, QSizePolicy,
-                           QFrame, QSpinBox)
+                           QFrame, QSpinBox, QSpacerItem)
 from PyQt5.QtCore import Qt, QSize, QByteArray, QUrl, QRegExp, QCoreApplication, QMimeData
 from PyQt5.QtGui import QFont, QPixmap, QMovie, QIcon, QRegExpValidator, QDragEnterEvent, QDragMoveEvent, QDropEvent
 
@@ -425,121 +425,247 @@ def preview_structure(app, structure):
     dialog.exec_()
 
 def show_batch_results(app, results):
-    """Show the results of batch project creation"""
-    # If results is None or False, don't show the dialog
+    """
+    Show a dialog with batch creation results.
+    
+    Args:
+        app: The main application instance
+        results: Results from batch creation
+            This can be:
+            - None or False: No dialog shown
+            - A list of tuples: (project_name, success, path_or_error)
+            - A dictionary with 'results' key containing the list of tuples
+    """
     if not results:
         return
+    
+    # Avoid duplicating dialogs if this was already shown
+    if hasattr(app, '_current_batch_dialog') and app._current_batch_dialog:
+        try:
+            app._current_batch_dialog.close()
+        except:
+            pass
         
+    # Create dialog
     dialog = QDialog(app)
     dialog.setWindowTitle("Batch Project Creation Results")
-    dialog.resize(500, 400)
+    dialog.setMinimumWidth(600)
+    dialog.setMinimumHeight(400)
     
+    # Store reference to prevent duplication
+    app._current_batch_dialog = dialog
+    
+    # Create layout
     layout = QVBoxLayout(dialog)
-    layout.setContentsMargins(15, 15, 15, 15)
-    layout.setSpacing(10)
+    layout.setContentsMargins(20, 20, 20, 20)
+    layout.setSpacing(15)
     
-    # Add a header
-    header_label = QLabel("Batch Project Creation Results")
-    header_label.setStyleSheet(f"color: {colors['text']}; font-size: 16px; font-weight: bold;")
-    layout.addWidget(header_label)
+    # Create results text area
+    successful_projects = []
+    total_success_count = 0
+    total_count = 0
     
-    # Create a scrollable text area for the results
-    results_area = QTextEdit()
-    results_area.setReadOnly(True)
-    results_area.setStyleSheet(f"""
-        QTextEdit {{
-            background-color: {colors['card_bg']};
-            color: {colors['text']};
-            border: 1px solid {colors['border']};
+    # Check for dictionary format with results key (new format)
+    if isinstance(results, dict) and "results" in results:
+        # Get the list of results from the dictionary
+        result_list = results["results"]
+        
+        # Check for summary information in the dictionary
+        if "successful_count" in results and "total_count" in results:
+            total_success_count = results["successful_count"]
+            total_count = results["total_count"]
+    # Handle list of tuples format
+    elif isinstance(results, list):
+        result_list = results
+    else:
+        # Unknown format - just display error
+        result_list = []
+    
+    # Process the result list
+    for result in result_list:
+        if len(result) >= 3:  # Tuple with at least 3 elements
+            project_name, success, path_or_message = result
+            
+            if success:
+                # For successful creations, get the path
+                if isinstance(path_or_message, dict):
+                    # Path is a dictionary with project_dir key
+                    path = path_or_message.get("project_dir", "Unknown path")
+                else:
+                    # Path is a string
+                    path = path_or_message
+                
+                # Store successful project for opening
+                successful_projects.append(path)
+                total_success_count += 1
+            
+            total_count += 1
+    
+    # Create colorful summary header
+    summary_frame = QFrame(dialog)
+    summary_frame.setStyleSheet(f"""
+        QFrame {{
+            background-color: #2C4F76;
+            border-radius: 8px;
             padding: 10px;
         }}
     """)
+    summary_layout = QVBoxLayout(summary_frame)
     
-    # Format and add the results
+    # Summary label with green checkmark for success
+    summary_text = f"SUMMARY: {total_success_count} of {total_count} projects created successfully "
+    summary_label = QLabel(summary_text + "✓")
+    summary_label.setStyleSheet("""
+        QLabel {
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+        }
+    """)
+    summary_layout.addWidget(summary_label)
+    
+    # If there are successful projects, show the first one's path
+    if successful_projects:
+        first_project = successful_projects[0]
+        project_path_label = QLabel(f"Project '{os.path.basename(first_project)}' created successfully at: {first_project}")
+        project_path_label.setStyleSheet("""
+            QLabel {
+                color: white;
+                font-size: 13px;
+            }
+        """)
+        project_path_label.setWordWrap(True)
+        summary_layout.addWidget(project_path_label)
+    
+    layout.addWidget(summary_frame)
+    
+    # Add detailed results text display
     results_text = ""
-    success_count = 0
     
-    # Check if results is a list of tuples from the project builder
-    if isinstance(results, list) and len(results) > 0 and isinstance(results[0], tuple):
-        for name, success, path in results:
+    # Process the result list again for detailed text
+    for result in result_list:
+        if len(result) >= 3:  # Tuple with at least 3 elements
+            project_name, success, path_or_message = result
+            
             if success:
-                success_count += 1
-                results_text += f"<b style='color: #90EE90;'>✓ {name}</b><br>"
-                results_text += f"&nbsp;&nbsp;&nbsp;Created at: {path}<br><br>"
-            else:
-                results_text += f"<b style='color: #FFA07A;'>✗ {name}</b><br>"
-                results_text += f"&nbsp;&nbsp;&nbsp;Error: {path}<br><br>"
-        
-        total_count = len(results)
-    else:
-        # Handle dictionary format - remove "summary" from the count
-        actual_projects = [k for k in results.keys() if k != "summary"]
-        total_count = len(actual_projects)
-        
-        # Process each project result
-        for project_name in actual_projects:
-            result = results[project_name]
-            if isinstance(result, dict):
-                success = result.get('success', False)
-                path = result.get('directory', result.get('path', 'Not created'))
-                error = result.get('error', '')
-                message = result.get('message', '')
-                
-                if success:
-                    success_count += 1
-                    results_text += f"<b style='color: #90EE90;'>✓ {project_name}</b><br>"
-                    results_text += f"&nbsp;&nbsp;&nbsp;Created at: {path}<br><br>"
+                # For successful creations, get the path
+                if isinstance(path_or_message, dict):
+                    # Path is a dictionary with project_dir key
+                    path = path_or_message.get("project_dir", "Unknown path")
+                    has_warning = path_or_message.get("warning", False)
+                    no_structure = path_or_message.get("no_structure", False)
+                    
+                    # Format success message with possible warning
+                    results_text += f"✅ Project '{project_name}' created successfully at:\n   {path}\n"
+                    
+                    if no_structure:
+                        results_text += f"   ⚠️ WARNING: Template has no structure, project created without folders\n"
+                    elif has_warning:
+                        results_text += f"   ⚠️ WARNING: {has_warning}\n"
                 else:
-                    results_text += f"<b style='color: #FFA07A;'>✗ {project_name}</b><br>"
-                    results_text += f"&nbsp;&nbsp;&nbsp;Error: {error or message}<br><br>"
+                    # Path is a string
+                    path = path_or_message
+                    results_text += f"✅ Project '{project_name}' created successfully at:\n   {path}\n"
+            else:
+                # For failures, display the error message
+                error_msg = path_or_message
+                results_text += f"❌ Failed to create project '{project_name}':\n   {error_msg}\n"
+            
+            results_text += "\n"
     
-    # Add summary
-    summary = f"<b>Summary:</b> {success_count} of {total_count} projects created successfully."
-    results_text = f"{summary}<br><br>{results_text}"
+    if result_list:
+        # Show detailed results only if there are items to display
+        results_display = QTextEdit(dialog)
+        results_display.setReadOnly(True)
+        results_display.setLineWrapMode(QTextEdit.WidgetWidth)
+        results_display.setStyleSheet("""
+            QTextEdit {
+                background-color: #1E1E1E;
+                border: 1px solid #333333;
+                border-radius: 4px;
+                padding: 10px;
+                font-family: "Menlo", "Consolas", monospace;
+                font-size: 13px;
+            }
+        """)
+        results_display.setHtml(results_text.replace("✅", "<span style='color:#4CAF50'>✅</span>")
+                                        .replace("❌", "<span style='color:#F44336'>❌</span>")
+                                        .replace("⚠️", "<span style='color:#FF9800'>⚠️</span>")
+                                        .replace("**", "<b>").replace("**", "</b>"))
+        layout.addWidget(results_display, 1)  # Give this widget a stretch factor
     
-    results_area.setHtml(results_text)
-    layout.addWidget(results_area)
+    # Create button container with enhanced styling
+    button_container = QFrame(dialog)
+    button_container.setStyleSheet("""
+        QFrame {
+            background-color: #252525;
+            border-radius: 4px;
+            padding: 8px;
+        }
+    """)
+    button_layout = QHBoxLayout(button_container)
+    button_layout.setContentsMargins(10, 10, 10, 10)
     
-    # Add buttons
-    button_layout = QHBoxLayout()
+    # Add Open Output Directory button if there were successful projects
+    if successful_projects:
+        open_button = QPushButton("Open Output Directory", dialog)
+        open_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2C4F76;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #3A639A;
+            }
+            QPushButton:pressed {
+                background-color: #1F3C5C;
+            }
+        """)
+        # Add folder icon if possible
+        try:
+            # Set icon if we can find it
+            open_button.setIcon(QIcon.fromTheme("folder-open"))
+        except:
+            pass
+        open_button.clicked.connect(lambda: QDesktopServices.openUrl(
+            QUrl.fromLocalFile(os.path.dirname(successful_projects[0]))))
+        button_layout.addWidget(open_button)
     
-    # Open folder button - only if at least one project was created
-    if success_count > 0:
-        from app.utils.utils import open_folder
-        
-        # Try to get the directory of the first successful project
-        output_dir = None
-        
-        # Check which format we're dealing with
-        if isinstance(results, list) and len(results) > 0 and isinstance(results[0], tuple):
-            for name, success, path in results:
-                if success:
-                    import os
-                    output_dir = os.path.dirname(path)
-                    break
-        else:
-            for project_name in actual_projects:
-                result = results[project_name]
-                if isinstance(result, dict) and result.get('success', False):
-                    path = result.get('directory', result.get('path', ''))
-                    import os
-                    output_dir = os.path.dirname(path)
-                    break
-        
-        if output_dir:
-            open_folder_btn = QPushButton("Open Folder")
-            open_folder_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
-            open_folder_btn.clicked.connect(lambda: open_folder(output_dir))
-            button_layout.addWidget(open_folder_btn)
+    # Add spacer
+    button_layout.addItem(QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum))
     
-    # Close button
-    close_button = QPushButton("Close")
-    close_button.setStyleSheet(BUTTON_STYLE)
+    # Add Close button
+    close_button = QPushButton("Close", dialog)
+    close_button.setStyleSheet("""
+        QPushButton {
+            background-color: #444444;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+        }
+        QPushButton:hover {
+            background-color: #555555;
+        }
+        QPushButton:pressed {
+            background-color: #333333;
+        }
+    """)
     close_button.clicked.connect(dialog.accept)
     button_layout.addWidget(close_button)
     
-    layout.addLayout(button_layout)
+    layout.addWidget(button_container)
     
+    # Clean up dialog when closing
+    def cleanup_on_close():
+        if hasattr(app, '_current_batch_dialog'):
+            app._current_batch_dialog = None
+    
+    dialog.finished.connect(cleanup_on_close)
+    
+    # Show dialog
     dialog.exec_()
 
 def show_about(app):

@@ -61,6 +61,16 @@ class TemplateCard(QFrame):
         self.setCursor(Qt.PointingHandCursor)
         self.setFixedSize(140, 140)
         
+        # Check if template has structure
+        self.has_structure = False
+        if isinstance(self.template, dict):
+            if 'structure' in self.template:
+                structure = self.template['structure']
+                if isinstance(structure, dict) and 'folders' in structure and structure['folders']:
+                    self.has_structure = True
+                elif isinstance(structure, list) and structure:
+                    self.has_structure = True
+        
         # Initial style - will be updated by _update_styling
         self.setStyleSheet(f"background-color: {CARD_NORMAL}; border-radius: 6px;")
         
@@ -82,7 +92,7 @@ class TemplateCard(QFrame):
         self.icon_label = QLabel()
         icon_path = get_resource_path(os.path.join(
             "ICONS", "templates", "template_structure_icon.svg")) # Corrected path
-        print(f"DEBUG (Card Icon Path): {icon_path}") # Add debug print for path
+        print(f"DEBUG (Card Icon Path): {icon_path}")
         if os.path.exists(icon_path):
             icon = QIcon(icon_path) # Use QIcon for better scaling
             # Get a pixmap from the icon at the desired size
@@ -99,6 +109,25 @@ class TemplateCard(QFrame):
         self.icon_label.setAlignment(Qt.AlignCenter)
         icon_layout.addWidget(self.icon_label, 1, Qt.AlignCenter)
         layout.addWidget(icon_container)
+        
+        # If the template has no structure, add a warning icon overlay
+        if not self.has_structure:
+            # Create a warning indicator in the top right corner
+            self.warning_indicator = QLabel(self)
+            self.warning_indicator.setFixedSize(24, 24)
+            self.warning_indicator.setStyleSheet(f"""
+                background-color: {colors['error']};
+                color: white;
+                border-radius: 12px;
+                font-weight: bold;
+                border: 1px solid white;
+            """)
+            self.warning_indicator.setText("!")
+            self.warning_indicator.setAlignment(Qt.AlignCenter)
+            self.warning_indicator.move(110, 10)  # Position in top right
+            
+            # Create a tooltip that explains the warning
+            self.setToolTip("This template has no folder structure defined")
         
         # Text container with fixed height
         text_container = QWidget()
@@ -122,7 +151,7 @@ class TemplateCard(QFrame):
         category_str = self.template.get("category") # Read 'category'
         # Display "No Category" if category is missing or empty
         display_category = category_str if category_str else "No Category" 
-        self.category_label = QLabel(display_category, self) # Use display_category
+        self.category_label = QLabel(display_category, self)
         self.category_label.setAlignment(Qt.AlignCenter)
         font = QFont(SYSTEM_FONT)
         font.setPointSize(8)

@@ -239,251 +239,291 @@ class ProjectBuilder:
 
     def create_project(self, project_name, output_dir=None, template_file=None, project_type="Standard", 
                    structure_name=None, create_backup=True, use_cached_files=True):
-        """
-        Create a project with the given name from a template
+        """Create a new project based on a template.
         
         Args:
             project_name (str): Name of the project
-            output_dir (str): Path to create the project in (parent directory)
-            template_file (str, optional): Path to template file or name of template
-            project_type (str, optional): Type of project
-            structure_name (str, optional): Name of structure to use
-            create_backup (bool, optional): Whether to create backup files
+            output_dir (str, optional): Directory where the project should be created
+            template_file (str, optional): Path to template file or template data
+            project_type (str, optional): Type of project (Standard, etc.)
+            structure_name (str, optional): Name of the structure to use
+            create_backup (bool, optional): Whether to create a backup if the directory exists
             use_cached_files (bool, optional): Whether to use cached files
             
         Returns:
-            tuple: (success, project_path) where success is True if project was created successfully
-                  and project_path is the path to the created project directory or error message
+            tuple: (success, result) where result is either the project path or an error message
+                   success is True if project was created, False otherwise
         """
-        # Log what's received for debugging
+        # Log parameters for debugging
         print(f"DEBUG: Creating project '{project_name}' in directory: '{output_dir}'")
         print(f"DEBUG: Using template: '{template_file}', structure: '{structure_name}'")
         
+        # Validate project name
         if not project_name:
-            error_message = "Project name is required"
-            print(f"ERROR: {error_message}")
-            return False, error_message
+            return False, "No project name provided"
             
+        # Validate output directory
         if not output_dir:
-            error_message = "Output directory is required"
-            print(f"ERROR: {error_message}")
-            return False, error_message
+            return False, "No output directory provided"
             
-        # Ensure output directory exists
+        # Create output directory if it doesn't exist
         try:
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir, exist_ok=True)
-                print(f"DEBUG: Created output directory: {output_dir}")
+            os.makedirs(output_dir, exist_ok=True)
         except Exception as e:
-            error_message = f"Failed to create output directory: {str(e)}"
-            print(f"ERROR: {error_message}")
-            return False, error_message
-        
-        # Create the project directory 
+            print(f"Error creating output directory: {e}")
+            return False, f"Failed to create output directory: {e}"
+            
+        # Create project directory path
         project_dir = os.path.join(output_dir, project_name)
         print(f"DEBUG: Project will be created at: {project_dir}")
         
-        # Check if project directory already exists
+        # Check if project directory exists
         if os.path.exists(project_dir):
             if create_backup:
-                # Create backup if requested
+                # Create backup of existing directory
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 backup_dir = f"{project_dir}_backup_{timestamp}"
                 try:
-                    shutil.move(project_dir, backup_dir)
-                    print(f"DEBUG: Created backup at {backup_dir}")
+                    shutil.copytree(project_dir, backup_dir)
+                    # Also try to copy hidden files which might be missed by copytree
+                    os.system(f'cp -r "{project_dir}/."* "{backup_dir}" 2>/dev/null || true')
+                    print(f"Created backup at {backup_dir}")
                 except Exception as e:
-                    error_message = f"Failed to create backup: {str(e)}"
-                    print(f"ERROR: {error_message}")
-                    return False, error_message
+                    print(f"Failed to create backup: {e}")
+                    return False, f"Failed to create backup: {e}"
+                    
+                # Remove old directory contents but keep the directory
+                try:
+                    for item in os.listdir(project_dir):
+                        item_path = os.path.join(project_dir, item)
+                        if os.path.isdir(item_path):
+                            shutil.rmtree(item_path)
+                        else:
+                            os.remove(item_path)
+                except Exception as e:
+                    print(f"Failed to clean project directory: {e}")
+                    return False, f"Failed to clean project directory: {e}"
             else:
-                error_message = f"Project directory already exists: {project_dir}"
-                print(f"ERROR: {error_message}")
-                return False, error_message
+                # If we're not creating a backup, fail
+                return False, f"Project directory '{project_dir}' already exists"
+        else:
+            # Create project directory if it doesn't exist
+            try:
+                os.makedirs(project_dir, exist_ok=True)
+            except Exception as e:
+                print(f"Error creating project directory: {e}")
+                return False, f"Failed to create project directory: {e}"
                 
-        # Create project directory
-        try:
-            os.makedirs(project_dir, exist_ok=True)
-        except Exception as e:
-            error_message = f"Failed to create project directory: {str(e)}"
-            print(f"ERROR: {error_message}")
-            return False, error_message
-            
-        # If template_file is an object, extract structure and other data
+        # Get template data
         template_data = None
+        files_to_process = []
+        
+        # If template_file is a dict, use it directly
         if isinstance(template_file, dict):
             template_data = template_file
-            
-            # Use structure from template
-            if structure_name is None and 'structure_name' in template_data:
-                structure_name = template_data['structure_name']
-                print(f"DEBUG: Using structure from template: {structure_name}")
-                
-            # Use template path for files
-            template_file = template_data.get('path')
-                
-        # Get template data and structure
-        structure_data, template_result = self._get_structure_data(structure_name, template_file)
-        
-        # Use template_data if provided directly
-        if template_data and not template_result:
-            template_result = template_data
-            
-        # Determine the template name for cache lookup
-        template_name_for_cache = None
-        if isinstance(template_data, dict):
-            template_name_for_cache = template_data.get('name')
-        elif isinstance(template_file, str) and not isinstance(template_file, dict):
-            # If template_file was a path string and template_data didn't load a name
-            # Use the filename part of the path as the name
-            template_name_for_cache = os.path.splitext(os.path.basename(template_file))[0]
-        print(f"DEBUG: Determined template name for cache operations: {template_name_for_cache}")
-        
-        # Create folders from structure
-        if structure_data:
+            print(f"DEBUG: Direct template_data has structure: {template_data.get('structure', [])}")
+        elif template_file and os.path.isfile(template_file):
+            # Load template from file
             try:
-                created_folders = self._create_folders_from_structure(project_dir, structure_data)
-                print(f"DEBUG: Created {len(created_folders)} folders from structure")
+                with open(template_file, 'r', encoding='utf-8') as f:
+                    template_data = json.load(f)
             except Exception as e:
-                error_message = f"Failed to create folder structure: {str(e)}"
-                print(f"ERROR: {error_message}")
-                return False, error_message
+                print(f"Error loading template file: {e}")
+                return False, f"Failed to load template file: {e}"
                 
-        # Process files if available
-        files_array = []
-        if template_result:
-            # Get files array from template
-            files_array = template_result.get('files', [])
-            
-            # Apply structure flags to files array (add rename_flag and uses_project_name from structure)
-            files_array = self._apply_structure_flags_to_files(structure_data, files_array)
-            
-        if files_array:
+        # Get structure data
+        structure_data = self._get_structure_data(structure_name, template_data.get('name') if template_data else None)
+        
+        # Check for valid structure - crucial step to validate structure exists
+        if not structure_data:
+            print(f"DEBUG: No valid structure found for '{structure_name}'")
+            # Create the project directory but return a message that there's no structure
             try:
-                # Set up placeholders for variable replacement
-                placeholders = {
-                    'PROJECT_NAME': project_name
-                }
-                
-                # Process files
-                copied_files = self._process_files_array(
-                    project_dir, 
-                    files_array, 
-                    placeholders, 
-                    use_cached_files,
-                    template_name=template_name_for_cache
-                )
-                print(f"DEBUG: Copied {len(copied_files)} files from template")
+                os.makedirs(project_dir, exist_ok=True)
             except Exception as e:
-                error_message = f"Failed to copy files: {str(e)}"
-                print(f"ERROR: {error_message}")
-                # Don't return error here, just log it - still successful if structure was created
+                print(f"Error creating project directory: {e}")
+                return False, f"Failed to create project directory: {e}"
                 
-        # Success!
-        return True, project_dir
+            # Instead of failing, return success with no_structure flag
+            return True, {"project_dir": project_dir, "no_structure": True}
+            
+        # Create placeholders for template processing
+        placeholders = {
+            "PROJECT_NAME": project_name,
+            "project_name": project_name.lower(),
+            "Project_Name": project_name.title(),
+            "ProjectName": self._camel_case(project_name),
+            "PROJECT_DIR": project_dir,
+            "PROJECT_TYPE": project_type,
+            # Additional placeholders can be added here
+        }
+        
+        # Create folders based on structure
+        print(f"DEBUG: Creating folders with structure: {structure_data}")
+        created_folders_count = self._create_folders_from_structure(project_dir, structure_data)
+        print(f"DEBUG: Created {created_folders_count} folders from structure")
+        
+        # Process files if available in template
+        if template_data and 'files' in template_data and template_data['files']:
+            files_array = template_data['files']
+            
+            # Apply structure flags to files if needed
+            if structure_data:
+                files_array = self._apply_structure_flags_to_files(structure_data, files_array)
+                
+            # Process files
+            files_result = self._process_files_array(
+                project_dir, 
+                files_array, 
+                placeholders,
+                use_cached_files,
+                template_data.get('name')
+            )
+            print(f"DEBUG: Processed {len(files_array)} files")
+            
+            if not files_result[0]:
+                # If file processing failed, return warning
+                return True, {"project_dir": project_dir, "warning": files_result[1]}
+        
+        # Return success and project directory
+        return True, {"project_dir": project_dir}
         
     def _get_structure_data(self, structure_name=None, template_name=None):
         """
-        Get the structure data from either a named structure or a template
+        Get structure data for creating project folders
         
         Args:
-            structure_name (str, optional): Name of the structure to use
-            template_name (str, optional): Name of the template to use
+            structure_name (str, optional): Name of structure to use
+            template_name (str, optional): Name of template for finding matching structure
             
         Returns:
-            tuple: (structure_data, template_data) where structure_data is the structure dict
-                  and template_data is the full template dict if available
+            dict/list: The structure data if found, None otherwise
         """
-        structure_data = None
-        template_data = None
+        print(f"DEBUG: get_structure called with structure_name='{structure_name}'")
         
-        # Try to load structure first if provided
+        # If a template name is provided but no structure name, try to construct the structure name
+        if template_name and not structure_name:
+            structure_name = f"Template_{template_name}"
+            print(f"DEBUG: Using template name to create structure name: {structure_name}")
+        
+        # Try different variations of the structure name
+        variations = []
         if structure_name:
-            print(f"DEBUG: get_structure called with structure_name='{structure_name}'")
-            structure_data = self.template_manager.get_structure(structure_name)
-            
-            # If structure was found, return it
-            if structure_data:
-                return structure_data, None
-                
-        # If no structure found or none provided, try template
-        if template_name:
-            # Check if template_name is actually a template object (dict)
-            if isinstance(template_name, dict) and 'structure' in template_name:
-                print(f"DEBUG: Using provided template object directly")
-                template_data = template_name
-                structure_data = template_data.get('structure')
+            variations.append(structure_name)
+            # Try with and without "Template_" prefix
+            if structure_name.startswith("Template_"):
+                variations.append(structure_name[9:])  # Remove "Template_"
             else:
-                # Try to get template from template manager
-                print(f"DEBUG: Looking up template by name: '{template_name}'")
-                template_data = self.template_manager.get_template(template_name)
-            
-            if template_data:
-                # Get structure from template data
-                if isinstance(template_data, dict):
-                    # Check for structure in template
-                    if 'structure' in template_data:
-                        structure_data = template_data['structure']
-                        print(f"DEBUG: Found structure in template. Type: {type(structure_data)}")
-                        
-                        if structure_data:
-                            # Debug output for structure format
-                            if isinstance(structure_data, dict):
-                                print(f"DEBUG: Structure keys: {structure_data.keys()}")
-                            elif isinstance(structure_data, list):
-                                print(f"DEBUG: Structure is a list with {len(structure_data)} items")
-                            
-                            # Ensure structure data is valid - convert list to appropriate format if needed
-                            if isinstance(structure_data, list):
-                                # Handle newer list-based format
-                                print(f"DEBUG: Using list-based structure format")
-                                
-                            # Extract files array from old format if present in structure
-                            if isinstance(structure_data, dict) and 'files' in structure_data:
-                                files = structure_data.pop('files', [])
-                                # Add files to template data if not already there
-                                if 'files' not in template_data:
-                                    template_data['files'] = files
-                                print(f"DEBUG: Extracted {len(files)} files from structure data")
-                            
-                            return structure_data, template_data
-                        else:
-                            print(f"WARNING: Structure data is empty in template")
-                    else:
-                        print(f"WARNING: No structure field found in template")
-                else:
-                    print(f"WARNING: Template data is not a dictionary: {type(template_data)}")
+                variations.append(f"Template_{structure_name}")
+                variations.append(f"Template {structure_name}")
+                
+        print(f"DEBUG: Trying structure names: {variations}")
         
-        # If still no structure, return default structure
+        # Process the structure
+        structure_data = None
+        
+        # Check if we already have the template loaded with embedded structure
+        if hasattr(self, 'template_manager') and template_name:
+            try:
+                template_data = self.template_manager.get_template_by_name(template_name)
+                if template_data and 'structure' in template_data and template_data['structure']:
+                    print(f"DEBUG: Found structure embedded in template '{template_name}'")
+                    # Validate the embedded structure first
+                    if self._ensure_valid_structure(template_data['structure']):
+                        return template_data['structure']
+            except Exception as e:
+                print(f"ERROR: Failed to extract structure from template: {e}")
+        
+        # First check if we have custom structures directory
+        structures_dir = os.path.expanduser("~/.echelon/structures")
+        if os.path.exists(structures_dir):
+            for variation in variations:
+                structure_path = os.path.join(structures_dir, f"{variation}.json")
+                if os.path.exists(structure_path):
+                    print(f"DEBUG: Found custom structure on disk: {variation}")
+                    try:
+                        with open(structure_path, 'r', encoding='utf-8') as f:
+                            structure_data = json.load(f)
+                            
+                            # If structure is in 'directories' key, extract it
+                            if isinstance(structure_data, dict) and 'directories' in structure_data:
+                                structure_data = structure_data['directories']
+                            
+                            # Validate structure
+                            if self._ensure_valid_structure(structure_data):
+                                return structure_data
+                            else:
+                                print(f"DEBUG: Structure from file {variation} is not valid")
+                    except Exception as e:
+                        print(f"ERROR: Failed to load structure file {structure_path}: {e}")
+                        
+        # If we reach here, no structure was found or loaded successfully
+        # Check if template name was provided, try to get default structure
         if not structure_data:
-            print(f"WARNING: No structure found for template: {template_name}, structure: {structure_name}")
-            print(f"WARNING: Using default fallback structure")
-            structure_data = self._get_default_structure()
-            
-        return structure_data, template_data
+            default_structure = self._get_default_structure()
+            if default_structure:
+                print(f"DEBUG: Using default structure")
+                return default_structure
+        
+        # No valid structure found
+        print(f"DEBUG: No valid structure found, skipping folder creation")
+        return None
     
     def _ensure_valid_structure(self, structure_data):
         """
-        Ensure structure data is valid and not an empty array.
+        Ensure that a structure is valid and can be used for folder creation.
         
         Args:
             structure_data: The structure data to validate
             
         Returns:
-            dict or list: Valid structure data
+            bool: True if the structure is valid, False otherwise
         """
-        # If structure is None or empty array, return a minimal valid structure
-        if structure_data is None or (isinstance(structure_data, list) and not structure_data):
-            print("WARNING: Empty structure data, using minimal default structure")
-            return self._get_default_structure()
-        
-        # If it's a dict with 'root' that is an empty array, populate with minimal structure
-        if isinstance(structure_data, dict) and 'root' in structure_data:
-            if not structure_data['root'] or (isinstance(structure_data['root'], list) and not structure_data['root']):
-                print("WARNING: Empty root in structure data, using minimal default structure")
-                structure_data['root'] = self._get_default_structure()['root']
+        if not structure_data:
+            print("DEBUG: Structure data is empty or None")
+            return False
+            
+        # Check for dict format with folders key
+        if isinstance(structure_data, dict):
+            if 'folders' in structure_data and structure_data['folders']:
+                # Old format with folders key
+                print("DEBUG: Structure is valid (dict with folders key)")
+                return True
+            elif any(isinstance(value, dict) for value in structure_data.values()):
+                # Dict format with folder objects as values
+                print("DEBUG: Structure is valid (dict with folder objects)")
+                return True
+            # Check for 'directories' key used in template editor
+            elif 'directories' in structure_data and structure_data['directories']:
+                print("DEBUG: Structure is valid (dict with directories key)")
+                return True
                 
-        return structure_data
+        # Check for list format with folder items
+        elif isinstance(structure_data, list) and structure_data:
+            # Check if any item has a type of 'folder'
+            has_folders = any(
+                isinstance(item, dict) and item.get('type') == 'folder' for item in structure_data 
+            )
+            
+            # Check for folder dictionaries in the list (common format)
+            has_folder_dicts = any(
+                isinstance(item, dict) and len(item) == 1 and 
+                isinstance(list(item.values())[0], list)
+                for item in structure_data
+            )
+            
+            # Check for valid template UI structure format
+            template_ui_format = len(structure_data) > 0 and all(
+                isinstance(item, dict) and ('name' in item) 
+                for item in structure_data if isinstance(item, dict)
+            )
+            
+            if has_folders or has_folder_dicts or template_ui_format:
+                print("DEBUG: Structure is valid (list with folder items)")
+                return True
+                
+        print("DEBUG: Structure is not valid")
+        return False
     
     def _get_default_structure(self):
         """
@@ -1343,16 +1383,16 @@ class ProjectBuilder:
             # Create project
             print(f"Creating project: {name} in {output_dir}")
 
-            # --- MODIFIED --- Pass template_data if available, otherwise template_name
-            template_input = selected_template if selected_template else template_file
-            # --- END MODIFIED ---
-
-            success, project_dir = self.create_project(
-                name, output_dir, structure_name=structure_name,
-                template_file=template_input, use_cached_files=True
+            # Run the create_project method
+            success, result = self.create_project(
+                project_name=name,
+                output_dir=output_dir,
+                template_file=template_file if template_file else structure_name,
+                structure_name=structure_name,
+                use_cached_files=True
             )
             
-            results.append((name, success, project_dir))
+            results.append((name, success, result))
         
         # Completed
         self.is_building = False
@@ -1423,90 +1463,119 @@ class ProjectBuilder:
         # this could prompt the user or check preferences
         return True
         
-    def batch_create_projects(self, project_names, template_name=None, structure_name=None, output_dir=None, 
-                             use_cached_files=True, template_data=None):
+    def batch_create_projects(self, project_names, template_name=None, structure_name=None, output_dir=None, use_cached_files=True, template_data=None):
         """
-        Create multiple projects based on a list of project names
+        Create multiple projects from a list of project names
         
         Args:
             project_names (list): List of project names to create
-            template_name (str, optional): Name of the template to use
-            structure_name (str, optional): Name of the structure to use
+            template_name (str, optional): Template to use for projects
+            structure_name (str, optional): Structure to use for projects
             output_dir (str, optional): Directory to create projects in
             use_cached_files (bool, optional): Whether to use cached files
-            template_data (dict, optional): Template data to use instead of loading from name
+            template_data (dict, optional): Template data to use instead of loading from file
             
         Returns:
-            dict: Dictionary of results with project names as keys and status as values
+            dict: Results dictionary with success/failure information
         """
-        results = {}
-        successful_projects = 0
-        
         # Validate input
-        if not project_names or not isinstance(project_names, list):
-            print(f"ERROR: Invalid project names: {project_names}")
-            return {"error": "Invalid project names", "successful_count": 0, "total_count": 0}
+        if not isinstance(project_names, list):
+            error_msg = "Project names must be provided as a list"
+            print(f"ERROR: {error_msg}")
+            return {
+                "error": error_msg,
+                "successful_count": 0,
+                "total_count": 0,
+                "success_rate": "0/0 (0%)"
+            }
             
+        # Ensure output directory is provided
         if not output_dir:
-            print("ERROR: No output directory specified")
-            return {"error": "No output directory specified", "successful_count": 0, "total_count": 0}
-            
-        # Ensure output directory exists
-        os.makedirs(output_dir, exist_ok=True)
+            error_msg = "Output directory must be provided for batch creation"
+            print(f"ERROR: {error_msg}")
+            return {
+                "error": error_msg,
+                "successful_count": 0,
+                "total_count": 0,
+                "success_rate": "0/0 (0%)"
+            }
         
-        # Process each project
+        # Ensure the output directory exists
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except Exception as e:
+            error_msg = f"Failed to create output directory: {e}"
+            print(f"ERROR: {error_msg}")
+            return {
+                "error": error_msg,
+                "successful_count": 0,
+                "total_count": 0,
+                "success_rate": "0/0 (0%)"
+            }
+            
+        # Initialize results
+        results = {
+            "results": [],  # List of tuples (project_name, success, message)
+            "successful_count": 0,
+            "total_count": len(project_names),
+            "success_rate": "0/0 (0%)",
+            "no_structure": True  # Default to True, will set to False if any project has a structure
+        }
+        
+        # Track if all projects were created without structure
+        all_no_structure = True
+        
+        # Process each project name
         for project_name in project_names:
+            print(f"Creating project: {project_name} in {output_dir}")
+            
+            # Create project directory
+            project_dir = os.path.join(output_dir, project_name)
             try:
-                project_name = project_name.strip()
-                if not project_name:
-                    continue
-                    
-                # Create subdirectory for project
-                project_dir = os.path.join(output_dir, project_name)
-                
-                print(f"Creating project: {project_name} in {project_dir}")
-                
-                # --- MODIFIED --- Pass template_data if available, otherwise template_name
-                template_input = template_data if template_data else template_name
-                # --- END MODIFIED ---
-
-                # Create the project
-                success, project_dir = self.create_project(
+                # Run the create_project method
+                success, result = self.create_project(
                     project_name=project_name,
                     output_dir=output_dir,
-                    template_file=template_input,
+                    template_file=template_data if template_data else template_name,
                     structure_name=structure_name,
                     use_cached_files=use_cached_files
                 )
                 
-                # Check if project creation was successful
+                # Check if the result is a dictionary with a no_structure flag
                 if success:
-                    successful_projects += 1
+                    results["successful_count"] += 1
+                    if isinstance(result, dict):
+                        if result.get("no_structure", False):
+                            # Project was created without structure
+                            results["results"].append((project_name, True, result))
+                        else:
+                            # Project was created with structure
+                            results["results"].append((project_name, True, result["project_dir"]))
+                            # At least one project had a structure
+                            all_no_structure = False
+                    else:
+                        # Result is just a string (project directory)
+                        results["results"].append((project_name, True, result))
+                        # Assume it has a structure
+                        all_no_structure = False
+                else:
+                    # Failed to create project
+                    results["results"].append((project_name, False, result))
                     
-                results[project_name] = {
-                    "success": success,
-                    "message": f"Project created successfully at {project_dir}" if success else f"Failed to create project: {project_dir}",
-                    "directory": project_dir,
-                    "details": project_dir
-                }
-                
             except Exception as e:
-                results[project_name] = {
-                    "success": False,
-                    "message": f"Failed to create project: {str(e)}",
-                    "error": str(e)
-                }
+                print(f"ERROR creating project {project_name}: {e}")
                 import traceback
                 traceback.print_exc()
-                
-        # Add summary information to results
-        results["summary"] = {
-            "successful_count": successful_projects,
-            "total_count": len(project_names),
-            "success_rate": f"{successful_projects}/{len(project_names)}"
-        }
+                results["results"].append((project_name, False, str(e)))
         
-        print(f"Batch creation complete: {successful_projects} of {len(project_names)} projects created successfully")
+        # Update no_structure flag based on results
+        results["no_structure"] = all_no_structure
+        
+        # Calculate success rate
+        if results["total_count"] > 0:
+            success_rate = results["successful_count"] / results["total_count"] * 100
+            results["success_rate"] = f"{results['successful_count']}/{results['total_count']} ({success_rate:.0f}%)"
+        
         return results
 
     def _process_files_array(self, project_dir, files_array, placeholders, use_cached_files=True, template_name=None):

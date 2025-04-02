@@ -23,6 +23,32 @@ from app.utils.utils import (
 )
 
 
+def template_has_structure(template):
+    """
+    Check if a template has a valid structure
+    
+    Args:
+        template: Template dictionary or object
+        
+    Returns:
+        bool: True if template has a valid structure, False otherwise
+    """
+    if not template:
+        return False
+        
+    # Check for structure field
+    if isinstance(template, dict) and 'structure' in template:
+        structure = template['structure']
+        
+        # Check if structure is valid and not empty
+        if isinstance(structure, dict) and 'folders' in structure and structure['folders']:
+            return True
+        elif isinstance(structure, list) and structure:
+            return True
+            
+    return False
+
+
 def create_project(app, project_name, output_directory=None):
     """Create a new project with the given name"""
     print("\n=== PROJECT CREATION DEBUG ===")
@@ -46,7 +72,15 @@ def create_project(app, project_name, output_directory=None):
         print(f"❌ Error: {error_msg}")
         print("=== END PROJECT CREATION DEBUG ===\n")
         return False
-        
+    
+    # Check if the template has a structure and prevent project creation if not
+    if not template_has_structure(app.selected_template):
+        error_msg = "This template has no folder structure defined. Projects require a folder structure to be created."
+        app.show_status_message(error_msg, message_type="error")
+        print("❌ Project creation prevented due to missing structure")
+        print("=== END PROJECT CREATION DEBUG ===\n")
+        return False
+            
     # Get output directory from UI if not provided
     if not output_directory:
         output_directory = app.output_directory_input.text()
@@ -103,7 +137,7 @@ def create_project(app, project_name, output_directory=None):
     print(f"- Structure name: {structure_name}")
     
     # Create the project using the selected output directory
-    result, project_path = app.project_builder.create_project(
+    result, project_path_or_info = app.project_builder.create_project(
         project_name=project_name,
         output_dir=output_directory,
         template_file=template_path,
@@ -112,7 +146,14 @@ def create_project(app, project_name, output_directory=None):
         create_backup=True
     )
     
+    # We should no longer have no_structure flag since we're preventing those projects
     if result:
+        # Use project_path directly if not a dict
+        if isinstance(project_path_or_info, dict):
+            project_path = project_path_or_info.get('project_dir')
+        else:
+            project_path = project_path_or_info
+            
         # Show success message
         success_message = f"Project '{project_name}' created successfully at\n{project_path}"
         QMessageBox.information(app, "Success", success_message)
@@ -131,10 +172,11 @@ def create_project(app, project_name, output_directory=None):
         # Show path in status bar
         app.show_status_message(f"Project created at: {project_path}")
     else:
-        error_message = f"Failed to create project '{project_name}': {project_path}"
+        # Error case
+        error_message = f"Failed to create project '{project_name}': {project_path_or_info}"
         QMessageBox.critical(app, "Error", error_message)
         print(f"❌ Error: {error_message}")
-        app.show_status_message(f"Error creating project: {project_path}", message_type="error")
+        app.show_status_message(f"Error creating project: {project_path_or_info}", message_type="error")
     
     print("=== END PROJECT CREATION DEBUG ===\n")
     return result
@@ -202,6 +244,13 @@ def handle_batch_create(app, project_names_text):
     if not template_name:
         print("No template selected!")
         return {"error": "No template selected. Please select a template first."}
+
+    # Check if the template has a structure
+    if not template_has_structure(template_data):
+        error_msg = "This template has no folder structure defined. Projects require a folder structure to be created."
+        app.show_status_message(error_msg, message_type="error")
+        print("❌ Batch creation prevented due to missing structure")
+        return {"error": "Template has no structure defined", "successful_count": 0, "total_count": len(project_names)}
     
     print(f"Using gallery template without file path: {template_name}")
     

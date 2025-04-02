@@ -747,12 +747,41 @@ class ProjectCreatorApp(QMainWindow):
         QMessageBox.information(self, "Not Implemented", "Structure management dialog not yet implemented in PyQt version.")
     
     def check_batch_results(self):
-        """Check for batch results and display them if available"""
-        if hasattr(self, 'batch_results') and self.batch_results:
-            from app.dialogs.dialog_windows_pyqt import show_batch_results
-            results = self.batch_results
-            self.batch_results = None  # Clear results to avoid showing them again
-            show_batch_results(self, results)
+        """
+        Check batch results and update UI accordingly
+        """
+        print(f"Checking batch results: {self.batch_results}")
+        
+        if not self.batch_results:
+            return
+            
+        # Store the results locally so we can clear the main attribute
+        results = self.batch_results
+        
+        # Clear the batch results immediately to prevent duplicate dialogs
+        self.batch_results = None
+            
+        # Extract error message if present
+        error_message = results.get("error", None)
+        
+        # Check if any projects were created
+        if results.get("successful_count", 0) > 0:
+            # Update status
+            self.show_status_message(f"Created {results.get('successful_count')} of {results.get('total_count')} projects", 5000)
+            
+            # If no_structure flag is True AND no projects were created with structure,
+            # only show the status message
+            if results.get("no_structure", False) and results.get("successful_count") == results.get("total_count"):
+                self.show_status_message("Note: Projects created without folder structure", 5000)
+            else:
+                # Show results dialog - this handles projects with valid structures
+                from app.dialogs.dialog_windows_pyqt import show_batch_results
+                show_batch_results(self, results)
+        else:
+            # No projects created successfully
+            self.show_error(error_message or "Failed to create any projects")
+            
+        print(f"Batch results checked: {results}")
     
     def _create_template(self):
         """Create a new template"""
@@ -805,7 +834,6 @@ class ProjectCreatorApp(QMainWindow):
         import re
         from PyQt5.QtWidgets import QMessageBox
         from app.core.project_operations import handle_batch_create
-        from app.dialogs.dialog_windows_pyqt import show_batch_results
         
         # Get text from the batch input area
         text = self.batch_text_edit.toPlainText().strip()
@@ -875,20 +903,19 @@ class ProjectCreatorApp(QMainWindow):
             )
             return
         
-        # Removed confirmation dialog - directly create projects
+        # Show creating message in status bar
+        self.show_status_message(f"Creating {len(project_names)} projects...", message_type="info")
         
         # Convert list of project names to a string for handle_batch_create
         projects_text = "\n".join(project_names)
         
-        # Show creating message in status bar
-        self.show_status_message(f"Creating {len(project_names)} projects...", message_type="info")
-        
         # Execute batch creation
         results = handle_batch_create(self, projects_text)
         
-        # Display the results if it's not just a boolean success indicator
+        # Store results and check them - dialog will be shown by check_batch_results
         if results and not isinstance(results, bool):
-            show_batch_results(self, results)
+            self.batch_results = results
+            self.check_batch_results()
 
     def _export_all(self):
         """Export all settings and templates"""
@@ -908,4 +935,8 @@ class ProjectCreatorApp(QMainWindow):
     def _import_settings(self):
         """Import settings only"""
         from app.core.import_export_manager import import_package
-        import_package(self, import_settings=True, import_templates=False) 
+        import_package(self, import_settings=True, import_templates=False)
+    
+    def show_error(self, message):
+        """Show an error message in the status bar"""
+        self.show_status_message(message, message_type="error", duration=10000) 

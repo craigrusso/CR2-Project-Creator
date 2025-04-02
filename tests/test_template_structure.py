@@ -1,168 +1,169 @@
 #!/usr/bin/env python3
-# Test script for template creation with fixed structure format
+# Copyright (c) 2023-present Craig P. Russo and CR2 Creative
+
+"""
+Test that templates without structure are properly handled
+"""
 
 import os
 import sys
 import tempfile
-import shutil
-from PyQt5.QtWidgets import QApplication, QDialog, QVBoxLayout, QPushButton, QLabel, QTextEdit
-from PyQt5.QtCore import Qt
+import unittest
+from datetime import datetime
 
-# Import app modules
-from app.templates.template_manager import TemplateManager
+# Add parent directory to path so we can import app modules
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Import from app
 from app.core.project_builder import ProjectBuilder
-from app.dialogs.dialog_windows_pyqt import preview_structure
-from app.templates.gallery_events import GalleryEvents
+from app.core.project_operations import template_has_structure
 
-# Test structure with various folder types - both empty and with children
-TEST_STRUCTURE = [
-    {"01_FOLDER": []},  # Empty folder using new format
-    {"02_FOLDER_WITH_CHILDREN": [
-        {"SUBFOLDER_1": []},  # Nested empty folder
-        {"SUBFOLDER_2": [
-            "file1.txt",
-            "file2.txt"
-        ]},
-        "file_in_parent.txt"
-    ]},
-    "root_file.txt",  # File in root
-    "03_FOLDER/"  # Legacy format empty folder (for compatibility testing)
-]
-
-class TemplateStructureTestDialog(QDialog):
-    """Dialog to test template creation with fixed structure format"""
+class TestTemplateStructure(unittest.TestCase):
+    """Test template structure validation and handling"""
     
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Template Structure Test")
-        self.resize(700, 600)
+    def setUp(self):
+        """Set up test environment"""
+        self.temp_dir = tempfile.mkdtemp()
+        self.project_builder = ProjectBuilder(None)
+    
+    def test_template_has_structure(self):
+        """Test the template_has_structure function"""
+        # Test with empty template
+        self.assertFalse(template_has_structure(None))
+        self.assertFalse(template_has_structure({}))
         
-        # Create template manager
-        self.template_manager = TemplateManager()
+        # Test with template without structure
+        template_no_structure = {
+            'name': 'Test Template',
+            'description': 'Template without structure'
+        }
+        self.assertFalse(template_has_structure(template_no_structure))
         
-        # UI setup
-        layout = QVBoxLayout(self)
+        # Test with template with empty structure
+        template_empty_structure = {
+            'name': 'Empty Structure',
+            'structure': {}
+        }
+        self.assertFalse(template_has_structure(template_empty_structure))
         
-        # Header
-        header = QLabel("Template Structure Test")
-        header.setStyleSheet("font-size: 16px; font-weight: bold;")
-        layout.addWidget(header)
+        # Test with template with empty folders
+        template_empty_folders = {
+            'name': 'Empty Folders',
+            'structure': {
+                'folders': {}
+            }
+        }
+        self.assertFalse(template_has_structure(template_empty_folders))
         
-        # Instructions
-        instructions = QLabel(
-            "This test simulates the template creation process with the fixed structure format.\n"
-            "It shows how the structure is formatted and displayed."
+        # Test with template with valid dict structure
+        template_valid_dict = {
+            'name': 'Valid Dict',
+            'structure': {
+                'folders': {
+                    'src': {},
+                    'docs': {}
+                }
+            }
+        }
+        self.assertTrue(template_has_structure(template_valid_dict))
+        
+        # Test with template with valid list structure
+        template_valid_list = {
+            'name': 'Valid List',
+            'structure': [
+                {
+                    'type': 'folder',
+                    'name': 'src',
+                    'children': []
+                }
+            ]
+        }
+        self.assertTrue(template_has_structure(template_valid_list))
+    
+    def test_create_project_with_no_structure(self):
+        """Test creating a project with a template that has no structure"""
+        # Create a test template with no structure
+        template_no_structure = {
+            'name': 'No Structure Template',
+            'description': 'Template without structure',
+            'created': datetime.now().isoformat(),
+            'modified': datetime.now().isoformat(),
+            'files': []  # Empty files array
+        }
+        
+        # Try to create project
+        result, info = self.project_builder.create_project(
+            project_name="TestNoStructure",
+            output_dir=self.temp_dir,
+            template_file=template_no_structure
         )
-        instructions.setWordWrap(True)
-        layout.addWidget(instructions)
         
-        # Preview section - simulate gallery preview
-        preview_label = QLabel("Structure Preview (Gallery Style):")
-        preview_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
-        layout.addWidget(preview_label)
+        # Verify result - should be success but with no_structure flag
+        self.assertTrue(result)
+        self.assertTrue(isinstance(info, dict))
+        self.assertTrue(info.get('no_structure', False))
         
-        self.gallery_preview = QTextEdit()
-        self.gallery_preview.setReadOnly(True)
-        self.gallery_preview.setMinimumHeight(150)
-        self.gallery_preview.setStyleSheet("""
-            background-color: #2A2A2A;
-            color: #FFFFFF;
-            padding: 10px;
-            border-radius: 5px;
-            font-family: monospace;
-        """)
-        layout.addWidget(self.gallery_preview)
+        # Verify project directory exists
+        project_dir = info.get('project_dir')
+        self.assertTrue(os.path.exists(project_dir))
         
-        # Raw JSON representation
-        json_label = QLabel("Raw JSON Representation:")
-        json_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
-        layout.addWidget(json_label)
-        
-        self.json_preview = QTextEdit()
-        self.json_preview.setReadOnly(True)
-        self.json_preview.setMinimumHeight(100)
-        self.json_preview.setStyleSheet("""
-            background-color: #2A2A2A;
-            color: #FFFFFF;
-            padding: 10px;
-            border-radius: 5px;
-            font-family: monospace;
-        """)
-        layout.addWidget(self.json_preview)
-        
-        # Buttons
-        preview_btn = QPushButton("Show Gallery Style Preview")
-        preview_btn.clicked.connect(self.show_gallery_preview)
-        layout.addWidget(preview_btn)
-        
-        tree_btn = QPushButton("Show Tree Preview")
-        tree_btn.clicked.connect(self.show_tree_preview)
-        layout.addWidget(tree_btn)
-        
-        # Status
-        self.status_label = QLabel("Ready")
-        self.status_label.setStyleSheet("margin-top: 10px; color: #666;")
-        layout.addWidget(self.status_label)
-        
-        # Close button
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(self.close)
-        layout.addWidget(close_btn)
-        
-        # Initialize with JSON representation
-        self.show_json()
+        # Verify no default folders were created
+        self.assertFalse(os.path.exists(os.path.join(project_dir, 'src')))
+        self.assertFalse(os.path.exists(os.path.join(project_dir, 'docs')))
+        self.assertFalse(os.path.exists(os.path.join(project_dir, 'resources')))
     
-    def show_gallery_preview(self):
-        """Simulate the gallery preview format"""
-        self.status_label.setText("Showing gallery style preview...")
+    def test_create_project_with_structure(self):
+        """Test creating a project with a template that has structure"""
+        # Create a test template with structure
+        template_with_structure = {
+            'name': 'With Structure Template',
+            'description': 'Template with structure',
+            'created': datetime.now().isoformat(),
+            'modified': datetime.now().isoformat(),
+            'structure': {
+                'folders': {
+                    'src': {},
+                    'docs': {},
+                    'resources': {}
+                }
+            },
+            'files': []  # Empty files array
+        }
         
-        # Create a format_structure function like in gallery_events.py
-        def format_structure(items, indent=""):
-            result = []
-            
-            for item in items:
-                if isinstance(item, dict):
-                    # It's a directory with children (or empty directory)
-                    for dir_name, children in item.items():
-                        result.append(f"{indent}📁 {dir_name}/")
-                        if children:  # Only process if there are children
-                            child_result = format_structure(children, indent + "  ")
-                            if child_result:
-                                result.append(child_result)
-                elif isinstance(item, str):
-                    # It's a file or legacy empty directory
-                    if item.endswith('/'):
-                        result.append(f"{indent}📁 {item.rstrip('/')}/")
-                    else:
-                        result.append(f"{indent}📄 {item}")
-            
-            return "\n".join(result)
+        # Try to create project
+        result, info = self.project_builder.create_project(
+            project_name="TestWithStructure",
+            output_dir=self.temp_dir,
+            template_file=template_with_structure
+        )
         
-        preview = format_structure(TEST_STRUCTURE)
-        self.gallery_preview.setText(preview)
-        self.status_label.setText("Gallery preview displayed")
+        # Verify result
+        self.assertTrue(result)
+        
+        # Get project path (may be a string or dict with project_dir)
+        if isinstance(info, dict):
+            project_dir = info.get('project_dir')
+            # Verify it doesn't have no_structure flag
+            self.assertFalse(info.get('no_structure', False))
+        else:
+            project_dir = info
+        
+        # Verify project directory exists
+        self.assertTrue(os.path.exists(project_dir))
+        
+        # Verify folders were created
+        self.assertTrue(os.path.exists(os.path.join(project_dir, 'src')))
+        self.assertTrue(os.path.exists(os.path.join(project_dir, 'docs')))
+        self.assertTrue(os.path.exists(os.path.join(project_dir, 'resources')))
     
-    def show_tree_preview(self):
-        """Show the tree preview dialog"""
-        self.status_label.setText("Showing tree preview...")
-        preview_structure(self, TEST_STRUCTURE)
-        self.status_label.setText("Tree preview displayed")
-    
-    def show_json(self):
-        """Show the raw JSON representation"""
-        # Format the JSON-like structure for display
-        import json
-        json_str = json.dumps(TEST_STRUCTURE, indent=2)
-        self.json_preview.setText(json_str)
+    def tearDown(self):
+        """Clean up after tests"""
+        # Remove temporary directory and its contents
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-def run_test():
-    """Run the template structure test"""
-    app = QApplication(sys.argv)
-    dialog = TemplateStructureTestDialog()
-    dialog.show()
-    app.exec_()
 
-if __name__ == "__main__":
-    run_test()
+if __name__ == '__main__':
+    unittest.main()
 
  
