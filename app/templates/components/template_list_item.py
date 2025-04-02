@@ -115,16 +115,14 @@ class TemplateListItem(QFrame):
         
         # Add warning indicator for templates without structure
         if not self.has_structure:
-            self.warning_label = QLabel("!")
+            self.warning_label = QLabel("⚠")
             self.warning_label.setFixedSize(16, 16)
             self.warning_label.setAlignment(Qt.AlignCenter)
             self.warning_label.setStyleSheet(f"""
-                background-color: {colors.get('error', '#FF5252')};
-                color: white;
-                border-radius: 8px;
+                color: {colors.get('error', '#FF5252')};
+                background-color: transparent;
                 font-weight: bold;
-                border: 1px solid white;
-                font-size: 10px;
+                font-size: 12px;
             """)
             layout.addWidget(self.warning_label)
             

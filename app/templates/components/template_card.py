@@ -116,13 +116,12 @@ class TemplateCard(QFrame):
             self.warning_indicator = QLabel(self)
             self.warning_indicator.setFixedSize(24, 24)
             self.warning_indicator.setStyleSheet(f"""
-                background-color: {colors['error']};
-                color: white;
-                border-radius: 12px;
+                color: {colors['error']};
+                background-color: transparent;
                 font-weight: bold;
-                border: 1px solid white;
+                font-size: 16px;
             """)
-            self.warning_indicator.setText("!")
+            self.warning_indicator.setText("⚠")
             self.warning_indicator.setAlignment(Qt.AlignCenter)
             self.warning_indicator.move(110, 10)  # Position in top right
             
