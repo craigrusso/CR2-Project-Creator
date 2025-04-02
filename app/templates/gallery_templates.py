@@ -772,8 +772,10 @@ class GalleryTemplatesSetup:
             # Store initial sizes for persistence
             gallery.header_sizes = [300, 150, 150, 150]
             
-            # Connect splitter's splitterMoved signal
-            header_splitter.splitterMoved.connect(lambda: GalleryTemplatesSetup._update_column_widths(gallery))
+            # Connect splitter's splitterMoved signal - pass handle index
+            header_splitter.splitterMoved.connect(
+                lambda pos, index: GalleryTemplatesSetup._update_column_widths(gallery, index)
+            )
             
             # Add the splitter to the header layout
             header_layout.addWidget(header_splitter)
@@ -875,54 +877,67 @@ class GalleryTemplatesSetup:
             traceback.print_exc()
 
     @staticmethod
-    def _update_column_widths(gallery):
-        """Update column widths when splitter handles are moved"""
+    def _update_column_widths(gallery, handle_index):
+        """Update column widths based on which handle was moved."""
         try:
-            # Get the new sizes directly from the splitter
-            if hasattr(gallery, 'header_splitter'):
-                sizes = gallery.header_splitter.sizes()
-                # print(f"[DEBUG] Splitter moved. Sizes: {sizes}") # Keep commented out unless needed
-                
-                # Ensure we have the expected number of sizes
-                if len(sizes) == 4:
-                    # Re-introduce constraints for stability
-                    name_width = max(100, min(800, sizes[0]))
-                    category_width = max(80, min(400, sizes[1]))
-                    created_width = max(120, min(300, sizes[2]))
-                    modified_width = max(120, min(300, sizes[3]))
-                    
-                    # Store the constrained sizes
-                    gallery.header_sizes = [name_width, category_width, created_width, modified_width]
-                    
-                    # Update the fixed width of container widgets in each list item
-                    if hasattr(gallery, 'template_item_map'):
-                        needs_update = True 
-                        # ... (optional check for significant changes) ...
-                        
-                        if needs_update:
-                            for item in gallery.template_item_map.values():
-                                # ... (setFixedWidth on item containers) ...
-                                if item and hasattr(item, 'name_container'):
-                                    item.name_container.setFixedWidth(name_width)
-                                if item and hasattr(item, 'category_container'):
-                                    item.category_container.setFixedWidth(category_width)
-                                if item and hasattr(item, 'created_container'):
-                                    item.created_container.setFixedWidth(created_width)
-                                if item and hasattr(item, 'modified_container'):
-                                    item.modified_container.setFixedWidth(modified_width)
-                                    
-                            # Remove forced layout updates - let Qt handle it
-                            #if gallery.templates_list_widget and gallery.templates_list_widget.widget():
-                            #    items_container = gallery.templates_list_widget.widget().findChild(QWidget, "ItemsContainer")
-                            #    if items_container:
-                            #        items_container.layout().update() # Update the layout containing list items
-                            #        items_container.updateGeometry()
+            if not hasattr(gallery, 'header_splitter') or not hasattr(gallery, 'header_sizes'):
+                print("[WARN] Splitter or header_sizes not initialized.")
+                return
 
+            sizes = gallery.header_splitter.sizes()
+            if len(sizes) != 4 or len(gallery.header_sizes) != 4:
+                print(f"[WARN] Size array length mismatch. Splitter: {len(sizes)}, Stored: {len(gallery.header_sizes)}")
+                # Attempt to recover if possible, otherwise return
+                if len(sizes) == 4:
+                    gallery.header_sizes = list(sizes) # Reset stored sizes
                 else:
-                    print(f"[WARN] Splitter returned unexpected number of sizes: {len(sizes)}")
-            else:
-                print("[WARN] Header splitter not found in gallery object")
+                    return 
+
+            # The handle_index is the divider AFTER the column we want to primarily resize.
+            column_index_to_resize = handle_index
+
+            if 0 <= column_index_to_resize < 4:
+                # Get the new width for the column being resized from the splitter
+                new_width = sizes[column_index_to_resize]
                 
+                # Define constraints (can be made more dynamic if needed)
+                constraints = [
+                    (100, 800), # Name
+                    (80, 400),  # Category
+                    (120, 300), # Created
+                    (120, 300)  # Modified
+                ]
+                min_w, max_w = constraints[column_index_to_resize]
+                
+                # Apply constraints
+                constrained_width = max(min_w, min(max_w, new_width))
+                
+                # Update only the specific column's stored size
+                gallery.header_sizes[column_index_to_resize] = constrained_width
+                # print(f"[DEBUG] Resizing column {column_index_to_resize} to {constrained_width}")
+
+                # Now apply all potentially updated stored sizes to the items
+                if hasattr(gallery, 'template_item_map'):
+                    name_w, cat_w, created_w, mod_w = gallery.header_sizes
+                    for item in gallery.template_item_map.values():
+                        if item and hasattr(item, 'name_container'):
+                            item.name_container.setFixedWidth(name_w)
+                        if item and hasattr(item, 'category_container'):
+                            item.category_container.setFixedWidth(cat_w)
+                        if item and hasattr(item, 'created_container'):
+                            item.created_container.setFixedWidth(created_w)
+                        if item and hasattr(item, 'modified_container'):
+                            item.modified_container.setFixedWidth(mod_w)
+                            
+                    # Update layout may still be needed for smoothness
+                    if gallery.templates_list_widget and gallery.templates_list_widget.widget():
+                        items_container = gallery.templates_list_widget.widget().findChild(QWidget, "ItemsContainer")
+                        if items_container:
+                            items_container.layout().activate() # Try activate() instead of update()
+                            # items_container.updateGeometry() # Maybe not needed?
+            else:
+                 print(f"[WARN] Invalid handle_index received: {handle_index}")
+
         except Exception as e:
             import traceback
             print(f"Error updating column widths: {e}")
