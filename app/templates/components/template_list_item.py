@@ -50,6 +50,16 @@ class TemplateListItem(QFrame):
         self.dragging = False  # Track active drag state
         self.was_multi_selected = False  # Added for tracking if item was already multi-selected
         
+        # Check if template has structure
+        self.has_structure = False
+        if isinstance(self.template, dict):
+            if 'structure' in self.template:
+                structure = self.template['structure']
+                if isinstance(structure, dict) and 'folders' in structure and structure['folders']:
+                    self.has_structure = True
+                elif isinstance(structure, list) and structure:
+                    self.has_structure = True
+        
         # Enable drag and drop
         self.setAcceptDrops(True)
         
@@ -102,6 +112,26 @@ class TemplateListItem(QFrame):
             self.icon_label.setStyleSheet(f"color: {colors.get('accent', '#FFFFFF')}; background-color: transparent;") # Add color fallback
 
         layout.addWidget(self.icon_label)
+        
+        # Add warning indicator for templates without structure
+        if not self.has_structure:
+            self.warning_label = QLabel("⚠")
+            self.warning_label.setFixedSize(24, 24)
+            self.warning_label.setAlignment(Qt.AlignCenter)
+            self.warning_label.setStyleSheet(f"""
+                color: {colors.get('error', '#FF5252')};
+                font-weight: bold;
+                background-color: transparent;
+            """)
+            layout.addWidget(self.warning_label)
+            
+            # Add tooltip to explain the warning
+            self.setToolTip("This template has no folder structure defined")
+        else:
+            # Add a spacer to keep alignment consistent
+            self.spacer_label = QLabel()
+            self.spacer_label.setFixedSize(24, 24)
+            layout.addWidget(self.spacer_label)
         
         # Name label
         template_name = template.get('name', 'Untitled Template') if isinstance(template, dict) else str(template)
