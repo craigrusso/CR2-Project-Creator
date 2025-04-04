@@ -12,6 +12,8 @@ from app.core.app_config import APP_NAME, APP_VERSION, setup_dpi_awareness
 from app.ui.app_theme_pyqt import apply_dark_theme_to_template_section, force_app_palette
 from app.templates.template_manager_migration import TemplateManagerMigration
 from app.ui.tree_styling import apply_styling_to_all_tree_widgets
+# Import QSettings if not already imported (might be handled by PyQt5 import)
+from PyQt5.QtCore import QSettings 
 
 # This is the PyQt version of the application
 UI_FRAMEWORK = 'pyqt'
@@ -126,6 +128,28 @@ def main():
         print("DEBUG: Applying tree styling to all tree widgets")
         styled_count = apply_styling_to_all_tree_widgets(main_window)
         print(f"DEBUG: Tree styling applied to all tree widgets ({styled_count} widgets styled)")
+        
+        # --- Connect state saving for TableView --- 
+        def save_table_view_state():
+            # Access the gallery and then the table view
+            # This assumes main_window has access to the gallery which has the table view
+            # Adjust the path as necessary based on your application structure
+            try:
+                # Example path: main_window -> central_widget -> template_gallery -> template_table_view
+                gallery = main_window.template_gallery # Assuming gallery is directly accessible
+                if hasattr(gallery, 'template_table_view') and gallery.template_table_view:
+                    print("DEBUG: Saving TemplateTableView state on exit...")
+                    gallery.template_table_view.save_state()
+                else:
+                    print("DEBUG: TemplateTableView not found, skipping state save.")
+            except AttributeError as ae:
+                print(f"DEBUG: Could not find gallery or table view for state saving: {ae}")
+            except Exception as e:
+                print(f"ERROR saving table view state: {e}")
+
+        app.aboutToQuit.connect(save_table_view_state)
+        print("DEBUG: Connected aboutToQuit signal for saving TableView state.")
+        # ------------------------------------------
         
         print("DEBUG: Starting application main loop")
         return app.exec_()

@@ -3,7 +3,7 @@
 
 from PyQt5.QtWidgets import QDesktopWidget, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QComboBox, \
      QPushButton, QLineEdit, QFrame, QGridLayout, QMessageBox, QApplication, QSizePolicy, QTabWidget, QMainWindow, QDockWidget, QToolButton, QButtonGroup, QMenu, QAction
-from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSignal, QPoint
+from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSignal, QPoint, QModelIndex
 
 # Import modular components
 from .gallery_ui_setup import GalleryUISetup
@@ -11,6 +11,9 @@ from .gallery_folders import GalleryFoldersSetup
 from .gallery_templates import GalleryTemplatesSetup
 from .gallery_events import GalleryEvents
 from app.core.import_export_manager import import_template
+from app.ui.views.template_table_view import TemplateTableView
+from app.templates.components.template_folder_card import TemplateFolderCard, TemplateFolderListItem
+from app.templates.components.menu_actions import ContextMenu  # Import ContextMenu for context menus
 
 class TemplateGallery(QWidget):
     """Main widget for displaying and managing templates"""
@@ -32,12 +35,14 @@ class TemplateGallery(QWidget):
         self.selected_folder = None
         self.folder_cards = []
         self.template_cards = []
-        self.template_item_map = {}  # Add this attribute for list view items
         self.multi_selected_templates = []  # Track multi-selected templates
         self.icon_scale = 100  # Default scale in percentage
         self.folder_view_mode = "grid"  # Default to grid view for folders
         self.template_view_mode = "grid"  # Default to grid view for templates
         self.templates_loaded = False  # Track if templates have been loaded
+        
+        # Add placeholder for table view instance (will be created in setup_ui)
+        self.template_table_view = None
         
         # Set minimum size to ensure all UI elements are visible
         self.setMinimumSize(800, 400)
@@ -58,11 +63,23 @@ class TemplateGallery(QWidget):
         # Set up the UI
         GalleryUISetup.setup_ui(self)
         
-        # Set up the context menu
+        # --- Connect Table View Signals --- 
+        if self.template_table_view:
+            print("DEBUG: Connecting TemplateTableView signals...")
+            self.template_table_view.clicked.connect(self._on_table_item_clicked)
+            self.template_table_view.doubleClicked.connect(self._on_table_item_double_clicked)
+            self.template_table_view.setContextMenuPolicy(Qt.CustomContextMenu)
+            self.template_table_view.customContextMenuRequested.connect(self._show_table_context_menu)
+            self.template_table_view.horizontalHeader().sectionClicked.connect(self._on_table_header_clicked)
+        else:
+            print("[ERROR] TemplateTableView instance not found after UI setup!")
+        # ---------------------------------
+        
+        # Set up the main gallery context menu (for blank space)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_gallery_context_menu)
         
-        # Populate the gallery initially - do this after UI setup
+        # Populate the gallery initially - do this after UI setup and signal connection
         self.populate_gallery()
     
     # Gallery population methods
@@ -293,7 +310,6 @@ class TemplateGallery(QWidget):
         # Reset arrays
         self.folder_cards = []
         self.template_cards = []
-        self.template_item_map = {}  # Clear the template item map as well
     
     # Event handlers - connect to the modular handlers
     def _on_category_select(self, category):
@@ -476,8 +492,12 @@ class TemplateGallery(QWidget):
         """Handle delete folder button click"""
         GalleryEvents.on_delete_folder(self)
     
-    def _on_structure_editor(self):
-        """Handle structure editor button click"""
+    def _on_structure_editor(self, template_name=None):
+        """Handle structure editor button click
+        
+        Args:
+            template_name: Optional name of the template to edit structure for
+        """
         # Get the parent app if available
         parent_app = None
         if hasattr(self, 'app') and self.app is not None:
@@ -533,12 +553,38 @@ class TemplateGallery(QWidget):
                     # No need to populate structure dropdown explicitly, it will be handled by the parent class
                     # if available, otherwise just skip it
             
+            # Load the structure if template_name is provided
+            structure_name = None
+            structure = []
+            is_new = True
+            
+            if template_name:
+                # Get the structure for the specified template
+                if hasattr(parent_app, 'template_manager'):
+                    template_manager = parent_app.template_manager
+                    if hasattr(template_manager, 'get_structure'):
+                        # Try variations of structure names
+                        structure_name = f"Template_{template_name}"
+                        structure = template_manager.get_structure(structure_name)
+                        
+                        # If not found, try with _ in place of spaces
+                        if not structure and ' ' in template_name:
+                            underscore_name = template_name.replace(' ', '_')
+                            structure_name = f"Template_{underscore_name}"
+                            structure = template_manager.get_structure(structure_name)
+                        
+                        if structure:
+                            print(f"Found structure for template: {template_name}")
+                            is_new = False
+            
             # Create and show the editor
             editor = EnhancedStructureEditorWithFallback(
                 parent_app,
-                structure_name=None,
-                is_new=True,
-                project_type=None
+                structure_name=structure_name,
+                is_new=is_new,
+                project_type=None,
+                structure=structure,
+                template_name=template_name
             )
             editor.exec_()
         else:
@@ -1077,130 +1123,295 @@ class TemplateGallery(QWidget):
         
         return selected 
 
-    # --------------------------------------------
-    # Selection Handling Logic (New Unified Method)
-    # --------------------------------------------
-    def handle_template_item_press(self, template, is_modifier_click):
-        """Unified handler for item clicks (normal or modifier-based)."""
-        print(f"\n--- Handle Item Press ---")
-        template_name = template.get('name', 'Unknown') if isinstance(template, dict) else str(template)
-        print(f"Item: {template_name}, Modifier Click: {is_modifier_click}")
-
-        # Ensure multi-select list exists
-        if not hasattr(self, 'multi_selected_templates'):
-            self.multi_selected_templates = []
-        
-        # Get current state BEFORE making changes
-        current_primary = getattr(self, 'selected_template', None)
-        
-        if not is_modifier_click:
-            # --- Normal Click --- 
-            print("Handling Normal Click")
-            # Set new primary selection
-            self.selected_template = template
-            # Clear previous multi-selection
-            self.multi_selected_templates.clear()
-            print("Cleared multi-selection list")
+    # --- New Handlers for Table View Signals --- 
+    def _on_table_item_clicked(self, index: QModelIndex):
+        """Handle single click on a row in the TemplateTableView."""
+        if not index.isValid():
+            return
             
-        else:
-            # --- Modifier Click (Ctrl/Cmd or Shift) ---
-            print("Handling Modifier Click")
-            # Ensure multi-selecting mode flag is set
-            self.is_multi_selecting = True
+        proxy_model = self.template_table_view.model()
+        source_model = proxy_model.sourceModel()
+        source_index = proxy_model.mapToSource(index)
+        # Use source model and index for getting items
+        name_item = source_model.item(source_index.row(), 0) # Assuming Name is column 0
+        if name_item:
+            template_name = name_item.text()
+            print(f"DEBUG: Table item clicked: {template_name}")
             
-            # Check if clicking on the current primary selection
-            if current_primary == template:
-                # If clicking the primary selection with modifier:
-                # 1. Toggle it in the multi-selection list
-                if template in self.multi_selected_templates:
-                    self.multi_selected_templates.remove(template)
-                    print(f"Removed primary '{template_name}' from multi-select")
-                else:
-                    self.multi_selected_templates.append(template)
-                    print(f"Added primary '{template_name}' to multi-select")
-                # Leave it as the primary selection
+            # Find the corresponding template data dictionary
+            template_data = self.template_manager.get_template(template_name)
+            if template_data:
+                 # Use the existing selection logic
+                 self._on_template_select(template_data) 
             else:
-                # Clicking on a non-primary item with modifier
-                
-                # First make sure current primary is in multi-select if it exists
-                if current_primary and current_primary not in self.multi_selected_templates:
-                    self.multi_selected_templates.append(current_primary)
-                    print(f"Added previous primary to multi-select")
-                
-                # Now toggle the clicked item's multi-selection state
-                if template in self.multi_selected_templates:
-                    # If removing from multi-selection
-                    self.multi_selected_templates.remove(template)
-                    print(f"Removed '{template_name}' from multi-select")
-                    
-                    # If removing the clicked item, DON'T make it the primary selection
-                    # but we still need a valid primary selection if possible
-                    if current_primary:
-                        # Keep current primary selection
-                        pass
-                    elif self.multi_selected_templates:
-                        # Use the first multi-selected item as primary
-                        self.selected_template = self.multi_selected_templates[0]
-                        print(f"Set first multi-selected item as new primary")
-                    else:
-                        # Nothing else selected, make this the primary even though unselected
-                        self.selected_template = template
-                        print(f"No other selections - '{template_name}' remains primary")
-                else:
-                    # Adding to multi-selection
-                    self.multi_selected_templates.append(template)
-                    print(f"Added '{template_name}' to multi-select")
-                    
-                    # Make this the new primary selection
-                    self.selected_template = template
-                    print(f"Set '{template_name}' as primary selection")
+                print(f"[WARNING] Could not find template data for '{template_name}'")
 
-        # --- Update Visuals --- 
-        self._update_selection_visuals()
-        print(f"Final Primary: {self.selected_template.get('name', 'Unknown') if self.selected_template else 'None'}")
-        print(f"Final Multi-Select: {[t.get('name', 'Unknown') for t in self.multi_selected_templates]}")
-        print("--- End Handle Item Press ---\n")
+    def _on_table_item_double_clicked(self, index: QModelIndex):
+        """Handle double click on a row in the TemplateTableView."""
+        if not index.isValid():
+            return
+
+        proxy_model = self.template_table_view.model()
+        source_model = proxy_model.sourceModel()
+        source_index = proxy_model.mapToSource(index)
+        # Use source model and index for getting items
+        name_item = source_model.item(source_index.row(), 0) # Assuming Name is column 0
+        if name_item:
+            template_name = name_item.text()
+            print(f"DEBUG: Table item double-clicked: {template_name}")
+            
+            # Trigger the edit action (or whatever double-click should do)
+            self._on_edit_template(template_name=template_name)
+
+    def _on_table_header_clicked(self, logicalIndex):
+        """Handle click on a table header section to trigger sorting."""
+        header_view = self.template_table_view.horizontalHeader()
+        model = header_view.model() # Get the model associated with the header
+        sort_field = model.headerData(logicalIndex, Qt.Horizontal, Qt.DisplayRole)
         
-        # Emit signal for app-level updates (like property editor)
-        if hasattr(self, 'template_selected'):
-            self.template_selected.emit(self.selected_template)
+        if sort_field:
+            print(f"DEBUG: Table header clicked: Index={logicalIndex}, Field='{sort_field}'")
+            # Call the sorting function from GalleryTemplatesSetup
+            GalleryTemplatesSetup.set_template_sort(self, sort_field)
+        else:
+            print(f"[WARNING] Could not get header field name for index {logicalIndex}")
 
-    def _update_selection_visuals(self):
-        """Unified method to update selection visuals for all items (grid and list)."""
-        print("Updating selection visuals...")
-        primary_selection = getattr(self, 'selected_template', None)
-        multi_selection = getattr(self, 'multi_selected_templates', [])
+    def _show_table_context_menu(self, position: QPoint):
+        """Show context menu for the selected item(s) in the table view."""
+        table_view = self.template_table_view
+        selected_indexes = table_view.selectionModel().selectedRows() # Get selected row indexes (Column 0)
+        
+        template_names = []
+        if selected_indexes:
+             proxy_model = table_view.model()
+             source_model = proxy_model.sourceModel()
+             
+             for index in selected_indexes:
+                 # Map proxy index to source index
+                 source_index = proxy_model.mapToSource(index)
+                 # Get item from source model
+                 name_item = source_model.item(source_index.row(), 0) # Assuming Name is column 0
+                 if name_item:
+                     template_names.append(name_item.text())
 
-        # Update Grid View Cards
-        if hasattr(self, 'template_cards'):
-            for card in self.template_cards:
-                if hasattr(card, 'template'):
-                    is_primary = (card.template == primary_selection)
-                    is_multi = (card.template in multi_selection)
-                    
-                    if hasattr(card, 'set_selected'):
-                        card.set_selected(is_primary)
-                    if hasattr(card, 'set_multi_selected'):
-                        # Ensure multi-selected state reflects list membership, even for primary
-                        card.set_multi_selected(is_multi) 
+        if not template_names:
+            print("DEBUG: Table context menu requested, but no rows selected.")
+            # Optionally show a generic menu (e.g., Add Template) or do nothing
+            self._show_gallery_context_menu(table_view.mapToGlobal(position)) # Fallback to gallery menu
+            return
+        
+        print(f"DEBUG: Showing table context menu for: {template_names}")
+        menu = ContextMenu(self)
+        
+        # --- Actions --- 
+        if len(template_names) == 1:
+            template_name = template_names[0]
+            edit_action = QAction("Edit", self)
+            edit_action.triggered.connect(lambda: self._on_edit_template(template_name=template_name))
+            menu.addAction(edit_action)
+            
+            # Export Template action
+            export_action = QAction("Export", self)
+            export_action.triggered.connect(lambda: GalleryEvents.on_export_template(self, template_name))
+            menu.addAction(export_action)
 
-        # Update List View Items
-        if hasattr(self, 'template_item_map') and self.template_item_map:
-            for item_name, list_item in self.template_item_map.items():
-                if hasattr(list_item, 'template'):
-                    is_primary = (list_item.template == primary_selection)
-                    is_multi = (list_item.template in multi_selection)
-                    
-                    if hasattr(list_item, 'setSelected'):
-                        list_item.setSelected(is_primary)
-                    if hasattr(list_item, 'setMultiSelected'):
-                        # Ensure multi-selected state reflects list membership, even for primary
-                        list_item.setMultiSelected(is_multi)
-        print("...Visuals updated")
+            # Duplicate Template action
+            duplicate_action = QAction("Duplicate", self)
+            duplicate_action.triggered.connect(lambda: GalleryEvents.on_duplicate_template(self, template_name))
+            menu.addAction(duplicate_action)
 
-    # --------------------------------------------
+            # Rename Template action
+            rename_action = QAction("Rename", self)
+            rename_action.triggered.connect(lambda: GalleryEvents.on_rename_template(self, template_name))
+            menu.addAction(rename_action)
+
+            menu.addSeparator()
+        
+        # Move to Folder (Submenu) - For single or multiple items
+        move_menu = menu.addMenu("Move to Folder")
+        folders = self.template_manager.get_folders() if self.template_manager else []
+        if folders:
+            for folder_name in sorted(folders):
+                move_action = QAction(folder_name, self)
+                # Use lambda with default args to capture current names and folder
+                move_action.triggered.connect(lambda checked=False, names=list(template_names), fn=folder_name: 
+                    GalleryEvents.on_move_template_to_folder(self, names, fn))
+                move_menu.addAction(move_action)
+        else:
+             move_menu.setEnabled(False) # Disable if no folders exist
+
+        # Remove from Folder (if currently in a folder context)
+        if self.current_folder:
+            remove_from_folder_action = QAction(f"Remove from '{self.current_folder}'", self)
+            remove_from_folder_action.triggered.connect(lambda checked=False, names=list(template_names): 
+                 GalleryEvents.on_remove_template_from_folder(self, names, self.current_folder))
+            menu.addAction(remove_from_folder_action)
+            menu.addSeparator()
+
+        # Delete action (works for single or multiple)
+        delete_text = f"Delete Template" if len(template_names) == 1 else f"Delete {len(template_names)} Templates"
+        
+        # Define a helper function to handle deletion of multiple items
+        def delete_selected():
+            print(f"DEBUG: Deleting templates: {template_names}")
+            for name in template_names:
+                # Call the existing single-delete method for each selected template
+                self._on_delete_template(template_name=name) 
+            print(f"DEBUG: Finished deleting {len(template_names)} templates.")
+
+        # Use addRedDeleteAction for proper styling of the delete option
+        menu.addRedDeleteAction(
+            parent=self,
+            callback=delete_selected, # Use the helper function
+            text=delete_text
+        )
+        
+        # --- Show Menu --- 
+        global_position = table_view.viewport().mapToGlobal(position)
+        menu.exec_(global_position)
+    # ----------------------------------------------
 
     # Additional methods and properties
+    # ... (keep the existing methods and properties)
+    # ...
+    # ... 
+
+    # --- Unified Selection Handler ---
+    def handle_template_item_press(self, template, is_modifier_click):
+        """Handles clicks on template items (cards or list rows) for selection."""
+        template_name = template.get('name') if isinstance(template, dict) else None
+        if not template_name:
+            print("ERROR: Template item press with invalid template data.")
+            return
+
+        print(f"🔍 LISTENER: Handling press for '{template_name}', modifier: {is_modifier_click}")
+
+        # Determine current selection state
+        is_currently_primary_selected = self.selected_template and self.selected_template.get('name') == template_name
+        is_currently_multi_selected = template in self.multi_selected_templates
+
+        if not is_modifier_click:
+            # --- Single Click (No Modifiers) ---
+            # Only clear multi-selection if the clicked item WASN'T already part of it.
+            # This allows starting a drag on a multi-selected group even if the modifier key
+            # was released before the drag starts.
+            if not is_currently_multi_selected:
+                 self.multi_selected_templates = []
+                 print(f"🔍 LISTENER: Single click on non-multi-selected item - clearing multi-select.")
+            else:
+                 print(f"🔍 LISTENER: Single click on multi-selected item - preserving multi-select for potential drag.")
+                 
+            # Set this template as the primary selection
+            self.selected_template = template
+            print(f"🔍 LISTENER: Single click - setting primary selection to '{template_name}'")
+
+        else:
+            # --- Modifier Click (Ctrl/Cmd or Shift) ---
+            if is_currently_primary_selected and len(self.multi_selected_templates) <= 1:
+                 # If clicking the already primary-selected item with a modifier,
+                 # start multi-selection with this item.
+                 if template not in self.multi_selected_templates:
+                      self.multi_selected_templates.append(template)
+                 print(f"🔍 LISTENER: Modifier click on primary - starting multi-select with '{template_name}'")
+            elif is_currently_multi_selected:
+                 # If clicking an already multi-selected item, deselect it
+                 self.multi_selected_templates.remove(template)
+                 # If this was also the primary selection, clear primary
+                 if is_currently_primary_selected:
+                      self.selected_template = None
+                 print(f"🔍 LISTENER: Modifier click - deselecting '{template_name}' from multi-select")
+            else:
+                 # --- Modifier click on a NEW item --- 
+                 # Add the new item to the multi-selection list
+                 if template not in self.multi_selected_templates:
+                      self.multi_selected_templates.append(template)
+                 # IMPORTANT: DO NOT change self.selected_template here.
+                 # Keep the original primary selection unless a non-modifier click occurs.
+                 # This allows adding multiple items while preserving the initial anchor.
+                 print(f"🔍 LISTENER: Modifier click - adding '{template_name}' to multi-select")
+                 # If this is the *second* item selected (first modifier click after initial click),
+                 # ensure the *original* primary selection is also in the multi-select list.
+                 if len(self.multi_selected_templates) == 1 and self.selected_template and self.selected_template not in self.multi_selected_templates:
+                     self.multi_selected_templates.insert(0, self.selected_template)
+                     print(f"🔍 LISTENER: Ensuring original primary '{self.selected_template.get('name')}' is in multi-select")
+
+        # Update UI based on new selection state
+        self._update_selection_ui()
+
+        # Emit signals as needed
+        self.template_selected.emit(self.selected_template if self.selected_template else {}) # Emit primary selection
+
+    # --- End Unified Selection Handler ---
+
+    def _update_selection_ui(self):
+        """Updates the visual selection state of all items (cards/rows)."""
+        print(f"🔍 LISTENER: Updating template selection UI")
+        is_multi_select_mode = len(self.multi_selected_templates) > 1
+        primary_selected_name = self.selected_template.get('name') if self.selected_template else None
+        multi_selected_names = {t.get('name') for t in self.multi_selected_templates if isinstance(t, dict)}
+
+        print(f"🔍 LISTENER: In multi-selection mode: {is_multi_select_mode}")
+        print(f"🔍 LISTENER: Primary selection: {primary_selected_name}")
+        print(f"🔍 LISTENER: Multi-selection count: {len(multi_selected_names)}")
+
+        # Update Template Cards
+        for card in self.template_cards:
+            card_template_name = card.template_name()
+            is_primary = card_template_name == primary_selected_name
+            is_multi = card_template_name in multi_selected_names
+
+            print(f"🔍 LISTENER: Setting multi-selection state of '{card_template_name}' to {is_multi}")
+            card.set_multi_selected(is_multi) # Set multi-selected first
+
+            if is_primary:
+                 print(f"🔍 LISTENER: Setting '{card_template_name}' as selected")
+                 card.set_selected(True)
+            else:
+                 # Only deselect if not part of the multi-selection group
+                 if not is_multi:
+                     print(f"🔍 LISTENER: Setting '{card_template_name}' as NOT selected")
+                     card.set_selected(False)
+
+        # Update Table View (if it exists and is visible)
+        if self.template_table_view and self.template_table_view.isVisible():
+            model = self.template_table_view.model() # Use the proxy model
+            selection_model = self.template_table_view.selectionModel()
+            if not selection_model:
+                print("WARNING: No selection model found for table view")
+                return
+
+            selection_model.clear() # Clear existing selection first
+
+            # Select rows corresponding to the multi_selected_templates
+            for row in range(model.rowCount()):
+                index = model.index(row, 0) # Get index for the Name column
+                source_index = model.mapToSource(index) # Map to source model index if needed
+                # Retrieve template data associated with this row (might need adjustment)
+                # This assumes template data is stored or accessible via the model index
+                # Example: Get name from DisplayRole
+                item_name = model.data(index, Qt.DisplayRole)
+
+                if item_name in multi_selected_names:
+                    # Select the entire row
+                    selection_model.select(index, QItemSelectionModel.Select | QItemSelectionModel.Rows)
+
+            # Ensure the primary selected item is also current/highlighted if needed
+            if primary_selected_name:
+                 for row in range(model.rowCount()):
+                     index = model.index(row, 0)
+                     item_name = model.data(index, Qt.DisplayRole)
+                     if item_name == primary_selected_name:
+                         self.template_table_view.setCurrentIndex(index)
+                         break
+
+        print(f"DEBUG: Finished updating selection UI")
+
+    def _on_folder_card_clicked(self, folder_name):
+        """Handle clicks on folder cards."""
+        # Implement the logic to handle folder card clicks
+        print(f"🔍 LISTENER: Folder card clicked: {folder_name}")
+        # This method should be implemented to handle folder card clicks
+
     # ... (keep the existing methods and properties)
     # ...
     # ... 

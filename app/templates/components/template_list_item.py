@@ -219,10 +219,11 @@ class TemplateListItem(QFrame):
             # Add Delete action with appropriate callback based on selection state
             if has_multi:
                 delete_text = "Delete Selected Templates"
-                delete_callback = lambda: self._delete_multi_selected(gallery)
+                delete_callback = lambda: self._safe_delete(gallery, template_name)
             else:
                 delete_text = "Delete"
-                delete_callback = lambda: self.deleteRequested.emit(template_name)
+                # Call our safer method instead of _delete_multi_selected directly
+                delete_callback = lambda: self._safe_delete(gallery, template_name)
                 
             menu.addRedDeleteAction(
                 parent=self,
@@ -232,6 +233,11 @@ class TemplateListItem(QFrame):
             
             # Add separator
             menu.addSeparator()
+            
+            # Add duplicate template option
+            duplicate_action = QAction("Duplicate", self)
+            duplicate_action.triggered.connect(lambda: self._duplicate_template(template_name))
+            menu.addAction(duplicate_action)
             
             # Add export template option
             export_action = QAction("Export Template...", self)
@@ -301,6 +307,20 @@ class TemplateListItem(QFrame):
                 }
             """)
             
+            # Make sure gallery is defined
+            if not gallery:
+                print("[ERROR] No gallery reference found for fallback menu")
+                # Try to find gallery one more time
+                parent = self.parent()
+                while parent:
+                    if hasattr(parent, 'multi_selected_templates'):
+                        gallery = parent
+                        print("[INFO] Found gallery reference through parent hierarchy")
+                        break
+                    parent = parent.parent()
+            
+            print(f"[DEBUG] Fallback menu gallery reference exists: {gallery is not None}")
+            
             # Create actions
             edit_action = QAction("Edit Template", self)
             delete_action = QAction("Delete Template", self)
@@ -311,10 +331,14 @@ class TemplateListItem(QFrame):
             menu.addAction(delete_action)
             menu.addAction(duplicate_action)
             
-            # Connect actions to slots
+            # Connect actions to slots - with error handling
             edit_action.triggered.connect(lambda: self.editRequested.emit(template_name))
-            delete_action.triggered.connect(lambda: self.deleteRequested.emit(template_name))
-            duplicate_action.triggered.connect(lambda: self._duplicate_template())
+            
+            # Use try/except for delete to prevent crashes
+            delete_action.triggered.connect(lambda: self._safe_delete(gallery, template_name))
+            
+            # Use safer duplicate implementation
+            duplicate_action.triggered.connect(lambda: self._duplicate_template(template_name))
             
         # Show the menu at the requested position
         menu.exec_(self.mapToGlobal(position))
@@ -421,49 +445,182 @@ class TemplateListItem(QFrame):
         """Handle deletion of multiple selected templates"""
         # Make sure we're working with a valid gallery
         if not gallery or not hasattr(gallery, 'multi_selected_templates'):
+            print("[ERROR] Cannot delete: invalid gallery reference or multi_selected_templates missing")
             return
             
-        # Get the list of selected templates
-        selected_templates = list(gallery.multi_selected_templates)
-        
-        # Don't proceed if nothing is selected
-        if not selected_templates:
-            return
+        try:
+            # Print current selection states for debugging
+            if hasattr(gallery, 'selected_template') and gallery.selected_template:
+                if isinstance(gallery.selected_template, dict):
+                    print(f"🔍 LISTENER: Current primary selection: {gallery.selected_template.get('name', 'Unknown')}")
+                else:
+                    print(f"🔍 LISTENER: Current primary selection: {str(gallery.selected_template)}")
+            else:
+                print(f"🔍 LISTENER: No primary selection")
+                
+            if hasattr(gallery, 'multi_selected_templates'):
+                template_names = []
+                for t in gallery.multi_selected_templates:
+                    if isinstance(t, dict):
+                        template_names.append(t.get('name', 'Unknown'))
+                    else:
+                        template_names.append(str(t))
+                print(f"🔍 LISTENER: Current multi-selection: {template_names}")
             
-        # Create confirmation dialog
-        from PyQt5.QtWidgets import QMessageBox
-        confirm_msg = QMessageBox()
-        confirm_msg.setIcon(QMessageBox.Warning)
-        
-        # Customize message based on number of templates
-        if len(selected_templates) == 1:
-            template_name = selected_templates[0].get('name', '') if isinstance(selected_templates[0], dict) else str(selected_templates[0])
-            confirm_msg.setWindowTitle("Delete Template")
-            confirm_msg.setText(f"Are you sure you want to delete the template '{template_name}'?")
-        else:
-            confirm_msg.setWindowTitle("Delete Multiple Templates")
-            confirm_msg.setText(f"Are you sure you want to delete {len(selected_templates)} templates?")
-        
-        confirm_msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        confirm_msg.setDefaultButton(QMessageBox.No)
-        
-        # If confirmed, delete all selected templates
-        if confirm_msg.exec_() == QMessageBox.Yes:
-            for template in selected_templates:
-                template_name = template.get('name', '') if isinstance(template, dict) else str(template)
-                # Emit the delete signal for each template
-                self.deleteRequested.emit(template_name)
+            # First, detect what we're deleting
+            has_primary = hasattr(gallery, 'selected_template') and gallery.selected_template is not None
+            has_multi = (hasattr(gallery, 'multi_selected_templates') and 
+                       gallery.multi_selected_templates and 
+                       len(gallery.multi_selected_templates) > 0)
             
-            # Clear the multi-selection
-            gallery.multi_selected_templates.clear()
+            # If nothing to delete, exit
+            if not has_primary and not has_multi:
+                print(f"🔍 LISTENER: No templates selected for deletion")
+                return
+            
+            # Create a fresh set of templates to delete (using set for deduplication)
+            templates_to_delete_set = set()
+            templates_to_delete = []
+            
+            # ALWAYS include the primary selected template FIRST if it exists
+            if has_primary:
+                if isinstance(gallery.selected_template, dict):
+                    primary_name = gallery.selected_template.get('name', 'Unknown')
+                else:
+                    primary_name = str(gallery.selected_template)
+                templates_to_delete.append(gallery.selected_template)
+                templates_to_delete_set.add(id(gallery.selected_template))  # Add object id to set for tracking
+                print(f"🔍 LISTENER: Including primary selected template in delete operation: {primary_name}")
+            
+            # Then add the multi-selected templates
+            if has_multi:
+                for template in gallery.multi_selected_templates:
+                    template_id = id(template)
+                    if template_id not in templates_to_delete_set:
+                        templates_to_delete.append(template)
+                        templates_to_delete_set.add(template_id)
+                        if isinstance(template, dict):
+                            print(f"🔍 LISTENER: Adding multi-selected template to delete operation: {template.get('name', 'Unknown')}")
+                        else:
+                            print(f"🔍 LISTENER: Adding multi-selected template to delete operation: {str(template)}")
+            
+            # Verify total count matches expectations
+            expected_count = (1 if has_primary else 0) + (len(gallery.multi_selected_templates) if has_multi else 0)
+            actual_count = len(templates_to_delete)
+            print(f"🔍 LISTENER: Expected {expected_count} templates, found {actual_count} templates after deduplication")
+            
+            # If no templates to delete, exit
+            if not templates_to_delete:
+                print(f"🔍 LISTENER: No templates to delete after processing")
+                return
+            
+            # Get template names for display and deletion
+            template_names = []
+            for template in templates_to_delete:
+                if isinstance(template, dict) and 'name' in template:
+                    name = template['name']
+                elif isinstance(template, dict) and hasattr(template, 'get'):
+                    name = template.get('name', 'Unknown')
+                elif isinstance(template, str):
+                    name = template
+                else:
+                    name = str(template)
+                    
+                if name and name not in template_names:
+                    template_names.append(name)
+                    print(f"🔍 LISTENER: Template to delete: '{name}'")
+            
+            # If no valid template names, exit
+            if not template_names:
+                print(f"🔍 LISTENER: No valid template names found for deletion")
+                return
+                
+            print(f"🔍 LISTENER: Final delete list ({len(template_names)} templates): {template_names}")
+            
+            # Create confirmation message
+            if len(template_names) == 1:
+                message = f"Are you sure you want to delete template '{template_names[0]}'?"
+            else:
+                message = f"Are you sure you want to delete these {len(template_names)} templates?"
+            
+            # Create confirmation dialog
+            from PyQt5.QtWidgets import QMessageBox
+            confirm = QMessageBox.question(
+                self,
+                "Confirm Delete",
+                message,
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if confirm == QMessageBox.Yes:
+                # Find the app and template_manager
+                app = None
+                if hasattr(gallery, 'app'):
+                    app = gallery.app
+                elif hasattr(self, 'gallery') and hasattr(self.gallery, 'app'):
+                    app = self.gallery.app
+                
+                # Check if we have a valid app and template_manager
+                if app and hasattr(app, 'template_manager'):
+                    success_count = 0
+                    error_count = 0
+                    for name in template_names:
+                        try:
+                            print(f"🔍 LISTENER: Deleting template '{name}'")
+                            if app.template_manager.delete_template(name):
+                                success_count += 1
+                            else:
+                                error_count += 1
+                                print(f"[ERROR] Template manager failed to delete template '{name}'")
+                        except Exception as e:
+                            error_count += 1
+                            print(f"[ERROR] Exception when deleting template '{name}': {e}")
+                            import traceback
+                            traceback.print_exc()
+                    
+                    print(f"🔍 LISTENER: Delete operation completed - Success: {success_count}, Errors: {error_count}")
+                    
+                    # Show success message
+                    if hasattr(app, 'show_status_message'):
+                        if len(template_names) == 1:
+                            app.show_status_message(f"Deleted template '{template_names[0]}'", "success")
+                        else:
+                            app.show_status_message(f"Deleted {len(template_names)} templates", "success")
+                else:
+                    print("[ERROR] Cannot delete templates: app or template_manager not available")
+                    
+                # Clear the multi-selection
+                if gallery and hasattr(gallery, 'multi_selected_templates'):
+                    gallery.multi_selected_templates.clear()
+                
+                # Refresh the gallery if possible
+                try:
+                    if gallery and hasattr(gallery, 'populate_gallery'):
+                        gallery.populate_gallery(force_refresh=True)
+                except Exception as e:
+                    print(f"[ERROR] Failed to refresh gallery after delete: {e}")
+        except Exception as e:
+            print(f"[ERROR] Exception in _delete_multi_selected: {e}")
+            import traceback
+            traceback.print_exc()
 
-    def _duplicate_template(self):
+    def _duplicate_template(self, template_name):
         """Duplicate the template if gallery has the method"""
-        if hasattr(self.gallery, 'duplicate_template'):
-            template_name = self.template.get('name', '') if isinstance(self.template, dict) else str(self.template)
-            self.gallery.duplicate_template(template_name)
+        gallery = self.gallery
+        if not gallery:
+            # Try to find gallery by traversing parent hierarchy
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, 'multi_selected_templates'):
+                    gallery = parent
+                    break
+                parent = parent.parent()
+        
+        if gallery and hasattr(gallery, 'app'):
+            from app.templates.gallery_events import GalleryEvents
+            GalleryEvents.on_duplicate_template(gallery, template_name)
         else:
-            print("Template duplication not supported by gallery")
+            print(f"[ERROR] Could not duplicate template '{template_name}': Gallery not found or missing app reference")
 
     def _update_styling(self):
         """Update the styling of the list item based on its state"""
@@ -640,7 +797,6 @@ class TemplateListItem(QFrame):
             else:
                 # No gallery parent found, just select locally (no multi-select possible)
                 self.setSelected(True)
-                self._update_styling()
                 self.clicked.emit(self.template)
             
             # Accept the event to prevent propagation
@@ -967,4 +1123,41 @@ class TemplateListItem(QFrame):
             elif event.type() == QEvent.Leave:
                 self.hover = False
                 self._update_styling()
-        return super().eventFilter(obj, event) 
+        return super().eventFilter(obj, event)
+
+    def _safe_delete(self, gallery, template_name):
+        """Safe wrapper for delete operation to prevent crashes"""
+        try:
+            print(f"[DEBUG] Safe delete called for template: {template_name}")
+            
+            # Check if we have a gallery
+            if not gallery:
+                print("[ERROR] No gallery reference for safe delete, trying to find it")
+                # Try to find gallery through parent hierarchy
+                parent = self.parent()
+                while parent:
+                    if hasattr(parent, 'multi_selected_templates'):
+                        gallery = parent
+                        print("[INFO] Found gallery in safe_delete through parent hierarchy")
+                        break
+                    parent = parent.parent()
+            
+            if gallery:
+                print(f"[DEBUG] Using _delete_multi_selected with gallery reference")
+                self._delete_multi_selected(gallery)
+            else:
+                print(f"[ERROR] No gallery reference found for delete operation")
+                # Last resort, try direct signal
+                print(f"[WARNING] Falling back to direct deleteRequested signal")
+                self.deleteRequested.emit(template_name)
+        except Exception as e:
+            print(f"[ERROR] Exception in _safe_delete: {e}")
+            import traceback
+            traceback.print_exc()
+            # Last attempt - try direct signal
+            try:
+                print(f"[WARNING] Attempting direct deleteRequested signal after exception")
+                self.deleteRequested.emit(template_name)
+            except Exception as e2:
+                print(f"[ERROR] Even direct deleteRequested signal failed: {e2}")
+                traceback.print_exc() 

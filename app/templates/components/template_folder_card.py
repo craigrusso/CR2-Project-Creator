@@ -1,18 +1,20 @@
 # template_folder_card.py
 
-from PyQt5.QtWidgets import QFrame, QLabel, QLineEdit, QVBoxLayout, QHBoxLayout, QMessageBox, QMenu, QAction
-from PyQt5.QtCore import pyqtSignal, Qt, QTimer, QEvent
-from PyQt5.QtGui import QFont, QIcon, QPixmap, QCursor, QColor
-from app.ui.color_scheme_pyqt import colors, MENU_DESTRUCTIVE_ITEM_STYLE, DELETE_TEXT_STYLE
+from PyQt5.QtWidgets import QFrame, QLabel, QLineEdit, QVBoxLayout, QHBoxLayout, QMessageBox, QMenu, QAction, QWidget
+from PyQt5.QtCore import pyqtSignal, Qt, QTimer, QEvent, QPoint, QRect, QRectF
+from PyQt5.QtGui import QFont, QIcon, QPixmap, QCursor, QColor, QFontMetrics, QPainter, QBrush, QPen, QPainterPath, QLinearGradient
 from .utils import SYSTEM_FONT
-import os
+from .common_styles import CARD_NORMAL, CARD_HOVER, CARD_SELECTED
+from app.ui.color_scheme_pyqt import colors, MENU_DESTRUCTIVE_ITEM_STYLE, DELETE_TEXT_STYLE
 from app.templates.components.menu_actions import ContextMenu
+from app.constants import get_resource_path
 
 class TemplateFolderCard(QFrame):
     clicked = pyqtSignal(str)
     doubleClicked = pyqtSignal(str)
     renameRequested = pyqtSignal(str)
     renameDone = pyqtSignal(str, str)
+    deleteRequested = pyqtSignal(str)
 
     def __init__(self, parent=None, folder_name="", app=None):
         super().__init__(parent)
@@ -21,6 +23,7 @@ class TemplateFolderCard(QFrame):
         self.selected = False
         self.hover = False
         self.editing = False
+        self.setAcceptDrops(True)
 
         self.click_timer = QTimer()
         self.click_timer.setSingleShot(True)
@@ -29,47 +32,107 @@ class TemplateFolderCard(QFrame):
         self.click_pending = False
 
         self.setFrameShape(QFrame.NoFrame)
-        self.setFixedSize(120, 120)  # This size is for the whole card
+        self.setMinimumSize(120, 130)  # Increase minimum height for text
         self.setCursor(Qt.PointingHandCursor)
-        self.setAcceptDrops(True)
 
         # Layouts
         self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(2, 2, 2, 0)
-        self.layout.setSpacing(0)
+        self.layout.setContentsMargins(10, 10, 10, 10)
+        self.layout.setSpacing(8)  # Increase spacing between icon and text
 
-        # Icon - create with fixed size that can be adjusted
-        self.icon_layout = QHBoxLayout()
-        self.icon_layout.setAlignment(Qt.AlignCenter)
-        self.icon_label = QLabel("📁")
-        self.icon_label.setFont(QFont(SYSTEM_FONT, 40))
-        self.icon_label.setFixedSize(64, 64)  # Default icon size at 100% scale
+        # Icon Label (3D macOS-style Folder Icon)
+        self.icon_label = QLabel()
         self.icon_label.setAlignment(Qt.AlignCenter)
-        self.icon_layout.addWidget(self.icon_label)
-        self.layout.addLayout(self.icon_layout)
-
-        # Title label
-        self.title = QLabel(folder_name)
-        self.title.setFont(QFont(SYSTEM_FONT, 12))
-        self.title.setAlignment(Qt.AlignCenter)
-        self.title.setWordWrap(True)
-        self.layout.addWidget(self.title)
-
-        # Apply base styling with transparent background
-        self.setStyleSheet("background: transparent; border: none;")
         
-        # Inline edit field
-        self.name_edit = QLineEdit(folder_name)
-        self.name_edit.setFont(QFont(SYSTEM_FONT, 12))
-        self.name_edit.setAlignment(Qt.AlignCenter)
-        self.name_edit.editingFinished.connect(self._finish_rename)
-        self.name_edit.hide()
-        self.layout.addWidget(self.name_edit)
+        # Create flat folder icon
+        folder_icon = self._create_folder_icon(64, 64)
+        self.icon_label.setPixmap(folder_icon)
+        self.layout.addWidget(self.icon_label, 0, Qt.AlignCenter)  # Force center alignment
+
+        # Folder Name Label/LineEdit
+        self.name_container = QWidget()
+        self.name_container.setObjectName("folderNameContainer")
+        # Make container background transparent
+        self.name_container.setStyleSheet("background-color: transparent;")
+        self.name_layout = QHBoxLayout(self.name_container)
+        self.name_layout.setContentsMargins(0, 0, 0, 0)
+        self.name_layout.setSpacing(0)
+
+        self.name_label = QLabel(self.folder_name)
+        self.name_label.setAlignment(Qt.AlignCenter)
+        font = QFont(SYSTEM_FONT)
+        font.setPointSize(10)
+        self.name_label.setFont(font)
+        # Use text color from main `colors` dictionary
+        self.name_label.setStyleSheet(f"color: {colors.get('text', '#FFFFFF')}; background-color: transparent; font-size: 10pt;")
+        self.name_label.setWordWrap(True)
+        self.name_label.setFixedWidth(100)  # Set fixed width to ensure proper wrapping
+        self.name_layout.addWidget(self.name_label)
+
+        self.rename_edit = QLineEdit(self.folder_name)
+        self.rename_edit.setFont(font)
+        self.rename_edit.setAlignment(Qt.AlignCenter)
+        self.rename_edit.setStyleSheet(f"color: {colors.get('text', '#FFFFFF')}; background-color: {colors.get('input_bg', '#444444')}; border: 1px solid {colors.get('highlight_bg', '#5A5A5A')}; border-radius: 3px;")
+        self.rename_edit.editingFinished.connect(self._finish_rename)
+        self.rename_edit.returnPressed.connect(self._finish_rename) # Also finish on Enter
+        self.rename_edit.setVisible(False)
+        self.name_layout.addWidget(self.rename_edit)
+
+        self.layout.addWidget(self.name_container, 0, Qt.AlignCenter)  # Force center alignment
+
+        # Set frame background to transparent
+        self.setAutoFillBackground(False)
+        # Apply the background color from main app background
+        self.setStyleSheet(f"background-color: {colors.get('bg', '#1E1E1E')}; border-radius: 6px;")
 
         self.installEventFilter(self)
-        self.title.installEventFilter(self)
+        self.name_label.installEventFilter(self)
 
         self._update_styling()
+
+    def _create_folder_icon(self, width, height):
+        """Create a simple flat folder icon (non-3D)"""
+        pixmap = QPixmap(width, height)
+        pixmap.fill(Qt.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Calculate folder dimensions
+        folder_width = width * 0.75
+        folder_height = height * 0.65
+        x = (width - folder_width) / 2
+        y = (height - folder_height) / 2 + (height * 0.05)
+        
+        # Create folder path
+        folder_path = QPainterPath()
+        folder_path.addRoundedRect(QRectF(x, y, folder_width, folder_height), 4, 4)
+        
+        # Add tab to folder
+        tab_width = folder_width * 0.4
+        tab_height = folder_height * 0.2
+        tab_x = x + folder_width * 0.05
+        tab_y = y - tab_height * 0.7
+        
+        # Create tab path
+        tab_path = QPainterPath()
+        tab_path.addRoundedRect(QRectF(tab_x, tab_y, tab_width, tab_height), 2, 2)
+        
+        # Folder color - light blue
+        folder_color = QColor(100, 150, 240)
+        
+        # Fill the folder
+        painter.fillPath(folder_path, folder_color)
+        painter.fillPath(tab_path, folder_color)
+        
+        # Add outline
+        outline_pen = QPen(QColor(80, 120, 200), 1)
+        painter.setPen(outline_pen)
+        painter.drawPath(folder_path)
+        painter.drawPath(tab_path)
+        
+        painter.end()
+        return pixmap
 
     def _handle_single_click(self):
         if not self.editing:
@@ -77,56 +140,66 @@ class TemplateFolderCard(QFrame):
 
     def _update_styling(self):
         """Update the styling based on hover and selection state"""
-        # Base styles without gradients or complex effects
-        base_style = "background-color: transparent; border-radius: 6px;"
-        hover_style = f"background-color: {colors['hover_bg']}; border-radius: 6px;"
-        selected_style = f"background-color: {colors['accent']}; border-radius: 6px;"
+        # Get app bg color for normal state to match surrounding
+        app_bg = colors.get('bg', '#1E1E1E')
         
-        # Text styles
-        normal_text = f"color: {colors['text']}; background: transparent;"
-        highlight_text = f"color: {colors['highlight_text']}; background: transparent;"
-        
-        # Apply appropriate styles based on state
-        if self.selected:
-            # Selected style
-            self.setStyleSheet(f"QFrame {{ {selected_style} }}")
-            self.icon_label.setStyleSheet(highlight_text)
-            self.title.setStyleSheet(highlight_text)
+        if self.editing:
+            # Special style for renaming (maybe just keep border?)
+            self.setStyleSheet(f"background-color: {app_bg}; border-radius: 6px; border: 1px solid {colors.get('highlight_bg', '#FFFFFF')};")
+        elif self.selected:
+            self.setStyleSheet(f"background-color: {CARD_SELECTED}; border-radius: 6px; border: 1px solid {colors.get('highlight_border', '#FFFFFF')};")
         elif self.hover:
-            # Hover style
-            self.setStyleSheet(f"QFrame {{ {hover_style} }}")
-            self.icon_label.setStyleSheet(normal_text)
-            self.title.setStyleSheet(normal_text)
+            self.setStyleSheet(f"background-color: {CARD_HOVER}; border-radius: 6px; border: none;")
         else:
-            # Normal style
-            self.setStyleSheet(f"QFrame {{ {base_style} }}")
-            self.icon_label.setStyleSheet(normal_text)
-            self.title.setStyleSheet(normal_text)
+            self.setStyleSheet(f"background-color: {app_bg}; border-radius: 6px; border: none;")
+        # Update name label color based on selection too if needed
+        text_color = colors.get('highlight_text', '#FFFFFF') if self.selected else colors.get('text', '#DDDDDD')
+        self.name_label.setStyleSheet(f"color: {text_color}; background-color: transparent; font-size: 10pt;")
 
     def resize_icon(self, scale_percent):
-        """Resize just the icon based on scale percentage"""
-        # Base icon size at 100%
-        base_size = 64
+        """Resize just the icon based on scale percentage, preserving the macOS Finder behavior"""
+        # Base sizes at 100%
+        base_icon_size = 64
+        base_card_width = 120
+        base_card_height = 130
         
-        # Get available space in the card (accounting for minimal margins all around)
-        available_height = self.height() - 5  # Reserve only 5px for title and margins
-        available_width = self.width() - 5  # Reserve only 5px for horizontal margins
-        max_icon_size = min(available_height, available_width)  # Use the smaller dimension
+        # Calculate new sizes based on scale percentage
+        new_icon_size = int(base_icon_size * scale_percent / 100)
+        new_card_width = max(int(base_card_width * scale_percent / 100), 80)  # Minimum width of 80px
+        new_card_height = max(int(base_card_height * scale_percent / 100), 100)  # Minimum height
         
-        # Calculate new size based on scale percentage, but cap it to available space
-        new_size = min(int(base_size * scale_percent / 100), max_icon_size)
+        # Update card size
+        self.setFixedSize(new_card_width, new_card_height)
         
-        # Update icon size
-        self.icon_label.setFixedSize(new_size, new_size)
+        # Create properly scaled icon
+        folder_icon = self._create_folder_icon(new_icon_size, new_icon_size)
+        self.icon_label.setPixmap(folder_icon)
         
-        # Adjust font size based on the actual icon size
-        font_scale = new_size / base_size
-        font_size = int(40 * font_scale)
-        font_size = max(18, min(font_size, 60))  # Keep font size between 18 and 60
-        self.icon_label.setFont(QFont(SYSTEM_FONT, font_size))
+        # Set icon container size to prevent clipping
+        self.icon_label.setFixedSize(new_icon_size, new_icon_size)
+        
+        # Update spacing based on scale
+        spacing = max(int(8 * scale_percent / 100), 4)  # Minimum spacing of 4px
+        self.layout.setSpacing(spacing)
+        
+        # Set name label width based on card width
+        name_width = min(new_card_width - 20, 120)  # Keep some margin, max 120px
+        self.name_label.setFixedWidth(name_width)
+        
+        # Adjust font size only slightly based on scale - don't make it too small
+        font_size = max(int(10 * (0.7 + (scale_percent / 300))), 8)  # Min font size 8pt, don't scale too aggressively
+        
+        # Set a fixed font size
+        font = QFont(SYSTEM_FONT)
+        font.setPointSize(font_size)
+        self.name_label.setFont(font)
+        
+        # Also ensure text color is preserved
+        text_color = colors.get('highlight_text', '#FFFFFF') if self.selected else colors.get('text', '#DDDDDD')
+        self.name_label.setStyleSheet(f"color: {text_color}; background-color: transparent; font-size: {font_size}pt;")
 
     def eventFilter(self, obj, event):
-        if obj == self.title and event.type() == QEvent.MouseButtonDblClick:
+        if obj == self.name_label and event.type() == QEvent.MouseButtonDblClick:
             if not self.editing:
                 self._start_rename()
                 return True
@@ -137,78 +210,83 @@ class TemplateFolderCard(QFrame):
             self.doubleClicked.emit(self.folder_name)
 
     def dragEnterEvent(self, event):
-        """Handle drag enter event"""
-        if event.mimeData().hasText() or event.mimeData().hasFormat("application/x-template-multi-selection"):
-            self.hover = True
-            self._update_styling()
-            event.acceptProposedAction()
+        """Accept drops if they contain template names."""
+        if event.mimeData().hasFormat('application/x-echelon-template-names'):
+            event.setDropAction(Qt.MoveAction)
+            event.accept()
+            # Add visual feedback (e.g., highlight)
+            self.setStyleSheet(f"background-color: {colors.get('highlight_bg', '#4A90E2')}; border-radius: 6px; border: 1px solid {colors.get('highlight_border', '#FFFFFF')};")
         else:
             event.ignore()
 
     def dragLeaveEvent(self, event):
-        """Handle drag leave event"""
-        self.hover = False
-        self._update_styling()
+        """Remove visual feedback when drag leaves."""
+        self._update_styling() # Restore normal style
+        event.accept()
 
     def dropEvent(self, event):
-        """Handle drop event"""
-        mime_data = event.mimeData()
-        template_names = []
-        
-        # Check for multi-selection MIME format first
-        if mime_data.hasFormat("application/x-template-multi-selection"):
+        """Handle the drop event to move templates."""
+        if event.mimeData().hasFormat('application/x-echelon-template-names'):
+            encoded_data = event.mimeData().data('application/x-echelon-template-names')
             try:
-                # Get JSON data with multi-selected templates
-                multi_data = mime_data.data("application/x-template-multi-selection").data()
-                import json
-                template_names = json.loads(multi_data.decode())
-                print(f"[DEBUG] FolderListItem: Processing multi-selection drop with {len(template_names)} templates")
-            except Exception as e:
-                print(f"Error processing multi-selection drop: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        # Fallback to text-based format
-        elif mime_data.hasText():
-            text_data = mime_data.text()
-            # Check if this contains multiple templates (newline separated)
-            if '\n' in text_data:
-                template_names = text_data.strip().split('\n')
-                print(f"[DEBUG] FolderListItem: Detected newline-separated drop with {len(template_names)} templates")
-            else:
-                # Single template drop
-                template_name = text_data
-                template_names = [template_name]
-                print(f"[DEBUG] FolderListItem: Detected single template drop: '{template_name}'")
-        
-        # Process all templates
-        if template_names:
-            success_count = 0
-            for template_name in template_names:
-                if template_name and template_name.strip():  # Skip empty names
-                    try:
-                        success = self.app.template_manager.move_template_to_folder(template_name, self.folder_name)
-                        if success:
-                            success_count += 1
-                    except Exception as e:
-                        print(f"Error moving template '{template_name}': {e}")
-            
-            # Show success message if available
-            if success_count > 0 and hasattr(self.app, 'show_status_message'):
-                if success_count == 1:
-                    self.app.show_status_message(f"Moved template to '{self.folder_name}'", "success")
+                template_names_str = bytes(encoded_data).decode('utf-8')
+                template_names = template_names_str.split('\n')
+                template_names = [name for name in template_names if name] # Remove empty strings
+                
+                print(f"[DEBUG] FolderCard '{self.folder_name}': Dropped {len(template_names)} templates: {template_names}")
+
+                # Call the gallery/app handler to move the templates
+                gallery = self._find_gallery()
+                # Ensure gallery and template_manager exist
+                template_manager = None
+                if gallery and hasattr(gallery, 'template_manager'):
+                    template_manager = gallery.template_manager
+                elif gallery and hasattr(gallery, 'app') and hasattr(gallery.app, 'template_manager'):
+                    template_manager = gallery.app.template_manager
+                
+                if template_manager and hasattr(template_manager, 'move_template_to_folder'):
+                    success_count = 0
+                    for template_name in template_names:
+                        try:
+                            # Call the move function for each template
+                            success = template_manager.move_template_to_folder(template_name, self.folder_name)
+                            if success:
+                                success_count += 1
+                            else:
+                                print(f"[WARNING] Failed to move template '{template_name}' to folder '{self.folder_name}'")
+                        except Exception as move_error:
+                            print(f"[ERROR] Error moving template '{template_name}': {move_error}")
+
+                    if success_count > 0:
+                        print(f"Successfully moved {success_count}/{len(template_names)} templates to {self.folder_name}")
+                        event.setDropAction(Qt.MoveAction)
+                        event.accept()
+                        # Refresh the gallery view after move
+                        if hasattr(gallery, 'populate_gallery'):
+                            gallery.populate_gallery(force_refresh=True)
+                    else:
+                        print(f"[ERROR] Failed to move any templates.")
+                        event.ignore()
                 else:
-                    self.app.show_status_message(f"Moved {success_count} templates to '{self.folder_name}'", "success")
-            
-            event.acceptProposedAction()
-            self.hover = False
-            self._update_styling()
-            
-            # Refresh the gallery to show the updated contents
-            if hasattr(self.app, 'template_gallery') and self.app.template_gallery:
-                self.app.template_gallery.populate_gallery(force_refresh=True)
+                    print("[ERROR] Could not find template_manager or move_template_to_folder method.")
+                    event.ignore()
+
+            except Exception as e:
+                print(f"[ERROR] Failed to process drop data: {e}")
+                event.ignore()
         else:
             event.ignore()
+        
+        self._update_styling() # Restore normal style
+
+    def _find_gallery(self):
+        """Helper to find the parent TemplateGallery instance."""
+        parent = self.parent()
+        while parent:
+            if isinstance(parent, QWidget) and hasattr(parent, 'multi_selected_templates'): # Check for a known gallery attribute
+                return parent
+            parent = parent.parent()
+        return None
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton and not self.editing:
@@ -229,11 +307,11 @@ class TemplateFolderCard(QFrame):
             self.editing = True
             
             # Hide label, show edit field
-            self.title.hide()
-            self.name_edit.setText(self.folder_name)
-            self.name_edit.show()
-            self.name_edit.setFocus()
-            self.name_edit.selectAll()
+            self.name_label.hide()
+            self.rename_edit.setText(self.folder_name)
+            self.rename_edit.show()
+            self.rename_edit.setFocus()
+            self.rename_edit.selectAll()
             
             # Emit signal that rename was requested
             self.renameRequested.emit(self.folder_name)
@@ -249,11 +327,11 @@ class TemplateFolderCard(QFrame):
                 return
                 
             self.editing = False
-            new_name = self.name_edit.text().strip()
+            new_name = self.rename_edit.text().strip()
             
             # Hide edit field, show label
-            self.name_edit.hide()
-            self.title.show()
+            self.rename_edit.hide()
+            self.name_label.show()
             
             # If name is empty or unchanged, do nothing
             if not new_name or new_name == self.folder_name:
@@ -264,7 +342,7 @@ class TemplateFolderCard(QFrame):
             
             # Update internal folder name - will be reset by gallery when refreshed
             self.folder_name = new_name
-            self.title.setText(new_name)
+            self.name_label.setText(new_name)
         except Exception as e:
             print(f"Error in _finish_rename: {e}")
             import traceback
@@ -278,8 +356,8 @@ class TemplateFolderCard(QFrame):
             elif event.key() == Qt.Key_Escape:
                 # Cancel editing
                 self.editing = False
-                self.name_edit.hide()
-                self.title.show()
+                self.rename_edit.hide()
+                self.name_label.show()
         # Handle both Delete and Backspace (for Mac) for folder deletion when selected
         elif (event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace) and self.selected:
             self._delete_folder()
@@ -405,11 +483,10 @@ class TemplateFolderListItem(QFrame):
         self.layout = QHBoxLayout(self)
         self.layout.setContentsMargins(10, 8, 10, 8)
         
-        # Folder icon
-        self.icon_label = QLabel("📁")
-        self.icon_label.setFont(QFont(SYSTEM_FONT, 18))
-        self.icon_label.setFixedSize(24, 24)  # Fixed size for list view
-        self.icon_label.setAlignment(Qt.AlignCenter)
+        # Folder icon - use the flat style for consistency
+        self.icon_label = QLabel()
+        self._create_folder_icon(24, 24)  # Create a smaller flat icon for list view
+        self.icon_label.setFixedSize(24, 24)
         self.layout.addWidget(self.icon_label)
         
         # Folder name
@@ -435,6 +512,50 @@ class TemplateFolderListItem(QFrame):
         
         self._update_styling()
     
+    def _create_folder_icon(self, width, height):
+        """Create a simple flat folder icon for list view (non-3D)"""
+        pixmap = QPixmap(width, height)
+        pixmap.fill(Qt.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Calculate folder dimensions
+        folder_width = width * 0.75
+        folder_height = height * 0.65
+        x = (width - folder_width) / 2
+        y = (height - folder_height) / 2 + (height * 0.05)
+        
+        # Create folder path
+        folder_path = QPainterPath()
+        folder_path.addRoundedRect(QRectF(x, y, folder_width, folder_height), 3, 3)
+        
+        # Add tab to folder
+        tab_width = folder_width * 0.4
+        tab_height = folder_height * 0.2
+        tab_x = x + folder_width * 0.05
+        tab_y = y - tab_height * 0.7
+        
+        # Create tab path
+        tab_path = QPainterPath()
+        tab_path.addRoundedRect(QRectF(tab_x, tab_y, tab_width, tab_height), 2, 2)
+        
+        # Folder color - light blue
+        folder_color = QColor(100, 150, 240)
+        
+        # Fill the folder
+        painter.fillPath(folder_path, folder_color)
+        painter.fillPath(tab_path, folder_color)
+        
+        # Add outline
+        outline_pen = QPen(QColor(80, 120, 200), 1)
+        painter.setPen(outline_pen)
+        painter.drawPath(folder_path)
+        painter.drawPath(tab_path)
+        
+        painter.end()
+        self.icon_label.setPixmap(pixmap)
+    
     def _handle_single_click(self):
         """Handle single click event"""
         if not self.editing:
@@ -457,8 +578,9 @@ class TemplateFolderListItem(QFrame):
         normal_text = f"color: {colors['text']}; background: transparent;"
         highlight_text = f"color: {colors['highlight_text']}; background: transparent;"
         
-        # Icon styles
-        normal_icon = "color: goldenrod; background: transparent;"
+        # Icon styles - use colors.get('folder_icon') instead of hardcoded "goldenrod"
+        folder_icon_color = colors.get('folder_icon', '#E8BA36')  # Get folder icon color from theme
+        normal_icon = f"color: {folder_icon_color}; background: transparent;"
         
         # Apply appropriate styles based on state
         if self.selected:
@@ -521,63 +643,93 @@ class TemplateFolderListItem(QFrame):
     
     def dropEvent(self, event):
         """Handle drop event"""
-        mime_data = event.mimeData()
-        template_names = []
-        
-        # Check for multi-selection MIME format first
-        if mime_data.hasFormat("application/x-template-multi-selection"):
+        if event.mimeData().hasFormat('application/x-echelon-template-names'):
+            encoded_data = event.mimeData().data('application/x-echelon-template-names')
             try:
-                # Get JSON data with multi-selected templates
-                multi_data = mime_data.data("application/x-template-multi-selection").data()
-                import json
-                template_names = json.loads(multi_data.decode())
-                print(f"[DEBUG] FolderListItem: Processing multi-selection drop with {len(template_names)} templates")
-            except Exception as e:
-                print(f"Error processing multi-selection drop: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        # Fallback to text-based format
-        elif mime_data.hasText():
-            text_data = mime_data.text()
-            # Check if this contains multiple templates (newline separated)
-            if '\n' in text_data:
-                template_names = text_data.strip().split('\n')
-                print(f"[DEBUG] FolderListItem: Detected newline-separated drop with {len(template_names)} templates")
-            else:
-                # Single template drop
-                template_name = text_data
-                template_names = [template_name]
-                print(f"[DEBUG] FolderListItem: Detected single template drop: '{template_name}'")
-        
-        # Process all templates
-        if template_names:
-            success_count = 0
-            for template_name in template_names:
-                if template_name and template_name.strip():  # Skip empty names
-                    try:
-                        success = self.app.template_manager.move_template_to_folder(template_name, self.folder_name)
-                        if success:
-                            success_count += 1
-                    except Exception as e:
-                        print(f"Error moving template '{template_name}': {e}")
-            
-            # Show success message if available
-            if success_count > 0 and hasattr(self.app, 'show_status_message'):
-                if success_count == 1:
-                    self.app.show_status_message(f"Moved template to '{self.folder_name}'", "success")
+                template_names_str = bytes(encoded_data).decode('utf-8')
+                template_names = template_names_str.split('\n')
+                template_names = [name for name in template_names if name] # Remove empty strings
+                
+                print(f"[DEBUG] FolderListItem '{self.folder_name}': Dropped {len(template_names)} templates: {template_names}")
+
+                # Find the template manager via app reference
+                if self.app and hasattr(self.app, 'template_manager'):
+                    template_manager = self.app.template_manager
+                    
+                    success_count = 0
+                    for template_name in template_names:
+                        try:
+                            # Call the move function for each template
+                            success = template_manager.move_template_to_folder(template_name, self.folder_name)
+                            if success:
+                                success_count += 1
+                            else:
+                                print(f"[WARNING] Failed to move template '{template_name}' to folder '{self.folder_name}'")
+                        except Exception as move_error:
+                            print(f"[ERROR] Error moving template '{template_name}': {move_error}")
+
+                    if success_count > 0:
+                        print(f"Successfully moved {success_count}/{len(template_names)} templates to {self.folder_name}")
+                        event.setDropAction(Qt.MoveAction)
+                        event.accept()
+                        # Refresh the gallery view after move
+                        if hasattr(self.app, 'template_gallery'):
+                            self.app.template_gallery.populate_gallery(force_refresh=True)
+                    else:
+                        print(f"[ERROR] Failed to move any templates.")
+                        event.ignore()
                 else:
-                    self.app.show_status_message(f"Moved {success_count} templates to '{self.folder_name}'", "success")
-            
-            event.acceptProposedAction()
-            self.hover = False
-            self._update_styling()
-            
-            # Refresh the gallery to show the updated contents
-            if hasattr(self.app, 'template_gallery') and self.app.template_gallery:
-                self.app.template_gallery.populate_gallery(force_refresh=True)
+                    print("[ERROR] Could not find template_manager method.")
+                    event.ignore()
+
+            except Exception as e:
+                print(f"[ERROR] Failed to process drop data: {e}")
+                event.ignore()
         else:
+            # Fallback to check other MIME types
+            mime_data = event.mimeData()
+            template_names = []
+            
+            # Check for text format as fallback
+            if mime_data.hasText():
+                text_data = mime_data.text()
+                # Check if this contains multiple templates (newline separated)
+                if '\n' in text_data:
+                    template_names = text_data.strip().split('\n')
+                    print(f"[DEBUG] FolderListItem: Detected newline-separated drop with {len(template_names)} templates")
+                else:
+                    # Single template drop
+                    template_name = text_data
+                    template_names = [template_name]
+                    print(f"[DEBUG] FolderListItem: Detected single template drop: '{template_name}'")
+                
+                # Process all templates
+                if template_names and self.app and hasattr(self.app, 'template_manager'):
+                    success_count = 0
+                    for template_name in template_names:
+                        if template_name and template_name.strip():  # Skip empty names
+                            try:
+                                success = self.app.template_manager.move_template_to_folder(template_name, self.folder_name)
+                                if success:
+                                    success_count += 1
+                            except Exception as e:
+                                print(f"Error moving template '{template_name}': {e}")
+                    
+                    # Show success message if available
+                    if success_count > 0:
+                        print(f"Successfully moved {success_count}/{len(template_names)} templates to '{self.folder_name}'")
+                        event.setDropAction(Qt.MoveAction)
+                        event.accept()
+                        
+                        # Refresh the gallery to show the updated contents
+                        if hasattr(self.app, 'template_gallery'):
+                            self.app.template_gallery.populate_gallery(force_refresh=True)
+                        return
+            
             event.ignore()
+        
+        self.hover = False
+        self._update_styling()
     
     def _start_rename(self):
         """Start inline renaming of folder"""

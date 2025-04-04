@@ -391,7 +391,7 @@ class GalleryEvents:
         print(f"🔍 EDIT TEMPLATE: Template is_new=False, name='{template_name}', structure_name='{structure_name}'")
         
         # Open the structure editor
-        result, updated_structure, updated_structure_name, original_template_name, updated_template_name = show_enhanced_structure_editor(
+        result, updated_structure, updated_structure_name, original_template_name, updated_template_name, category, description = show_enhanced_structure_editor(
             parent=gallery,
             structure_name=structure_name,
             structure=structure,
@@ -980,4 +980,121 @@ class GalleryEvents:
             print(f"Error saving template and structure: {e}")
             import traceback
             traceback.print_exc()
-            return False 
+            return False
+
+    @staticmethod
+    def on_structure_edit(gallery, template_name):
+        """Handle editing structure for template"""
+        print(f"🔍 LISTENER: Structure edit requested for '{template_name}'")
+        if hasattr(gallery, '_on_structure_editor'):
+            gallery._on_structure_editor(template_name)
+        else:
+            print("❌ LISTENER: No _on_structure_editor method found in gallery")
+            QMessageBox.warning(gallery, "Not Implemented", "Structure editing is not implemented yet.")
+    
+    @staticmethod
+    def on_export_template(gallery, template_name):
+        """Handle exporting a template"""
+        print(f"🔍 LISTENER: Export requested for '{template_name}'")
+        
+        if not template_name or not hasattr(gallery, 'template_manager'):
+            QMessageBox.warning(gallery, "Error", "Cannot export template: No template selected or template manager not available.")
+            return
+            
+        # Get export path from user
+        export_path, _ = QFileDialog.getSaveFileName(
+            gallery,
+            "Export Template",
+            os.path.expanduser("~") + f"/{template_name}.json",
+            "Template Files (*.json)"
+        )
+        
+        if not export_path:
+            return  # User cancelled
+            
+        # Get template data
+        template_data = gallery.template_manager.get_template_by_name(template_name)
+        if not template_data:
+            QMessageBox.warning(gallery, "Error", f"Could not find template '{template_name}'.")
+            return
+            
+        # Export template
+        try:
+            if hasattr(gallery.template_manager, 'export_template'):
+                success = gallery.template_manager.export_template(template_name, export_path)
+                if success:
+                    QMessageBox.information(gallery, "Success", f"Template '{template_name}' exported successfully.")
+                else:
+                    QMessageBox.warning(gallery, "Error", f"Failed to export template '{template_name}'.")
+            else:
+                QMessageBox.warning(gallery, "Not Implemented", "Export functionality is not implemented yet.")
+        except Exception as e:
+            QMessageBox.critical(gallery, "Error", f"Error exporting template: {str(e)}")
+    
+    @staticmethod
+    def on_duplicate_template(gallery, template_name):
+        """Handle duplicating a template"""
+        print(f"🔍 LISTENER: Duplicate requested for '{template_name}'")
+        
+        if not template_name or not hasattr(gallery, 'template_manager'):
+            QMessageBox.warning(gallery, "Error", "Cannot duplicate template: No template selected or template manager not available.")
+            return
+            
+        # Ask for new name
+        new_name, ok = QInputDialog.getText(
+            gallery,
+            "Duplicate Template",
+            "Enter name for the duplicate template:",
+            text=f"{template_name} (Copy)"
+        )
+        
+        if not ok or not new_name:
+            return  # User cancelled
+            
+        # Duplicate template
+        try:
+            if hasattr(gallery.template_manager, 'duplicate_template'):
+                success = gallery.template_manager.duplicate_template(template_name, new_name)
+                if success:
+                    QMessageBox.information(gallery, "Success", f"Template '{template_name}' duplicated as '{new_name}'.")
+                    gallery.populate_gallery(force_refresh=True)
+                else:
+                    QMessageBox.warning(gallery, "Error", f"Failed to duplicate template '{template_name}'.")
+            else:
+                QMessageBox.warning(gallery, "Not Implemented", "Duplicate functionality is not implemented yet.")
+        except Exception as e:
+            QMessageBox.critical(gallery, "Error", f"Error duplicating template: {str(e)}")
+    
+    @staticmethod
+    def on_rename_template(gallery, template_name):
+        """Handle renaming a template"""
+        print(f"🔍 LISTENER: Rename requested for '{template_name}'")
+        
+        if not template_name or not hasattr(gallery, 'template_manager'):
+            QMessageBox.warning(gallery, "Error", "Cannot rename template: No template selected or template manager not available.")
+            return
+            
+        # Ask for new name
+        new_name, ok = QInputDialog.getText(
+            gallery,
+            "Rename Template",
+            "Enter new name for the template:",
+            text=template_name
+        )
+        
+        if not ok or not new_name or new_name == template_name:
+            return  # User cancelled or no change
+            
+        # Rename template
+        try:
+            if hasattr(gallery.template_manager, 'rename_template'):
+                success = gallery.template_manager.rename_template(template_name, new_name)
+                if success:
+                    QMessageBox.information(gallery, "Success", f"Template '{template_name}' renamed to '{new_name}'.")
+                    gallery.populate_gallery(force_refresh=True)
+                else:
+                    QMessageBox.warning(gallery, "Error", f"Failed to rename template '{template_name}'.")
+            else:
+                QMessageBox.warning(gallery, "Not Implemented", "Rename functionality is not implemented yet.")
+        except Exception as e:
+            QMessageBox.critical(gallery, "Error", f"Error renaming template: {str(e)}") 

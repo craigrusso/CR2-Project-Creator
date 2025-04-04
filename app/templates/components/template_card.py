@@ -143,7 +143,7 @@ class TemplateCard(QFrame):
         font = QFont(SYSTEM_FONT)
         font.setPointSize(10)
         self.name_label.setFont(font)
-        self.name_label.setStyleSheet(f"color: {colors['text']};")
+        self.name_label.setStyleSheet(f"color: {colors['text']}; font-size: 10pt;")
         text_layout.addWidget(self.name_label)
         
         # Template category label (changed from type_label)
@@ -332,93 +332,64 @@ class TemplateCard(QFrame):
             event.accept()
 
     def mouseMoveEvent(self, event):
-        if event.buttons() & Qt.LeftButton:
-            # Get gallery reference to check multi-selection
+        if (self.mouse_is_pressed and 
+            (event.pos() - self.mouse_press_pos).manhattanLength() > QApplication.startDragDistance()):
+            
+            # Find the parent gallery
             gallery = None
             parent = self.parent()
             while parent:
-                if hasattr(parent, 'multi_selected_templates'):
+                if hasattr(parent, 'multi_selected_templates') and hasattr(parent, 'selected_template'):
                     gallery = parent
                     break
                 parent = parent.parent()
-            
-            # Calculate drag distance to ensure this is a drag, not a click
-            if hasattr(self, 'mouse_press_pos'):
-                drag_distance = (event.pos() - self.mouse_press_pos).manhattanLength()
-                if drag_distance < 5:  # Common threshold for drag detection
-                    return  # Not a drag yet
-            
-            # Prepare mime data for the drag operation
+
+            if not gallery:
+                print("ERROR: Could not find gallery parent for drag operation")
+                return
+
+            self.dragging = True
+            drag = QDrag(self)
             mime_data = QMimeData()
             
-            # Check if we're part of a multi-selection
-            is_multi_drag = False
-            template_names = []
+            # Check if this card is part of a multi-selection
+            is_multi_selected_item = self.template in gallery.multi_selected_templates
+            templates_to_drag = []
+
+            if is_multi_selected_item and len(gallery.multi_selected_templates) > 1:
+                # Dragging multiple items
+                templates_to_drag = gallery.multi_selected_templates
+                print(f"🔍 LISTENER: Multi-selection drag with {len(templates_to_drag)} templates: {[t.get('name') for t in templates_to_drag]}")
+            else:
+                # Dragging a single item (or the first item of a potential multi-select)
+                templates_to_drag = [self.template]
+                print(f"🔍 LISTENER: Single template drag: {self.template.get('name')}")
+
+            # Encode template names (newline separated)
+            template_names = [t.get('name', '') for t in templates_to_drag if isinstance(t, dict)]
+            encoded_data = QByteArray(bytes('\n'.join(template_names), 'utf-8'))
+            mime_data.setData('application/x-echelon-template-names', encoded_data)
             
-            if gallery and hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
-                # Check if this template is either the primary selection or in multi-selection
-                is_primary = hasattr(gallery, 'selected_template') and gallery.selected_template == self.template
-                is_in_multi = self.template in gallery.multi_selected_templates
-                
-                if is_primary or is_in_multi or getattr(self, 'clicking_multi_selected', False):
-                    # This is a multi-selection drag - include all selected templates
-                    is_multi_drag = True
-                    
-                    # Always include primary selection first if it exists
-                    if hasattr(gallery, 'selected_template') and gallery.selected_template:
-                        primary_name = gallery.selected_template.get('name', 'Unknown')
-                        if primary_name not in template_names:
-                            template_names.append(primary_name)
-                    
-                    # Then add all multi-selected templates
-                    for template in gallery.multi_selected_templates:
-                        name = template.get('name', 'Unknown')
-                        if name not in template_names:
-                            template_names.append(name)
-                    
-                    print(f"🔍 LISTENER: Multi-selection drag with {len(template_names)} templates: {template_names}")
-            
-            # If not a multi-selection drag, just use this template
-            if not is_multi_drag:
-                template_names = [self.template_name()]
-                print(f"🔍 LISTENER: Single template drag: {template_names[0]}")
-            
-            # Store data in mime data
-            mime_data.setText("\n".join(template_names))
-            # Add a custom MIME type to identify multi-template drag
-            if is_multi_drag:
-                mime_data.setData("application/x-template-multi-drag", QByteArray(str(len(template_names)).encode()))
-            
-            # Create drag object
-            drag = QDrag(self)
             drag.setMimeData(mime_data)
             
-            # Set appropriate pixmap based on selection count
-            if len(template_names) > 1:
-                # Create a special pixmap for multi-template drag
-                pixmap = QPixmap(self.size())
-                pixmap.fill(Qt.transparent)
-                painter = QPainter(pixmap)
-                painter.setOpacity(0.8)
-                painter.drawPixmap(0, 0, self.grab())
-                painter.setOpacity(1.0)
-                painter.setPen(QPen(QColor(colors["highlight_bg"]), 2))
-                painter.setBrush(QBrush(QColor(colors["highlight_bg"]).darker(150)))
-                painter.drawRect(QRect(10, 10, 30, 20))
-                painter.setPen(QPen(Qt.white))
-                painter.setFont(QFont(SYSTEM_FONT, 10, QFont.Bold))
-                painter.drawText(QRect(10, 10, 30, 20), Qt.AlignCenter, str(len(template_names)))
-                painter.end()
-                drag.setPixmap(pixmap)
-                drag.setHotSpot(QPoint(pixmap.width() // 2, pixmap.height() // 2))
-            else:
-                # Single template drag
-                drag.setPixmap(self.grab())
-            
-            # Execute drag
-            drag.exec_(Qt.MoveAction)
-            event.accept()
+            # Create a pixmap for the drag preview (optional, could show multiple items)
+            pixmap = QPixmap(self.size())
+            self.render(pixmap)
+            drag.setPixmap(pixmap)
+            drag.setHotSpot(event.pos() - self.rect().topLeft())
 
+            # Execute the drag operation
+            # Use CopyAction initially, let the drop target decide if it's a move
+            result = drag.exec_(Qt.CopyAction | Qt.MoveAction, Qt.CopyAction) 
+            
+            # Reset flags after drag completes
+            self.dragging = False
+            self.mouse_is_pressed = False
+            
+            # Optional: Handle result if needed (e.g., if MoveAction occurred)
+            if result == Qt.MoveAction:
+                print("DEBUG: Drag resulted in MoveAction (Item might be removed by drop target)")
+            
     def enterEvent(self, event):
         self.hover = True
         self._update_styling()
@@ -670,6 +641,11 @@ class TemplateCard(QFrame):
         # Add separator
         context_menu.addSeparator()
         
+        # Add duplicate template option
+        duplicate_action = QAction("Duplicate", self)
+        duplicate_action.triggered.connect(lambda: self._duplicate_template(gallery))
+        context_menu.addAction(duplicate_action)
+        
         # Add export template option
         export_action = QAction("Export Template...", self)
         export_action.triggered.connect(lambda: self._export_template())
@@ -801,23 +777,38 @@ class TemplateCard(QFrame):
 
     def _refresh_gallery(self, gallery=None):
         """Helper method to refresh gallery properly after all operations"""
-        # If gallery was provided, use it directly
-        if gallery and hasattr(gallery, 'populate_gallery'):
-            print(f"🔍 LISTENER: Refreshing gallery using provided gallery reference")
-            gallery.populate_gallery(force_refresh=True)
-            return
+        try:
+            # If gallery was provided, use it directly
+            if gallery and hasattr(gallery, 'populate_gallery'):
+                print(f"🔍 LISTENER: Refreshing gallery using provided gallery reference")
+                gallery.populate_gallery(force_refresh=True)
+                return
+                
+            # Otherwise find parent gallery through hierarchy
+            if not hasattr(self, 'parent'):
+                print(f"[ERROR] Cannot refresh gallery: self.parent method not available")
+                return
+                
+            parent = self.parent()
+            if not parent:
+                print(f"[ERROR] Cannot refresh gallery: parent is None")
+                return
             
-        # Otherwise find parent gallery through hierarchy
-        parent = self.parent()
-        
-        # First try list items parent chain
-        if hasattr(parent, 'parent') and hasattr(parent.parent(), 'populate_gallery'):
-            print(f"🔍 LISTENER: Refreshing gallery through list item parent chain")
-            parent.parent().populate_gallery(force_refresh=True)
-        # Then try direct parent
-        elif hasattr(parent, 'populate_gallery'):
-            print(f"🔍 LISTENER: Refreshing gallery through direct parent")
-            parent.populate_gallery(force_refresh=True)
+            # First try list items parent chain
+            if parent and hasattr(parent, 'parent') and parent.parent() and hasattr(parent.parent(), 'populate_gallery'):
+                print(f"🔍 LISTENER: Refreshing gallery through list item parent chain")
+                parent.parent().populate_gallery(force_refresh=True)
+            # Then try direct parent
+            elif parent and hasattr(parent, 'populate_gallery'):
+                print(f"🔍 LISTENER: Refreshing gallery through direct parent")
+                parent.populate_gallery(force_refresh=True)
+            else:
+                print(f"[WARNING] Could not find a gallery to refresh")
+                
+        except Exception as e:
+            print(f"[ERROR] Exception in _refresh_gallery: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _move_to_folder_and_hide(self, folder_name):
         """Move template to folder and hide for immediate feedback"""
@@ -913,12 +904,21 @@ class TemplateCard(QFrame):
         try:
             # Print current selection states
             if hasattr(gallery, 'selected_template') and gallery.selected_template:
-                print(f"🔍 LISTENER: Current primary selection: {gallery.selected_template.get('name', 'Unknown')}")
+                if isinstance(gallery.selected_template, dict):
+                    print(f"🔍 LISTENER: Current primary selection: {gallery.selected_template.get('name', 'Unknown')}")
+                else:
+                    print(f"🔍 LISTENER: Current primary selection: {str(gallery.selected_template)}")
             else:
                 print(f"🔍 LISTENER: No primary selection")
                 
             if hasattr(gallery, 'multi_selected_templates'):
-                print(f"🔍 LISTENER: Current multi-selection: {[t.get('name', 'Unknown') for t in gallery.multi_selected_templates]}")
+                template_names = []
+                for t in gallery.multi_selected_templates:
+                    if isinstance(t, dict):
+                        template_names.append(t.get('name', 'Unknown'))
+                    else:
+                        template_names.append(str(t))
+                print(f"🔍 LISTENER: Current multi-selection: {template_names}")
             
             # First, detect what we're deleting
             has_primary = hasattr(gallery, 'selected_template') and gallery.selected_template is not None
@@ -937,7 +937,10 @@ class TemplateCard(QFrame):
             
             # ALWAYS include the primary selected template FIRST if it exists
             if has_primary:
-                primary_name = gallery.selected_template.get('name', 'Unknown')
+                if isinstance(gallery.selected_template, dict):
+                    primary_name = gallery.selected_template.get('name', 'Unknown')
+                else:
+                    primary_name = str(gallery.selected_template)
                 templates_to_delete.append(gallery.selected_template)
                 templates_to_delete_set.add(id(gallery.selected_template))  # Add object id to set for tracking
                 print(f"🔍 LISTENER: Including primary selected template in delete operation: {primary_name}")
@@ -949,7 +952,10 @@ class TemplateCard(QFrame):
                     if template_id not in templates_to_delete_set:
                         templates_to_delete.append(template)
                         templates_to_delete_set.add(template_id)
-                        print(f"🔍 LISTENER: Adding multi-selected template to delete operation: {template.get('name', 'Unknown')}")
+                        if isinstance(template, dict):
+                            print(f"🔍 LISTENER: Adding multi-selected template to delete operation: {template.get('name', 'Unknown')}")
+                        else:
+                            print(f"🔍 LISTENER: Adding multi-selected template to delete operation: {str(template)}")
             
             # Verify total count matches expectations
             expected_count = (1 if has_primary else 0) + (len(gallery.multi_selected_templates) if has_multi else 0)
@@ -966,7 +972,7 @@ class TemplateCard(QFrame):
             for template in templates_to_delete:
                 if isinstance(template, dict) and 'name' in template:
                     name = template['name']
-                elif hasattr(template, 'get'):
+                elif isinstance(template, dict) and hasattr(template, 'get'):
                     name = template.get('name', 'Unknown')
                 elif isinstance(template, str):
                     name = template
@@ -1000,20 +1006,41 @@ class TemplateCard(QFrame):
             
             if confirm == QMessageBox.Yes:
                 # Delete all templates in one operation
-                if hasattr(self.app, 'template_manager'):
+                if hasattr(self, 'app') and self.app and hasattr(self.app, 'template_manager'):
+                    success_count = 0
+                    error_count = 0
                     for name in template_names:
-                        print(f"🔍 LISTENER: Deleting template '{name}'")
-                        self.app.template_manager.delete_template(name)
+                        try:
+                            print(f"🔍 LISTENER: Deleting template '{name}'")
+                            if self.app.template_manager.delete_template(name):
+                                success_count += 1
+                            else:
+                                error_count += 1
+                                print(f"[ERROR] Template manager failed to delete template '{name}'")
+                        except Exception as e:
+                            error_count += 1
+                            print(f"[ERROR] Exception when deleting template '{name}': {e}")
+                            import traceback
+                            traceback.print_exc()
+                    
+                    print(f"🔍 LISTENER: Delete operation completed - Success: {success_count}, Errors: {error_count}")
+                else:
+                    print("[ERROR] Cannot delete templates: app or template_manager not available")
                 
                 # Show success message
-                if hasattr(self.app, 'show_status_message'):
+                if hasattr(self, 'app') and self.app and hasattr(self.app, 'show_status_message'):
                     if len(template_names) == 1:
                         self.app.show_status_message(f"Deleted template '{template_names[0]}'", "success")
                     else:
                         self.app.show_status_message(f"Deleted {len(template_names)} templates", "success")
                 
-                # Refresh gallery to update the view
-                self._refresh_gallery(gallery)
+                try:
+                    # Refresh gallery to update the view
+                    self._refresh_gallery(gallery)
+                except Exception as e:
+                    print(f"[ERROR] Failed to refresh gallery after delete: {e}")
+                    import traceback
+                    traceback.print_exc()
         finally:
             # Reset deletion in progress flag
             TemplateCard._deletion_in_progress = False
@@ -1065,6 +1092,23 @@ class TemplateCard(QFrame):
         
         # Export the template
         export_template(self.app, template_name, include_files)
+
+    def _duplicate_template(self, gallery=None):
+        """Duplicate this template using the gallery's handler"""
+        if not gallery:
+            # Try to find the parent gallery
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, 'multi_selected_templates'):
+                    gallery = parent
+                    break
+                parent = parent.parent()
+        
+        if gallery and hasattr(gallery, 'app'):
+            from app.templates.gallery_events import GalleryEvents
+            GalleryEvents.on_duplicate_template(gallery, self.template_name())
+        else:
+            print(f"[ERROR] Could not duplicate template '{self.template_name()}': Gallery not found or missing app reference")
 
 # Utility function for QIcon cache (Optional but good practice)
 icon_cache = {}
