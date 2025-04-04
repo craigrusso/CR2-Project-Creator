@@ -2016,13 +2016,45 @@ class TemplateOperations:
             print(f"[ERROR] self.templates is neither list nor dict ({type(self.templates)}). Cannot determine existing names.")
             return False, "Internal error: Could not read existing template names."
         
-        base_copy_name = f"{original_template_name} copy"
-        new_name = base_copy_name
-        counter = 2
-        while new_name in existing_names:
-            new_name = f"{base_copy_name} {counter}"
+        # --- New Naming Logic ---
+        base_name = original_template_name
+        start_counter = 1 # Default: start with " copy", then " copy 2"
+
+        # Check if the original name already ends with " copy N"
+        match_numbered = re.match(r"^(.*?) copy (\d+)$", original_template_name)
+        if match_numbered:
+            base_name = match_numbered.group(1)
+            # If duplicating "Name copy 5", start checking from "Name copy 6"
+            start_counter = int(match_numbered.group(2)) + 1
+            print(f"[DEBUG] Detected numbered copy: Base='{base_name}', Next counter={start_counter}")
+        else:
+            # Check if the original name ends with " copy" (no number)
+            match_simple = re.match(r"^(.*?) copy$", original_template_name)
+            if match_simple:
+                base_name = match_simple.group(1)
+                # If duplicating "Name copy", start checking from "Name copy 2"
+                start_counter = 2 
+                print(f"[DEBUG] Detected simple copy: Base='{base_name}', Next counter={start_counter}")
+            # else: original name doesn't end with " copy" or " copy N", 
+            # use original_template_name as base_name and start_counter = 1 (default)
+            else:
+                 print(f"[DEBUG] Original name is the base: Base='{base_name}', Start counter={start_counter}")
+                 
+
+        # Find the next available name using the base_name and start_counter
+        counter = start_counter
+        while True:
+            if counter == 1:
+                # First copy attempt for a base name is always " copy"
+                new_name = f"{base_name} copy"
+            else:
+                new_name = f"{base_name} copy {counter}"
+            
+            if new_name not in existing_names:
+                break # Found a unique name
             counter += 1
-        
+        # --- End New Naming Logic ---
+
         new_sanitized_name = self.sanitize_filename(new_name)
         print(f"[DEBUG] Determined new name: '{new_name}' (Sanitized: '{new_sanitized_name}'")
 
