@@ -1,6 +1,6 @@
 # template_folder_card.py
 
-from PyQt5.QtWidgets import QFrame, QLabel, QLineEdit, QVBoxLayout, QHBoxLayout, QMessageBox, QMenu, QAction, QWidget
+from PyQt5.QtWidgets import QFrame, QLabel, QLineEdit, QVBoxLayout, QHBoxLayout, QMessageBox, QMenu, QAction, QWidget, QApplication, QStyle
 from PyQt5.QtCore import pyqtSignal, Qt, QTimer, QEvent, QPoint, QRect, QRectF
 from PyQt5.QtGui import QFont, QIcon, QPixmap, QCursor, QColor, QFontMetrics, QPainter, QBrush, QPen, QPainterPath, QLinearGradient
 from .utils import SYSTEM_FONT
@@ -8,6 +8,7 @@ from .common_styles import CARD_NORMAL, CARD_HOVER, CARD_SELECTED
 from app.ui.color_scheme_pyqt import colors, MENU_DESTRUCTIVE_ITEM_STYLE, DELETE_TEXT_STYLE
 from app.templates.components.menu_actions import ContextMenu
 from app.constants import get_resource_path
+import os
 
 class TemplateFolderCard(QFrame):
     clicked = pyqtSignal(str)
@@ -44,9 +45,23 @@ class TemplateFolderCard(QFrame):
         self.icon_label = QLabel()
         self.icon_label.setAlignment(Qt.AlignCenter)
         
-        # Create flat folder icon
-        folder_icon = self._create_folder_icon(64, 64)
-        self.icon_label.setPixmap(folder_icon)
+        # --- MODIFICATION START: Use System Icon --- 
+        # Get the standard system directory icon
+        try:
+            style = QApplication.style()
+            icon = style.standardIcon(QStyle.SP_DirIcon) 
+            pixmap = icon.pixmap(64, 64) # Initial size
+            if not pixmap.isNull():
+                self.icon_label.setPixmap(pixmap)
+                self.icon_label.setFixedSize(64, 64)
+            else:
+                print("ERROR (FolderCard): Failed to get standard system folder icon pixmap.")
+                self.icon_label.setText("??") # Fallback
+        except Exception as e:
+            print(f"ERROR (FolderCard): Exception getting system icon: {e}")
+            self.icon_label.setText("SYSERR") # Fallback for exception
+        # --- MODIFICATION END ---
+        
         self.layout.addWidget(self.icon_label, 0, Qt.AlignCenter)  # Force center alignment
 
         # Folder Name Label/LineEdit
@@ -90,50 +105,6 @@ class TemplateFolderCard(QFrame):
 
         self._update_styling()
 
-    def _create_folder_icon(self, width, height):
-        """Create a simple flat folder icon (non-3D)"""
-        pixmap = QPixmap(width, height)
-        pixmap.fill(Qt.transparent)
-        
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        # Calculate folder dimensions
-        folder_width = width * 0.75
-        folder_height = height * 0.65
-        x = (width - folder_width) / 2
-        y = (height - folder_height) / 2 + (height * 0.05)
-        
-        # Create folder path
-        folder_path = QPainterPath()
-        folder_path.addRoundedRect(QRectF(x, y, folder_width, folder_height), 4, 4)
-        
-        # Add tab to folder
-        tab_width = folder_width * 0.4
-        tab_height = folder_height * 0.2
-        tab_x = x + folder_width * 0.05
-        tab_y = y - tab_height * 0.7
-        
-        # Create tab path
-        tab_path = QPainterPath()
-        tab_path.addRoundedRect(QRectF(tab_x, tab_y, tab_width, tab_height), 2, 2)
-        
-        # Folder color - light blue
-        folder_color = QColor(100, 150, 240)
-        
-        # Fill the folder
-        painter.fillPath(folder_path, folder_color)
-        painter.fillPath(tab_path, folder_color)
-        
-        # Add outline
-        outline_pen = QPen(QColor(80, 120, 200), 1)
-        painter.setPen(outline_pen)
-        painter.drawPath(folder_path)
-        painter.drawPath(tab_path)
-        
-        painter.end()
-        return pixmap
-
     def _handle_single_click(self):
         if not self.editing:
             self.clicked.emit(self.folder_name)
@@ -147,7 +118,7 @@ class TemplateFolderCard(QFrame):
             # Special style for renaming (maybe just keep border?)
             self.setStyleSheet(f"background-color: {app_bg}; border-radius: 6px; border: 1px solid {colors.get('highlight_bg', '#FFFFFF')};")
         elif self.selected:
-            self.setStyleSheet(f"background-color: {CARD_SELECTED}; border-radius: 6px; border: 1px solid {colors.get('highlight_border', '#FFFFFF')};")
+            self.setStyleSheet(f"background-color: {CARD_SELECTED}; border-radius: 6px; border: none;")
         elif self.hover:
             self.setStyleSheet(f"background-color: {CARD_HOVER}; border-radius: 6px; border: none;")
         else:
@@ -171,9 +142,21 @@ class TemplateFolderCard(QFrame):
         # Update card size
         self.setFixedSize(new_card_width, new_card_height)
         
-        # Create properly scaled icon
-        folder_icon = self._create_folder_icon(new_icon_size, new_icon_size)
-        self.icon_label.setPixmap(folder_icon)
+        # --- MODIFICATION START: Use System Icon in resize --- 
+        # Get standard system icon at the new size
+        try:
+            style = QApplication.style()
+            icon = style.standardIcon(QStyle.SP_DirIcon)
+            pixmap = icon.pixmap(new_icon_size, new_icon_size)
+            if not pixmap.isNull():
+                self.icon_label.setPixmap(pixmap)
+            else:
+                print(f"ERROR (resize_icon): Failed to get standard system folder icon pixmap at size {new_icon_size}.")
+                self.icon_label.setText("??") # Fallback
+        except Exception as e:
+            print(f"ERROR (resize_icon): Exception getting system icon: {e}")
+            self.icon_label.setText("SYSERR") # Fallback for exception
+        # --- MODIFICATION END ---
         
         # Set icon container size to prevent clipping
         self.icon_label.setFixedSize(new_icon_size, new_icon_size)

@@ -1177,11 +1177,13 @@ class TemplateGallery(QWidget):
             template_name = name_item.text()
             print(f"DEBUG: Table item clicked: {template_name}")
             
-            # Find the corresponding template data dictionary
-            template_data = self.template_manager.get_template(template_name)
+            # Get the full template data using the name
+            # MODIFIED: Call get_template via template_io
+            template_data = self.template_manager.template_io.get_template(template_name)
+            
             if template_data:
-                 # Use the existing selection logic
-                 self._on_template_select(template_data) 
+                # Use the existing selection logic
+                self._on_template_select(template_data) 
             else:
                 print(f"[WARNING] Could not find template data for '{template_name}'")
 
@@ -1520,43 +1522,49 @@ class TemplateGallery(QWidget):
             return
 
         print(f"[DEBUG] Gallery: Duplicate request for template '{template_name}'")
-        result = self.app.template_manager.duplicate_template(template_name)
+        try:
+            # MODIFIED: Handle tuple return (success, result_data)
+            success, result_data = self.app.template_manager.template_io.duplicate_template(template_name)
+            if success:
+                new_name = result_data # result_data is the new name string
+                print(f"[INFO] Gallery: Successfully duplicated template '{template_name}' as '{new_name}'")
+                # Refresh the gallery to show the new template
+                self.populate_gallery(force_refresh=True)
 
-        # Check if result is a tuple indicating success (True, new_name)
-        if isinstance(result, tuple) and len(result) == 2 and result[0] is True:
-            new_name = result[1] # Extract new name from the tuple
-            print(f"[INFO] Gallery: Successfully duplicated template '{template_name}' as '{new_name}'")
-            
-            # Repopulate the gallery FIRST to include the new template
-            self.populate_gallery(force_refresh=True) 
-            
-            # --- NEW: Select the duplicated template AFTER population ---
-            try:
-                # Ensure templates are loaded/accessible to find the new one
-                # (populate_gallery should handle loading, but getting fresh data is good)
-                new_template_data = self.app.template_manager.get_template(new_name)
-                if new_template_data:
-                    print(f"[DEBUG] Gallery: Selecting newly created template '{new_name}' after refresh")
-                    self.selected_template = new_template_data
-                    self._clear_multi_selection() # Clear multi-select 
-                    self._update_selection_ui() # Update UI immediately
-                else:
-                    print(f"[WARNING] Gallery: Could not find data for new template '{new_name}' after duplication and refresh.")
-                    self.selected_template = None # Clear selection if new template not found
+                # --- NEW: Select the duplicated template AFTER population ---
+                try:
+                    # Ensure templates are loaded/accessible to find the new one
+                    # MODIFIED: Use template_io for get_template
+                    new_template_data = self.app.template_manager.template_io.get_template(new_name)
+                    if new_template_data:
+                        print(f"[DEBUG] Gallery: Selecting newly created template '{new_name}' after refresh")
+                        self.selected_template = new_template_data
+                        self._clear_multi_selection() # Clear multi-select
+                        self._update_selection_ui() # Update UI immediately
+                    else:
+                        print(f"[WARNING] Gallery: Could not find data for new template '{new_name}' after duplication and refresh.")
+                        self.selected_template = None # Clear selection if new template not found
+                        self._update_selection_ui() # Update UI to reflect cleared selection
+                except Exception as e:
+                    print(f"[ERROR] Gallery: Error selecting new template '{new_name}' after refresh: {e}")
+                    self.selected_template = None # Clear selection on error
                     self._update_selection_ui() # Update UI to reflect cleared selection
-            except Exception as e:
-                print(f"[ERROR] Gallery: Error selecting new template '{new_name}' after refresh: {e}")
-                self.selected_template = None # Clear selection on error
-                self._update_selection_ui() # Update UI to reflect cleared selection
-            # --- END NEW ---
-            
-            # Optionally notify user via status bar
-            if hasattr(self.app, 'show_status_message'):
-                self.app.show_status_message(f"Duplicated '{template_name}' as '{new_name}'", "success")
-                
-        else: # Assuming error returns something else (e.g., None or False)
-            print(f"[ERROR] Gallery: Failed to duplicate template '{template_name}': {result}")
-            QMessageBox.warning(self, "Duplication Failed", f"Could not duplicate template '{template_name}':\n{result}")
+                # --- END NEW ---
+
+                # Optionally notify user via status bar
+                if hasattr(self.app, 'show_status_message'):
+                    self.app.show_status_message(f"Duplicated '{template_name}' as '{new_name}'", "success")
+
+            else:
+                # Duplication failed, result_data is the error message
+                error_message = result_data
+                print(f"[ERROR] Gallery: Failed to duplicate template '{template_name}': {error_message}")
+                QMessageBox.warning(self, "Duplication Failed", f"Could not duplicate template '{template_name}':\\n{error_message}")
+
+        except Exception as e:
+            # Catch unexpected errors during the call itself
+            print(f"[ERROR] Gallery: Exception during duplication call for '{template_name}': {e}")
+            QMessageBox.warning(self, "Duplication Failed", f"An unexpected error occurred while duplicating '{template_name}':\\n{e}")
         print(f"[DEBUG GALLERY HANDLER] _on_duplicate_template finished for '{template_name}'")
     # --- End Handler for Duplication ---
 
@@ -1643,7 +1651,8 @@ class TemplateGallery(QWidget):
                 if name_item:
                     template_name = name_item.text()
                     current_selection_names.add(template_name)
-                    template_data = self.template_manager.get_template(template_name)
+                    # MODIFIED: Call get_template via template_io
+                    template_data = self.template_manager.template_io.get_template(template_name)
                     if template_data:
                         if template_data not in new_multi_selected_templates:
                              new_multi_selected_templates.append(template_data)

@@ -6,13 +6,14 @@ from PyQt5.QtWidgets import (
     QPushButton
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QMimeData, QSize, QPoint, QRect, QByteArray, QTimer
-from PyQt5.QtGui import QPixmap, QFont, QDrag, QPainter, QColor, QBrush, QPen, QIcon, QCursor
+from PyQt5.QtGui import QPixmap, QFont, QDrag, QPainter, QColor, QBrush, QPen, QIcon, QCursor, QPalette
 import os
 from .utils import SYSTEM_FONT
 from .common_styles import CARD_NORMAL, CARD_HOVER, CARD_SELECTED, colors
 from app.ui.color_scheme_pyqt import MENU_DESTRUCTIVE_ITEM_STYLE, DELETE_TEXT_STYLE
 from app.templates.components.menu_actions import ContextMenu
 from app.constants import get_resource_path
+from PyQt5.QtWidgets import QApplication, QStyle
 
 def template_icon_path(template_name=None):
     """Return the path to the template icon."""
@@ -91,22 +92,30 @@ class TemplateCard(QFrame):
         
         # Template icon
         self.icon_label = QLabel()
+        icon_size = 64 # Define icon size
+        pixmap = None
+
+        # --- MODIFIED: Always use template_structure_icon.svg --- 
+        icon_filename = "template_structure_icon.svg"
         icon_path = get_resource_path(os.path.join(
-            "ICONS", "templates", "template_structure_icon.svg")) # Corrected path
+            "ICONS", "templates", icon_filename))
         print(f"DEBUG (Card Icon Path): {icon_path}")
         if os.path.exists(icon_path):
-            icon = QIcon(icon_path) # Use QIcon for better scaling
-            # Get a pixmap from the icon at the desired size
-            pixmap = icon.pixmap(64, 64)
+            icon = QIcon(icon_path)
+            pixmap = icon.pixmap(QSize(icon_size, icon_size))
             if pixmap.isNull():
-                print(f"ERROR: Failed to load icon pixmap from: {icon_path}")
-                # Optionally set a default/fallback icon here
-            else:
-                # No need for scaled() method now, QIcon provides the correct size
-                self.icon_label.setPixmap(pixmap)
+                print(f"ERROR (Card): Failed to load icon pixmap from: {icon_path}")
         else:
-            print(f"ERROR: Icon file not found at: {icon_path}")
-            # Optionally set a default/fallback icon here
+            print(f"ERROR (Card): Icon file not found at: {icon_path}")
+        # --- END MODIFICATION --- 
+        
+        # Set the pixmap if successfully created
+        if pixmap and not pixmap.isNull():
+            self.icon_label.setPixmap(pixmap)
+        else:
+            self.icon_label.setText("?") # Fallback text
+            print("ERROR (Card): Could not set icon pixmap.")
+            
         self.icon_label.setAlignment(Qt.AlignCenter)
         icon_layout.addWidget(self.icon_label, 1, Qt.AlignCenter)
         layout.addWidget(icon_container)

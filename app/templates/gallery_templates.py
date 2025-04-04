@@ -125,21 +125,12 @@ def handle_template_edit(gallery, template=None, selected_template=None, name=No
             
             # Try to find template by name
             print(f"🔷 GALLERY LISTENER: Searching for template with name '{clean_name}'")
-            
-            # First try to get template from template manager
-            if hasattr(gallery, 'app') and hasattr(gallery.app, 'template_manager'):
-                template = gallery.app.template_manager.get_template(clean_name)
-                if template:
-                    print(f"🔷 GALLERY LISTENER: Found template: name='{template.get('name', '')}', structure_name='{template.get('structure_name', '')}'")
-                else:
-                    print(f"🔷 GALLERY LISTENER: Template not found in template manager")
-                    
-                    # If not found in template manager, try to find it in the templates list
-                    for t in gallery.templates:
-                        if isinstance(t, dict) and t.get('name') == clean_name:
-                            template = t
-                            print(f"🔷 GALLERY LISTENER: Found template in list by name: {clean_name}")
-                            break
+            # Find the template data using the TemplateManager
+            # MODIFIED: Access get_template via template_io instance
+            template = gallery.app.template_manager.template_io.get_template(clean_name)
+
+            if not template:
+                QMessageBox.warning(gallery, "Template Not Found", f"Could not find template data for '{clean_name}'")
             
             # If still not found, create a new template with this name
             if template is None:
@@ -229,12 +220,7 @@ def handle_template_edit(gallery, template=None, selected_template=None, name=No
                 updated_structure_name = f"Template_{updated_template_name}"
                 
             print(f"🔷 GALLERY LISTENER: Saving structure: Name='{updated_structure_name}', Category='{saved_category}'")
-            structure_save_success = template_manager.save_custom_structure(
-                name=updated_structure_name,
-                structure=updated_structure,
-                category=saved_category,  # Use category from editor
-                description=saved_description # Use description from editor
-            )
+            structure_save_success = template_manager.save_custom_structure(updated_structure_name, updated_structure, saved_category, saved_description)
             
             if not structure_save_success:
                 print(f"❌ GALLERY LISTENER: Failed to save structure for template '{updated_template_name}'")
@@ -243,15 +229,16 @@ def handle_template_edit(gallery, template=None, selected_template=None, name=No
             
             # --- Save main template file (using save_template) ---
             print(f"🔷 GALLERY LISTENER: Saving main template file: Name='{updated_template_name}', Category='{saved_category}'")
-            # Pass arguments directly to save_template based on its new signature
-            template_save_success = template_manager.save_template(
+            # MODIFIED: Call save_template via template_io
+            template_save_success, save_message = template_manager.template_io.save_template(
                 template_name=updated_template_name,
-                structure=updated_structure, # Pass the structure directly
-                category=saved_category, 
-                description=saved_description, 
-                tags=template.get('tags'), # Pass existing tags if available
-                template_type=template.get('type', 'Standard'), # Pass existing type or default
-                original_name=original_template_name if is_rename else None # Pass original name only if renamed
+                structure=updated_structure,
+                category=saved_category,
+                description=saved_description,
+                tags=template.get('tags'),
+                template_type=template.get('type', 'Standard'),
+                original_name=original_template_name if is_rename else None,
+                files_to_cache=None
             )
             
             if template_save_success:

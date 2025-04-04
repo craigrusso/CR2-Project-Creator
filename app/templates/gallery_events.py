@@ -305,7 +305,8 @@ class GalleryEvents:
                 
                 # --- Save main template file ---    
                 # Call save_template with individual arguments
-                save_success = gallery.app.template_manager.save_template(
+                # MODIFIED: Call via template_io and handle tuple return
+                save_success, save_message = gallery.app.template_manager.template_io.save_template(
                     template_name=updated_template_name, 
                     structure=updated_structure,
                     category=saved_category, 
@@ -326,8 +327,8 @@ class GalleryEvents:
                     else:
                         print("🔍 LISTENER: Gallery object not available for refresh")
                 else:
-                    print(f"❌ LISTENER: Failed to save new template '{updated_template_name}'")
-                    QMessageBox.warning(gallery, "Save Error", f"Could not save the new template file for {updated_template_name}.")
+                    print(f"❌ LISTENER: Failed to save new template '{updated_template_name}': {save_message}")
+                    QMessageBox.warning(gallery, "Save Error", f"Could not save the new template file for {updated_template_name}. Error: {save_message}")
             else:
                 print("🔍 LISTENER: Add template cancelled or failed")
         except Exception as e:
@@ -809,7 +810,8 @@ class GalleryEvents:
                     for i, name in enumerate(template_names):
                         print(f"🔍 LISTENER: Gallery - Deleting template '{name}'")
                         try:
-                            if gallery.app.template_manager.delete_template(name):
+                            # MODIFIED: Call delete_template via template_io
+                            if gallery.app.template_manager.template_io.delete_template(name):
                                 success_count += 1
                                 print(f"🔍 LISTENER: Gallery - Successfully deleted template '{name}'")
                             else:

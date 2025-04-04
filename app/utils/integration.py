@@ -7,7 +7,6 @@ import sys
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout
 from app.ui.color_scheme_pyqt import colors
 from app.ui.ui_components_pyqt import SearchBox
-from app.templates.components import TemplateCard
 UI_FRAMEWORK = 'pyqt'
 
 def integrate_enhanced_templates(app):
