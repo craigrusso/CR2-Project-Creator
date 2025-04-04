@@ -12,9 +12,10 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                            QInputDialog, QFileDialog, QApplication, QStyle,
                            QTabWidget, QGridLayout, QGroupBox, QRadioButton,
                            QButtonGroup, QComboBox, QSplitter, QSizePolicy,
-                           QFrame, QSpinBox, QSpacerItem)
-from PyQt5.QtCore import Qt, QSize, QByteArray, QUrl, QRegExp, QCoreApplication, QMimeData
-from PyQt5.QtGui import QFont, QPixmap, QMovie, QIcon, QRegExpValidator, QDragEnterEvent, QDragMoveEvent, QDropEvent
+                           QFrame, QSpinBox, QSpacerItem, QProgressBar, QDialogButtonBox, QDesktopWidget)
+from PyQt5.QtCore import Qt, QSize, QByteArray, QUrl, QRegExp, QCoreApplication, QMimeData, QTimer
+from PyQt5.QtGui import QFont, QPixmap, QMovie, QIcon, QRegExpValidator, QDragEnterEvent, QDragMoveEvent, QDropEvent, QTextCursor
+from PyQt5.QtGui import QDesktopServices
 
 from app.core.app_config import APP_NAME, APP_VERSION
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE

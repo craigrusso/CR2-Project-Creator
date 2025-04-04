@@ -6,9 +6,9 @@ Utility modules
 
 # Import key utility functions
 from app.utils.utils import (
-    get_config_paths,
     load_json_file,
     save_json_file,
+    get_config_paths,
     load_config,
     save_config,
     load_recent_projects,
@@ -20,14 +20,13 @@ from app.utils.utils import (
     create_readme_file,
     truncate_path
 )
-from app.utils.integration import integrate_enhanced_templates, patch_app_file
 from app.utils.file_operations import FileOperationsHandler
 
 # Export file operations
 __all__ = [
-    'get_config_paths',
     'load_json_file',
     'save_json_file',
+    'get_config_paths',
     'load_config',
     'save_config',
     'load_recent_projects',
@@ -38,7 +37,5 @@ __all__ = [
     'open_folder',
     'create_readme_file',
     'truncate_path',
-    'integrate_enhanced_templates',
-    'patch_app_file',
     'FileOperationsHandler'
 ]
