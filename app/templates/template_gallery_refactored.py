@@ -2,8 +2,9 @@
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
 from PyQt5.QtWidgets import QDesktopWidget, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QComboBox, \
-     QPushButton, QLineEdit, QFrame, QGridLayout, QMessageBox, QApplication, QSizePolicy, QTabWidget, QMainWindow, QDockWidget, QToolButton, QButtonGroup, QMenu, QAction
-from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSignal, QPoint, QModelIndex
+     QPushButton, QLineEdit, QFrame, QGridLayout, QMessageBox, QApplication, QSizePolicy, QTabWidget, QMainWindow, QDockWidget, QToolButton, QButtonGroup, QMenu, QAction, QShortcut
+from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSignal, QPoint, QModelIndex, QItemSelectionModel
+from PyQt5.QtGui import QKeySequence, QDrag, QPixmap, QPainter, QColor, QPalette
 
 # Import modular components
 from .gallery_ui_setup import GalleryUISetup
@@ -71,6 +72,7 @@ class TemplateGallery(QWidget):
             self.template_table_view.setContextMenuPolicy(Qt.CustomContextMenu)
             self.template_table_view.customContextMenuRequested.connect(self._show_table_context_menu)
             self.template_table_view.horizontalHeader().sectionClicked.connect(self._on_table_header_clicked)
+            self.template_table_view.selectionModel().selectionChanged.connect(self._on_table_selection_changed)
         else:
             print("[ERROR] TemplateTableView instance not found after UI setup!")
         # ---------------------------------
@@ -81,6 +83,7 @@ class TemplateGallery(QWidget):
         
         # Populate the gallery initially - do this after UI setup and signal connection
         self.populate_gallery()
+        self._setup_shortcuts()
     
     # Gallery population methods
     def populate_gallery(self, force_refresh=False):
@@ -274,7 +277,20 @@ class TemplateGallery(QWidget):
                 
             # Process events to make UI updates visible immediately
             QApplication.processEvents()
-    
+
+            # --- Connect signals from gallery side AFTER population ---
+            # This block should only run AFTER the grid/table population logic above
+
+            # --- Re-add Connection block ---
+            for card in self.template_cards:
+                card_name = card.template_name()
+                if card_name:
+                    pass
+                # Connect directly to the main handler
+                card.duplicate_requested.connect(self._on_duplicate_template)
+                print(f"[DEBUG GALLERY CONNECT] Connected duplicate_requested for card '{card_name}'")
+            # --- END Re-add Connection block ---
+
     def clear_gallery(self):
         """Clear the gallery view"""
         # Clear templates section
@@ -1217,7 +1233,7 @@ class TemplateGallery(QWidget):
 
             # Duplicate Template action
             duplicate_action = QAction("Duplicate", self)
-            duplicate_action.triggered.connect(lambda: GalleryEvents.on_duplicate_template(self, template_name))
+            duplicate_action.triggered.connect(lambda: self._on_duplicate_template(template_name=template_name))
             menu.addAction(duplicate_action)
 
             # Rename Template action
@@ -1380,29 +1396,46 @@ class TemplateGallery(QWidget):
                 print("WARNING: No selection model found for table view")
                 return
 
+            # Block signals to prevent recursive calls during manual selection update
+            selection_model.blockSignals(True)
             selection_model.clear() # Clear existing selection first
+            print(f"🔍 LISTENER (UI Update): Cleared table selection model.")
 
-            # Select rows corresponding to the multi_selected_templates
+            # Select rows corresponding to the multi_selected_templates OR the primary selection
+            rows_to_select = []
+            primary_row_index = -1 # Track the row index of the primary selection
+
             for row in range(model.rowCount()):
                 index = model.index(row, 0) # Get index for the Name column
-                source_index = model.mapToSource(index) # Map to source model index if needed
-                # Retrieve template data associated with this row (might need adjustment)
-                # This assumes template data is stored or accessible via the model index
-                # Example: Get name from DisplayRole
                 item_name = model.data(index, Qt.DisplayRole)
 
-                if item_name in multi_selected_names:
+                # Check if this item should be selected (either primary or multi-selected)
+                should_select_row = False
+                if item_name == primary_selected_name:
+                     should_select_row = True
+                     primary_row_index = row
+                     print(f"🔍 LISTENER (UI Update): Marking row {row} ({item_name}) for selection (Primary).")
+                elif item_name in multi_selected_names:
+                     should_select_row = True
+                     print(f"🔍 LISTENER (UI Update): Marking row {row} ({item_name}) for selection (Multi).")
+
+                if should_select_row:
                     # Select the entire row
                     selection_model.select(index, QItemSelectionModel.Select | QItemSelectionModel.Rows)
+                    print(f"🔍 LISTENER (UI Update): Selected row {row} in table model.")
 
-            # Ensure the primary selected item is also current/highlighted if needed
-            if primary_selected_name:
-                 for row in range(model.rowCount()):
-                     index = model.index(row, 0)
-                     item_name = model.data(index, Qt.DisplayRole)
-                     if item_name == primary_selected_name:
-                         self.template_table_view.setCurrentIndex(index)
-                         break
+            # Ensure the primary selected item is also the current index for focus/highlight
+            if primary_row_index != -1:
+                 primary_model_index = model.index(primary_row_index, 0)
+                 self.template_table_view.setCurrentIndex(primary_model_index)
+                 print(f"🔍 LISTENER (UI Update): Set current table index to row {primary_row_index}.")
+            else:
+                 self.template_table_view.setCurrentIndex(QModelIndex()) # Clear current index if no primary selection
+                 print(f"🔍 LISTENER (UI Update): Cleared current table index.")
+
+            # Unblock signals
+            selection_model.blockSignals(False)
+            print(f"🔍 LISTENER (UI Update): Unblocked table selection signals.")
 
         print(f"DEBUG: Finished updating selection UI")
 
@@ -1415,3 +1448,146 @@ class TemplateGallery(QWidget):
     # ... (keep the existing methods and properties)
     # ...
     # ... 
+
+    # --- Add Handler for Duplication ---
+    def _on_duplicate_template(self, template_name=None):
+        """Handles the request to duplicate a template."""
+        # --- DEBUG PRINT ADDED ---
+        print(f"[DEBUG GALLERY HANDLER] _on_duplicate_template called for '{template_name}'")
+        # --- END DEBUG PRINT ---
+        if not template_name:
+            print("[WARNING] Duplicate template requested without a name.")
+            return
+
+        if not self.template_manager or not hasattr(self.template_manager, 'duplicate_template'):
+            print("[ERROR] Template manager or duplicate_template method not available.")
+            QMessageBox.warning(self, "Error", "Cannot duplicate template: Operation not supported.")
+            return
+            
+        print(f"[DEBUG] Gallery: Duplicate request for template '{template_name}'")
+        
+        # Call the core duplication method
+        # Assumes duplicate_template returns (bool success, str message_or_new_name)
+        success, result = self.template_manager.duplicate_template(template_name)
+        
+        if success:
+            print(f"[INFO] Gallery: Successfully duplicated template '{template_name}' as '{result}'")
+            # Refresh the gallery view to show the new template
+            self.populate_gallery(force_refresh=True) 
+            # Optionally select the newly created template
+            # self.select_template_by_name(result)
+        else:
+            print(f"[ERROR] Gallery: Failed to duplicate template '{template_name}': {result}")
+            QMessageBox.warning(self, "Duplication Failed", f"Could not duplicate template '{template_name}':\n{result}")
+        print(f"[DEBUG GALLERY HANDLER] _on_duplicate_template finished for '{template_name}'")
+    # --- End Handler for Duplication ---
+
+    def _on_move_template_to_folder(self, template_name, folder_name):
+        # Implement the logic to handle moving a template to a folder
+        print(f"🔍 LISTENER: Moving template '{template_name}' to folder '{folder_name}'")
+        # This method should be implemented to handle moving a template to a folder
+
+    # ... (keep the existing methods and properties)
+    # ...
+    # ... 
+
+    # --- Table Selection Handler (Added) ---
+    def _on_table_selection_changed(self, selected, deselected):
+        """Handles selection changes in the TemplateTableView."""
+        # Block signals temporarily to prevent recursion during UI update
+        self.template_table_view.selectionModel().blockSignals(True)
+        
+        selected_indexes = self.template_table_view.selectionModel().selectedRows() 
+        proxy_model = self.template_table_view.model()
+        source_model = proxy_model.sourceModel()
+        
+        current_selection_names = set()
+        new_multi_selected_templates = []
+        primary_selection_candidate = None
+        primary_index = self.template_table_view.currentIndex() 
+
+        for index in selected_indexes:
+            if index.isValid():
+                source_index = proxy_model.mapToSource(index)
+                name_item = source_model.item(source_index.row(), 0) 
+                if name_item:
+                    template_name = name_item.text()
+                    current_selection_names.add(template_name)
+                    template_data = self.template_manager.get_template(template_name)
+                    if template_data:
+                        if template_data not in new_multi_selected_templates:
+                             new_multi_selected_templates.append(template_data)
+                        if index.row() == primary_index.row():
+                             primary_selection_candidate = template_data
+                    else:
+                         print(f"[WARNING] _on_table_selection_changed: Could not find template data for '{template_name}'")
+
+        print(f"[DEBUG] Table Selection Changed. Names: {current_selection_names}")
+        self.multi_selected_templates = new_multi_selected_templates
+        
+        if primary_selection_candidate:
+             self.selected_template = primary_selection_candidate
+             print(f"[DEBUG] Table Selection: Primary set to focused item '{primary_selection_candidate.get('name')}'")
+        elif len(self.multi_selected_templates) == 1:
+             self.selected_template = self.multi_selected_templates[0]
+             print(f"[DEBUG] Table Selection: Primary set to single selected item '{self.selected_template.get('name')}'")
+        elif len(self.multi_selected_templates) > 1:
+             # If multiple items are selected, but none have primary focus (e.g., shift-click range),
+             # keep the *last* selected item as primary for consistency?
+             self.selected_template = self.multi_selected_templates[-1]
+             print(f"[DEBUG] Table Selection: Primary set to last of multi-select '{self.selected_template.get('name')}'")
+        else:
+             self.selected_template = None # Clear primary if selection is cleared
+             print(f"[DEBUG] Table Selection: Primary selection cleared.")
+
+        # Update UI and emit signals
+        self._update_selection_ui() # Ensure UI reflects the potentially changed selection
+        self.template_selected.emit(self.selected_template if self.selected_template else {}) # Emit primary
+
+    # --- End Table Selection Handler ---
+
+    # --- Add Shortcut Setup and Handling ---
+    def _setup_shortcuts(self):
+        """Sets up keyboard shortcuts for the gallery."""
+        # Duplicate Shortcut (Cmd+D on Mac, Ctrl+D elsewhere)
+        # Use the standard string representation "Ctrl+D". Qt maps this correctly.
+        duplicate_shortcut = QShortcut(QKeySequence("Ctrl+D"), self)
+        duplicate_shortcut.activated.connect(self._handle_duplicate_shortcut)
+        print("[DEBUG] Duplicate shortcut (Ctrl+D / Cmd+D) connected.")
+        
+        # You can add other shortcuts here as needed
+
+    def _handle_duplicate_shortcut(self):
+        """Handles the activation of the duplicate keyboard shortcut."""
+        print("[DEBUG] Duplicate shortcut activated.")
+        
+        # Check if exactly one template is selected
+        selected_template = self.get_primary_selected_template() # Use helper to get primary selection
+        multi_select_count = len(self.multi_selected_templates)
+
+        if selected_template and multi_select_count <= 1:
+             template_name = selected_template.get('name')
+             if template_name:
+                 print(f"[DEBUG] Triggering duplication for '{template_name}' via shortcut.")
+                 self._on_duplicate_template(template_name=template_name)
+             else:
+                 print("[WARNING] Duplicate shortcut: Selected item has no name.")
+        elif multi_select_count > 1:
+             print("[DEBUG] Duplicate shortcut ignored: Multiple templates selected.")
+             # Optionally show a status tip or message
+             # self.parent_window.statusBar().showMessage("Duplicate shortcut requires a single selection.", 2000)
+        else:
+             print("[DEBUG] Duplicate shortcut ignored: No template selected.")
+    # --- End Shortcut Setup and Handling ---
+
+    # Helper to get primary selection consistently
+    def get_primary_selected_template(self):
+         # Prioritize self.selected_template if it exists
+         if self.selected_template:
+             return self.selected_template
+         # Fallback for table view single selection if necessary (adapt based on actual selection logic)
+         # This depends on how your selection model updates self.selected_template
+         # Maybe check table view selection directly if self.selected_template isn't reliable?
+         return None 
+
+    # ... rest of TemplateGallery methods ...

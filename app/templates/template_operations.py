@@ -9,6 +9,7 @@ import time
 import hashlib
 import re
 import uuid
+import copy # Add copy import
 
 from app.utils.utils import save_json_file, get_config_paths, load_json_file
 from app.utils.file_cache_manager import FileCacheManager
@@ -1986,3 +1987,137 @@ class TemplateOperations:
         os.makedirs(templates_dir, exist_ok=True)
         
         return templates_dir
+
+    def duplicate_template(self, original_template_name):
+        """Duplicates an existing template, including its data and cached files."""
+        print(f"[DEBUG] Attempting to duplicate template: '{original_template_name}'")
+
+        # 1. Reload templates to ensure we have the latest list
+        try:
+            self.load_templates()
+        except Exception as e:
+            return False, f"Failed to reload templates before duplication: {e}"
+            
+        # 2. Get original template data
+        original_data = self.get_template(original_template_name)
+        if not original_data:
+            print(f"[ERROR] Original template '{original_template_name}' not found for duplication.")
+            return False, f"Original template '{original_template_name}' not found."
+            
+        original_sanitized_name = self.sanitize_filename(original_template_name)
+
+        # 3. Determine new unique name
+        # Handle both list and dict formats for self.templates
+        if isinstance(self.templates, dict):
+            existing_names = set(self.templates.keys())
+        elif isinstance(self.templates, list):
+            existing_names = {t.get('name') for t in self.templates if isinstance(t, dict) and t.get('name')}
+        else:
+            print(f"[ERROR] self.templates is neither list nor dict ({type(self.templates)}). Cannot determine existing names.")
+            return False, "Internal error: Could not read existing template names."
+        
+        base_copy_name = f"{original_template_name} copy"
+        new_name = base_copy_name
+        counter = 2
+        while new_name in existing_names:
+            new_name = f"{base_copy_name} {counter}"
+            counter += 1
+        
+        new_sanitized_name = self.sanitize_filename(new_name)
+        print(f"[DEBUG] Determined new name: '{new_name}' (Sanitized: '{new_sanitized_name}'")
+
+        # 4. Create new template data (deep copy)
+        try:
+            new_data = copy.deepcopy(original_data)
+        except Exception as e:
+            print(f"[ERROR] Failed to deep copy template data: {e}")
+            return False, f"Failed to copy template data: {e}"
+
+        # 5. Update metadata
+        new_data['name'] = new_name
+        now = time.time()
+        new_data['created'] = now
+        new_data['modified'] = now
+        new_json_path = os.path.join(self.get_templates_dir(), f"{new_sanitized_name}.json")
+        new_data['file_path'] = new_json_path
+
+        # Update structure name if it exists and matches the old sanitized name
+        if new_data.get('structure_name') == original_sanitized_name:
+             new_data['structure_name'] = new_sanitized_name
+             print(f"[DEBUG] Updated structure_name to '{new_sanitized_name}'")
+
+        # 6. Handle Cached Files and Paths
+        new_cache_path = None
+        original_cache_path = original_data.get('cached_path')
+        
+        if self.file_cache_manager and original_cache_path and os.path.isdir(original_cache_path):
+            new_cache_base_dir = self.file_cache_manager.cache_dir
+            new_cache_path = os.path.join(new_cache_base_dir, new_sanitized_name)
+            new_data['cached_path'] = new_cache_path
+            print(f"[DEBUG] Original cache path: {original_cache_path}")
+            print(f"[DEBUG] New cache path: {new_cache_path}")
+
+            # Copy cache directory
+            try:
+                if os.path.exists(new_cache_path):
+                     print(f"[WARNING] Target cache path {new_cache_path} already exists. Removing before copy.")
+                     shutil.rmtree(new_cache_path)
+                shutil.copytree(original_cache_path, new_cache_path, dirs_exist_ok=False) # dirs_exist_ok=False to ensure clean copy
+                print(f"[DEBUG] Copied cache directory from {original_cache_path} to {new_cache_path}")
+            except Exception as e:
+                print(f"[ERROR] Failed to copy cache directory: {e}")
+                # Decide if this is a critical error. Maybe proceed without cached files?
+                # For now, let's return failure.
+                return False, f"Failed to copy cached files: {e}"
+
+            # Update cached_path within the 'files' array
+            updated_files_count = 0
+            if 'files' in new_data and isinstance(new_data['files'], list):
+                for file_info in new_data['files']:
+                    if isinstance(file_info, dict) and 'cached_path' in file_info:
+                        old_file_cache_path = file_info['cached_path']
+                        # Replace the old sanitized name part with the new one
+                        # Assumes path structure like /.../cache_dir/ORIGINAL_SANITIZED/files/file.ext
+                        try:
+                            # More robustly replace the segment corresponding to the template name
+                            parts = old_file_cache_path.split(os.sep)
+                            if original_sanitized_name in parts:
+                                idx = parts.index(original_sanitized_name)
+                                parts[idx] = new_sanitized_name
+                                file_info['cached_path'] = os.sep.join(parts)
+                                updated_files_count += 1
+                            else:
+                                print(f"[WARNING] Could not find '{original_sanitized_name}' segment in file cache path: {old_file_cache_path}")
+                        except Exception as path_e:
+                             print(f"[ERROR] Failed to update file cache path '{old_file_cache_path}': {path_e}")
+                print(f"[DEBUG] Updated cached_path for {updated_files_count} entries in the files array.")
+        else:
+            print("[DEBUG] No original cache directory found or file cache manager unavailable. Skipping cache copy.")
+            # Ensure new template doesn't point to a non-existent cache
+            if 'cached_path' in new_data:
+                 del new_data['cached_path']
+            # Clear file cache paths if they exist but source wasn't copied
+            if 'files' in new_data and isinstance(new_data['files'], list):
+                 for file_info in new_data['files']:
+                     if isinstance(file_info, dict) and 'cached_path' in file_info:
+                         del file_info['cached_path']
+
+
+        # 7. Save the new template JSON file
+        save_success = self.save_template_to_file(new_data, new_json_path)
+        if not save_success:
+            print(f"[ERROR] Failed to save new template file: {new_json_path}")
+            # Cleanup potentially copied cache?
+            if new_cache_path and os.path.exists(new_cache_path):
+                try:
+                    shutil.rmtree(new_cache_path)
+                    print(f"[DEBUG] Cleaned up copied cache directory: {new_cache_path}")
+                except Exception as clean_e:
+                    print(f"[ERROR] Failed to cleanup cache directory {new_cache_path}: {clean_e}")
+            return False, f"Failed to save duplicated template file."
+
+        # 8. Reload templates in memory
+        self.load_templates()
+        
+        print(f"[INFO] Successfully duplicated template '{original_template_name}' as '{new_name}'")
+        return True, new_name

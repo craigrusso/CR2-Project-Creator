@@ -43,6 +43,7 @@ class TemplateCard(QFrame):
     editRequested = pyqtSignal(str)  # New signal for edit action
     deleteRequested = pyqtSignal(str)  # New signal for delete action
     moveToFolderRequested = pyqtSignal(str, str)  # template_name, folder_name
+    duplicate_requested = pyqtSignal(str)  # New signal for duplicate action
 
     # Static variable to track if deletion is in progress
     _deletion_in_progress = False
@@ -643,7 +644,7 @@ class TemplateCard(QFrame):
         
         # Add duplicate template option
         duplicate_action = QAction("Duplicate", self)
-        duplicate_action.triggered.connect(lambda: self._duplicate_template(gallery))
+        duplicate_action.triggered.connect(lambda: self.duplicate_requested.emit(self.template_name()))
         context_menu.addAction(duplicate_action)
         
         # Add export template option
@@ -651,6 +652,10 @@ class TemplateCard(QFrame):
         export_action.triggered.connect(lambda: self._export_template())
         context_menu.addAction(export_action)
         
+        # --- Keep reference to action during exec_ ---
+        self._temp_duplicate_action = duplicate_action 
+        # --- END ---
+
         # Add separator
         context_menu.addSeparator()
         
@@ -1092,23 +1097,6 @@ class TemplateCard(QFrame):
         
         # Export the template
         export_template(self.app, template_name, include_files)
-
-    def _duplicate_template(self, gallery=None):
-        """Duplicate this template using the gallery's handler"""
-        if not gallery:
-            # Try to find the parent gallery
-            parent = self.parent()
-            while parent:
-                if hasattr(parent, 'multi_selected_templates'):
-                    gallery = parent
-                    break
-                parent = parent.parent()
-        
-        if gallery and hasattr(gallery, 'app'):
-            from app.templates.gallery_events import GalleryEvents
-            GalleryEvents.on_duplicate_template(gallery, self.template_name())
-        else:
-            print(f"[ERROR] Could not duplicate template '{self.template_name()}': Gallery not found or missing app reference")
 
 # Utility function for QIcon cache (Optional but good practice)
 icon_cache = {}
