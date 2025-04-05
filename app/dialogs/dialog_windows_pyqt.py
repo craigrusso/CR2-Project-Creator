@@ -127,11 +127,15 @@ SPINBOX_STYLE = f"""
     QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
         background-color: {colors['hover_bg']};
     }}
-    QSpinBox::up-arrow, QSpinBox::down-arrow {{
+    QSpinBox::up-arrow {{
+        image: url(app/assets/css/v_arrow_up.svg);
         width: 10px;
         height: 10px;
-        /* Consider adding arrow icons here */
-        /* image: url(...); */
+    }}
+    QSpinBox::down-arrow {{
+        image: url(app/assets/css/v_arrow.svg);
+        width: 10px;
+        height: 10px;
     }}
 """
 
