@@ -495,13 +495,26 @@ class UIOperations:
             # Save to the template manager
             success = False
             try:
-                from app.templates.template_operations import TemplateOperations
-                success = TemplateOperations.save_template(self, name, category, file_path, structure_type, description)
+                # Call the base class save_template method from TemplateOperations
+                print(f"UIOperations.save_template: Calling save_template with name='{name}', path='{file_path}', type='{structure_type}'")
+                # result = TemplateOperations.save_template(self, name, file_path, structure_type, description) # OLD Incorrect call
+                
+                # Delegate saving to TemplateIO instance
+                if hasattr(self, 'template_io') and self.template_io:
+                    # TemplateIO.save_template might return a tuple (bool, message) or just bool
+                    save_result = self.template_io.save_template(template)
+                    if isinstance(save_result, tuple):
+                        result = save_result[0] # Get the boolean success status
+                    else:
+                        result = save_result # Assume boolean return
+                else:
+                    print("ERROR: UIOperations.save_template - TemplateIO not found on self.")
+                    result = False
             except Exception as e:
                 QMessageBox.warning(dialog, "Error", f"Failed to save template: {str(e)}")
                 return
             
-            if success:
+            if result:
                 # Add to recent templates
                 try:
                     from app.core.project_operations import add_to_recent_templates
@@ -758,7 +771,19 @@ class UIOperations:
             
             # Call the base class save_template method from TemplateOperations
             print(f"UIOperations.save_template: Calling save_template with name='{name}', path='{file_path}', type='{structure_type}'")
-            result = TemplateOperations.save_template(self, name, file_path, structure_type, description)
+            # result = TemplateOperations.save_template(self, name, file_path, structure_type, description) # OLD Incorrect call
+            
+            # Delegate saving to TemplateIO instance
+            if hasattr(self, 'template_io') and self.template_io:
+                # TemplateIO.save_template might return a tuple (bool, message) or just bool
+                save_result = self.template_io.save_template(template)
+                if isinstance(save_result, tuple):
+                    result = save_result[0] # Get the boolean success status
+                else:
+                    result = save_result # Assume boolean return
+            else:
+                print("ERROR: UIOperations.save_template - TemplateIO not found on self.")
+                result = False
             
             # Add to recent templates if successful
             if result and hasattr(self, 'add_to_recent_templates'):

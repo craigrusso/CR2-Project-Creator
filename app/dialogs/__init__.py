@@ -14,7 +14,7 @@ from app.dialogs.dialog_windows_pyqt import (
     show_batch_results,
     show_about,
     show_tutorial,
-    show_preferences,
+    show_preferences_dialog,
     show_edit_template
 )
 
@@ -23,6 +23,6 @@ __all__ = [
     'show_batch_results',
     'show_about',
     'show_tutorial',
-    'show_preferences',
+    'show_preferences_dialog',
     'show_edit_template'
 ]

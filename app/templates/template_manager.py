@@ -7,14 +7,14 @@ import json
 import datetime
 import time
 
+from PyQt5.QtCore import QObject, pyqtSignal, QTimer
+
 from app.templates.template_manager_core import TemplateManagerCore
-from app.templates.template_operations import TemplateOperations
 from app.templates.structure_operations import StructureOperations
 from app.templates.folder_operations import FolderOperations
 from app.templates.ui_operations import UIOperations
-from app.utils.utils import get_config_paths
 
-class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations, UIOperations):
+class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations, UIOperations, QObject):
     """
     Manages project templates and custom structures.
     
@@ -28,15 +28,15 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
     """
     def __init__(self):
         """Initialize the template manager"""
-        # Initialize core first to set up paths and basic attributes
-        TemplateManagerCore.__init__(self)
+        super().__init__()  # Initialize QObject and other parents via MRO
         
-        # Initialize mixins after core initialization
-        StructureOperations.__init__(self)
-        FolderOperations.__init__(self)
-        UIOperations.__init__(self)
+        # Initialization of mixins/parents is handled by super() based on MRO
+        # TemplateManagerCore.__init__(self)  # REMOVED
+        # StructureOperations.__init__(self) # REMOVED
+        # FolderOperations.__init__(self)    # REMOVED
+        # UIOperations.__init__(self)       # REMOVED
         
-        # Initialize additional attributes for multi-selection
+        # Initialize additional attributes specific to TemplateManager
         self.multi_selected_templates = []
 
     def move_template_to_folder(self, template_name, folder_name):

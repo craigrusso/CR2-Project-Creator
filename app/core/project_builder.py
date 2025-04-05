@@ -435,7 +435,13 @@ class ProjectBuilder:
                 print(f"ERROR: Failed to extract structure from template: {e}")
         
         # First check if we have custom structures directory
-        structures_dir = os.path.expanduser("~/.echelon/structures")
+        config_manager = None
+        if hasattr(self, 'template_manager') and hasattr(self.template_manager, 'config_manager'):
+            config_manager = self.template_manager.config_manager
+        else:
+            print("WARNING: ProjectBuilder cannot access ConfigManager via template_manager.")
+        
+        structures_dir = config_manager.get_structures_path() if config_manager else "~/.echelon/structures"
         if os.path.exists(structures_dir):
             for variation in variations:
                 structure_path = os.path.join(structures_dir, f"{variation}.json")

@@ -251,28 +251,42 @@ class TemplateIO:
         print(f"DEBUG: TemplateIO: Final files_array count for JSON: {len(files_array_for_json)}")
         # --- END Extract and Cache Files ---
 
-        # --- Get Template Cache Directory Path ---
-        template_cache_directory = None
-        if self.file_cache_manager and self.file_cache_manager.cache_dir:
-            template_cache_directory = os.path.join(self.file_cache_manager.cache_dir, sanitized_name)
-            # print(f"DEBUG: TemplateIO: Determined template cache directory: {template_cache_directory}")
+        # --- Get Template Cache Directory Path (MODIFIED) ---
+        # The 'cached_path' in the JSON should store the BASE cache directory
+        # managed by config_manager, not a template-specific sub-path.
+        base_cache_directory = self.paths.get('cache_dir')
+        if not base_cache_directory:
+            print("ERROR: TemplateIO: Cache directory path ('cache_dir') not found in self.paths.")
+            # Fallback or error handling needed? For now, set to None.
+            base_cache_directory = None 
+        # template_cache_directory = None # OLD
+        # if self.file_cache_manager and self.file_cache_manager.cache_dir:
+        #     template_cache_directory = os.path.join(self.file_cache_manager.cache_dir, sanitized_name) # OLD - Incorrect path calculation
         # --- END Get Template Cache Directory Path ---
 
         # --- Prepare Template Data ---
-        file_path = os.path.join(self.paths["templates_dir"], f"{sanitized_name}.json")
+        # Use the templates_dir from self.paths
+        templates_dir = self.paths.get('templates_dir')
+        if not templates_dir:
+             print("ERROR: TemplateIO: Templates directory path ('templates_dir') not found in self.paths.")
+             return False, "Templates directory configuration missing." # Critical error
+
+        file_path = os.path.join(templates_dir, f"{sanitized_name}.json")
         template_data = {
             'name': template_name,
-            'structure_name': sanitized_name, # Use sanitized name
+            'structure_name': sanitized_name,
             'structure': structure,
             'category': category or "Uncategorized",
             'description': description,
-            'created': datetime.datetime.now().timestamp(), # Set initially
+            'created': datetime.datetime.now().timestamp(),
             'modified': datetime.datetime.now().timestamp(),
             'tags': tags or [],
             'files': files_array_for_json,
             'type': template_type,
-            'cached_path': template_cache_directory,
-            'file_path': file_path # Store the intended file path
+            # --- MODIFIED: Store the BASE cache directory --- 
+            'cached_path': base_cache_directory,
+            # --- END MODIFIED ---
+            'file_path': file_path
         }
         # --- END Prepare Template Data ---
 

@@ -8,6 +8,8 @@ class FolderOperations:
     
     def __init__(self):
         """Initialize folder operations"""
+        super().__init__() # Initialize base/next in MRO
+        
         # Only initialize folders if it doesn't already exist
         # This is important when inheriting from TemplateManagerCore which already sets self.folders
         if not hasattr(self, 'folders') or self.folders is None:

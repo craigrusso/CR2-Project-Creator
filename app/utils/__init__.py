@@ -8,7 +8,6 @@ Utility modules
 from app.utils.utils import (
     load_json_file,
     save_json_file,
-    get_config_paths,
     load_config,
     save_config,
     load_recent_projects,
@@ -26,7 +25,6 @@ from app.utils.file_operations import FileOperationsHandler
 __all__ = [
     'load_json_file',
     'save_json_file',
-    'get_config_paths',
     'load_config',
     'save_config',
     'load_recent_projects',

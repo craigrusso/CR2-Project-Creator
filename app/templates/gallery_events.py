@@ -304,17 +304,22 @@ class GalleryEvents:
                     # return # Don't proceed if structure save fails
                 
                 # --- Save main template file ---    
-                # Call save_template with individual arguments
-                # MODIFIED: Call via template_io and handle tuple return
-                save_success, save_message = gallery.app.template_manager.template_io.save_template(
-                    template_name=updated_template_name, 
-                    structure=updated_structure,
-                    category=saved_category, 
-                    description=saved_description, 
-                    tags=[], # New template, so empty tags
-                    template_type="Standard" # Default type for new templates
-                    # original_name is None because it's a new template
-                )
+                # Now save the main template file, linking to the saved structure
+                print(f"🔷 GALLERY LISTENER: Saving main template file: Name='{updated_template_name}', Category='{saved_category}'")
+                
+                # Construct the template data dictionary
+                template_data = {
+                    "name": updated_template_name,
+                    "structure_name": updated_structure_name, # Link to the saved structure
+                    "structure": updated_structure,
+                    "category": saved_category,
+                    "description": saved_description,
+                    "type": "Standard", # Assuming default type, adjust if needed
+                    # created/modified timestamps are likely handled within save_template
+                }
+                
+                # Call save_template with the dictionary
+                save_success = gallery.app.template_manager.save_template(template_data)
 
                 if save_success:
                     print(f"🔍 LISTENER: Successfully created template '{updated_template_name}'")
@@ -327,7 +332,7 @@ class GalleryEvents:
                     else:
                         print("🔍 LISTENER: Gallery object not available for refresh")
                 else:
-                    print(f"❌ LISTENER: Failed to save new template '{updated_template_name}': {save_message}")
+                    print(f"❌ LISTENER: Failed to save new template '{updated_template_name}'")
                     QMessageBox.warning(gallery, "Save Error", f"Could not save the new template file for {updated_template_name}. Error: {save_message}")
             else:
                 print("🔍 LISTENER: Add template cancelled or failed")
@@ -960,15 +965,7 @@ class GalleryEvents:
                 return False
             
             # Save the main template file
-            save_success = gallery.app.template_manager.save_template(
-                template_name=data['name'],
-                structure=data['structure'],
-                category=data['category'],
-                description=data['description'],
-                tags=[], # New template, so empty tags
-                template_type="Standard" # Default type for new templates
-                # original_name is None because it's a new template
-            )
+            save_success = gallery.app.template_manager.save_template(data)
 
             if save_success:
                 # Refresh gallery to show changes

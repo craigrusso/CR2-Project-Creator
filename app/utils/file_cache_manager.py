@@ -452,25 +452,37 @@ class FileCacheManager:
     
     def get_cache_stats(self):
         """
-        Get cache statistics
+        Get current cache statistics, recalculating size and file count.
         
         Returns:
-            dict: Cache statistics
+            dict: Dictionary containing cache stats like total_size, cached_files, etc.
         """
-        # Calculate template count
+        # Calculate total size and file count dynamically by iterating through cache
+        total_size = 0
+        total_files = 0
         template_count = 0
-        for item in os.listdir(self.cache_dir):
-            if item != "cache_stats.json" and os.path.isdir(os.path.join(self.cache_dir, item)):
-                template_count += 1
         
-        # Add template count to stats
-        stats = self.cache_stats.copy()
-        stats["template_count"] = template_count
+        if os.path.exists(self.cache_dir):
+            for item in os.listdir(self.cache_dir):
+                item_path = os.path.join(self.cache_dir, item)
+                # Only count template directories 
+                if os.path.isdir(item_path):
+                    template_count += 1
+                    # Use helper function to get size and count of this template's cache dir
+                    dir_size, file_count = self._get_directory_size(item_path) # Unpack tuple
+                    total_size += dir_size
+                    total_files += file_count # Correctly increment total_files
+                    
+        # Update the internal stats dictionary (can be saved later if needed)
+        self.cache_stats['total_size'] = total_size
+        self.cache_stats['cached_files'] = total_files
+        self.cache_stats['template_count'] = template_count # Keep template count
         
-        # Convert total size to human-readable format
-        stats["total_size_human"] = self._human_readable_size(stats["total_size"])
-        
-        return stats
+        # Add human-readable size
+        self.cache_stats['total_size_human'] = self._human_readable_size(total_size)
+
+        # Return a copy of the current, recalculated stats
+        return self.cache_stats.copy()
     
     def prune_cache(self, max_age_days=None, max_size_mb=None):
         """
@@ -528,11 +540,11 @@ class FileCacheManager:
                 template_cache_dir = os.path.join(self.cache_dir, template_name)
                 
                 # Get size before removal
-                template_size = self._get_directory_size(template_cache_dir)
+                template_size, file_count = self._get_directory_size(template_cache_dir)
                 
                 try:
                     shutil.rmtree(template_cache_dir)
-                    pruned_stats["files_removed"] += 1
+                    pruned_stats["files_removed"] += file_count
                     pruned_stats["bytes_removed"] += template_size
                 except Exception as e:
                     print(f"Error removing template cache {template_name}: {e}")
@@ -548,11 +560,11 @@ class FileCacheManager:
                     template_cache_dir = os.path.join(self.cache_dir, template_name)
                     
                     # Get size before removal
-                    template_size = self._get_directory_size(template_cache_dir)
+                    template_size, file_count = self._get_directory_size(template_cache_dir)
                     
                     try:
                         shutil.rmtree(template_cache_dir)
-                        pruned_stats["files_removed"] += 1
+                        pruned_stats["files_removed"] += file_count
                         pruned_stats["bytes_removed"] += template_size
                     except Exception as e:
                         print(f"Error removing template cache {template_name}: {e}")
@@ -618,15 +630,17 @@ class FileCacheManager:
             path: Path to the directory
             
         Returns:
-            int: Total size in bytes
+            tuple: (Total size in bytes, Total file count)
         """
         total_size = 0
+        file_count = 0 # Initialize file count
         for dirpath, dirnames, filenames in os.walk(path):
             for filename in filenames:
                 file_path = os.path.join(dirpath, filename)
                 if os.path.isfile(file_path):
                     total_size += os.path.getsize(file_path)
-        return total_size
+                    file_count += 1 # Increment file count
+        return total_size, file_count # Return tuple
     
     def _human_readable_size(self, size_bytes):
         """

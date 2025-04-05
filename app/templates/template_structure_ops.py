@@ -11,9 +11,9 @@ class TemplateStructureOps:
     def __init__(self, paths):
         """Initialize with required paths."""
         self.paths = paths
-        # Initialize custom structures list/dict (will be loaded by load_custom_structures)
+        # Initialize custom structures list/dict
         self.custom_structures = [] 
-        self.load_custom_structures() # Load structures on init
+        # self.load_custom_structures() # REMOVED: Prevent auto-load on init
 
     def get_default_structure(self, project_type):
         """Get the default directory structure for a project type (OBSOLETE)

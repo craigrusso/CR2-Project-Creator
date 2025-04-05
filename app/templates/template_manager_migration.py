@@ -80,35 +80,40 @@ class TemplateManagerMigration:
         # Get home directory
         home_dir = os.path.expanduser("~")
         
-        # Paths
+        # Path to the base old directory
         echelon_dir = os.path.join(home_dir, '.echelon')
-        templates_dir = os.path.join(echelon_dir, 'templates')
+        # templates_dir = os.path.join(echelon_dir, 'templates') # REMOVED old path
         
-        # Ensure directories exist
-        os.makedirs(echelon_dir, exist_ok=True)
-        os.makedirs(templates_dir, exist_ok=True)
+        # Ensure base directory exists (only needed for structure check)
+        # os.makedirs(echelon_dir, exist_ok=True) # Potentially remove if structure check is robust
+        # os.makedirs(templates_dir, exist_ok=True) # REMOVED - Do not create old templates dir
         
         # Check for old structures directory and remove the warning
         # No need to migrate or rename it since we're moving away from it
         structures_dir = os.path.join(echelon_dir, 'structures')
         if os.path.exists(structures_dir):
             # Check if it has any files
-            structure_files = [f for f in os.listdir(structures_dir) if os.path.isfile(os.path.join(structures_dir, f))]
-            if structure_files:
-                print(f"INFO: Found .echelon/structures folder with {len(structure_files)} files.")
-                print(f"INFO: The structures folder is no longer used. All template data is now stored in the template JSON files.")
-            else:
-                print(f"INFO: Found empty .echelon/structures folder. This folder is no longer used.")
-            
-            # Simply delete the directory if it's empty
-            if not structure_files:
-                try:
-                    os.rmdir(structures_dir)
-                    print(f"INFO: Removed empty structures directory: {structures_dir}")
-                except Exception as e:
-                    print(f"WARNING: Could not remove structures directory: {e}")
-            
-        success = TemplateManagerMigration.migrate_enhanced_to_unified(app)
-        if success:
-            TemplateManagerMigration.create_template_manager_enhanced_proxy(app)
-        return success 
+            try:
+                structure_files = [f for f in os.listdir(structures_dir) if os.path.isfile(os.path.join(structures_dir, f))]
+                if structure_files:
+                    print(f"INFO: Found .echelon/structures folder with {len(structure_files)} files.")
+                    print(f"INFO: The structures folder is no longer used. All template data is now stored in the template JSON files.")
+                else:
+                    print(f"INFO: Found empty .echelon/structures folder. This folder is no longer used.")
+                
+                # Simply delete the directory if it's empty
+                if not structure_files:
+                    try:
+                        os.rmdir(structures_dir)
+                        print(f"INFO: Removed empty structures directory: {structures_dir}")
+                    except Exception as e:
+                        print(f"WARNING: Could not remove structures directory: {e}")
+            except Exception as list_err:
+                 print(f"WARNING: Could not check or remove structures directory {structures_dir}: {list_err}")
+        # Removed the migrate_enhanced_to_unified call as it seemed related to an old refactor
+        # success = TemplateManagerMigration.migrate_enhanced_to_unified(app) 
+        # Removed the proxy creation as it seemed related to an old refactor
+        # if success:
+        #    TemplateManagerMigration.create_template_manager_enhanced_proxy(app)
+        # return success
+        return True # Indicate migration check completed (even if nothing done) 

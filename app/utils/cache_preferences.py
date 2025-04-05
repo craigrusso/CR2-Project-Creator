@@ -24,7 +24,6 @@ class CachePreferences:
         "enable_file_caching": True,
         "max_cache_size_mb": 1000,  # 1GB
         "max_cache_age_days": 30,   # 1 month
-        "cache_location": "",       # Empty = use default
         "auto_clean_cache": True,
         "cache_check_frequency_days": 7  # Check cache weekly
     }
@@ -37,14 +36,24 @@ class CachePreferences:
             preferences_path: Path to the preferences file. If None, use default location
         """
         if preferences_path is None:
-            # Use default location in user's home directory
-            home_dir = os.path.expanduser("~")
-            self.preferences_path = os.path.join(home_dir, ".echelon", "cache_preferences.json")
+            # Store preferences file inside the centralized settings directory
+            try:
+                # Import late to avoid circular dependencies if config_manager imports this
+                from app.core.config_manager import get_settings_path
+                settings_dir = get_settings_path() 
+                self.preferences_path = os.path.join(settings_dir, "cache_preferences.json")
+            except ImportError as e:
+                print(f"CRITICAL ERROR: Could not import config_manager to determine settings path: {e}")
+                # Fallback to old location as a last resort? Or raise error?
+                # Using a fallback might hide the underlying issue. Let's log and maybe use a temp name
+                home_dir = os.path.expanduser("~")
+                self.preferences_path = os.path.join(home_dir, ".echelon", "cache_preferences.json.error_fallback")
+                print(f"WARNING: Using fallback preferences path: {self.preferences_path}")
         else:
             self.preferences_path = preferences_path
             
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(self.preferences_path), exist_ok=True)
+        # Ensure directory exists (get_settings_path in config_manager should already do this)
+        # os.makedirs(os.path.dirname(self.preferences_path), exist_ok=True) # Likely redundant now
         
         # Load preferences
         self.preferences = self.load_preferences()
@@ -62,17 +71,24 @@ class CachePreferences:
                     preferences = json.load(f)
                     
                 # Merge with defaults to ensure all keys exist
+                # Also remove obsolete keys like cache_location if found
+                final_preferences = {}
                 for key, value in self.DEFAULT_PREFERENCES.items():
-                    if key not in preferences:
-                        preferences[key] = value
+                    final_preferences[key] = preferences.get(key, value) # Use default if missing in file
+                    
+                # Optional: Clean up keys present in file but not in defaults
+                # obsolete_keys = [k for k in preferences if k not in self.DEFAULT_PREFERENCES]
+                # if obsolete_keys:
+                #    print(f"DEBUG: Removing obsolete keys from loaded preferences: {obsolete_keys}")
                         
-                return preferences
+                return final_preferences
             except Exception as e:
-                print(f"Error loading cache preferences: {e}")
-                return self.DEFAULT_PREFERENCES.copy()
+                print(f"Error loading cache preferences from {self.preferences_path}: {e}")
+                # Fallback to defaults, ensure cache_location is NOT included
+                return {k: v for k, v in self.DEFAULT_PREFERENCES.items()}
         else:
-            # If no preferences file exists, return defaults
-            return self.DEFAULT_PREFERENCES.copy()
+            # If no preferences file exists, return defaults (without cache_location)
+             return {k: v for k, v in self.DEFAULT_PREFERENCES.items()}
     
     def save_preferences(self):
         """
@@ -82,6 +98,9 @@ class CachePreferences:
             bool: True if successful, False otherwise
         """
         try:
+            # Ensure directory exists before writing
+            pref_dir = os.path.dirname(self.preferences_path)
+            os.makedirs(pref_dir, exist_ok=True)
             with open(self.preferences_path, 'w') as f:
                 json.dump(self.preferences, f, indent=2)
             return True
@@ -123,25 +142,9 @@ class CachePreferences:
         Returns:
             bool: True if successful, False otherwise
         """
-        self.preferences = self.DEFAULT_PREFERENCES.copy()
+        # Ensure cache_location is not part of the reset defaults
+        self.preferences = {k: v for k, v in self.DEFAULT_PREFERENCES.items()}
         return self.save_preferences()
-    
-    def get_cache_location(self):
-        """
-        Get the cache location
-        
-        Returns:
-            str: Path to the cache directory
-        """
-        # Use specified location or default
-        location = self.get_preference("cache_location", "")
-        
-        if not location:
-            # Use default location
-            home_dir = os.path.expanduser("~")
-            location = os.path.join(home_dir, ".echelon", "template_cache")
-            
-        return location
     
     def should_cache_files(self):
         """

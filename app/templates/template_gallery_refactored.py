@@ -101,11 +101,12 @@ class TemplateGallery(QWidget):
         # This guarantees we have the latest data, even if less efficient
         print(f"[DEBUG] Gallery: Forcing template reload before populating...")
         try:
-            if hasattr(self.app, 'template_manager') and hasattr(self.app.template_manager, 'load_templates'):
-                self.app.template_manager.load_templates()
-                print(f"[DEBUG] Gallery: Templates reloaded.")
+            # Check for template_io within template_manager and call its load_templates
+            if hasattr(self.app, 'template_manager') and hasattr(self.app.template_manager, 'template_io') and hasattr(self.app.template_manager.template_io, 'load_templates'):
+                self.app.template_manager.template_io.load_templates() # Corrected call
+                print(f"[DEBUG] Gallery: Templates reloaded via template_io.")
             else:
-                print(f"[WARNING] Gallery: Cannot reload templates - template_manager or load_templates missing.")
+                print(f"[WARNING] Gallery: Cannot reload templates - template_manager.template_io or template_io.load_templates missing.")
         except Exception as e:
             print(f"[ERROR] Gallery: Failed during explicit template reload: {e}")
             

@@ -16,13 +16,14 @@ from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, COMBOBOX_S
 from app.utils.utils import load_config, save_config, truncate_path
 from app.ui.ui_components_pyqt import ToolTip, CardFrame, SearchBox, TemplateFileCard, ScrollableFrame, UI_FONT
 from app.templates.template_manager import TemplateManager
+from app.templates.template_manager_core import TemplateManagerCore
 from app.core.project_builder import ProjectBuilder
 from app.dialogs.dialog_windows_pyqt import (preview_structure, show_about, 
-                                show_tutorial, show_preferences, show_edit_template,
+                                show_tutorial, show_preferences_dialog, show_edit_template,
                                 show_batch_results)
 from app.templates.template_utils import (get_template_file, clear_template_file, clear_structure_template,
                        rename_current_template, rename_template_file)
-from app.templates.refactored_template_gallery import create_template_gallery, select_template_from_gallery
+from app.templates.template_gallery_ui_pyqt import create_template_gallery
 from app.ui.app_theme_pyqt import apply_dark_theme_to_template_gallery
 from app.core.structures_pyqt import (create_custom_structure, edit_structure, update_structure_dropdown,
                      manage_structures, _update_structure_combo, _preview_structure, _edit_structure)
@@ -32,9 +33,8 @@ from app.core.project_operations import (handle_batch_create,
                              add_to_recent_templates, update_card_highlighting,
                              remove_from_recent_templates)
 from app.utils.utils import (load_recent_projects, save_recent_projects, 
-                 open_folder, create_sample_templates, load_recent_templates,
-                 save_recent_templates)
-from app.templates.template_gallery_ui_pyqt import create_template_gallery
+                 open_folder, load_recent_templates,
+                 save_recent_templates, add_to_recent_projects)
 from app.dialogs.template_creation_form import show_template_creation_form
 from app.templates.components.utils import get_system_font, SYSTEM_FONT
 from app.core.import_export_manager import import_template
@@ -419,7 +419,7 @@ class ProjectCreatorApp(QMainWindow):
             # Set shortcut for Windows/Linux
             preferences_action.setShortcut("Ctrl+P") 
             
-        preferences_action.triggered.connect(lambda: show_preferences(self))
+        preferences_action.triggered.connect(lambda: show_preferences_dialog(self))
         edit_menu.addAction(preferences_action)
         
         # View menu

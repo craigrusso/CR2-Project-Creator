@@ -40,12 +40,13 @@ class StructureOperations:
     """
     
     def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
         # Initialize custom_structures as a dictionary
         self.custom_structures = {}
         # Initialize paths if not provided
         if not hasattr(self, 'paths'):
             self.paths = {}
-        super().__init__(*args, **kwargs)
         
         # Ensure consistent naming of directories
         if "custom_structures_dir" in self.paths and "structures_dir" not in self.paths:

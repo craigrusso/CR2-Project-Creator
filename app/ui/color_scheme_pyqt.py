@@ -290,6 +290,24 @@ SECONDARY_LABEL_STYLE = f"""
     }}
 """
 
+# Add GroupBox style
+GROUPBOX_STYLE = f"""
+    QGroupBox {{
+        border: 1px solid {colors['border']};
+        margin-top: 10px; /* Space for the title */
+        padding: 10px;
+        border-radius: 3px;
+    }}
+    QGroupBox::title {{
+        subcontrol-origin: margin;
+        subcontrol-position: top left;
+        padding: 0 5px 0 5px;
+        left: 10px; /* Indent title slightly */
+        color: {colors['text']}; /* Set title color */
+        background-color: {colors['bg']}; /* Match main background */
+    }}
+"""
+
 # Destructive action style (for delete buttons, menu items, etc.)
 DESTRUCTIVE_ACTION_STYLE = f"""
     color: {colors['error_text']};
