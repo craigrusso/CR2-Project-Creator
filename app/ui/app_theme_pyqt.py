@@ -350,6 +350,40 @@ def configure_styles(app):
             color: {colors['text']};
         }}
     """)
+
+    # Define CheckBox QSS separately
+    checkbox_qss = f"""
+        QCheckBox {{ 
+            spacing: 5px; /* Space between indicator and text */
+            color: {colors['text']}; /* Ensure text color matches theme */
+        }}
+        QCheckBox::indicator {{
+            width: 16px;
+            height: 16px;
+            border: 1px solid {colors['border']};
+            border-radius: 3px;
+            background-color: {colors['card_bg']}; /* Slightly different background */
+        }}
+        QCheckBox::indicator:hover {{
+            border: 1px solid {colors['accent']};
+        }}
+        QCheckBox::indicator:checked {{
+            background-color: {colors['accent']};
+            border: 1px solid {colors['accent']};
+            image: url(app/assets/css/check.svg); /* Use the check icon */
+        }}
+        QCheckBox::indicator:disabled {{
+            border: 1px solid {colors['secondary_text']};
+            background-color: {colors['bg']};
+        }}
+        QCheckBox::indicator:checked:disabled {{
+            image: url(app/assets/css/check_disabled.svg); /* Optional: Add a disabled check icon if needed */
+            background-color: {colors['secondary_text']};
+        }}
+    """
+
+    # Append checkbox QSS to the main stylesheet
+    app.setStyleSheet(app.styleSheet() + checkbox_qss)
     
     # Install a global event filter to catch combo box popups
     popup_filter = ComboBoxPopupFilter()

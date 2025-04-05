@@ -857,26 +857,6 @@ def show_preferences_dialog(parent=None):
     '''
     tabs.setStyleSheet(tab_qss) 
 
-    # --- General Tab ---
-    general_tab = QWidget()
-    general_layout = QVBoxLayout(general_tab)
-
-    # User Interface Group
-    ui_group = QGroupBox("User Interface")
-    ui_group.setStyleSheet(GROUPBOX_STYLE) # Apply group box styling
-    ui_layout = QVBoxLayout(ui_group)
-
-    # Dark mode option (placeholder for future implementation)
-    dark_mode_check = QCheckBox("Use Dark Mode (Requires Restart)")
-    dark_mode_check.setStyleSheet(CHECKBOX_STYLE)
-    dark_mode_check.setChecked(True)  # Default to checked
-    dark_mode_check.setEnabled(False)  # Disabled for now
-    dark_mode_check.setToolTip("Theme settings will be available in a future update.")
-    ui_layout.addWidget(dark_mode_check)
-
-    general_layout.addWidget(ui_group)
-    general_layout.addStretch()
-
     # --- Storage Location Tab (MODIFIED) ---
     storage_tab = QWidget()
     storage_layout = QGridLayout(storage_tab)
@@ -947,8 +927,8 @@ def show_preferences_dialog(parent=None):
     row += 1
     storage_layout.setRowStretch(row, 1)
 
-    # Add the tabs to the tab widget
-    tabs.addTab(general_tab, "General")
+    # Add the tabs to the tab widget (Removed General)
+    # tabs.addTab(general_tab, "General")
     tabs.addTab(storage_tab, "Storage") # Renamed tab
 
     # --- Cache Management Tab (MODIFIED) ---
