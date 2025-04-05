@@ -8,6 +8,7 @@ import zipfile
 import tempfile
 from datetime import datetime
 from PyQt5.QtWidgets import QFileDialog, QMessageBox, QDialog, QVBoxLayout, QLabel, QCheckBox, QDialogButtonBox
+from app.constants import APP_NAME # Import the APP_NAME constant
 
 def export_package(app, include_settings=True, include_templates=True):
     """
@@ -34,7 +35,7 @@ def export_package(app, include_settings=True, include_templates=True):
     file_path, _ = QFileDialog.getSaveFileName(
         app,
         f"Export {export_type}",
-        os.path.expanduser("~/Desktop/CR2_CreativePro_Export.zip"),
+        os.path.expanduser(f"~/Desktop/{APP_NAME}_Export.zip"), # Use APP_NAME for the default filename
         "ZIP Files (*.zip)"
     )
     
