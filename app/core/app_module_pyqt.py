@@ -430,24 +430,6 @@ class ProjectCreatorApp(QMainWindow):
         refresh_gallery_action.triggered.connect(lambda: self.template_gallery.populate_gallery())
         view_menu.addAction(refresh_gallery_action)
         
-        # Tools menu
-        tools_menu = menubar.addMenu("Tools")
-        
-        # Batch Create action
-        batch_create_action = QAction("Batch Create...", self)
-        batch_create_action.triggered.connect(self.process_batch_projects)
-        tools_menu.addAction(batch_create_action)
-        
-        # Create Custom Structure action
-        custom_structure_action = QAction("Create Custom Structure...", self)
-        custom_structure_action.triggered.connect(self._create_custom_structure)
-        tools_menu.addAction(custom_structure_action)
-        
-        # Manage Custom Structures action
-        manage_structures_action = QAction("Manage Custom Structures...", self)
-        manage_structures_action.triggered.connect(self._manage_structures)
-        tools_menu.addAction(manage_structures_action)
-        
         # Help menu
         help_menu = menubar.addMenu("Help")
         
