@@ -349,6 +349,11 @@ def configure_styles(app):
             background-color: {colors['bg']};
             color: {colors['text']};
         }}
+        
+        /* Style for Accent Buttons (e.g., Close button in dialogs) */
+        QPushButton#closeButtonAccent {{
+            {ACCENT_BUTTON_STYLE}
+        }}
     """)
 
     # Define CheckBox QSS separately

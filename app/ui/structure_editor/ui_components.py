@@ -534,6 +534,7 @@ class UIBuilder:
         
         # Template category field
         self.template_category_field = QComboBox()
+        self.template_category_field.setObjectName("template_category_combo_box")
         self.template_category_field.addItems(self.categories)
         self.template_category_field.setCurrentIndex(0)  # Default to "Custom"
         self.template_category_field.setStyleSheet(f"""
@@ -1190,71 +1191,46 @@ class UIBuilder:
             traceback.print_exc()
 
     def _manage_categories(self):
-        """
-        Show dialog to manage template categories
-        """
-        try:
-            # Import the category manager dialog
-            from app.ui.structure_editor.category_manager import CategoryManager
+        """Open the category management dialog"""
+        from .category_manager import CategoryManager
+        
+        # Correctly get template_manager instance
+        template_manager = None
+        if hasattr(self.editor, 'template_manager'): # Check editor first
+            template_manager = self.editor.template_manager
+        elif hasattr(self.editor, 'app') and hasattr(self.editor.app, 'template_manager'): # Then check app via editor
+            template_manager = self.editor.app.template_manager
             
-            # Get app and template manager reference
-            app = None
-            if hasattr(self.editor, 'app'):
-                app = self.editor.app
-            elif hasattr(self.editor, 'parent') and callable(self.editor.parent) and hasattr(self.editor.parent(), 'app'):
-                app = self.editor.parent().app
-                
-            # Get template manager
-            template_manager = None
-            if app and hasattr(app, 'template_manager'):
-                template_manager = app.template_manager
+        if not template_manager:
+             print("ERROR in _manage_categories: Could not find template_manager instance.")
+             QMessageBox.critical(self.editor, "Error", "Could not access category data.")
+             return
+
+        # Get current categories to pass to manager
+        # Use template_manager as the source of truth for initial load
+        manager_categories = template_manager.get_categories()
+        print(f"UIBuilder: Opening category manager with initial categories: {manager_categories}")
+        
+        manager = CategoryManager(parent=self.editor, categories=manager_categories)
+        if manager.exec_() == QDialog.Accepted:
+            # Categories are saved via ProjectTypeManager now.
+            # Dropdowns are updated dynamically via _update_ui_dropdowns 
+            # when the setting changes or categories are added/removed in the manager.
+            # No need to manually update this specific dropdown here.
+            print(f"UIBuilder: Category manager closed (Accepted). Dropdown updates handled by manager.")
             
-            # Get current categories - use template_manager as source of truth
-            if template_manager and hasattr(template_manager, 'get_categories'):
-                categories = template_manager.get_categories()
-                print(f"UIBuilder: Getting categories from app's template_manager: {categories}")
-            else:
-                # Try to create a template manager instance if needed
-                from app.templates.template_manager import TemplateManager
-                template_manager = TemplateManager()
-                categories = template_manager.get_categories() if hasattr(template_manager, 'get_categories') else ["Custom"]
-                print(f"UIBuilder: Created new template_manager instance to get categories: {categories}")
-            
-            # Show the dialog with the right parent
-            category_manager = CategoryManager(self.editor, categories)
-            result = category_manager.exec()
-            
-            # If dialog was accepted, refresh categories
-            if result == category_manager.Accepted:
-                # Get updated categories
-                updated_categories = category_manager.get_categories()
-                print(f"UIBuilder: Categories updated in manager: {updated_categories}")
-                
-                # Update the categories in our builder
-                self.categories = updated_categories
-                
-                # Refresh the category dropdown
-                if hasattr(self, 'template_category_field') and self.template_category_field:
-                    # Store current category
-                    current_category = self.template_category_field.currentText()
-                    
-                    # Update combobox
-                    self.template_category_field.clear()
-                    self.template_category_field.addItems(updated_categories)
-                    
-                    # Restore selection if possible, otherwise use first category
-                    index = self.template_category_field.findText(current_category)
-                    if index >= 0:
-                        self.template_category_field.setCurrentIndex(index)
-                    elif self.template_category_field.count() > 0:
-                        self.template_category_field.setCurrentIndex(0)
-                    
-                    print(f"UIBuilder: Updated category dropdown with {len(updated_categories)} items")
-        except Exception as e:
-            print(f"ERROR in _manage_categories: {e}")
-            import traceback
-            traceback.print_exc()
-    
+            # We might still want to update the internal list used by UIBuilder if needed elsewhere
+            self.categories = template_manager.get_categories()
+
+            # Optional: Re-select the current category if it still exists, 
+            # just to ensure selection is preserved after potential list changes.
+            current_selection = self.template_category_field.currentText()
+            index = self.template_category_field.findText(current_selection)
+            if index != -1:
+                self.template_category_field.setCurrentIndex(index)
+            elif self.template_category_field.count() > 0:
+                self.template_category_field.setCurrentIndex(0)
+
     def _update_structure_stats(self):
         """Update the status bar with structure statistics"""
         if not hasattr(self, 'tree') or not self.tree:
@@ -1297,71 +1273,32 @@ class UIBuilder:
             self.stats_label.setText(f"Total: {total_items} items ({folders} folders, {files} files)")
 
     def _init_category_dropdown(self):
-        """Initialize the category dropdown with available categories"""
-        # Get categories from template manager if available
-        if self.template_manager and hasattr(self.template_manager, 'get_categories'):
-            categories = self.template_manager.get_categories()
-            print(f"UIBuilder: Getting categories from app's template_manager: {categories}")
-        else:
-            # Fall back to constants if template manager not available
-            from app.constants import DEFAULT_TEMPLATE_CATEGORIES
-            categories = list(DEFAULT_TEMPLATE_CATEGORIES)
-            print(f"UIBuilder: Using default categories from constants")
+        """Initialize the category dropdown with project types"""
+        # print(f"[INIT DROPDOWN DEBUG] Running _init_category_dropdown") # Removed debug print
+        # Always get fresh categories from the template manager
+        self.categories = self._get_categories()
+        print(f"UIBuilder: Initializing category dropdown with {len(self.categories)} categories: {self.categories}")
         
-        # Initialize the combobox
+        # Create and configure the combo box
         self.template_category_field = QComboBox()
-        self.template_category_field.setObjectName("template_category_field")
+        self.template_category_field.setObjectName("template_category_combo_box")  # Give it a name to identify later
         
-        # Add "No Category" as first option (always present)
+        # Add "No Category" as the first option
         self.template_category_field.addItem("No Category")
         
-        # Get hide default categories preference
-        try:
-            from app.core.config_manager import get_hide_default_categories
-            hide_defaults = get_hide_default_categories()
-        except ImportError:
-            hide_defaults = False
-        
-        # Import default categories to split them
-        from app.constants import DEFAULT_TEMPLATE_CATEGORIES
-        
-        # Split categories into default and custom
-        default_categories = []
-        custom_categories = []
-        
-        for category in categories:
-            if category in DEFAULT_TEMPLATE_CATEGORIES:
-                default_categories.append(category)
-            else:
-                custom_categories.append(category)
-        
-        # Only add default categories if not hiding them
-        if not hide_defaults:
-            for category in default_categories:
-                self.template_category_field.addItem(category)
-            
-            # Add a separator if there are custom categories
-            if custom_categories:
-                self.template_category_field.insertSeparator(self.template_category_field.count())
-        else:
-            # Always include "Custom" even if defaults are hidden
-            if "Custom" not in custom_categories and "Custom" in DEFAULT_TEMPLATE_CATEGORIES:
-                self.template_category_field.addItem("Custom")
-                
-                # Add a separator if there are other custom categories
-                if custom_categories:
-                    self.template_category_field.insertSeparator(self.template_category_field.count())
-        
-        # Add custom categories
-        for category in custom_categories:
-            if category != "No Category":  # Avoid duplicates
+        # Add other categories to dropdown
+        for category in self.categories:
+            if category != "No Category": # Avoid duplicates if it exists in the list
                 self.template_category_field.addItem(category)
         
-        # Set default selection
+        # Set the default index to 'No Category' after adding all items
         no_cat_index = self.template_category_field.findText("No Category")
         if no_cat_index >= 0:
+            # print(f"[INIT DROPDOWN DEBUG] Setting default index to {no_cat_index} ('No Category')") # Removed debug print
             self.template_category_field.setCurrentIndex(no_cat_index)
         else:
+            # Fallback to index 0 if 'No Category' isn't found (shouldn't happen)
+            # print(f"[INIT DROPDOWN DEBUG] 'No Category' not found, setting default index to 0") # Removed debug print
             self.template_category_field.setCurrentIndex(0)
 
     def set_ui_values(self, template_data):

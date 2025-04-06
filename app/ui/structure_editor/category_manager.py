@@ -8,11 +8,13 @@ This module provides a dialog for managing template categories.
 """
 
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QLabel, QListWidget, QPushButton,
-                           QHBoxLayout, QLineEdit, QMessageBox, QListWidgetItem, QCheckBox, QInputDialog,
-                           QComboBox, QApplication)
-from PyQt5.QtCore import Qt
+                           QHBoxLayout, QLineEdit, QMessageBox, QListWidgetItem, QCheckBox)
+from PyQt5.QtCore import Qt, QSettings
 import os
 import json
+
+# Define a user role for the divider item
+DIVIDER_ROLE = Qt.UserRole + 1
 
 class CategoryManager(QDialog):
     """Dialog for managing template categories"""
@@ -48,6 +50,9 @@ class CategoryManager(QDialog):
             self.categories.append("Custom")
             
         self.result_categories = self.categories.copy()
+        
+        # Initialize QSettings
+        self.settings = QSettings()
         
         # Configure dialog
         self.setWindowTitle("Manage Categories")
@@ -89,131 +94,115 @@ class CategoryManager(QDialog):
             return None
         
     def _init_ui(self):
-        """Initialize the UI components"""
-        self.setWindowTitle("Manage Categories")
-        self.resize(400, 300)
-        
+        """Initialize the user interface"""
         # Main layout
-        main_layout = QVBoxLayout()
-        self.setLayout(main_layout)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
         
-        # Category list
-        self.category_list_label = QLabel("Categories:")
-        main_layout.addWidget(self.category_list_label)
+        # Add title
+        title = QLabel("Template Categories")
+        title.setStyleSheet("font-size: 16px; font-weight: bold;")
+        layout.addWidget(title)
         
-        self.category_list = QListWidget()
-        main_layout.addWidget(self.category_list)
+        # Add description
+        description = QLabel("Add, edit, or remove template categories.")
+        description.setWordWrap(True)
+        layout.addWidget(description)
         
-        # Add the hide defaults checkbox under the list
+        # Add checkbox to hide default categories
         self.hide_defaults_checkbox = QCheckBox("Hide Default Categories")
-        # Get the current preference
-        try:
-            from app.core.config_manager import get_hide_default_categories
-            hide_defaults = get_hide_default_categories()
-            self.hide_defaults_checkbox.setChecked(hide_defaults)
-        except ImportError:
-            self.hide_defaults_checkbox.setChecked(False)
+        self.hide_defaults_checkbox.stateChanged.connect(self._toggle_default_categories_visibility)
+        self.hide_defaults_checkbox.stateChanged.connect(self._save_hide_defaults_setting)
+        layout.addWidget(self.hide_defaults_checkbox)
         
-        self.hide_defaults_checkbox.stateChanged.connect(self._on_hide_defaults_changed)
-        main_layout.addWidget(self.hide_defaults_checkbox)
+        # Add list of categories
+        self.category_list = QListWidget()
         
-        # Input for adding new categories
-        input_layout = QHBoxLayout()
-        main_layout.addLayout(input_layout)
-        
-        self.new_category_input = QLineEdit()
-        self.new_category_input.setPlaceholderText("New Category")
-        input_layout.addWidget(self.new_category_input)
-        
-        self.add_button = QPushButton("Add")
-        self.add_button.clicked.connect(self._add_category)
-        input_layout.addWidget(self.add_button)
-        
-        # Buttons for removing and modifying categories
-        button_layout = QHBoxLayout()
-        main_layout.addLayout(button_layout)
-        
-        self.remove_button = QPushButton("Remove")
-        self.remove_button.clicked.connect(self._remove_category)
-        button_layout.addWidget(self.remove_button)
-        
-        self.rename_button = QPushButton("Rename")
-        self.rename_button.clicked.connect(self._rename_category)
-        button_layout.addWidget(self.rename_button)
-        
-        # Dialog buttons
-        dialog_buttons = QHBoxLayout()
-        main_layout.addLayout(dialog_buttons)
-        
-        self.ok_button = QPushButton("OK")
-        self.ok_button.clicked.connect(self.accept)
-        dialog_buttons.addWidget(self.ok_button)
-        
-        self.cancel_button = QPushButton("Cancel")
-        self.cancel_button.clicked.connect(self.reject)
-        dialog_buttons.addWidget(self.cancel_button)
-        
-        # Initialize the category list
-        self._reload_category_list()
-        
-    def _on_hide_defaults_changed(self, state):
-        """Handle the hide defaults checkbox state change"""
-        try:
-            from app.core.config_manager import set_hide_default_categories
-            set_hide_default_categories(state == 2)  # Qt.Checked = 2
-        except ImportError:
-            pass  # Just use local state if config_manager not available
-        
-        # Reload the category list to reflect the current preference
-        self._reload_category_list()
-        
-        # Update the app's dropdowns if possible
-        self._update_ui_dropdowns()
-        
-    def _reload_category_list(self):
-        """Reload the category list based on current settings"""
-        # Clear the list
-        self.category_list.clear()
-        
-        # Get the hide defaults preference
-        try:
-            from app.core.config_manager import get_hide_default_categories
-            hide_defaults = get_hide_default_categories()
-        except ImportError:
-            hide_defaults = self.hide_defaults_checkbox.isChecked()
-            
         # Import default categories
         from app.constants import DEFAULT_TEMPLATE_CATEGORIES
         
-        # Get all current categories
-        self._update_result()
+        # Get all current categories from template manager (if available)
+        if self.template_manager and hasattr(self.template_manager, 'get_categories'):
+            self.categories = self.template_manager.get_categories()
+        else:
+            self.categories = list(DEFAULT_TEMPLATE_CATEGORIES)
+        
+        # Ensure "Custom" is always present
+        if "Custom" not in self.categories:
+            self.categories.append("Custom")
+        
+        # Use a set to remove duplicates and maintain order for display
+        unique_categories = list(dict.fromkeys(self.categories))
         
         # Split categories into default and custom
         default_categories = []
         custom_categories = []
         
-        for category in self.result_categories:
+        for category in unique_categories:
             if category in DEFAULT_TEMPLATE_CATEGORIES:
                 default_categories.append(category)
             else:
                 custom_categories.append(category)
         
-        # Add default categories if not hiding them
-        if not hide_defaults:
-            for category in default_categories:
-                item = QListWidgetItem(category)
-                self.category_list.addItem(item)
+        # Add default categories first
+        for category in default_categories:
+            self.category_list.addItem(category)
             
-            # Add a separator if we have custom categories
-            if custom_categories:
-                divider = QListWidgetItem("─" * 40)  # Use dash characters for visual separator
-                divider.setFlags(Qt.NoItemFlags)  # Make it non-selectable
-                self.category_list.addItem(divider)
+        # Add a divider if there are custom categories
+        self.divider_item = None # Store reference to the divider item
+        if custom_categories:
+            divider = QListWidgetItem("─────── Custom Categories ───────")
+            divider.setFlags(Qt.NoItemFlags)  # Make non-selectable
+            divider.setTextAlignment(Qt.AlignCenter)
+            divider.setData(DIVIDER_ROLE, True) # Mark as divider
+            
+            # Apply styling to the divider
+            divider_font = divider.font()
+            divider_font.setBold(True)
+            divider.setFont(divider_font)
+            divider.setForeground(Qt.darkGray)
+            
+            self.category_list.addItem(divider)
+            self.divider_item = divider # Store reference
+            
+            # Add custom categories after divider
+            for category in custom_categories:
+                self.category_list.addItem(category)
+            
+        layout.addWidget(self.category_list)
         
-        # Always add custom categories
-        for category in custom_categories:
-            item = QListWidgetItem(category)
-            self.category_list.addItem(item)
+        # Add input for new category
+        input_layout = QHBoxLayout()
+        self.new_category_input = QLineEdit()
+        self.new_category_input.setPlaceholderText("New category name")
+        self.add_btn = QPushButton("Add")
+        self.add_btn.clicked.connect(self._add_category)
+        input_layout.addWidget(self.new_category_input, 3)
+        input_layout.addWidget(self.add_btn, 1)
+        layout.addLayout(input_layout)
+        
+        # Add button row
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        self.remove_btn = QPushButton("Remove")
+        self.remove_btn.clicked.connect(self._remove_category)
+        
+        self.close_btn = QPushButton("Close")
+        self.close_btn.clicked.connect(self.accept)
+        self.close_btn.setObjectName("closeButtonAccent") # Set object name for styling
+        
+        button_layout.addWidget(self.remove_btn)
+        button_layout.addWidget(self.close_btn)
+        layout.addLayout(button_layout)
+        
+        # Set close button as default
+        self.close_btn.setDefault(True)
+        
+        # Load initial checkbox state and apply visibility
+        self._load_hide_defaults_setting()
+        self._toggle_default_categories_visibility() # Apply initial state
         
     def _add_category(self):
         """Add a new category to the list"""
@@ -236,6 +225,7 @@ class CategoryManager(QDialog):
             if not (self.category_list.item(i).flags() & Qt.ItemIsSelectable):
                 divider_exists = True
                 divider_index = i
+                self.divider_item = self.category_list.item(i) # Get reference if exists
                 break
                 
         # If no divider exists, add one before adding the custom category
@@ -244,6 +234,7 @@ class CategoryManager(QDialog):
             divider = QListWidgetItem("─────── Custom Categories ───────")
             divider.setFlags(Qt.NoItemFlags)  # Make non-selectable
             divider.setTextAlignment(Qt.AlignCenter)
+            divider.setData(DIVIDER_ROLE, True) # Mark as divider
             
             # Apply styling to the divider
             divider_font = divider.font()
@@ -252,6 +243,7 @@ class CategoryManager(QDialog):
             divider.setForeground(Qt.darkGray)
             
             self.category_list.addItem(divider)
+            self.divider_item = divider # Store reference
             divider_index = self.category_list.count() - 1
             
         # Add the new category after the divider
@@ -292,29 +284,97 @@ class CategoryManager(QDialog):
         # Update result categories
         self._update_result()
         
-        # Save to template category manager
-        self._save_to_category_manager()
+        # Call the appropriate method on ProjectTypeManager to remove
+        category_name = selected[0].text()
+        if self.template_manager and hasattr(self.template_manager, 'project_type_manager'):
+            print(f"Attempting to delete project type: {category_name}")
+            success = self.template_manager.project_type_manager.delete_project_type(category_name)
+            if success:
+                print(f"Successfully deleted project type '{category_name}'")
+                # Update categories list in memory (might be redundant if reload happens)
+                if category_name in self.categories:
+                    self.categories.remove(category_name)
+                # Update UI dropdowns immediately
+                self._update_ui_dropdowns()
+            else:
+                print(f"Failed to delete project type '{category_name}' via manager (might be default or already removed)")
+                # Optionally show a message if deletion fails unexpectedly
+                # QMessageBox.warning(self, "Deletion Failed", f"Could not delete category '{category_name}'.")
+                # Re-add item to list if deletion failed?
+                # self.category_list.insertItem(row, category_name)
+                # self._update_result() # Re-update result if re-added
+        else:
+            print("Project type manager not found, cannot delete from backend.")
+            # If no manager, just update internal lists
+            if category_name in self.categories:
+                 self.categories.remove(category_name)
+            self._update_result()
+        
+        # Reload the list to reflect the changes (including divider removal if needed)
+        self._reload_category_list()
+        
+    def _reload_category_list(self):
+        """Reloads the category list preserving the hide defaults state"""
+        # Get current state
+        hide_defaults = self.hide_defaults_checkbox.isChecked()
+        
+        # Clear the list
+        self.category_list.clear()
+        self.divider_item = None # Reset divider reference
+        
+        # Repopulate based on current self.categories
+        from app.constants import DEFAULT_TEMPLATE_CATEGORIES
+        
+        # Use a set to remove duplicates and maintain order for display
+        unique_categories = list(dict.fromkeys(self.categories))
+        
+        # Split categories into default and custom
+        default_categories = []
+        custom_categories = []
+        
+        for category in unique_categories:
+            if category in DEFAULT_TEMPLATE_CATEGORIES:
+                default_categories.append(category)
+            else:
+                custom_categories.append(category)
+        
+        # Add default categories first
+        for category in default_categories:
+            self.category_list.addItem(category)
+            
+        # Add a divider if there are custom categories
+        if custom_categories:
+            divider = QListWidgetItem("─────── Custom Categories ───────")
+            divider.setFlags(Qt.NoItemFlags)  # Make non-selectable
+            divider.setTextAlignment(Qt.AlignCenter)
+            divider.setData(DIVIDER_ROLE, True) # Mark as divider
+            
+            # Apply styling to the divider
+            divider_font = divider.font()
+            divider_font.setBold(True)
+            divider.setFont(divider_font)
+            divider.setForeground(Qt.darkGray)
+            
+            self.category_list.addItem(divider)
+            self.divider_item = divider # Store reference
+            
+            # Add custom categories after divider
+            for category in custom_categories:
+                self.category_list.addItem(category)
+                
+        # Re-apply visibility based on checkbox state
+        self._toggle_default_categories_visibility()
         
     def _update_result(self):
-        """Update the result categories list"""
+        """Update the result list based on the current list widget content"""
         # Get all categories from the list that aren't dividers
         self.result_categories = []
         for i in range(self.category_list.count()):
             item = self.category_list.item(i)
-            if item.flags() & Qt.ItemIsSelectable:  # Skip dividers which aren't selectable
-                category = item.text()
-                if category not in self.result_categories:  # Avoid duplicates
-                    self.result_categories.append(category)
+            if item.flags() & Qt.ItemIsSelectable:  # Only include selectable items
+                self.result_categories.append(item.text())
         
-        # Make sure "Custom" is always present
-        if "Custom" not in self.result_categories:
-            self.result_categories.insert(0, "Custom")
-            # Add it to the list view too if not there already
-            for i in range(self.category_list.count()):
-                if self.category_list.item(i).text() == "Custom":
-                    break
-            else:  # Not found
-                self.category_list.insertItem(0, "Custom")
+        print(f"CategoryManager: Updated result categories: {self.result_categories}")
     
     def _save_to_category_manager(self):
         """Save categories to the project type manager"""
@@ -357,6 +417,13 @@ class CategoryManager(QDialog):
                     # Create the project type
                     self.template_manager.project_type_manager.create_project_type(category, default_structure)
                     print(f"Added category '{category}' as project type with structure '{default_structure}'")
+            
+            # REMOVE this incorrect call - saving is handled by create_project_type
+            # self.template_manager.save_categories(self.result_categories)
+            # print(f"CategoryManager: Saved {len(self.result_categories)} categories to template manager.")
+            
+            # Immediately update the UI dropdowns after saving
+            self._update_ui_dropdowns()
         else:
             print("Warning: Project type manager not available")
     
@@ -378,184 +445,153 @@ class CategoryManager(QDialog):
         QTimer.singleShot(100, self._update_ui_dropdowns)
     
     def _update_ui_dropdowns(self):
-        """Update any category dropdowns in the application with the new categories"""
-        # Check if we have access to the application instance
-        if not hasattr(self, 'app') or not self.app:
+        """Update known category dropdowns in the main UI components"""
+        print("CategoryManager: Updating UI dropdowns...")
+        if not self.app:
+            print("CategoryManager: App instance not found, cannot update dropdowns.")
             return
+            
+        # Get the latest categories
+        all_categories = []
+        if hasattr(self.app, 'template_manager') and hasattr(self.app.template_manager, 'get_categories'):
+            all_categories = self.app.template_manager.get_categories()
+            print(f"Using categories from template_manager: {all_categories}")
+        else:
+            # Fallback to current result categories if manager isn't available
+            self._update_result()
+            all_categories = self.result_categories
+            print(f"Using local categories fallback: {all_categories}")
+            
+        # Check the hide defaults setting
+        hide_defaults = self.settings.value("CategoryManager/hideDefaultCategories", False, type=bool)
+        categories_to_show = all_categories
         
-        # Ensure template_manager has the latest categories
-        if hasattr(self.app, 'template_manager'):
-            # Get all categories
-            if hasattr(self.app.template_manager, 'get_categories'):
-                categories = self.app.template_manager.get_categories()
-            else:
-                # Fall back to local categories if method not available
-                categories = self.result_categories
-            
-            # Check if we should hide default categories
-            try:
-                from app.core.config_manager import get_hide_default_categories
-                hide_defaults = get_hide_default_categories()
-            except ImportError:
-                hide_defaults = self.hide_defaults_checkbox.isChecked()
-            
-            # Import default categories
+        if hide_defaults:
             from app.constants import DEFAULT_TEMPLATE_CATEGORIES
-            
-            # Split categories into default and custom
-            default_categories = []
-            custom_categories = []
-            
-            for category in categories:
-                if category in DEFAULT_TEMPLATE_CATEGORIES:
-                    default_categories.append(category)
-                else:
-                    custom_categories.append(category)
-            
-            # Always include "Custom" even if defaults are hidden
-            if hide_defaults and "Custom" not in custom_categories and "Custom" not in default_categories:
-                custom_categories.append("Custom")
-            
-            # Find all QComboBox widgets that might hold categories
-            for widget in self.app.findChildren(QComboBox):
-                # Check if this looks like a category dropdown (by name or items)
-                if hasattr(widget, 'objectName') and ('category' in widget.objectName().lower() or 
-                                                     any('Category' in widget.itemText(i) for i in range(widget.count()))):
-                    current_text = widget.currentText()
-                    widget.clear()
-                    
-                    # Add the categories based on the hide setting
-                    if not hide_defaults:
-                        # Add default categories if we're showing them
-                        for category in default_categories:
-                            widget.addItem(category)
-                        
-                        # Add a separator if we have custom categories
-                        if custom_categories:
-                            widget.insertSeparator(widget.count())
-                    
-                    # Add custom categories
-                    for category in custom_categories:
-                        widget.addItem(category)
-                    
-                    # Try to restore the previous selection
-                    index = widget.findText(current_text)
-                    if index >= 0:
-                        widget.setCurrentIndex(index)
-                    elif widget.count() > 0:
-                        widget.setCurrentIndex(0)
-        
-        # Force a UI refresh
-        QApplication.processEvents()
-        
-    def get_categories(self):
-        """
-        Get the resulting categories
-        
-        Returns:
-            list: List of categories
-        """
-        # Make sure result is up to date
-        self._update_result()
-        return self.result_categories
-    
-    def accept(self):
-        """Override the accept method to update categories in the app"""
-        # Make sure to update the result categories
-        self._update_result()
-        
-        # Force saving all categories to project_type_manager
-        if self.template_manager and hasattr(self.template_manager, 'project_type_manager'):
-            # Use a default structure for any new categories
-            default_structure = "Video Editing - Standard"
-            
-            # Get existing project types to avoid duplicates
-            existing_types = self.template_manager.project_type_manager.get_all_project_types()
-            
-            # Add each category as a project type if not already saved
-            added_count = 0
-            for category in self.result_categories:
-                if category not in existing_types:
-                    success = self.template_manager.project_type_manager.create_project_type(category, default_structure)
-                    if success:
-                        added_count += 1
-                        print(f"Successfully added category '{category}' to project_type_manager")
-                    else:
-                        print(f"Failed to add category '{category}' to project_type_manager")
-            
-            if added_count > 0:
-                print(f"Added {added_count} new categories to project_type_manager")
-        
-        # Save categories to template manager
-        self._save_to_category_manager()
-        
-        # Update UI dropdowns
-        self._update_app_categories()
-        
-        # Call the parent method
-        super().accept()
+            categories_to_show = [cat for cat in all_categories if cat not in DEFAULT_TEMPLATE_CATEGORIES]
+            # Ensure 'Custom' is still shown if it exists and defaults are hidden
+            if "Custom" in all_categories and "Custom" not in categories_to_show:
+                categories_to_show.append("Custom")
+            print(f"Filtered categories (hide defaults): {categories_to_show}")
+        else:
+            print(f"Showing all categories (hide defaults is off): {categories_to_show}")
 
-    def _rename_category(self):
-        """Rename the selected category"""
-        current_index = self.category_list.currentRow()
-        if current_index < 0:
-            QMessageBox.warning(self, "No Selection", "Please select a category to rename.")
-            return
+        # Use findChildren on the main app window to be more targeted than allWidgets
+        from PyQt5.QtWidgets import QComboBox
+        project_type_combos = self.app.findChildren(QComboBox, "project_type_combo_box")
+        template_category_combos = self.app.findChildren(QComboBox, "template_category_combo_box")
         
-        # Get the current item text
-        current_item = self.category_list.item(current_index)
-        current_name = current_item.text()
+        # Combine the lists
+        all_target_combos = project_type_combos + template_category_combos
+        updated_widgets = 0
         
-        # Check if this is a default category
-        from app.constants import DEFAULT_TEMPLATE_CATEGORIES
-        if current_name in DEFAULT_TEMPLATE_CATEGORIES:
-            QMessageBox.warning(self, "Cannot Rename", 
-                               f"Default category '{current_name}' cannot be renamed.")
-            return
+        print(f"Found {len(project_type_combos)} widgets with name 'project_type_combo_box'.")
+        print(f"Found {len(template_category_combos)} widgets with name 'template_category_combo_box'.")
+        print(f"Total target dropdowns: {len(all_target_combos)}")
         
-        # Don't allow renaming of dividers
-        if "─" in current_name:
-            return
+        for combo_box in all_target_combos:
+            if combo_box:
+                current_text = combo_box.currentText()
+                print(f"Updating dropdown: {combo_box.objectName()}, current selection: {current_text}")
+                
+                # Clear and repopulate
+                combo_box.clear()
+                combo_box.addItems(sorted(categories_to_show))
+                
+                # Try to restore selection
+                index = combo_box.findText(current_text)
+                if index != -1:
+                    combo_box.setCurrentIndex(index)
+                elif combo_box.count() > 0:
+                    combo_box.setCurrentIndex(0) # Default to first item
+                    
+                combo_box.setEnabled(combo_box.count() > 0)
+                updated_widgets += 1
+                print(f"Dropdown {combo_box.objectName()} updated with {combo_box.count()} items.")
+                
+        # --- Add logic here to find and update other specific dropdowns if needed ---
+        # Example: Update template gallery filter (if its objectName is known)
+        # gallery_filter_combo = self.app.findChild(QComboBox, "galleryCategoryFilter")
+        # if gallery_filter_combo:
+        #     # ... (update logic similar to above, potentially adding "All") ...
+        #     pass
+        # --------------------------------------------------------------------------
+
+        print(f"CategoryManager: Finished updating {updated_widgets} dropdown widgets.")
+            
+        # Optional: Force a UI refresh if needed, though often not necessary
+        # from PyQt5.QtWidgets import QApplication
+        # QApplication.processEvents()
         
-        # Get the new name from the user
-        new_name, ok = QInputDialog.getText(self, "Rename Category", 
-                                          "New Category Name:", 
-                                          QLineEdit.Normal, 
-                                          current_name)
+    def _find_associated_label(self, widget):
+        """Try to find a QLabel associated with this widget"""
+        from PyQt5.QtWidgets import QLabel
         
-        if not ok or not new_name.strip():
-            return
+        # Check siblings in layout
+        parent = widget.parent()
+        if parent:
+            for child in parent.findChildren(QLabel):
+                if child.buddy() == widget:
+                    return child.text()
         
-        new_name = new_name.strip()
-        
-        # Check if the new name already exists
-        for i in range(self.category_list.count()):
-            if i != current_index and self.category_list.item(i).text() == new_name:
-                QMessageBox.warning(self, "Duplicate Name", 
-                                  f"Category '{new_name}' already exists.")
-                return
-        
-        # Update the item in the list
-        current_item.setText(new_name)
-        
-        # Update our internal list
+        return None
+    
+    def get_categories(self):
+        """Return the updated list of categories"""
+        # Ensure results are updated before returning
         self._update_result()
+        return self.result_categories[:]
+
+    # --- Methods for handling checkbox state and visibility ---
+    
+    def _load_hide_defaults_setting(self):
+        """Load the hide default categories setting from QSettings"""
+        hide_defaults = self.settings.value("CategoryManager/hideDefaultCategories", False, type=bool)
+        self.hide_defaults_checkbox.setChecked(hide_defaults)
+        print(f"Loaded hideDefaultCategories setting: {hide_defaults}")
         
-        # If we have a reference to the template manager, update it
-        if hasattr(self, 'template_manager') and self.template_manager:
-            if hasattr(self.template_manager, 'project_type_manager'):
-                # Find and update the category in the project_type_manager
-                ptm = self.template_manager.project_type_manager
-                if hasattr(ptm, 'rename_project_type'):
-                    ptm.rename_project_type(current_name, new_name)
-                else:
-                    # Manual fallback if no dedicated method exists
-                    ptm.remove_project_type(current_name)
-                    ptm.add_project_type(new_name)
-                    ptm.save_custom_project_types()
-        
-        # Update UI dropdowns
+    def _save_hide_defaults_setting(self):
+        """Save the hide default categories setting to QSettings"""
+        state = self.hide_defaults_checkbox.isChecked()
+        self.settings.setValue("CategoryManager/hideDefaultCategories", state)
+        print(f"Saved hideDefaultCategories setting: {state}")
+        # Immediately trigger dropdown updates when the setting changes
         self._update_ui_dropdowns()
+
+    def _toggle_default_categories_visibility(self):
+        """Hide or show default categories and the divider in the list"""
+        hide = self.hide_defaults_checkbox.isChecked()
+        print(f"Toggling default category visibility: {'Hide' if hide else 'Show'}")
+        
+        from app.constants import DEFAULT_TEMPLATE_CATEGORIES
+        
+        found_defaults = False
+        for i in range(self.category_list.count()):
+            item = self.category_list.item(i)
+            if item.data(DIVIDER_ROLE):
+                # Hide/show divider based on checkbox AND if there are actually defaults to hide
+                item.setHidden(hide and found_defaults)
+            elif item.text() in DEFAULT_TEMPLATE_CATEGORIES:
+                item.setHidden(hide)
+                if not hide:
+                     found_defaults = True # Mark that we found defaults to show
+            else:
+                 # Custom items always visible
+                 item.setHidden(False)
+                 
+        # If hiding defaults, and the divider exists but no defaults were found (e.g., all removed), hide divider too
+        # This scenario is less likely given defaults can't be removed, but good practice
+        if hide and self.divider_item and not any(self.category_list.item(i).text() in DEFAULT_TEMPLATE_CATEGORIES for i in range(self.category_list.count()) if not self.category_list.item(i).data(DIVIDER_ROLE)):
+             self.divider_item.setHidden(True)
+             
+    # --- End checkbox methods ---
+
+    def accept(self):
+        """Save changes when closing"""
+        print("Category Manager: Accepting changes (Close clicked)")
+        # Saving is now handled dynamically on add/remove and checkbox toggle
+        # self._save_to_category_manager() # No longer needed here if handled dynamically
+        super().accept()
 
 def manage_categories(parent=None, categories=None):
     """

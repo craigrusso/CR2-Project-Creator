@@ -20,7 +20,6 @@ if not QCoreApplication.applicationName():
 
 
 SETTINGS_KEY_USER_DATA_ROOT = "UserDataRoot"
-SETTINGS_KEY_HIDE_DEFAULT_CATEGORIES = "HideDefaultCategories"
 
 # Store the resolved root path in memory to avoid repeated QSettings lookups/default checks
 _resolved_user_data_root = None
@@ -228,40 +227,6 @@ def get_template_directories_path():
 def get_log_path():
     """Returns the path to the Logs directory."""
     return get_path("Logs")
-
-
-# Functions for UI preferences
-
-def get_hide_default_categories():
-    """
-    Get the user preference for hiding default categories
-    
-    Returns:
-        bool: True if default categories should be hidden, False otherwise
-    """
-    settings = QSettings()
-    # Default to False (show all categories)
-    return settings.value(SETTINGS_KEY_HIDE_DEFAULT_CATEGORIES, False, bool)
-
-
-def set_hide_default_categories(hide_defaults):
-    """
-    Set the user preference for hiding default categories
-    
-    Args:
-        hide_defaults (bool): Whether to hide default categories
-        
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    if not isinstance(hide_defaults, bool):
-        print(f"ERROR: Invalid value for hide_default_categories, must be bool: {hide_defaults}")
-        return False
-        
-    settings = QSettings()
-    settings.setValue(SETTINGS_KEY_HIDE_DEFAULT_CATEGORIES, hide_defaults)
-    settings.sync()  # Ensure it's written immediately
-    return True
 
 
 # Example Usage (for testing when run directly)
