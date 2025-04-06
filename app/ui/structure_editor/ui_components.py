@@ -1310,10 +1310,29 @@ class UIBuilder:
         # Add "No Category" as the first option
         self.template_category_field.addItem("No Category")
         
-        # Add other categories to dropdown
+        # Split categories into default and custom
+        from app.constants import DEFAULT_TEMPLATE_CATEGORIES
+        default_categories = []
+        custom_categories = []
+        
         for category in self.categories:
-            if category != "No Category": # Avoid duplicates if it exists in the list
+            if category in DEFAULT_TEMPLATE_CATEGORIES:
+                default_categories.append(category)
+            elif category != "No Category":  # Already added at the beginning
+                custom_categories.append(category)
+        
+        # Add default categories first
+        for category in default_categories:
+            if category != "No Category":  # Already added as the first item
                 self.template_category_field.addItem(category)
+        
+        # Add a separator if there are custom categories
+        if custom_categories:
+            self.template_category_field.insertSeparator(self.template_category_field.count())
+            
+        # Add custom categories after divider
+        for category in custom_categories:
+            self.template_category_field.addItem(category)
         
         # Set the default index to 'No Category' after adding all items
         no_cat_index = self.template_category_field.findText("No Category")

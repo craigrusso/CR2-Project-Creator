@@ -367,6 +367,19 @@ class CategoryManager(QDialog):
             all_categories = self.result_categories
             print(f"CategoryManager: Updating UI with local categories: {all_categories}")
             
+        # Split categories into default and custom for divider
+        from app.constants import DEFAULT_TEMPLATE_CATEGORIES
+        default_categories = []
+        custom_categories = []
+        
+        for category in all_categories:
+            if category in DEFAULT_TEMPLATE_CATEGORIES:
+                default_categories.append(category)
+            else:
+                custom_categories.append(category)
+                
+        print(f"CategoryManager: Split categories - Default: {default_categories}, Custom: {custom_categories}")
+            
         # Find and update all QComboBox widgets containing categories
         from PyQt5.QtWidgets import QApplication, QComboBox
         updated_widgets = 0
@@ -417,8 +430,22 @@ class CategoryManager(QDialog):
                     if is_gallery_dropdown or "All" in current_items:
                         widget.addItem("All")
                     
-                    # Add all categories
-                    widget.addItems(all_categories)
+                    # Add special items that may be at the start
+                    if "No Category" in current_items:
+                        widget.addItem("No Category")
+                    
+                    # Add default categories first
+                    for category in default_categories:
+                        widget.addItem(category)
+                    
+                    # Add a separator if there are custom categories
+                    if custom_categories:
+                        # In QComboBox, we use insertSeparator to add a divider line
+                        widget.insertSeparator(widget.count())
+                        
+                    # Add custom categories after divider
+                    for category in custom_categories:
+                        widget.addItem(category)
                     
                     # Try to restore the previous selection
                     index = widget.findText(current)
