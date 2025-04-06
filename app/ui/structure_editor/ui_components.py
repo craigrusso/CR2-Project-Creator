@@ -520,6 +520,32 @@ class UIBuilder(QObject):
         # --- Name Field ---
         self.template_name_field = QLineEdit()
         self.template_name_field.setPlaceholderText("Enter template name...")
+        
+        # Set initial template name if available from the editor
+        template_name = None
+        
+        # Try to get the template name from different sources in the editor
+        if hasattr(self.editor, '_template_name') and self.editor._template_name:
+            template_name = self.editor._template_name
+            print(f"DEBUG (UIBuilder): Found template name in editor._template_name: '{template_name}'")
+        elif hasattr(self.editor, 'template_name') and self.editor.template_name:
+            template_name = self.editor.template_name
+            print(f"DEBUG (UIBuilder): Found template name in editor.template_name: '{template_name}'")
+        elif hasattr(self.editor, 'get_template_name') and callable(self.editor.get_template_name):
+            template_name = self.editor.get_template_name()
+            print(f"DEBUG (UIBuilder): Retrieved template name from editor.get_template_name(): '{template_name}'")
+        elif hasattr(self.editor, 'structure_name') and self.editor.structure_name:
+            if self.editor.structure_name.startswith("Template_"):
+                template_name = self.editor.structure_name[len("Template_"):]
+                print(f"DEBUG (UIBuilder): Derived template name from editor.structure_name: '{template_name}'")
+        
+        # Set the template name field if we found a valid name
+        if template_name:
+            print(f"DEBUG (UIBuilder): Setting template name field to: '{template_name}'")
+            self.template_name_field.setText(template_name)
+        else:
+            print("DEBUG (UIBuilder): No template name found, leaving field empty")
+        
         form_layout.addRow(QLabel("Template Name:"), self.template_name_field)
 
         # --- Category Field ---

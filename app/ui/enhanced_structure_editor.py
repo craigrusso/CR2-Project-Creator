@@ -28,103 +28,163 @@ class EnhancedStructureEditor(QDialog):
     # Define signals
     template_renamed = pyqtSignal(str, str)  # old_name, new_name
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, structure_name="", structure=None, is_new=False, project_type=None, template_manager=None, template_data=None):
         super().__init__(parent)
         self.parent = parent
-        self.setWindowTitle("Edit Template")
-        self.resize(800, 600)  # Set initial size
         
-        # Initialize properties
-        self._template_name = ""
-        self._structure_name = ""
-        self._template_description = ""
-        self._template_category = "Custom"
-        self._is_new = False
+        print(f"DEBUG EnhancedStructureEditor.__init__ called")
+        print(f"  structure_name: {structure_name}")
+        print(f"  is_new: {is_new}")
+        print(f"  template_data provided: {template_data is not None}")
+        
+        # Store template manager instance
+        self.template_manager = template_manager
+        
+        # Initialize properties based on passed arguments or defaults
+        self._is_new = is_new
+        self._structure_name = structure_name if structure_name else ""
+        
+        # Extract initial values from template_data if provided
+        initial_name = ""
+        initial_description = ""
+        initial_category = "Custom" # Default category
+        
+        if template_data and isinstance(template_data, dict):
+            initial_name = template_data.get('name', '')
+            initial_description = template_data.get('description', '')
+            initial_category = template_data.get('category', template_data.get('type', 'Custom'))
+            self._structure_name = template_data.get('structure_name', self._structure_name)
+            print(f"  Loaded from template_data: name='{initial_name}', desc='{initial_description}', category='{initial_category}', struct_name='{self._structure_name}'")
+        elif structure_name and structure_name.startswith("Template_"):
+            initial_name = structure_name[len("Template_"):]
+            print(f"  Derived name from structure_name: '{initial_name}'")
+        
+        self._template_name = initial_name
+        self._template_description = initial_description
+        self._template_category = initial_category
+        
+        # Set window title based on mode and name
+        title = "Add New Template" if self._is_new else f"Edit Template: {self._template_name}"
+        self.setWindowTitle(title)
+        self.resize(800, 600)  # Set initial size
         
         # Initialize file operations handler
         self.file_operations = FileOperationsHandler(self)
         
-        # Initialize structure converter for handling conversions between tree and data structure
-        self._init_structure_converter()
+        # Initialize structure converter BEFORE creating UI
+        self._init_structure_converter() 
         
-        # Create UI
-        self._create_ui()
+        # Create UI Builder and UI components
+        self.ui_builder = None # Initialize ui_builder reference
+        self._create_ui() # This method should assign self.ui_builder and create widgets like self.name_field
+
+        # --- Direct population of UI fields AFTER creation ---
+        if hasattr(self, 'name_field') and self.name_field: 
+            print(f"  Clearing placeholder text before setting name...")
+            self.name_field.setPlaceholderText("") # Clear placeholder
+            
+            # Block signals, set text, unblock signals
+            print(f"  Blocking signals for name_field")
+            self.name_field.blockSignals(True)
+            try:
+                self.name_field.setText(self._template_name)
+                print(f"  Directly set name_field text (signals blocked) to: '{self._template_name}'")
+            finally:
+                self.name_field.blockSignals(False)
+                print(f"  Unblocked signals for name_field")
+                
+            # Force immediate UI update attempt (Keep this for now)
+            # self.name_field.repaint()
+            # QApplication.processEvents()
+        else:
+            print("  WARN: name_field not found after _create_ui() in __init__")
+            
+        if hasattr(self, 'description_field') and self.description_field:
+            self.description_field.setPlainText(self._template_description)
         
-        # Initialize drag and drop handling
+        if hasattr(self, 'category_field') and self.category_field:
+            category_index = self.category_field.findText(self._template_category)
+            if category_index != -1:
+                self.category_field.setCurrentIndex(category_index)
+            else:
+                self.category_field.addItem(self._template_category)
+                self.category_field.setCurrentText(self._template_category)
+        # -----------------------------------------------------
+            
+        print(f"  UI Populated Check: name='{self.name_field.text() if hasattr(self, 'name_field') else 'N/A'}', category='{self.category_field.currentText() if hasattr(self, 'category_field') else 'N/A'}'")
+
+        # Load structure data AFTER tree widget exists
+        structure_to_load = structure if structure else (template_data.get('structure') if template_data else None)
+        if structure_to_load:
+            print(f"  Loading structure...")
+            self.load_structure(structure_to_load)
+        else:
+             print(f"  No initial structure to load.")
+
+        # Initialize drag and drop AFTER tree widget exists
         self.init_drag_drop_handlers()
+        
+        # Setup a timer to ensure the name field is populated after the dialog is fully initialized
+        QTimer.singleShot(100, self._ensure_name_field_populated)
     
     def _create_ui(self):
         """Create the main user interface"""
-        # Main layout
-        main_layout = QVBoxLayout(self)
+        print("DEBUG: _create_ui called")
+        # Import UIBuilder locally if needed or ensure it's imported at module level
+        from app.ui.structure_editor.ui_components import UIBuilder
         
-        # Template details section
-        details_group = QGroupBox("Template Details")
-        details_layout = QFormLayout(details_group)
+        # Create the UI Builder instance
+        # Pass self (the editor instance) to UIBuilder
+        self.ui_builder = UIBuilder(self)
+        print("DEBUG: UIBuilder instance created")
         
-        # Name field
-        self.name_field = QLineEdit()
-        self.name_field.setPlaceholderText("Enter template name")
-        self.name_field.textChanged.connect(self.on_template_name_changed)
-        details_layout.addRow("Name:", self.name_field)
+        # Get the main layout from the UI Builder
+        main_layout = self.ui_builder.init_ui()
+        print("DEBUG: UIBuilder.init_ui() called, main_layout obtained")
         
-        # Description field
-        self.description_field = QTextEdit()
-        self.description_field.setPlaceholderText("Enter template description")
-        self.description_field.setMaximumHeight(80)
-        details_layout.addRow("Description:", self.description_field)
+        # --- Assign widget references created by UIBuilder to self --- 
+        if hasattr(self.ui_builder, 'template_name_field'):
+            self.name_field = self.ui_builder.template_name_field
+            print("DEBUG: Assigned self.name_field from ui_builder")
+        else:
+            print("WARN: ui_builder missing template_name_field")
+            
+        if hasattr(self.ui_builder, 'template_category_field'):
+            self.category_field = self.ui_builder.template_category_field
+            print("DEBUG: Assigned self.category_field from ui_builder")
+        else:
+             print("WARN: ui_builder missing template_category_field")
+             
+        if hasattr(self.ui_builder, 'template_info_field'):
+            self.description_field = self.ui_builder.template_info_field # Assuming this maps to description
+            print("DEBUG: Assigned self.description_field from ui_builder.template_info_field")
+        else:
+             print("WARN: ui_builder missing template_info_field")
+             
+        if hasattr(self.ui_builder, 'tree'):
+            self.tree = self.ui_builder.tree
+            print("DEBUG: Assigned self.tree from ui_builder")
+            # Connect context menu AFTER tree is assigned
+            if hasattr(self, 'show_context_menu'):
+                 self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+                 self.tree.customContextMenuRequested.connect(self.show_context_menu)
+        else:
+             print("WARN: ui_builder missing tree")
+        # ----------------------------------------------------------
         
-        # Category dropdown
-        self.category_field = QComboBox()
-        self.category_field.addItems(["Custom", "Web", "Desktop", "Mobile", "Other"])
-        self.category_field.setEditable(True)
-        details_layout.addRow("Category:", self.category_field)
-        
-        main_layout.addWidget(details_group)
-        
-        # Project structure section
-        structure_group = QGroupBox("Project Structure")
-        structure_layout = QVBoxLayout(structure_group)
-        
-        # Tree widget for structure
-        self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["Name", "Type"])
-        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.tree.customContextMenuRequested.connect(self.show_context_menu)
-        structure_layout.addWidget(self.tree)
-        
-        # Buttons for manipulating structure
-        button_layout = QHBoxLayout()
-        
-        self.add_folder_btn = QPushButton("Add Folder")
-        self.add_folder_btn.clicked.connect(self.add_folder)
-        button_layout.addWidget(self.add_folder_btn)
-        
-        self.add_file_btn = QPushButton("Add File")
-        self.add_file_btn.clicked.connect(self.add_file)
-        button_layout.addWidget(self.add_file_btn)
-        
-        self.edit_btn = QPushButton("Edit Selected")
-        self.edit_btn.clicked.connect(self.edit_item)
-        button_layout.addWidget(self.edit_btn)
-        
-        self.remove_btn = QPushButton("Remove Selected")
-        self.remove_btn.clicked.connect(self.remove_item)
-        button_layout.addWidget(self.remove_btn)
-        
-        structure_layout.addLayout(button_layout)
-        main_layout.addWidget(structure_group)
-        
-        # Dialog buttons
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        button_box.accepted.connect(self.accept)
-        button_box.rejected.connect(self.reject)
-        main_layout.addWidget(button_box)
+        # Set the layout for the dialog
+        self.setLayout(main_layout)
+        print("DEBUG: Main layout set for EnhancedStructureEditor dialog")
     
     def set_template_name(self, name):
         """Set the template name"""
+        print(f"DEBUG EnhancedStructureEditor.set_template_name called with: {name}")
         self._template_name = name
-        self.name_field.setText(name)
+        if hasattr(self, 'name_field') and self.name_field:
+            self.name_field.setText(name)
+            print(f"  set_template_name updated name_field text to: '{name}'")
+        else:
+            print("  WARN: name_field not found in set_template_name")
     
     def get_template_name(self):
         """Get the current template name"""
@@ -148,31 +208,46 @@ class EnhancedStructureEditor(QDialog):
         """Focus the name field"""
         if self.name_field:
             self.name_field.setFocus()
-            self.name_field.selectAll()
     
     def on_template_name_changed(self, text):
-        """Handle changes to the template name"""
-        old_name = self._template_name
-        new_name = text
+        """Handle changes to the template name FIELD"""
+        print(f"DEBUG: on_template_name_changed triggered with text: '{text}'")
+        # Get the current text directly from the sender widget to be sure
+        sender = self.sender() 
+        current_widget_text = sender.text() if sender else text # Fallback to argument
+        print(f"  Current widget text: '{current_widget_text}'")
+        print(f"  Internal _template_name BEFORE update: '{self._template_name}'")
+
+        # Only update internal state if the change wasn't programmatic (prevents feedback loop)
+        # We assume programmatic changes correctly updated _template_name already.
+        # Compare widget text to internal state.
+        if current_widget_text == self._template_name:
+             print("  Widget text matches internal state. Likely programmatic change or no actual change. Ignoring.")
+             return
+
+        print(f"  Widget text '{current_widget_text}' differs from internal '{self._template_name}'. User edit detected.")
+
+        # Update internal name based on the actual USER change in the widget
+        old_internal_name = self._template_name
+        self._template_name = current_widget_text # Update internal state from widget
+        new_internal_name = self._template_name
         
-        # Don't process if not changed
-        if old_name == new_name:
-            return
-        
-        # Update internal name
-        self._template_name = new_name
-        
+        print(f"  Internal _template_name AFTER update: '{self._template_name}'")
+
         # If this is a new template, update structure name to match
         if self._is_new or not self._structure_name:
-            # Only update structure name for new templates
-            structure_name = f"Template_{new_name}"
-            self._structure_name = structure_name
-            print(f"📝 STRUCTURE EDITOR: Updated structure name to '{structure_name}' (is_new={self._is_new})")
+            structure_name = f"Template_{new_internal_name}"
+            if self._structure_name != structure_name:
+                 self._structure_name = structure_name
+                 print(f"📝 STRUCTURE EDITOR: Updated structure name to '{structure_name}' (is_new={self._is_new})")
         
         # Emit signal if name actually changed and isn't empty
-        if old_name and new_name and old_name != new_name:
-            print(f"📝 STRUCTURE EDITOR: Template name changed from '{old_name}' to '{new_name}'")
-            self.template_renamed.emit(old_name, new_name)
+        # Compare the internal names before/after update
+        if old_internal_name is not None and new_internal_name and old_internal_name != new_internal_name:
+            print(f"📝 STRUCTURE EDITOR: Emitting template_renamed from '{old_internal_name}' to '{new_internal_name}'")
+            self.template_renamed.emit(old_internal_name, new_internal_name)
+        else:
+             print("  Not emitting template_renamed (no change or empty)")
     
     def init_drag_drop_handlers(self):
         """Initialize drag and drop handlers for the tree"""
@@ -503,19 +578,43 @@ class EnhancedStructureEditor(QDialog):
         from app.utils.template_validator import TemplateValidator
         from PyQt5.QtWidgets import QMessageBox, QApplication
         
-        print("DEBUG: Starting accept method")
+        print("DEBUG: EnhancedStructureEditor.accept method called")
         
-        # Get values from form
+        # --- Get the template name with fallbacks ---
+        template_name = ""
+        if hasattr(self, 'name_field') and self.name_field:
+            template_name = self.name_field.text().strip()
+            print(f"DEBUG: Got name from name_field: '{template_name}'")
+        
+        # If name field is empty, try using the internal template name
+        if not template_name and self._template_name:
+            template_name = self._template_name
+            print(f"DEBUG: Name field empty, using internal _template_name: '{template_name}'")
+            
+            # Also update the name field for consistency
+            if hasattr(self, 'name_field') and self.name_field:
+                self.name_field.setText(template_name)
+                QApplication.processEvents()
+        
+        # If still empty, extract from window title as last resort
+        if not template_name:
+            # Extract from window title (format: "Edit Template: template_name")
+            window_title = self.windowTitle()
+            if window_title and ":" in window_title:
+                template_name = window_title.split(":", 1)[1].strip()
+                print(f"DEBUG: Extracted name from window title: '{template_name}'")
+        
+        # Get values from form, prioritizing our multi-fallback name
         template = {
-            "name": self.name_field.text().strip(),
-            "type": self.category_field.currentText(),
-            "description": self.description_field.toPlainText().strip(),
+            "name": template_name, 
+            "type": self.category_field.currentText() if hasattr(self, 'category_field') else "Custom",
+            "description": self.description_field.toPlainText().strip() if hasattr(self, 'description_field') else "",
             "path": self.get_current_path() if hasattr(self, 'get_current_path') else ""
         }
         
-        print(f"DEBUG: Initial template data: {template}")
+        print(f"DEBUG: Template data for validation: {template}")
         
-        # Validate and fix template data
+        # Validate and fix template data (including generating name if still empty)
         is_valid, fixed_template, messages = TemplateValidator.validate_and_fix_template(template)
         
         # If name was empty and auto-generated
@@ -523,8 +622,9 @@ class EnhancedStructureEditor(QDialog):
             print(f"DEBUG: Name was auto-generated: {fixed_template['name']}")
             
             # Update UI with new name
-            self.name_field.setText(fixed_template["name"])
-            QApplication.processEvents()
+            if hasattr(self, 'name_field') and self.name_field:
+                self.name_field.setText(fixed_template["name"])
+                QApplication.processEvents()
             
             # Update internal state
             self._template_name = fixed_template["name"]
@@ -561,5 +661,62 @@ class EnhancedStructureEditor(QDialog):
         
         print(f"DEBUG: Final structure data: {structure_data}")
         
-        # Accept the dialog
-        super().accept() 
+        # Accept the dialog - call the parent class accept method
+        super().accept()
+
+    def _ensure_name_field_populated(self):
+        """Ensure the name field is populated with the template name after the dialog is fully initialized"""
+        print(f"DEBUG: _ensure_name_field_populated called, template name is: '{self._template_name}'")
+        if hasattr(self, 'name_field') and self.name_field and self._template_name:
+            current_text = self.name_field.text()
+            if not current_text and self._template_name:
+                print(f"DEBUG: Name field is empty, setting to: '{self._template_name}'")
+                self.name_field.setText(self._template_name)
+                
+                # Force UI update
+                from PyQt5.QtWidgets import QApplication
+                QApplication.processEvents()
+                
+                # Extra check to verify the text was set
+                if self.name_field.text() != self._template_name:
+                    print(f"WARNING: Failed to set name field text, current text: '{self.name_field.text()}'")
+                    # Try again with blocked signals
+                    self.name_field.blockSignals(True)
+                    try:
+                        self.name_field.setText(self._template_name)
+                    finally:
+                        self.name_field.blockSignals(False)
+                        
+                    QApplication.processEvents()
+                    print(f"DEBUG: After second attempt, name field text is: '{self.name_field.text()}'")
+            else:
+                print(f"DEBUG: Name field already has text: '{current_text}', no need to set")
+        else:
+            print("DEBUG: Could not find name field or template name is empty")
+
+    def showEvent(self, event):
+        """This event is called when the dialog is shown on screen"""
+        super().showEvent(event)
+        
+        print(f"DEBUG: EnhancedStructureEditor.showEvent called, template name is: '{self._template_name}'")
+        
+        # Ensure name field is properly populated
+        if hasattr(self, 'name_field') and self.name_field and self._template_name:
+            current_text = self.name_field.text()
+            if not current_text or current_text != self._template_name:
+                print(f"DEBUG: showEvent - Setting name field to: '{self._template_name}'")
+                self.name_field.blockSignals(True)
+                try:
+                    self.name_field.setText(self._template_name)
+                finally:
+                    self.name_field.blockSignals(False)
+                
+                # Force UI update
+                from PyQt5.QtWidgets import QApplication
+                QApplication.processEvents()
+                
+                print(f"DEBUG: showEvent - After setting, name field text is: '{self.name_field.text()}'")
+            else:
+                print(f"DEBUG: showEvent - Name field already has correct text: '{current_text}'")
+        else:
+            print("DEBUG: showEvent - Could not find name field or template name is empty") 

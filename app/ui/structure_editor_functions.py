@@ -63,8 +63,17 @@ def show_enhanced_structure_editor(
             fetched_template_data = template_manager.get_template_by_name(template_name) 
             if fetched_template_data:
                 print(f"🔧 STRUCTURE EDITOR: Successfully pre-fetched template data.")
+                # Make sure template_name is set from the fetched data if available
+                template_name = fetched_template_data.get('name', template_name)
             else:
                 print(f"⚠️ STRUCTURE EDITOR: Failed to pre-fetch template data for '{template_name}'. Editor will use defaults.")
+
+        # Handle the case where template_name might be None but structure_name contains the name
+        if not template_name and structure_name and structure_name.startswith("Template_"):
+            template_name = structure_name[len("Template_"):]
+            print(f"🔧 STRUCTURE EDITOR: Derived template_name '{template_name}' from structure_name")
+        
+        print(f"🔧 STRUCTURE EDITOR: Final template_name value: '{template_name}'")
 
         # Create the editor instance, passing pre-fetched data
         editor = EnhancedStructureEditor(
@@ -77,10 +86,22 @@ def show_enhanced_structure_editor(
             template_data=fetched_template_data # Pass fetched data
         )
         
-        # If template_name is provided, set it explicitly
+        # If template_name is provided, set it explicitly in multiple ways to ensure it's properly set
         if template_name:
             if hasattr(editor, 'set_template_name'):
+                print(f"🔧 STRUCTURE EDITOR: Explicitly setting template name to '{template_name}'")
                 editor.set_template_name(template_name)
+            
+            # Directly set the name field text if found
+            if hasattr(editor, 'name_field') and editor.name_field:
+                print(f"🔧 STRUCTURE EDITOR: Directly setting name_field text to '{template_name}'")
+                from PyQt5.QtWidgets import QApplication
+                editor.name_field.blockSignals(True)
+                try:
+                    editor.name_field.setText(template_name)
+                finally:
+                    editor.name_field.blockSignals(False)
+                QApplication.processEvents()
         
         # Store template manager reference if provided
         if template_manager:
@@ -101,8 +122,17 @@ def show_enhanced_structure_editor(
         # Apply tree styling to all tree widgets in the dialog
         apply_styling_to_all_tree_widgets(editor)
         
+        # --- Force setting the name field text right before showing --- 
+        if template_name and hasattr(editor, 'name_field') and editor.name_field:
+            print(f"🔧 STRUCTURE EDITOR: Force setting name field text to '{template_name}' before exec_")
+            editor.name_field.setText(template_name)
+        # ----------------------------------------------------------
+        
         # Show the dialog and get the result
         result = editor.exec_()
+        
+        # After dialog is shown, verify name field still has the template name
+        # This code will only execute after the dialog is closed
         
         if result == editor.Accepted:
             print(f"🔧 STRUCTURE EDITOR: Dialog accepted")
