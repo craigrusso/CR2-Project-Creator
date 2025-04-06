@@ -1120,35 +1120,68 @@ class GalleryTemplatesSetup:
 
         # Trigger a refresh of the current view to apply sorting
         if gallery.template_view_mode == 'list':
-            # Repopulate the table view which will use the new sort order
-            templates_to_show = {} # Get current templates again
+            # --- Get the templates currently being displayed ---
+            current_templates_data = []
             current_folder = getattr(gallery, 'current_folder', None)
-            if current_folder:
-                templates_to_show = GalleryTemplatesSetup.get_templates_in_folder(gallery, current_folder)
-            else:
-                 templates_to_show = getattr(gallery.template_manager, 'templates', {})
-            GalleryTemplatesSetup.populate_templates_list(gallery, templates_to_show)
             
-            # Update header visual indicator (if using custom header labels, not needed for QHeaderView)
-            # Or configure QHeaderView sort indicator if using proxy model
+            # Re-fetch based on the *same logic* used for initial population
+            if current_folder:
+                # If a folder filter is active, get templates for that folder
+                current_templates_data = GalleryTemplatesSetup.get_templates_in_folder(gallery, current_folder)
+            else:
+                # Otherwise, get all templates currently loaded by the manager
+                if hasattr(gallery, 'template_manager') and hasattr(gallery.template_manager, 'get_all_templates'):
+                     all_templates_dict = gallery.template_manager.get_all_templates()
+                     # Ensure it's a list of dicts for sorting/population
+                     if isinstance(all_templates_dict, dict):
+                         current_templates_data = list(all_templates_dict.values())
+                     elif isinstance(all_templates_dict, list): # Handle if it already returns a list
+                        current_templates_data = all_templates_dict
+                     else:
+                         print("[ERROR] get_all_templates did not return dict or list in set_template_sort")
+                         current_templates_data = []
+                else:
+                     print("[ERROR] Template manager or get_all_templates not found in set_template_sort")
+                     current_templates_data = [] # Fallback
+
+            # Ensure it's a list before passing (redundant if handled above, but safe)
+            if isinstance(current_templates_data, dict):
+                 current_templates_data = list(current_templates_data.values())
+
+            # --- Repopulate with the fetched data ---
+            print(f"[DEBUG] set_template_sort: Repopulating list view with {len(current_templates_data)} templates.")
+            GalleryTemplatesSetup.populate_templates_list(gallery, current_templates_data)
+            
+            # --- Update header indicator ---
             if hasattr(gallery, 'template_table_view'):
                  header = gallery.template_table_view.horizontalHeader()
-                 # Use Qt.AscendingOrder and Qt.DescendingOrder instead of QHeaderView.SortIndicator
+                 # Use Qt.AscendingOrder and Qt.DescendingOrder
                  sort_indicator = Qt.AscendingOrder if gallery.current_sort_order == 'asc' else Qt.DescendingOrder
                  
-                 # Map field name to column index (this needs to be robust)
-                 col_map = {header_text.lower(): i for i, header_text in enumerate(TemplateTableView.COLUMN_HEADERS)}
-                 sort_column_index = col_map.get(sort_field.lower(), -1)
+                 # Map field name to column index
+                 # Ensure TemplateTableView.COLUMN_HEADERS is accessible and correct
+                 try:
+                     # Assuming TemplateTableView is imported or accessible
+                     from app.ui.views.template_table_view import TemplateTableView # Ensure import
+                     col_map = {header_text.lower().strip(): i for i, header_text in enumerate(TemplateTableView.COLUMN_HEADERS)}
+                 except (ImportError, AttributeError) as e:
+                     print(f"[ERROR] Could not access TemplateTableView.COLUMN_HEADERS: {e}")
+                     col_map = {} # Fallback to empty map
+
+                 sort_column_index = col_map.get(sort_field.lower().strip(), -1)
                  
                  if sort_column_index != -1:
                       header.setSortIndicator(sort_column_index, sort_indicator)
                       header.setSortIndicatorShown(True)
                  else:
-                      header.setSortIndicatorShown(False) # Hide if field doesn't match a column
+                      print(f"[WARN] Could not map sort field '{sort_field}' to a table column index.")
+                      header.setSortIndicatorShown(False) # Hide if field doesn't match
 
         elif gallery.template_view_mode == 'grid':
             # Repopulate grid view (ensure populate_templates_grid uses sorting)
             print("[DEBUG] Triggering grid repopulation for sorting.")
+            # TODO: Ensure populate_gallery uses the new sort order.
+            # Might need modification if it doesn't already read gallery.current_sort_field/order
             gallery.populate_gallery() # Assuming this handles sorting for grid
 
     @staticmethod
