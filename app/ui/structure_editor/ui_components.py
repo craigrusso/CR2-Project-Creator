@@ -554,7 +554,29 @@ class UIBuilder:
         # Template category field
         self.template_category_field = QComboBox()
         self.template_category_field.setObjectName("template_category_combo_box")
-        self.template_category_field.addItems(sorted(self.categories_to_display))
+        
+        # Populate with the potentially filtered and grouped list
+        hide_defaults = self.settings.value("CategoryManager/hideDefaultCategories", False, type=bool)
+        self.template_category_field.clear() # Ensure it's empty
+        if not hide_defaults:
+            # Separate default and custom
+            default_cats = sorted([cat for cat in self.categories_to_display if cat in DEFAULT_TEMPLATE_CATEGORIES])
+            custom_cats = sorted([cat for cat in self.categories_to_display if cat not in DEFAULT_TEMPLATE_CATEGORIES])
+            
+            # Add defaults
+            if default_cats:
+                self.template_category_field.addItems(default_cats)
+            
+            # Add separator if custom exist
+            if custom_cats:
+                 if default_cats: # Only add separator if there were defaults before it
+                     self.template_category_field.insertSeparator(self.template_category_field.count())
+                 self.template_category_field.addItems(custom_cats)
+        else:
+            # Only custom categories, add them sorted
+            self.template_category_field.addItems(sorted(self.categories_to_display))
+            
+        # self.template_category_field.addItems(sorted(self.categories_to_display))
         self.template_category_field.setCurrentIndex(0)  # Default to first available
         self.template_category_field.setStyleSheet(f"""
             QComboBox {{

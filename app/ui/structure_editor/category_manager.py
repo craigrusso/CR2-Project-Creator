@@ -494,10 +494,28 @@ class CategoryManager(QDialog):
                 current_text = combo_box.currentText()
                 print(f"Updating dropdown: {combo_box.objectName()}, current selection: {current_text}")
                 
-                # Clear and repopulate
+                # Clear and repopulate with potential separator
                 combo_box.clear()
-                combo_box.addItems(sorted(categories_to_show))
                 
+                if not hide_defaults:
+                    # Separate default and custom
+                    from app.constants import DEFAULT_TEMPLATE_CATEGORIES
+                    default_cats = sorted([cat for cat in categories_to_show if cat in DEFAULT_TEMPLATE_CATEGORIES])
+                    custom_cats = sorted([cat for cat in categories_to_show if cat not in DEFAULT_TEMPLATE_CATEGORIES])
+                    
+                    # Add defaults
+                    if default_cats:
+                        combo_box.addItems(default_cats)
+                    
+                    # Add separator if custom exist
+                    if custom_cats:
+                        if default_cats: # Only add separator if there were defaults before it
+                            combo_box.insertSeparator(combo_box.count())
+                        combo_box.addItems(custom_cats)
+                else:
+                    # Only custom categories, add them sorted
+                    combo_box.addItems(sorted(categories_to_show))
+                    
                 # Try to restore selection
                 index = combo_box.findText(current_text)
                 if index != -1:
