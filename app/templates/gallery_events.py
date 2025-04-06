@@ -333,7 +333,8 @@ class GalleryEvents:
                         print("🔍 LISTENER: Gallery object not available for refresh")
                 else:
                     print(f"❌ LISTENER: Failed to save new template '{updated_template_name}'")
-                    QMessageBox.warning(gallery, "Save Error", f"Could not save the new template file for {updated_template_name}. Error: {save_message}")
+                    error_message = "Failed to save template. Please check that the template has a valid name and structure."
+                    QMessageBox.warning(gallery, "Save Error", f"Could not save the new template file for {updated_template_name}. Error: {error_message}")
             else:
                 print("🔍 LISTENER: Add template cancelled or failed")
         except Exception as e:

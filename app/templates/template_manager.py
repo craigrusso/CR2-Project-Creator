@@ -541,3 +541,84 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
                 return path
         
         return None
+
+    def save_template(self, template_data):
+        """
+        Save a template using a template data dictionary.
+        
+        Args:
+            template_data (dict): Dictionary containing template information
+                Required keys: 'name', 'structure'
+                Optional keys: 'category', 'description', 'tags', 'type', etc.
+                
+        Returns:
+            bool: True if saved successfully, False otherwise
+        """
+        print(f"UIOperations.save_template: Calling save_template with name='{template_data.get('name', 'UNNAMED')}', path='{template_data.get('path', '')}', type='{template_data.get('type', 'Standard')}'")
+        
+        # Validate required template data
+        if not isinstance(template_data, dict):
+            print(f"Error: template_data must be a dictionary")
+            return False
+            
+        if 'name' not in template_data:
+            print(f"Error: template_data missing required 'name' field")
+            return False
+            
+        if 'structure' not in template_data:
+            print(f"Error: template_data missing required 'structure' field")
+            return False
+        
+        # Extract required properties
+        name = template_data.get('name')
+        structure = template_data.get('structure')
+        
+        # Extract optional properties with defaults
+        category = template_data.get('category', 'General')
+        description = template_data.get('description', '')
+        tags = template_data.get('tags', [])
+        template_type = template_data.get('type', 'Standard')
+        original_name = template_data.get('original_name', None)  # For rename operations
+        files_to_cache = template_data.get('files_to_cache', None)
+        
+        # Call the template_io's save_template method with the extracted parameters
+        try:
+            success, message = self.template_io.save_template(
+                template_name=name,
+                structure=structure,
+                category=category,
+                description=description,
+                tags=tags,
+                template_type=template_type,
+                original_name=original_name,
+                files_to_cache=files_to_cache
+            )
+            
+            if not success:
+                print(f"Error saving template: {message}")
+            
+            return success
+            
+        except Exception as e:
+            print(f"Error saving template: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def get_categories(self):
+        """
+        Get all available categories from project_type_manager
+        
+        Returns:
+            list: List of all categories (default + custom)
+        """
+        # Get from project_type_manager if available (preferred source of truth)
+        if hasattr(self, 'project_type_manager'):
+            categories = self.project_type_manager.get_all_project_types()
+            print(f"TemplateManager.get_categories: Retrieved {len(categories)} categories from project_type_manager: {categories}")
+            return categories
+            
+        # Fallback to default categories
+        from app.constants import DEFAULT_TEMPLATE_CATEGORIES
+        print("TemplateManager.get_categories: Using default categories from constants")
+        return list(DEFAULT_TEMPLATE_CATEGORIES)

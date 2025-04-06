@@ -29,14 +29,24 @@ class ProjectTypeManager:
         else:
             # Initialize empty custom project types
             self.custom_project_types = {}
+            # Create the file on disk
+            print(f"Project types file not found at {project_types_path}. Creating new file.")
+            # Make sure the directory exists
+            os.makedirs(os.path.dirname(project_types_path), exist_ok=True)
+            # Save empty project types to create the file
+            self.save_custom_project_types()
     
     def save_custom_project_types(self):
         """Save custom project types to configuration"""
         project_types_path = os.path.join(self.template_manager.paths["templates_dir"], "project_types.json")
         
         try:
+            # Make sure the directory exists
+            os.makedirs(os.path.dirname(project_types_path), exist_ok=True)
+            
             with open(project_types_path, 'w') as f:
                 json.dump(self.custom_project_types, f, indent=2)
+            print(f"Successfully saved {len(self.custom_project_types)} project types to {project_types_path}")
             return True
         except Exception as e:
             print(f"Error saving project types: {e}")
@@ -44,15 +54,15 @@ class ProjectTypeManager:
     
     def get_all_project_types(self):
         """Get all available project types (including default categories)"""
+        # Force reload from disk to ensure we have the latest
+        self.load_custom_project_types()
+        
         # Combine default categories with any used in templates
         project_types = set(DEFAULT_TEMPLATE_CATEGORIES)
         print(f"ProjectTypeManager: Loading default categories: {project_types}")
         
         # Add custom project types
         if hasattr(self, 'custom_project_types') and self.custom_project_types:
-            # Make sure we have the latest from disk
-            self.load_custom_project_types()
-            
             # Add custom types
             for project_type in self.custom_project_types.keys():
                 # Validate it's a string and not empty
@@ -79,7 +89,9 @@ class ProjectTypeManager:
             "icon": "📂"  # Default icon
         }
         
-        return self.save_custom_project_types()
+        success = self.save_custom_project_types()
+        print(f"Created project type '{name}' with structure '{structure_name}'. Save success: {success}")
+        return success
     
     def delete_project_type(self, name):
         """Delete a custom project type"""

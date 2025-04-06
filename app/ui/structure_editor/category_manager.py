@@ -8,7 +8,7 @@ This module provides a dialog for managing template categories.
 """
 
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QLabel, QListWidget, QPushButton,
-                           QHBoxLayout, QLineEdit, QMessageBox)
+                           QHBoxLayout, QLineEdit, QMessageBox, QListWidgetItem)
 from PyQt5.QtCore import Qt
 import os
 import json
@@ -106,8 +106,55 @@ class CategoryManager(QDialog):
         
         # Add list of categories
         self.category_list = QListWidget()
-        for category in self.categories:
+        
+        # Import default categories
+        from app.constants import DEFAULT_TEMPLATE_CATEGORIES
+        
+        # Get all current categories from template manager (if available)
+        if self.template_manager and hasattr(self.template_manager, 'get_categories'):
+            self.categories = self.template_manager.get_categories()
+        else:
+            self.categories = list(DEFAULT_TEMPLATE_CATEGORIES)
+        
+        # Ensure "Custom" is always present
+        if "Custom" not in self.categories:
+            self.categories.append("Custom")
+        
+        # Use a set to remove duplicates and maintain order for display
+        unique_categories = list(dict.fromkeys(self.categories))
+        
+        # Split categories into default and custom
+        default_categories = []
+        custom_categories = []
+        
+        for category in unique_categories:
+            if category in DEFAULT_TEMPLATE_CATEGORIES:
+                default_categories.append(category)
+            else:
+                custom_categories.append(category)
+        
+        # Add default categories first
+        for category in default_categories:
             self.category_list.addItem(category)
+            
+        # Add a divider if there are custom categories
+        if custom_categories:
+            divider = QListWidgetItem("─────── Custom Categories ───────")
+            divider.setFlags(Qt.NoItemFlags)  # Make non-selectable
+            divider.setTextAlignment(Qt.AlignCenter)
+            
+            # Apply styling to the divider
+            divider_font = divider.font()
+            divider_font.setBold(True)
+            divider.setFont(divider_font)
+            divider.setForeground(Qt.darkGray)
+            
+            self.category_list.addItem(divider)
+            
+            # Add custom categories after divider
+            for category in custom_categories:
+                self.category_list.addItem(category)
+            
         layout.addWidget(self.category_list)
         
         # Add input for new category
@@ -145,13 +192,39 @@ class CategoryManager(QDialog):
             return
             
         # Check if already exists
-        existing_items = [self.category_list.item(i).text() for i in range(self.category_list.count())]
+        existing_items = [self.category_list.item(i).text() for i in range(self.category_list.count()) 
+                         if self.category_list.item(i).flags() & Qt.ItemIsSelectable]  # Skip dividers
         if new_cat in existing_items:
             QMessageBox.warning(self, "Duplicate", f"Category '{new_cat}' already exists")
             return
             
-        # Add to list
-        self.category_list.addItem(new_cat)
+        # Determine if a divider already exists
+        divider_exists = False
+        divider_index = -1
+        for i in range(self.category_list.count()):
+            if not (self.category_list.item(i).flags() & Qt.ItemIsSelectable):
+                divider_exists = True
+                divider_index = i
+                break
+                
+        # If no divider exists, add one before adding the custom category
+        if not divider_exists:
+            # Create and add divider
+            divider = QListWidgetItem("─────── Custom Categories ───────")
+            divider.setFlags(Qt.NoItemFlags)  # Make non-selectable
+            divider.setTextAlignment(Qt.AlignCenter)
+            
+            # Apply styling to the divider
+            divider_font = divider.font()
+            divider_font.setBold(True)
+            divider.setFont(divider_font)
+            divider.setForeground(Qt.darkGray)
+            
+            self.category_list.addItem(divider)
+            divider_index = self.category_list.count() - 1
+            
+        # Add the new category after the divider
+        self.category_list.insertItem(divider_index + 1, new_cat)
         self.new_category_input.clear()
         
         # Update result categories
@@ -159,6 +232,14 @@ class CategoryManager(QDialog):
         
         # Save to template category manager
         self._save_to_category_manager()
+        
+        # Force immediate save to disk and reload
+        if self.template_manager and hasattr(self.template_manager, 'project_type_manager'):
+            print(f"Force-saving '{new_cat}' to project_type_manager")
+            # Add the new category directly to ensure it's saved
+            self.template_manager.project_type_manager.create_project_type(new_cat, "Video Editing - Standard")
+            # Force reload to make it available immediately
+            self.template_manager.project_type_manager.load_custom_project_types()
         
     def _remove_category(self):
         """Remove selected category from the list"""
@@ -185,14 +266,24 @@ class CategoryManager(QDialog):
         
     def _update_result(self):
         """Update the result categories list"""
-        # Get all categories from the list
-        self.result_categories = [self.category_list.item(i).text() for i in range(self.category_list.count())]
+        # Get all categories from the list that aren't dividers
+        self.result_categories = []
+        for i in range(self.category_list.count()):
+            item = self.category_list.item(i)
+            if item.flags() & Qt.ItemIsSelectable:  # Skip dividers which aren't selectable
+                category = item.text()
+                if category not in self.result_categories:  # Avoid duplicates
+                    self.result_categories.append(category)
         
         # Make sure "Custom" is always present
         if "Custom" not in self.result_categories:
             self.result_categories.insert(0, "Custom")
-            # Add it to the list view too
-            self.category_list.insertItem(0, "Custom")
+            # Add it to the list view too if not there already
+            for i in range(self.category_list.count()):
+                if self.category_list.item(i).text() == "Custom":
+                    break
+            else:  # Not found
+                self.category_list.insertItem(0, "Custom")
     
     def _save_to_category_manager(self):
         """Save categories to the project type manager"""
@@ -371,6 +462,31 @@ class CategoryManager(QDialog):
     
     def accept(self):
         """Override the accept method to update categories in the app"""
+        # Make sure to update the result categories
+        self._update_result()
+        
+        # Force saving all categories to project_type_manager
+        if self.template_manager and hasattr(self.template_manager, 'project_type_manager'):
+            # Use a default structure for any new categories
+            default_structure = "Video Editing - Standard"
+            
+            # Get existing project types to avoid duplicates
+            existing_types = self.template_manager.project_type_manager.get_all_project_types()
+            
+            # Add each category as a project type if not already saved
+            added_count = 0
+            for category in self.result_categories:
+                if category not in existing_types:
+                    success = self.template_manager.project_type_manager.create_project_type(category, default_structure)
+                    if success:
+                        added_count += 1
+                        print(f"Successfully added category '{category}' to project_type_manager")
+                    else:
+                        print(f"Failed to add category '{category}' to project_type_manager")
+            
+            if added_count > 0:
+                print(f"Added {added_count} new categories to project_type_manager")
+        
         # Save categories to template manager
         self._save_to_category_manager()
         
