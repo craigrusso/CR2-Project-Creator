@@ -10,12 +10,15 @@ This module provides a dialog for managing template categories.
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QLabel, QListWidget, QPushButton,
                            QHBoxLayout, QLineEdit, QMessageBox, QListWidgetItem, QCheckBox, QComboBox, QListView, QStyledItemDelegate)
 from PyQt5.QtCore import Qt, QSettings
-from PyQt5.QtGui import QStandardItemModel, QStandardItem
+from PyQt5.QtGui import QStandardItemModel, QStandardItem, QColor
 import os
 import json
 
 # Define a user role for the divider item
 DIVIDER_ROLE = Qt.UserRole + 1
+
+# Import necessary modules
+from app.ui.color_scheme_pyqt import APP_COLORS
 
 class CategoryManager(QDialog):
     """Dialog for managing template categories"""
@@ -512,18 +515,15 @@ class CategoryManager(QDialog):
                     combo_box.blockSignals(True) # Block signals during modification
 
                     # Add Default Label and Items
-                    combo_box.addItem(default_label)
-                    item_index = combo_box.findText(default_label)
-                    if item_index != -1:
-                        model = combo_box.model()
-                        if isinstance(model, QStandardItemModel):
-                            item = model.item(item_index)
-                            if item:
-                                item.setEnabled(False) # Disable label
-                                # Optional: Style the label (e.g., bold)
-                                # font = item.font()
-                                # font.setBold(True)
-                                # item.setFont(font)
+                    default_label_item = QStandardItem(default_label)
+                    default_label_item.setEnabled(False) # Disable label
+                    # Set grey color for the label text
+                    default_label_item.setForeground(QColor(APP_COLORS['secondary_text']))
+                    model = combo_box.model()
+                    if isinstance(model, QStandardItemModel):
+                         model.appendRow(default_label_item)
+                    else:
+                         print("Warning: Could not add default label, model is not QStandardItemModel")
 
                     for cat in default_cats:
                         combo_box.addItem(cat)
@@ -535,18 +535,15 @@ class CategoryManager(QDialog):
                             combo_box.insertSeparator(combo_box.count()) 
 
                         # Add Custom Label
-                        combo_box.addItem(custom_label)
-                        item_index = combo_box.findText(custom_label)
-                        if item_index != -1:
-                            model = combo_box.model()
-                            if isinstance(model, QStandardItemModel):
-                                item = model.item(item_index)
-                                if item:
-                                    item.setEnabled(False) # Disable label
-                                    # Optional: Style the label
-                                    # font = item.font()
-                                    # font.setBold(True)
-                                    # item.setFont(font)
+                        custom_label_item = QStandardItem(custom_label)
+                        custom_label_item.setEnabled(False) # Disable label
+                        # Set grey color for the label text
+                        custom_label_item.setForeground(QColor(APP_COLORS['secondary_text']))
+                        model = combo_box.model()
+                        if isinstance(model, QStandardItemModel):
+                            model.appendRow(custom_label_item)
+                        else:
+                            print("Warning: Could not add custom label, model is not QStandardItemModel")
 
                         # Add Custom Categories
                         for cat in custom_cats:

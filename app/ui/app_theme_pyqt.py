@@ -224,6 +224,18 @@ def configure_styles(app):
             border-left: 5px solid white;
         }}
         
+        /* Style for disabled items (used as headers) in ComboBox dropdowns */
+        QComboBox QAbstractItemView::item:disabled {{
+            color: {colors['secondary_text']}; /* Muted grey color */
+            background-color: {colors['card_bg']}; /* Match dropdown background */
+            font-weight: bold; /* Make headers stand out slightly */
+            padding-top: 3px; /* Add slight padding */
+            padding-bottom: 3px;
+            /* Prevent selection styling on disabled items */
+            selection-background-color: transparent;
+            selection-color: {colors['secondary_text']};
+        }}
+        
         QStatusBar {{
             background-color: {colors['card_bg']};
             color: {colors['text']};

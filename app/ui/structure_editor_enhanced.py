@@ -22,7 +22,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QFont, QColor, QIcon, QDrag, QBrush, QKeySequence, QPixmap, QPainter, QPen
 
 # Import from app modules
-from app.ui.color_scheme_pyqt import colors, APP_COLORS
+from app.ui.color_scheme_pyqt import colors, APP_COLORS, ACCENT_BUTTON_STYLE
 from app.ui.structure_editor.ui_components import UIBuilder
 
 class EnhancedStructureEditor(QDialog):
@@ -182,7 +182,8 @@ class EnhancedStructureEditor(QDialog):
             
             # Create Save button - connect to accept method
             self.save_button = QPushButton("Save")
-            self.save_button.setStyleSheet(button_style)
+            # Use ACCENT_BUTTON_STYLE for primary action
+            self.save_button.setStyleSheet(ACCENT_BUTTON_STYLE)
             self.save_button.clicked.connect(self.accept)
             
             # Create Cancel button - connect to reject method
@@ -1058,18 +1059,32 @@ class EnhancedStructureEditor(QDialog):
 
     def _open_category_manager(self):
         """Opens the category manager dialog."""
-        if not self.app or not hasattr(self.app, 'template_manager'):
-            print("ERROR: Template manager not available")
+        # Try accessing template_manager through self.app, fallback to parent's app
+        template_manager = None
+        if hasattr(self, 'app') and self.app and hasattr(self.app, 'template_manager'):
+            template_manager = self.app.template_manager
+        elif self.parent() and hasattr(self.parent(), 'app') and self.parent().app and hasattr(self.parent().app, 'template_manager'):
+             print("DEBUG: Accessing template_manager via parent widget.")
+             template_manager = self.parent().app.template_manager
+        
+        if not template_manager:
+            print("ERROR: Template manager not available via self.app or parent().app")
+            # Optionally, show an error message to the user
+            QMessageBox.critical(self, "Error", "Could not access category data.")
             return
 
-        # Implement the logic to open the category manager dialog
-        # This is a placeholder and should be replaced with the actual implementation
-        print("Opening category manager dialog")
+        # Get current categories from the reliable source
+        current_categories = template_manager.get_categories()
 
-        # Add the logic to handle the selected category and update the UI
-        # This is a placeholder and should be replaced with the actual implementation
-        print("Category manager dialog opened")
+        # Create and execute the category manager dialog
+        from app.ui.structure_editor.category_manager import CategoryManager
+        manager_dialog = CategoryManager(parent=self, categories=current_categories)
+        result = manager_dialog.exec_()
 
-        # Add the logic to update the UI based on the selected category
-        # This is a placeholder and should be replaced with the actual implementation
-        print("UI updated based on selected category") 
+        if result == QDialog.Accepted:
+            print("DEBUG: Category Manager accepted. Dropdown updates handled dynamically.")
+            # Updates are handled dynamically by the CategoryManager itself now.
+            # No explicit update needed here, but we could refresh internal state if necessary.
+            # self.ui_builder.categories = template_manager.get_categories()
+        else:
+            print("DEBUG: Category Manager cancelled.") 

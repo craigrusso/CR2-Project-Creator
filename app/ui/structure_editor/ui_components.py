@@ -505,17 +505,24 @@ class UIBuilder(QObject):
         # Layouts
         main_layout = QVBoxLayout()
         top_section_layout = QHBoxLayout()
-        name_category_layout = QVBoxLayout()
+        # Use QFormLayout for the top form fields
+        form_layout = QFormLayout()
+        form_layout.setRowWrapPolicy(QFormLayout.DontWrapRows)
+        form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        form_layout.setLabelAlignment(Qt.AlignLeft)
+        form_layout.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
+        form_layout.setHorizontalSpacing(10)
+        form_layout.setVerticalSpacing(10)
+
         buttons_layout = QVBoxLayout()
         structure_section_layout = QVBoxLayout()
 
-        # --- Name and Category Section ---
+        # --- Name Field ---
         self.template_name_field = QLineEdit()
         self.template_name_field.setPlaceholderText("Enter template name...")
-        name_category_layout.addWidget(QLabel("Template Name:"))
-        name_category_layout.addWidget(self.template_name_field)
+        form_layout.addRow(QLabel("Template Name:"), self.template_name_field)
 
-        # --- Category Dropdown Population ---
+        # --- Category Field ---
         self.template_category_field = QComboBox()
         self.template_category_field.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.template_category_field.setEditable(False) # Typically non-editable
@@ -548,10 +555,8 @@ class UIBuilder(QObject):
         if not hide_defaults and default_cats:
             default_label_item = QStandardItem(default_label)
             default_label_item.setEnabled(False)
-            # Optional: Style the label
-            # font = default_label_item.font()
-            # font.setBold(True)
-            # default_label_item.setFont(font)
+            # Set grey color for the label text
+            default_label_item.setForeground(QColor(APP_COLORS['secondary_text']))
             self.template_category_field.model().appendRow(default_label_item)
 
             for cat in default_cats:
@@ -566,10 +571,8 @@ class UIBuilder(QObject):
             # Add Custom Label (always add if custom cats exist)
             custom_label_item = QStandardItem(custom_label)
             custom_label_item.setEnabled(False)
-            # Optional: Style the label
-            # font = custom_label_item.font()
-            # font.setBold(True)
-            # custom_label_item.setFont(font)
+            # Set grey color for the label text
+            custom_label_item.setForeground(QColor(APP_COLORS['secondary_text']))
             self.template_category_field.model().appendRow(custom_label_item)
 
 
@@ -579,9 +582,6 @@ class UIBuilder(QObject):
 
         # --- End Add Items ---
         self.template_category_field.blockSignals(False)
-
-        # No need to restore selection here as it's initialization
-
         # --- End Category Dropdown Population ---
 
         # Manage Categories Button
@@ -591,16 +591,16 @@ class UIBuilder(QObject):
         self.manage_categories_btn.clicked.connect(self.manage_categories_requested.emit)
         # Add horizontal layout for category dropdown and manage button
         category_layout = QHBoxLayout()
-        category_layout.addWidget(self.template_category_field)
+        category_layout.addWidget(self.template_category_field, 1) # Allow dropdown to expand
         category_layout.addWidget(self.manage_categories_btn)
+        category_layout.setSpacing(5) # Reduce spacing between combo and button
+        form_layout.addRow(QLabel("Category:"), category_layout)
 
-        name_category_layout.addWidget(QLabel("Category:"))
-        name_category_layout.addLayout(category_layout) # Add the horizontal layout
-
-        # Description Field
+        # --- Description Field ---
         self.template_info_field = QTextEdit()
         self.template_info_field.setPlaceholderText("Enter template description")
-        self.template_info_field.setMinimumHeight(60)
+        self.template_info_field.setFixedHeight(80) # Set a fixed height
+        self.template_info_field.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed) # Expand horizontally only
         self.template_info_field.setStyleSheet(f"""
             QTextEdit {{
                 background-color: {colors['card_bg']};
@@ -613,6 +613,10 @@ class UIBuilder(QObject):
                 border: 1px solid {colors['accent']};
             }}
         """)
+        form_layout.addRow(QLabel("Description:"), self.template_info_field)
+
+        # Add the form layout to the top section
+        top_section_layout.addLayout(form_layout, 1) # Allow form to take up space
 
         # Create structure section
         structure_layout = QVBoxLayout()
@@ -772,35 +776,33 @@ class UIBuilder(QObject):
         structure_panel = QWidget()
         structure_panel.setLayout(structure_layout)
 
-        # --- Create Top Info Panel ---
-        top_info_panel = QWidget()
-        top_info_layout = QVBoxLayout(top_info_panel)
-        top_info_layout.setContentsMargins(0, 0, 0, 0) # No margins for the container itself
-        top_info_layout.setSpacing(10)
-        top_info_layout.addLayout(name_category_layout) # Add name and category
-        top_info_layout.addWidget(QLabel("Description:")) # Add label for description
-        top_info_layout.addWidget(self.template_info_field) # Add description field
-        # ------------------------------
-        
-        # Create a QSplitter to allow resizing of template info and structure sections
-        splitter = QSplitter(Qt.Vertical)
-        
-        # Add top info panel and structure panel to splitter
-        splitter.addWidget(top_info_panel)
-        splitter.addWidget(structure_panel)
-        
-        # Set initial sizes to give more space to the structure section
-        splitter.setSizes([200, 400])  # Adjusted to give more space to structure section
-        
-        # Add splitter to main layout
-        main_layout.addWidget(splitter)
-        
-        # Connect selection changed signal to update stats
-        self.tree.itemSelectionChanged.connect(self._update_structure_stats)
-        
-        # Wait a moment before updating stats (let tree fully initialize)
-        QTimer.singleShot(100, self._update_structure_stats)
-        
+        # --- Final Assembly using Splitter ---
+        # Create a splitter to separate the form from the structure tree
+        splitter = QSplitter(Qt.Vertical) # Split vertically
+
+        # Create container widget for the top form section
+        top_widget = QWidget()
+        top_widget.setLayout(top_section_layout)
+        # Set a reasonable initial height, but allow shrinking
+        top_widget.setFixedHeight(200) 
+        top_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        splitter.addWidget(top_widget)
+
+        # Create container widget for the bottom structure section
+        bottom_widget = QWidget()
+        bottom_widget.setLayout(structure_layout)
+        bottom_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        splitter.addWidget(bottom_widget)
+
+        # Set initial sizes for splitter sections (adjust ratio as needed)
+        splitter.setSizes([200, 400]) # Give more space to structure tree initially
+        # Prevent sections from collapsing completely
+        splitter.setCollapsible(0, False)
+        splitter.setCollapsible(1, False)
+
+        main_layout.addWidget(splitter, 1) # Add splitter to main layout, allow stretching
+
+        self._apply_styling()
         return main_layout
     
     def _get_button_style(self, button_type='default'):

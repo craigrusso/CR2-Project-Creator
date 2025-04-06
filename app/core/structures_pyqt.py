@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                             QPushButton, QMessageBox, QInputDialog, QListWidget,
                             QAbstractItemView, QScrollArea, QWidget, QFrame)
 from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QStandardItemModel, QStandardItem
 
 # Import from our centralized color scheme
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE
@@ -225,26 +226,93 @@ def delete_structure_from_list(app, listbox, structures):
 
 
 def update_structure_dropdown(app):
-    """Update the structure dropdown with available structures"""
-    # Save current selection
-    current = app.structure_combo.currentText()
-    
-    # Clear and repopulate
-    app.structure_combo.clear()
-    
-    # Add default structure
-    app.structure_combo.addItem("Default")
-    
-    # Add custom structures
-    for structure_name in app.template_manager.custom_structures:
-        app.structure_combo.addItem(structure_name)
-    
-    # Restore selection if possible, otherwise select Default
-    index = app.structure_combo.findText(current)
-    if index >= 0:
-        app.structure_combo.setCurrentIndex(index)
+    """Update the structure dropdown with available structures using a model."""
+    # Get the TemplateManager instance safely
+    template_manager = getattr(app, 'template_manager', None)
+    if not template_manager:
+        print("Error: TemplateManager not found in update_structure_dropdown")
+        return
+
+    # Get custom structures safely
+    custom_structures = getattr(template_manager, 'custom_structures', {})
+    # Get default structures (assuming it's available, e.g., from constants)
+    # You might need to import DEFAULT_STRUCTURES if it's defined elsewhere
+    try:
+        # Assuming DEFAULT_STRUCTURES is available in scope or imported
+        from app.constants import DEFAULT_STRUCTURES 
+    except ImportError:
+        print("Warning: DEFAULT_STRUCTURES not found, cannot populate default structures.")
+        DEFAULT_STRUCTURES = {} # Fallback to empty dict
+
+    # Save current selection text
+    current_text = app.structure_combo.currentText()
+
+    # Create a standard item model
+    model = QStandardItemModel(app.structure_combo)
+
+    # Add default structures header
+    item_default_header = QStandardItem("---- Default Structures ----")
+    item_default_header.setEnabled(False) # Make it non-selectable
+    item_default_header.setFlags(item_default_header.flags() & ~Qt.ItemIsSelectable) # Ensure non-selectable visually
+    model.appendRow(item_default_header)
+
+    # Add default structures
+    for structure_name in sorted(DEFAULT_STRUCTURES.keys()):
+        item = QStandardItem(structure_name)
+        model.appendRow(item)
+
+    # Add custom structures header (if any custom structures exist)
+    if custom_structures:
+        # Add separator line visually if needed (optional)
+        # separator = QStandardItem()
+        # separator.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable) # Make it like a separator line visually
+        # separator.setData(QVariant(QSize(0, 1)), Qt.SizeHintRole) # Set size hint
+        # model.appendRow(separator)
+
+        item_custom_header = QStandardItem("---- Custom Structures ----")
+        item_custom_header.setEnabled(False) # Make it non-selectable
+        item_custom_header.setFlags(item_custom_header.flags() & ~Qt.ItemIsSelectable) # Ensure non-selectable visually
+        model.appendRow(item_custom_header)
+
+        # Add custom structures
+        for structure_name in sorted(custom_structures.keys()):
+            item = QStandardItem(structure_name)
+            model.appendRow(item)
+
+    # Set the model to the combo box
+    app.structure_combo.setModel(model)
+
+    # Restore selection if possible, otherwise select the first valid item
+    if current_text:
+        index_to_select = -1
+        for i in range(model.rowCount()):
+            item = model.item(i)
+            # Find the first enabled item matching the text
+            if item and item.isEnabled() and item.text() == current_text:
+                index_to_select = i
+                break
+        
+        if index_to_select != -1:
+            app.structure_combo.setCurrentIndex(index_to_select)
+        else:
+            # If previous selection not found/valid, select first enabled item
+            for i in range(model.rowCount()):
+                item = model.item(i)
+                if item and item.isEnabled():
+                    app.structure_combo.setCurrentIndex(i)
+                    break
+            else: # If no enabled items exist (unlikely)
+                 app.structure_combo.setCurrentIndex(-1) # No selection
+
     else:
-        app.structure_combo.setCurrentIndex(0)  # Default
+         # If no previous text, select first enabled item
+         for i in range(model.rowCount()):
+             item = model.item(i)
+             if item and item.isEnabled():
+                 app.structure_combo.setCurrentIndex(i)
+                 break
+         else:
+             app.structure_combo.setCurrentIndex(-1) # No selection
 
 
 def highlight_current_structure(app):
@@ -255,12 +323,21 @@ def highlight_current_structure(app):
 
 def _update_structure_combo(app):
     """Initialize the structure dropdown"""
-    # Add default structure
-    app.structure_combo.addItem("Default")
+    # Add default structures header
+    item_default_header = QStandardItem("---- Default Structures ----")
+    item_default_header.setEnabled(False)
+    model.appendRow(item_default_header)
     
-    # Add custom structures
-    for structure_name in app.template_manager.custom_structures:
-        app.structure_combo.addItem(structure_name)
+    # Add default structures
+    for structure_name in sorted(DEFAULT_STRUCTURES.keys()):
+        item = QStandardItem(structure_name)
+        model.appendRow(item)
+    
+    # Add custom structures header (if any custom structures exist)
+    if app.template_manager and app.template_manager.custom_structures:
+        item_custom_header = QStandardItem("---- Custom Structures ----")
+        item_custom_header.setEnabled(False)
+        model.appendRow(item_custom_header)
     
     # Set to Default initially
     app.structure_combo.setCurrentIndex(0)
