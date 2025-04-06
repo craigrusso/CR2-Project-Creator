@@ -102,8 +102,10 @@ class EnhancedStructureEditor(QDialog):
             layout.setContentsMargins(10, 10, 10, 10)
             layout.setSpacing(5)
             
-            # Init UI builder (creates the layout and form fields)
+            # Create the UI Builder instance
             self.ui_builder = UIBuilder(self, self.template_name)
+            # Connect the UIBuilder signal to the editor's method
+            self.ui_builder.manage_categories_requested.connect(self._open_category_manager)
             
             # Initialize file operations handler - Always initialize this before doing anything with the tree
             try:
@@ -1053,3 +1055,21 @@ class EnhancedStructureEditor(QDialog):
             traceback.print_exc()
             # Return empty structure as fallback
             return [] 
+
+    def _open_category_manager(self):
+        """Opens the category manager dialog."""
+        if not self.app or not hasattr(self.app, 'template_manager'):
+            print("ERROR: Template manager not available")
+            return
+
+        # Implement the logic to open the category manager dialog
+        # This is a placeholder and should be replaced with the actual implementation
+        print("Opening category manager dialog")
+
+        # Add the logic to handle the selected category and update the UI
+        # This is a placeholder and should be replaced with the actual implementation
+        print("Category manager dialog opened")
+
+        # Add the logic to update the UI based on the selected category
+        # This is a placeholder and should be replaced with the actual implementation
+        print("UI updated based on selected category") 

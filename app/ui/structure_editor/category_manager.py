@@ -8,8 +8,9 @@ This module provides a dialog for managing template categories.
 """
 
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QLabel, QListWidget, QPushButton,
-                           QHBoxLayout, QLineEdit, QMessageBox, QListWidgetItem, QCheckBox)
+                           QHBoxLayout, QLineEdit, QMessageBox, QListWidgetItem, QCheckBox, QComboBox, QListView, QStyledItemDelegate)
 from PyQt5.QtCore import Qt, QSettings
+from PyQt5.QtGui import QStandardItemModel, QStandardItem
 import os
 import json
 
@@ -503,15 +504,56 @@ class CategoryManager(QDialog):
                     default_cats = sorted([cat for cat in categories_to_show if cat in DEFAULT_TEMPLATE_CATEGORIES])
                     custom_cats = sorted([cat for cat in categories_to_show if cat not in DEFAULT_TEMPLATE_CATEGORIES])
                     
-                    # Add defaults
-                    if default_cats:
-                        combo_box.addItems(default_cats)
-                    
-                    # Add separator if custom exist
+                    # Define labels
+                    default_label = "Default Categories"
+                    custom_label = "Custom Categories"
+
+                    # --- Add Items with Labels and Separator ---
+                    combo_box.blockSignals(True) # Block signals during modification
+
+                    # Add Default Label and Items
+                    combo_box.addItem(default_label)
+                    item_index = combo_box.findText(default_label)
+                    if item_index != -1:
+                        model = combo_box.model()
+                        if isinstance(model, QStandardItemModel):
+                            item = model.item(item_index)
+                            if item:
+                                item.setEnabled(False) # Disable label
+                                # Optional: Style the label (e.g., bold)
+                                # font = item.font()
+                                # font.setBold(True)
+                                # item.setFont(font)
+
+                    for cat in default_cats:
+                        combo_box.addItem(cat)
+
+                    # Add Separator and Custom Section (if needed)
                     if custom_cats:
-                        if default_cats: # Only add separator if there were defaults before it
-                            combo_box.insertSeparator(combo_box.count())
-                        combo_box.addItems(custom_cats)
+                        # Check if default categories were added before adding separator
+                        if default_cats: 
+                            combo_box.insertSeparator(combo_box.count()) 
+
+                        # Add Custom Label
+                        combo_box.addItem(custom_label)
+                        item_index = combo_box.findText(custom_label)
+                        if item_index != -1:
+                            model = combo_box.model()
+                            if isinstance(model, QStandardItemModel):
+                                item = model.item(item_index)
+                                if item:
+                                    item.setEnabled(False) # Disable label
+                                    # Optional: Style the label
+                                    # font = item.font()
+                                    # font.setBold(True)
+                                    # item.setFont(font)
+
+                        # Add Custom Categories
+                        for cat in custom_cats:
+                            combo_box.addItem(cat)
+                    # --- End Add Items ---
+
+                    combo_box.blockSignals(False) # Re-enable signals
                 else:
                     # Only custom categories, add them sorted
                     combo_box.addItems(sorted(categories_to_show))

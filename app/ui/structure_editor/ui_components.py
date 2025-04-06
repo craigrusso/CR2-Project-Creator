@@ -14,8 +14,8 @@ from PyQt5.QtWidgets import (
     QMessageBox, QTextEdit, QComboBox, QCheckBox, QSplitter, QWidget, 
     QSizePolicy, QGroupBox, QFormLayout, QFrame, QTabWidget, QFileDialog, QInputDialog, QListWidget, QDialog, QApplication, QStyle
 )
-from PyQt5.QtCore import Qt, QSize, pyqtSignal, QTimer, QSettings
-from PyQt5.QtGui import QFont, QIcon, QColor, QPalette, QPainter
+from PyQt5.QtCore import Qt, QSize, pyqtSignal, QTimer, QSettings, QObject
+from PyQt5.QtGui import QFont, QIcon, QColor, QPalette, QPainter, QDrag, QDropEvent, QPixmap, QCursor, QStandardItemModel, QStandardItem
 
 # Import the main application colors
 from app.ui.color_scheme_pyqt import APP_COLORS, BUTTON_STYLE, ACCENT_BUTTON_STYLE, CONTEXT_MENU_STYLE
@@ -429,10 +429,13 @@ class StructureEditor(QDialog):
         # Accept and close
         self.accept()
 
-class UIBuilder:
+class UIBuilder(QObject):
     """
     Builds and manages the UI for the Enhanced Structure Editor
     """
+    
+    # Define a signal to request opening the category manager
+    manage_categories_requested = pyqtSignal()
     
     def __init__(self, editor, structure_name=None):
         """
@@ -442,6 +445,7 @@ class UIBuilder:
             editor: The parent editor instance
             structure_name: Optional name of the structure (for template name field)
         """
+        super().__init__() # Call QObject constructor
         self.editor = editor
         self.structure_name = structure_name
         self.tree = None
@@ -498,139 +502,102 @@ class UIBuilder:
         Returns:
             QLayout: The main layout
         """
-        # Create main layout - don't attach to any widget yet
+        # Layouts
         main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.setSpacing(10)
-        
-        # Create a fixed area for the top part of the form (name, category, search)
-        fixed_info_panel = QWidget()
-        fixed_info_layout = QVBoxLayout(fixed_info_panel)
-        fixed_info_layout.setContentsMargins(5, 5, 5, 5)
-        fixed_info_layout.setSpacing(10)
-        
-        # Create header label
-        header_label = QLabel("Template Information")
-        header_label.setFont(QFont(header_label.font().family(), 12, QFont.Bold))
-        header_label.setStyleSheet(f"color: {colors['text']}; padding-bottom: 5px;")
-        fixed_info_layout.addWidget(header_label)
-        
-        # Create a fixed form for name, category and search
-        fixed_form = QFormLayout()
-        fixed_form.setContentsMargins(0, 0, 0, 0)
-        fixed_form.setSpacing(10)
-        fixed_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        fixed_form.setLabelAlignment(Qt.AlignRight)
-        
-        # Helper function to create labels with consistent styling
-        def create_label(text):
-            label = QLabel(text)
-            label.setStyleSheet(f"color: {colors['text']}; font-weight: bold;")
-            return label
-        
-        # Template name field
+        top_section_layout = QHBoxLayout()
+        name_category_layout = QVBoxLayout()
+        buttons_layout = QVBoxLayout()
+        structure_section_layout = QVBoxLayout()
+
+        # --- Name and Category Section ---
         self.template_name_field = QLineEdit()
-        self.template_name_field.setPlaceholderText("Enter template name")
-        self.template_name_field.setText(self.structure_name)
-        self.template_name_field.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                border-radius: 3px;
-                padding: 5px;
-            }}
-            QLineEdit:focus {{
-                border: 1px solid {colors['accent']};
-            }}
-        """)
-        
-        # Connect template name change signal if the editor has a method for it
-        if hasattr(self.editor, '_on_template_name_changed'):
-            self.template_name_field.textChanged.connect(self.editor._on_template_name_changed)
-        
-        fixed_form.addRow(create_label("Template Name:"), self.template_name_field)
-        
-        # Template category field
+        self.template_name_field.setPlaceholderText("Enter template name...")
+        name_category_layout.addWidget(QLabel("Template Name:"))
+        name_category_layout.addWidget(self.template_name_field)
+
+        # --- Category Dropdown Population ---
         self.template_category_field = QComboBox()
+        self.template_category_field.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.template_category_field.setEditable(False) # Typically non-editable
         self.template_category_field.setObjectName("template_category_combo_box")
-        
-        # Populate with the potentially filtered and grouped list
+
+        # Read the setting here
         hide_defaults = self.settings.value("CategoryManager/hideDefaultCategories", False, type=bool)
         self.template_category_field.clear() # Ensure it's empty
-        if not hide_defaults:
-            # Separate default and custom
-            default_cats = sorted([cat for cat in self.categories_to_display if cat in DEFAULT_TEMPLATE_CATEGORIES])
-            custom_cats = sorted([cat for cat in self.categories_to_display if cat not in DEFAULT_TEMPLATE_CATEGORIES])
-            
-            # Add defaults
-            if default_cats:
-                self.template_category_field.addItems(default_cats)
-            
-            # Add separator if custom exist
-            if custom_cats:
-                 if default_cats: # Only add separator if there were defaults before it
-                     self.template_category_field.insertSeparator(self.template_category_field.count())
-                 self.template_category_field.addItems(custom_cats)
-        else:
-            # Only custom categories, add them sorted
-            self.template_category_field.addItems(sorted(self.categories_to_display))
-            
-        # self.template_category_field.addItems(sorted(self.categories_to_display))
-        self.template_category_field.setCurrentIndex(0)  # Default to first available
-        self.template_category_field.setStyleSheet(f"""
-            QComboBox {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                border-radius: 3px;
-                padding: 5px;
-                padding-right: 20px;  /* Make space for the dropdown arrow */
-                min-width: 120px;
-            }}
-            QComboBox:hover {{
-                border: 1px solid {colors['accent']};
-            }}
-            QComboBox::drop-down {{
-                subcontrol-origin: padding;
-                subcontrol-position: top right;
-                width: 20px;
-                border-left: 1px solid {colors['border']};
-            }}
-            QComboBox::down-arrow {{
-                image: url(app/assets/css/dropdown_arrow.svg);
-                width: 16px;
-                height: 16px;
-            }}
-            QComboBox::down-arrow:on {{
-                image: url(app/assets/css/dropdown_arrow_up.svg);
-            }}
-        """)
-        
-        # Create a horizontal layout for category dropdown and manage button
+
+        categories_to_display = self.categories # Use the full list initially
+        if hide_defaults:
+            categories_to_display = [cat for cat in self.categories if cat not in DEFAULT_TEMPLATE_CATEGORIES]
+
+        # Separate default and custom based on the potentially filtered list
+        default_cats = sorted([cat for cat in categories_to_display if cat in DEFAULT_TEMPLATE_CATEGORIES])
+        custom_cats = sorted([cat for cat in categories_to_display if cat not in DEFAULT_TEMPLATE_CATEGORIES])
+
+        # Define labels
+        default_label = "Default Categories"
+        custom_label = "Custom Categories"
+
+        # --- Add Items with Labels and Separator ---
+        self.template_category_field.blockSignals(True)
+
+        # Ensure a standard item model is used to allow disabling items
+        if not isinstance(self.template_category_field.model(), QStandardItemModel):
+             self.template_category_field.setModel(QStandardItemModel(self.template_category_field))
+
+        # Add Default Label and Items (only if not hiding defaults)
+        if not hide_defaults and default_cats:
+            default_label_item = QStandardItem(default_label)
+            default_label_item.setEnabled(False)
+            # Optional: Style the label
+            # font = default_label_item.font()
+            # font.setBold(True)
+            # default_label_item.setFont(font)
+            self.template_category_field.model().appendRow(default_label_item)
+
+            for cat in default_cats:
+                self.template_category_field.addItem(cat)
+
+        # Add Separator and Custom Section (if needed)
+        if custom_cats:
+            # Add separator only if default categories were previously added (and we are not hiding them)
+            if not hide_defaults and default_cats:
+                self.template_category_field.insertSeparator(self.template_category_field.count())
+
+            # Add Custom Label (always add if custom cats exist)
+            custom_label_item = QStandardItem(custom_label)
+            custom_label_item.setEnabled(False)
+            # Optional: Style the label
+            # font = custom_label_item.font()
+            # font.setBold(True)
+            # custom_label_item.setFont(font)
+            self.template_category_field.model().appendRow(custom_label_item)
+
+
+            # Add Custom Categories
+            for cat in custom_cats:
+                self.template_category_field.addItem(cat)
+
+        # --- End Add Items ---
+        self.template_category_field.blockSignals(False)
+
+        # No need to restore selection here as it's initialization
+
+        # --- End Category Dropdown Population ---
+
+        # Manage Categories Button
+        self.manage_categories_btn = QPushButton("Manage")
+        self.manage_categories_btn.setToolTip("Add, remove, or manage template categories")
+        # Connect button click to emit the new signal
+        self.manage_categories_btn.clicked.connect(self.manage_categories_requested.emit)
+        # Add horizontal layout for category dropdown and manage button
         category_layout = QHBoxLayout()
-        category_layout.setContentsMargins(0, 0, 0, 0)
-        category_layout.setSpacing(5)
         category_layout.addWidget(self.template_category_field)
-        
-        # Add manage categories button
-        manage_categories_btn = QPushButton("Manage")
-        manage_categories_btn.setFixedWidth(80)
-        manage_categories_btn.setStyleSheet(self._get_button_style('action'))
-        manage_categories_btn.clicked.connect(self._manage_categories)
-        category_layout.addWidget(manage_categories_btn)
-        
-        fixed_form.addRow(create_label("Category:"), category_layout)
-        
-        fixed_info_layout.addLayout(fixed_form)
-        
-        # Create description panel with stretch
-        description_panel = QWidget()
-        description_panel.setObjectName("description_panel")  # Set object name for testing
-        description_layout = QVBoxLayout(description_panel)
-        description_layout.setContentsMargins(5, 0, 5, 5)
-        
-        # Template description field
+        category_layout.addWidget(self.manage_categories_btn)
+
+        name_category_layout.addWidget(QLabel("Category:"))
+        name_category_layout.addLayout(category_layout) # Add the horizontal layout
+
+        # Description Field
         self.template_info_field = QTextEdit()
         self.template_info_field.setPlaceholderText("Enter template description")
         self.template_info_field.setMinimumHeight(60)
@@ -646,26 +613,7 @@ class UIBuilder:
                 border: 1px solid {colors['accent']};
             }}
         """)
-        
-        # Description form layout
-        description_form = QFormLayout()
-        description_form.setContentsMargins(0, 0, 0, 0)
-        description_form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        description_form.setLabelAlignment(Qt.AlignRight)
-        description_form.addRow(create_label("Description:"), self.template_info_field)
-        
-        description_layout.addLayout(description_form)
-        
-        # Create a container for both info panels
-        info_container = QWidget()
-        info_container_layout = QVBoxLayout(info_container)
-        info_container_layout.setContentsMargins(0, 0, 0, 0)
-        info_container_layout.setSpacing(0)
-        
-        # Add fixed panel and description panel to container
-        info_container_layout.addWidget(fixed_info_panel)
-        info_container_layout.addWidget(description_panel, 1)  # Give stretch to description panel
-        
+
         # Create structure section
         structure_layout = QVBoxLayout()
         
@@ -820,15 +768,25 @@ class UIBuilder:
         self.stats_label.setStyleSheet(f"color: {colors['secondary_text']}; font-size: 11px; padding: 5px 0;")
         structure_layout.addWidget(self.stats_label)
         
-        # Create structure panel
+        # Create structure panel widget
         structure_panel = QWidget()
         structure_panel.setLayout(structure_layout)
+
+        # --- Create Top Info Panel ---
+        top_info_panel = QWidget()
+        top_info_layout = QVBoxLayout(top_info_panel)
+        top_info_layout.setContentsMargins(0, 0, 0, 0) # No margins for the container itself
+        top_info_layout.setSpacing(10)
+        top_info_layout.addLayout(name_category_layout) # Add name and category
+        top_info_layout.addWidget(QLabel("Description:")) # Add label for description
+        top_info_layout.addWidget(self.template_info_field) # Add description field
+        # ------------------------------
         
         # Create a QSplitter to allow resizing of template info and structure sections
         splitter = QSplitter(Qt.Vertical)
         
-        # Add info container and structure panel to splitter
-        splitter.addWidget(info_container)
+        # Add top info panel and structure panel to splitter
+        splitter.addWidget(top_info_panel)
         splitter.addWidget(structure_panel)
         
         # Set initial sizes to give more space to the structure section
