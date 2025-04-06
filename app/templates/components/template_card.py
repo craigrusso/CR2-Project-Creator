@@ -472,7 +472,7 @@ class TemplateCard(QFrame):
             self.setStyleSheet("""
                 QFrame {
                     background-color: #3C6EA5;
-                    border: 2px solid #4A86E8;
+                    border: none;
                     border-radius: 6px;
                 }
             """)
