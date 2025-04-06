@@ -192,6 +192,9 @@ class CategoryManager(QDialog):
         self.close_btn = QPushButton("Close")
         self.close_btn.clicked.connect(self.accept)
         self.close_btn.setObjectName("closeButtonAccent") # Set object name for styling
+        # Also apply style directly for higher specificity
+        from app.ui.color_scheme_pyqt import ACCENT_BUTTON_STYLE
+        self.close_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
         
         button_layout.addWidget(self.remove_btn)
         button_layout.addWidget(self.close_btn)
