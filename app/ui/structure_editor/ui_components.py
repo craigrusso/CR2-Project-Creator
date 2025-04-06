@@ -1297,51 +1297,71 @@ class UIBuilder:
             self.stats_label.setText(f"Total: {total_items} items ({folders} folders, {files} files)")
 
     def _init_category_dropdown(self):
-        """Initialize the category dropdown with project types"""
-        # print(f"[INIT DROPDOWN DEBUG] Running _init_category_dropdown") # Removed debug print
-        # Always get fresh categories from the template manager
-        self.categories = self._get_categories()
-        print(f"UIBuilder: Initializing category dropdown with {len(self.categories)} categories: {self.categories}")
+        """Initialize the category dropdown with available categories"""
+        # Get categories from template manager if available
+        if self.template_manager and hasattr(self.template_manager, 'get_categories'):
+            categories = self.template_manager.get_categories()
+            print(f"UIBuilder: Getting categories from app's template_manager: {categories}")
+        else:
+            # Fall back to constants if template manager not available
+            from app.constants import DEFAULT_TEMPLATE_CATEGORIES
+            categories = list(DEFAULT_TEMPLATE_CATEGORIES)
+            print(f"UIBuilder: Using default categories from constants")
         
-        # Create and configure the combo box
+        # Initialize the combobox
         self.template_category_field = QComboBox()
-        self.template_category_field.setObjectName("template_category_field")  # Give it a name to identify later
+        self.template_category_field.setObjectName("template_category_field")
         
-        # Add "No Category" as the first option
+        # Add "No Category" as first option (always present)
         self.template_category_field.addItem("No Category")
         
-        # Split categories into default and custom
+        # Get hide default categories preference
+        try:
+            from app.core.config_manager import get_hide_default_categories
+            hide_defaults = get_hide_default_categories()
+        except ImportError:
+            hide_defaults = False
+        
+        # Import default categories to split them
         from app.constants import DEFAULT_TEMPLATE_CATEGORIES
+        
+        # Split categories into default and custom
         default_categories = []
         custom_categories = []
         
-        for category in self.categories:
+        for category in categories:
             if category in DEFAULT_TEMPLATE_CATEGORIES:
                 default_categories.append(category)
-            elif category != "No Category":  # Already added at the beginning
+            else:
                 custom_categories.append(category)
         
-        # Add default categories first
-        for category in default_categories:
-            if category != "No Category":  # Already added as the first item
+        # Only add default categories if not hiding them
+        if not hide_defaults:
+            for category in default_categories:
+                self.template_category_field.addItem(category)
+            
+            # Add a separator if there are custom categories
+            if custom_categories:
+                self.template_category_field.insertSeparator(self.template_category_field.count())
+        else:
+            # Always include "Custom" even if defaults are hidden
+            if "Custom" not in custom_categories and "Custom" in DEFAULT_TEMPLATE_CATEGORIES:
+                self.template_category_field.addItem("Custom")
+                
+                # Add a separator if there are other custom categories
+                if custom_categories:
+                    self.template_category_field.insertSeparator(self.template_category_field.count())
+        
+        # Add custom categories
+        for category in custom_categories:
+            if category != "No Category":  # Avoid duplicates
                 self.template_category_field.addItem(category)
         
-        # Add a separator if there are custom categories
-        if custom_categories:
-            self.template_category_field.insertSeparator(self.template_category_field.count())
-            
-        # Add custom categories after divider
-        for category in custom_categories:
-            self.template_category_field.addItem(category)
-        
-        # Set the default index to 'No Category' after adding all items
+        # Set default selection
         no_cat_index = self.template_category_field.findText("No Category")
         if no_cat_index >= 0:
-            # print(f"[INIT DROPDOWN DEBUG] Setting default index to {no_cat_index} ('No Category')") # Removed debug print
             self.template_category_field.setCurrentIndex(no_cat_index)
         else:
-            # Fallback to index 0 if 'No Category' isn't found (shouldn't happen)
-            # print(f"[INIT DROPDOWN DEBUG] 'No Category' not found, setting default index to 0") # Removed debug print
             self.template_category_field.setCurrentIndex(0)
 
     def set_ui_values(self, template_data):

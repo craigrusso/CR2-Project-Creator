@@ -159,6 +159,13 @@ COMBOBOX_STYLE = f"""
         outline: none; /* Remove focus outline */
     }}
     
+    /* Separator styling - ensuring visibility of the divider */
+    QComboBox::item:disabled {{
+        background-color: {colors['accent']};
+        height: 1px;
+        margin: 4px 0px;
+    }}
+    
     /* Default item styling in popup */
     QComboBox QAbstractItemView::item {{
         border-left: 3px solid transparent;
