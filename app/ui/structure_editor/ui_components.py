@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QMessageBox, QTextEdit, QComboBox, QCheckBox, QSplitter, QWidget, 
     QSizePolicy, QGroupBox, QFormLayout, QFrame, QTabWidget, QFileDialog, QInputDialog, QListWidget, QDialog, QApplication, QStyle
 )
-from PyQt5.QtCore import Qt, QSize, pyqtSignal, QTimer
+from PyQt5.QtCore import Qt, QSize, pyqtSignal, QTimer, QSettings
 from PyQt5.QtGui import QFont, QIcon, QColor, QPalette, QPainter
 
 # Import the main application colors
@@ -22,6 +22,9 @@ from app.ui.color_scheme_pyqt import APP_COLORS, BUTTON_STYLE, ACCENT_BUTTON_STY
 
 # Colors for UI consistency - using main app colors
 colors = APP_COLORS
+
+# Import default categories constant
+from app.constants import DEFAULT_TEMPLATE_CATEGORIES
 
 class StructureEditorTree(QTreeWidget):
     """Enhanced QTreeWidget for structure editing with improved styling"""
@@ -447,30 +450,46 @@ class UIBuilder:
         self.template_info_field = None
         self.search_field = None
         
-        # Get categories from template_manager if available
-        self.categories = self._get_categories()
+        # Get template manager from editor's app reference
+        self.template_manager = None
+        if hasattr(self.editor, 'app') and hasattr(self.editor.app, 'template_manager'):
+            self.template_manager = self.editor.app.template_manager
+        else:
+            # Fallback if app or manager isn't directly accessible (should not happen in normal flow)
+            print("Warning: UIBuilder could not access template_manager via editor.app")
+            # Attempt to create a standalone instance (may lack full context)
+            try:
+                from app.templates.template_manager import TemplateManager
+                self.template_manager = TemplateManager()
+            except ImportError:
+                 print("Critical Error: Cannot import TemplateManager in UIBuilder")
+                 # Handle error appropriately, maybe raise exception or disable category features
+                 # For now, use a default list
+                 self.categories = ["Custom"]
+                 
+        # Fetch categories from template manager if available
+        if self.template_manager and hasattr(self.template_manager, 'get_categories'):
+             self.categories = self.template_manager.get_categories()
+             print(f"UIBuilder: Retrieved {len(self.categories)} categories from template_manager")
+        else:
+             print("UIBuilder: Using default category list as template_manager was not found or lacked get_categories")
+             self.categories = ["Custom"]
+             
+        # Initialize QSettings to check for hide defaults
+        self.settings = QSettings()
+        
+        # Filter categories based on setting BEFORE populating dropdown
+        self.categories_to_display = self.categories[:]
+        hide_defaults = self.settings.value("CategoryManager/hideDefaultCategories", False, type=bool)
+        if hide_defaults:
+            self.categories_to_display = [cat for cat in self.categories if cat not in DEFAULT_TEMPLATE_CATEGORIES]
+            print(f"UIBuilder: Hiding defaults, categories to display: {self.categories_to_display}")
+        else:
+            print(f"UIBuilder: Not hiding defaults, categories to display: {self.categories_to_display}")
+
         print(f"UIBuilder: Initialized with {len(self.categories)} categories: {self.categories}")
-    
-    def _get_categories(self):
-        """Get categories from the application's template manager"""
-        # Try to get app reference from editor
-        app = None
-        if hasattr(self.editor, 'app'):
-            app = self.editor.app
-        elif hasattr(self.editor, 'parent') and callable(self.editor.parent) and hasattr(self.editor.parent(), 'app'):
-            app = self.editor.parent().app
-            
-        # Get template manager from app
-        if app and hasattr(app, 'template_manager') and hasattr(app.template_manager, 'get_categories'):
-            # Get categories from template manager (single source of truth)
-            categories = app.template_manager.get_categories()
-            print(f"UIBuilder: Retrieved {len(categories)} categories from template_manager")
-            return categories
-            
-        # Fallback to default categories
-        from app.constants import DEFAULT_TEMPLATE_CATEGORIES
-        print("UIBuilder: Using default categories from constants")
-        return list(DEFAULT_TEMPLATE_CATEGORIES)
+        
+        self.init_ui()
     
     def init_ui(self):
         """
@@ -535,8 +554,8 @@ class UIBuilder:
         # Template category field
         self.template_category_field = QComboBox()
         self.template_category_field.setObjectName("template_category_combo_box")
-        self.template_category_field.addItems(self.categories)
-        self.template_category_field.setCurrentIndex(0)  # Default to "Custom"
+        self.template_category_field.addItems(sorted(self.categories_to_display))
+        self.template_category_field.setCurrentIndex(0)  # Default to first available
         self.template_category_field.setStyleSheet(f"""
             QComboBox {{
                 background-color: {colors['card_bg']};

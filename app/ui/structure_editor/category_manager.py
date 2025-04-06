@@ -469,9 +469,6 @@ class CategoryManager(QDialog):
         if hide_defaults:
             from app.constants import DEFAULT_TEMPLATE_CATEGORIES
             categories_to_show = [cat for cat in all_categories if cat not in DEFAULT_TEMPLATE_CATEGORIES]
-            # Ensure 'Custom' is still shown if it exists and defaults are hidden
-            if "Custom" in all_categories and "Custom" not in categories_to_show:
-                categories_to_show.append("Custom")
             print(f"Filtered categories (hide defaults): {categories_to_show}")
         else:
             print(f"Showing all categories (hide defaults is off): {categories_to_show}")
