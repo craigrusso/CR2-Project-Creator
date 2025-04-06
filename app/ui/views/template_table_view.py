@@ -192,17 +192,24 @@ class SortableHeaderView(QHeaderView):
         # Draw the text within the calculated text_rect
         painter.drawText(text_rect, alignment, elided_text)
 
-        # --- 4. Draw Sort Indicator Arrow Manually (using Style Primitive) --- 
+        # --- 4. Platform-Specific Arrow Drawing --- 
         if is_sorted_section:
-            arrow_option = QStyleOptionHeader() # Use a separate option for the arrow
-            # Initialize necessary fields for the primitive to work
-            self.initStyleOption(arrow_option) # Initialize default state etc.
-            arrow_option.rect = arrow_rect # Use the specific, smaller arrow rectangle
-            # Set sort indicator state
-            arrow_option.sortIndicator = QStyleOptionHeader.SortDown if self.sortIndicatorOrder() == Qt.DescendingOrder else QStyleOptionHeader.SortUp
-            
-            # Draw the primitive within the calculated arrow_rect
-            self.style().drawPrimitive(QStyle.PE_IndicatorHeaderArrow, arrow_option, painter, self)
+            import platform # Import platform module here
+            if platform.system() == "Windows":
+                # Draw simple character indicator for Windows
+                indicator_char = "v" if self.sortIndicatorOrder() == Qt.DescendingOrder else "^"
+                painter.setPen(text_color) # Use the same text color
+                # Draw text centered within the arrow_rect
+                painter.drawText(arrow_rect, Qt.AlignCenter, indicator_char)
+            else:
+                # Draw native arrow for macOS and others
+                arrow_option = QStyleOptionHeader() 
+                self.initStyleOption(arrow_option) 
+                arrow_option.rect = arrow_rect 
+                arrow_option.sortIndicator = (QStyleOptionHeader.SortDown 
+                                           if self.sortIndicatorOrder() == Qt.DescendingOrder 
+                                           else QStyleOptionHeader.SortUp)
+                self.style().drawPrimitive(QStyle.PE_IndicatorHeaderArrow, arrow_option, painter, self)
         
         painter.restore()
 

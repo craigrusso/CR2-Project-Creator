@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt, QEvent, QObject, QRect, QSize
 from PyQt5.QtGui import QPalette, QColor, QPainter, QBrush, QPen, QFont
 import sys, time
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE, LINEEDIT_STYLE, LABEL_STYLE, LISTVIEW_POPUP_STYLE
+import platform
 
 # Add the force_app_palette function
 def force_app_palette(app):
