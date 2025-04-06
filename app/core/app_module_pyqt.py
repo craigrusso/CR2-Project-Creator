@@ -498,6 +498,16 @@ class ProjectCreatorApp(QMainWindow):
             self.config["last_output_dir"] = directory
             save_config(self.config)
             
+            # Create a security-scoped bookmark for macOS App Store compatibility
+            if platform.system() == "Darwin":
+                try:
+                    from app.utils.security_bookmarks import create_bookmark
+                    create_bookmark(directory)
+                except ImportError:
+                    print("WARNING: Could not import security_bookmarks module.")
+                except Exception as e:
+                    print(f"ERROR: Failed to create security-scoped bookmark: {e}")
+            
         return directory  # Return the selected directory so it can be used by callers
     
     def get_current_output_dir(self, use_fallbacks=True):
@@ -514,13 +524,36 @@ class ProjectCreatorApp(QMainWindow):
         if hasattr(self, 'output_dir_input') and self.output_dir_input:
             output_dir = self.output_dir_input.text().strip()
             if output_dir:
-                # Ensure the directory exists
-                try:
-                    if not os.path.exists(output_dir):
-                        os.makedirs(output_dir, exist_ok=True)
-                        print(f"Created output directory: {output_dir}")
-                except Exception as e:
-                    print(f"Warning: Could not create output directory: {e}")
+                # On macOS, use security-scoped bookmarks if available
+                if platform.system() == "Darwin":
+                    try:
+                        from app.utils.security_bookmarks import BookmarkAccessContext
+                        # Use a context manager to access the bookmark
+                        with BookmarkAccessContext(output_dir):
+                            # Ensure the directory exists
+                            try:
+                                if not os.path.exists(output_dir):
+                                    os.makedirs(output_dir, exist_ok=True)
+                                    print(f"Created output directory: {output_dir}")
+                            except Exception as e:
+                                print(f"Warning: Could not create output directory: {e}")
+                    except ImportError:
+                        print("WARNING: Could not import security_bookmarks module.")
+                        # Fall back to regular directory access
+                        try:
+                            if not os.path.exists(output_dir):
+                                os.makedirs(output_dir, exist_ok=True)
+                                print(f"Created output directory: {output_dir}")
+                        except Exception as e:
+                            print(f"Warning: Could not create output directory: {e}")
+                else:
+                    # Regular directory access for non-macOS platforms
+                    try:
+                        if not os.path.exists(output_dir):
+                            os.makedirs(output_dir, exist_ok=True)
+                            print(f"Created output directory: {output_dir}")
+                    except Exception as e:
+                        print(f"Warning: Could not create output directory: {e}")
                 
                 print(f"Using output directory from UI: {output_dir}")
                 return output_dir
@@ -534,6 +567,16 @@ class ProjectCreatorApp(QMainWindow):
         if hasattr(self, 'config') and 'last_output_dir' in self.config:
             output_dir = self.config['last_output_dir']
             if output_dir and os.path.exists(output_dir):
+                # Try to access with security-scoped bookmark on macOS
+                if platform.system() == "Darwin":
+                    try:
+                        from app.utils.security_bookmarks import access_bookmark
+                        # Just test if we can access it
+                        access_bookmark(output_dir)
+                    except (ImportError, Exception) as e:
+                        if isinstance(e, Exception):
+                            print(f"Warning: Could not access bookmark for {output_dir}: {e}")
+                
                 print(f"Using output directory from config: {output_dir}")
                 return output_dir
                 

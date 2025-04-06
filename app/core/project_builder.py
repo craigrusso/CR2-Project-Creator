@@ -15,10 +15,12 @@ import sys
 import json
 import platform
 import re  # Add import for regex
+import tempfile
+import base64
 from pathlib import Path
 
 # Using PyQt for the UI framework
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar, QPushButton
+from PyQt5.QtWidgets import QMessageBox, QApplication, QDialog, QVBoxLayout, QLabel, QProgressBar, QPushButton, QProgressDialog
 from PyQt5.QtCore import Qt, QTimer
 UI_FRAMEWORK = 'pyqt'
 
@@ -266,6 +268,41 @@ class ProjectBuilder:
         if not output_dir:
             return False, "No output directory provided"
             
+        # Use security-scoped bookmarks on macOS if available
+        use_bookmark = False
+        if platform.system() == "Darwin":
+            try:
+                from app.utils.security_bookmarks import BookmarkAccessContext
+                use_bookmark = True
+            except ImportError:
+                print("WARNING: Could not import security_bookmarks module.")
+            
+        # Create project using security-scoped bookmark if on macOS
+        if use_bookmark:
+            try:
+                with BookmarkAccessContext(output_dir):
+                    return self._create_project_internal(
+                        project_name, output_dir, template_file, project_type,
+                        structure_name, create_backup, use_cached_files
+                    )
+            except Exception as e:
+                print(f"ERROR: Failed to access directory with security bookmark: {e}")
+                # Try without bookmark as fallback
+                print("Falling back to standard directory access...")
+                return self._create_project_internal(
+                    project_name, output_dir, template_file, project_type,
+                    structure_name, create_backup, use_cached_files
+                )
+        else:
+            # Standard project creation for non-macOS platforms
+            return self._create_project_internal(
+                project_name, output_dir, template_file, project_type,
+                structure_name, create_backup, use_cached_files
+            )
+            
+    def _create_project_internal(self, project_name, output_dir, template_file, project_type, 
+                             structure_name, create_backup, use_cached_files):
+        """Internal implementation of project creation."""
         # Create output directory if it doesn't exist
         try:
             os.makedirs(output_dir, exist_ok=True)
@@ -1506,6 +1543,40 @@ class ProjectBuilder:
                 "success_rate": "0/0 (0%)"
             }
         
+        # Use security-scoped bookmarks on macOS if available
+        use_bookmark = False
+        if platform.system() == "Darwin":
+            try:
+                from app.utils.security_bookmarks import BookmarkAccessContext
+                use_bookmark = True
+            except ImportError:
+                print("WARNING: Could not import security_bookmarks module for batch operation.")
+        
+        # Process batch using security-scoped bookmark if on macOS
+        if use_bookmark:
+            try:
+                with BookmarkAccessContext(output_dir):
+                    return self._batch_create_projects_internal(
+                        project_names, template_name, structure_name, output_dir,
+                        use_cached_files, template_data
+                    )
+            except Exception as e:
+                print(f"ERROR: Failed to access directory with security bookmark for batch: {e}")
+                # Try without bookmark as fallback
+                print("Falling back to standard directory access for batch...")
+                return self._batch_create_projects_internal(
+                    project_names, template_name, structure_name, output_dir,
+                    use_cached_files, template_data
+                )
+        else:
+            # Standard project creation for non-macOS platforms
+            return self._batch_create_projects_internal(
+                project_names, template_name, structure_name, output_dir,
+                use_cached_files, template_data
+            )
+    
+    def _batch_create_projects_internal(self, project_names, template_name, structure_name, output_dir, use_cached_files, template_data):
+        """Internal implementation of batch project creation."""
         # Ensure the output directory exists
         try:
             os.makedirs(output_dir, exist_ok=True)

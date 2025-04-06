@@ -157,8 +157,21 @@ def open_folder(path):
         if platform.system() == "Windows":
             os.startfile(os.path.normpath(path))
         elif platform.system() == "Darwin":
-            # Use subprocess instead of os.system to avoid shell escaping issues
-            subprocess.run(['open', path], check=True)
+            # Use security-scoped bookmarks on macOS if available
+            try:
+                from app.utils.security_bookmarks import BookmarkAccessContext
+                # Use a context manager to access the bookmark
+                with BookmarkAccessContext(path):
+                    # Use subprocess instead of os.system to avoid shell escaping issues
+                    subprocess.run(['open', path], check=True)
+            except ImportError:
+                # Fall back to regular folder access
+                print("WARNING: Could not import security_bookmarks module. Falling back to standard access.")
+                subprocess.run(['open', path], check=True)
+            except Exception as e:
+                print(f"WARNING: Failed to use bookmark for {path}: {e}")
+                # Try regular access as fallback
+                subprocess.run(['open', path], check=True)
         else:
             # Use subprocess for Linux as well
             subprocess.run(['xdg-open', path], check=True)
@@ -174,7 +187,20 @@ def open_in_explorer(path):
         if platform.system() == "Windows":
             subprocess.run(['explorer', '/select,', path], check=True)
         elif platform.system() == "Darwin":
-            subprocess.run(['open', '-R', path], check=True)
+            # Use security-scoped bookmarks on macOS if available
+            try:
+                from app.utils.security_bookmarks import BookmarkAccessContext
+                # Use a context manager to access the bookmark
+                with BookmarkAccessContext(path):
+                    subprocess.run(['open', '-R', path], check=True)
+            except ImportError:
+                # Fall back to regular folder access
+                print("WARNING: Could not import security_bookmarks module. Falling back to standard access.")
+                subprocess.run(['open', '-R', path], check=True)
+            except Exception as e:
+                print(f"WARNING: Failed to use bookmark for {path}: {e}")
+                # Try regular access as fallback
+                subprocess.run(['open', '-R', path], check=True)
         else:
             # Fallback to regular open on Linux
             open_folder(path)
