@@ -218,11 +218,18 @@ def configure_styles(app):
             border: 1px solid {colors['border']};
         }}
         
-        QMenu::item:selected {{
+        QMenu::item {{
+            padding: 5px 10px 5px 10px; /* Added padding: top/bottom 5px, right/left 10px */
+            border: none; /* Ensure no default border */
+        }}
+        
+        QMenu::item:selected {{  /* Adjusted for consistent padding */
             background-color: {colors['accent']};
             color: white;
             font-weight: bold;
-            border-left: 5px solid white;
+            padding-left: 5px; /* Keep 5px padding inside the border */
+            border-left: 5px solid {colors['accent']}; /* Keep the 5px border */
+            /* Total left space = 5px padding + 5px border = 10px, matching QMenu::item */
         }}
         
         /* Style for disabled items (used as headers) in ComboBox dropdowns */

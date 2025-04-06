@@ -539,10 +539,14 @@ class GalleryTemplatesSetup:
         # Template title - should stretch
         gallery.templates_header = QLabel("Templates")
         gallery.templates_header.setFont(QFont(get_system_font(), 14, QFont.Bold))
-        gallery.templates_header.setStyleSheet(f"color: {colors['text']}; padding: 5px 0; background-color: transparent;")
+        gallery.templates_header.setStyleSheet(f"color: {colors['text']}; padding: 5px 0; background-color: transparent; margin-right: 15px;")
         gallery.templates_header.setAlignment(Qt.AlignLeft)
-        gallery.templates_header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        gallery.templates_header_layout.addWidget(gallery.templates_header, 1)  # Give stretch factor of 1
+        # Ensure the label can take necessary space but doesn't force expansion unnecessarily
+        gallery.templates_header.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Fixed) 
+        gallery.templates_header_layout.addWidget(gallery.templates_header) # Remove stretch factor
+
+        # Add stretch to push subsequent elements (buttons) to the right
+        gallery.templates_header_layout.addStretch(1)
         
         # Add template button - fixed size, right aligned
         gallery.add_button = QPushButton("Add Template")
