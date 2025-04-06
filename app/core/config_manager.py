@@ -4,6 +4,8 @@
 import os
 import platform
 from PyQt5.QtCore import QSettings, QStandardPaths, QCoreApplication
+# Removed direct import of APP_NAME to break circular dependency
+# from .app_config import APP_NAME 
 
 # Ensure QCoreApplication attributes are set before QSettings is used heavily
 # These should match what's in main.py
@@ -24,13 +26,36 @@ _resolved_user_data_root = None
 
 def get_default_data_root():
     """
-    Determines the default root directory for application data.
-    Uses ~/.echelon/Data as the default.
+    Determines the default root directory for application data based on
+    platform conventions.
     """
-    # Default to ~/.echelon/Data
-    home_dir = os.path.expanduser("~")
-    default_path = os.path.join(home_dir, ".echelon", "Data")
-    print(f"DEBUG: Using default data root location: {default_path}")
+    system = platform.system()
+    app_name = QCoreApplication.applicationName() # Get app name from QCoreApplication
+    if not app_name:
+        # Fallback if not set, though it should be by main.py
+        app_name = "Echelon_Fallback"
+        print(f"WARN: QCoreApplication.applicationName() was not set. Using fallback: {app_name}")
+
+    if system == "Darwin":  # macOS
+        # ~/Library/Application Support/APP_NAME
+        home_dir = os.path.expanduser("~")
+        default_path = os.path.join(home_dir, "Library", "Application Support", app_name)
+    elif system == "Windows":
+        # %APPDATA%\APP_NAME (e.g., C:\Users\<user>\AppData\Roaming\APP_NAME)
+        appdata = os.getenv('APPDATA')
+        if not appdata: # Fallback if APPDATA is not set
+             home_dir = os.path.expanduser("~")
+             # A less standard but usable fallback
+             appdata = os.path.join(home_dir, 'AppData', 'Roaming') 
+        default_path = os.path.join(appdata, app_name)
+    else:  # Linux and other Unix-like systems
+        # Use XDG Base Directory Specification
+        # Data files -> $XDG_DATA_HOME or default to ~/.local/share
+        xdg_data_home = os.getenv('XDG_DATA_HOME', os.path.join(os.path.expanduser("~"), ".local", "share"))
+        default_path = os.path.join(xdg_data_home, app_name)
+        
+    print(f"DEBUG: Determined default data root location for {system}: {default_path}")
+    # Note: Directory creation is handled by the caller (get_user_data_root)
     return default_path
 
 def get_user_data_root(force_reload=False):
@@ -51,6 +76,8 @@ def get_user_data_root(force_reload=False):
         return _resolved_user_data_root
 
     settings = QSettings()
+    # Add debug print for the settings file path
+    print(f"DEBUG: QSettings file being checked for {SETTINGS_KEY_USER_DATA_ROOT}: {settings.fileName()}")
     user_path = settings.value(SETTINGS_KEY_USER_DATA_ROOT, None)
 
     if user_path and isinstance(user_path, str) and os.path.isdir(os.path.dirname(user_path)):
@@ -69,15 +96,16 @@ def get_user_data_root(force_reload=False):
              _resolved_user_data_root = user_path
              return user_path
          except Exception as e:
-             print(f"WARN: User-defined path '{user_path}' exists but is not valid or writable ({e}). Falling back to default.")
+             default_path_for_error_msg = get_default_data_root() # Recalculate for message
+             print(f"WARN: User-defined path '{user_path}' exists but is not valid or writable ({e}). Falling back to default '{default_path_for_error_msg}'.")
              # Fall through to default logic
     elif user_path:
-        print(f"WARN: User-defined path '{user_path}' is invalid or parent doesn't exist. Falling back to default.")
+        default_path_for_error_msg = get_default_data_root() # Recalculate for message
+        print(f"WARN: User-defined path '{user_path}' is invalid or parent doesn't exist. Falling back to default '{default_path_for_error_msg}'.")
         # Fall through to default logic
 
     # If no valid user path, use default
     default_path = get_default_data_root()
-    print(f"DEBUG: Using default data root: {default_path}")
     try:
         os.makedirs(default_path, exist_ok=True)
         _resolved_user_data_root = default_path
@@ -131,6 +159,8 @@ def set_user_data_root(path):
         return False
 
     settings = QSettings()
+    # Add debug print here too for consistency when setting
+    print(f"DEBUG: Setting {SETTINGS_KEY_USER_DATA_ROOT} in QSettings file: {settings.fileName()}")
     settings.setValue(SETTINGS_KEY_USER_DATA_ROOT, path)
     settings.sync() # Ensure it's written immediately
     print(f"DEBUG: Set user data root to: {path}")
@@ -204,7 +234,15 @@ if __name__ == "__main__":
     # Make sure App Info is set for QSettings
     QCoreApplication.setOrganizationName("TestOrg")
     QCoreApplication.setOrganizationDomain("test.org")
-    QCoreApplication.setApplicationName("TestAppConfigManager")
+    # Use the actual APP_NAME for testing consistency - Need to import it here
+    # Since this block is only run when executed directly, the import is safe here.
+    try:
+        from app.core.app_config import APP_NAME
+        QCoreApplication.setApplicationName(APP_NAME) 
+    except ImportError:
+        # Fallback if running standalone without full package structure
+        print("WARN: Could not import APP_NAME from app_config for testing. Using default.")
+        QCoreApplication.setApplicationName("EchelonTest")
 
     print("--- Testing Config Manager ---")
     settings = QSettings()
@@ -217,7 +255,35 @@ if __name__ == "__main__":
     _resolved_user_data_root = None # Clear cache
 
     print("\n1. Getting default root path:")
-    default_root = get_user_data_root()
+    # Temporarily override platform for testing different OS defaults
+    original_system = platform.system
+    try:
+        print("   Testing macOS default:")
+        platform.system = lambda: "Darwin"
+        print(f"      -> {get_default_data_root()}")
+        _resolved_user_data_root = None # Clear cache between tests
+        
+        print("   Testing Windows default:")
+        platform.system = lambda: "Windows"
+        # Mock APPDATA if needed for consistency in tests
+        original_appdata = os.environ.get('APPDATA')
+        # Use raw string for Windows path to avoid unicode escape errors
+        os.environ['APPDATA'] = r'C:\Users\TestUser\AppData\Roaming'
+        print(f"      -> {get_default_data_root()}")
+        if original_appdata is None:
+            del os.environ['APPDATA']
+        _resolved_user_data_root = None # Clear cache
+
+        print("   Testing Linux default:")
+        platform.system = lambda: "Linux"
+        print(f"      -> {get_default_data_root()}")
+        _resolved_user_data_root = None # Clear cache
+    finally:
+        platform.system = original_system # Restore original platform function
+
+    # Get the actual default root for the current system for the rest of the test
+    print("\n   Getting actual default root for this system:")
+    default_root = get_user_data_root() # This will use the *actual* system's default
     print(f"   Resolved Root: {default_root}")
     print(f"   Templates Path: {get_templates_path()}")
     print(f"   Cache Path: {get_cache_path()}")

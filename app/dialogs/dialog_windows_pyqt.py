@@ -16,6 +16,9 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
 from PyQt5.QtCore import Qt, QSize, QByteArray, QUrl, QRegExp, QCoreApplication, QMimeData, QTimer
 from PyQt5.QtGui import QFont, QPixmap, QMovie, QIcon, QRegExpValidator, QDragEnterEvent, QDragMoveEvent, QDropEvent, QTextCursor, QPainter, QColor, QBrush, QPen, QImage
 from PyQt5.QtGui import QDesktopServices
+# --- ADDED: Import QSettings --- 
+from PyQt5.QtCore import QSettings
+# --- END ADDED ---
 
 from app.core.app_config import APP_NAME, APP_VERSION
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, GROUPBOX_STYLE
@@ -877,7 +880,14 @@ def show_preferences_dialog(parent=None):
     data_root_field.setText(config_manager.get_user_data_root()) # Get path from config_manager
     data_root_field.setReadOnly(True)
     data_root_field.setStyleSheet(LINEEDIT_STYLE)
-    storage_layout.addWidget(data_root_field, row, 1)
+    # Make the field span columns 1, 2, and 3
+    storage_layout.addWidget(data_root_field, row, 1, 1, 3) 
+
+    # --- Button Row --- 
+    row += 1 # Move to the next row for the buttons
+
+    # Button layout for Change, Reset, Open
+    button_hbox = QHBoxLayout()
 
     data_root_browse_btn = QPushButton("Change...")
     data_root_browse_btn.setStyleSheet(BUTTON_STYLE)
@@ -890,19 +900,45 @@ def show_preferences_dialog(parent=None):
             if success:
                 data_root_field.setText(new_path)
                 QMessageBox.information(dialog, "Path Changed",
-                                        f"Data root path set to:\\n{new_path}\\n\\nPlease restart the application for all changes to take full effect.")
+                                        f"Data root path set to:\n{new_path}\n\nPlease restart the application for all changes to take full effect.")
             else:
                  QMessageBox.warning(dialog, "Error Changing Path",
-                                     f"Could not set the data root path to:\\n{new_path}\\n\\nPlease ensure the location is valid and writable.")
+                                     f"Could not set the data root path to:\n{new_path}\n\nPlease ensure the location is valid and writable.")
     data_root_browse_btn.clicked.connect(browse_data_root)
-    storage_layout.addWidget(data_root_browse_btn, row, 2)
+    # storage_layout.addWidget(data_root_browse_btn, row, 2) # Old position
+    button_hbox.addWidget(data_root_browse_btn)
+
+    # --- ADDED: Reset Button ---
+    data_root_reset_btn = QPushButton("Reset to Default")
+    data_root_reset_btn.setStyleSheet(BUTTON_STYLE) # Use the same style
+    def reset_data_root():
+        reply = QMessageBox.question(dialog, "Confirm Reset",
+                                     "Are you sure you want to reset the data root directory to the default location?",
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            settings = QSettings()
+            settings.remove(config_manager.SETTINGS_KEY_USER_DATA_ROOT)
+            settings.sync() # Ensure change is saved
+            # Force config manager to forget the cached path and get the new default
+            new_default_path = config_manager.get_user_data_root(force_reload=True)
+            data_root_field.setText(new_default_path)
+            QMessageBox.information(dialog, "Path Reset",
+                                    f"Data root path reset to default:\n{new_default_path}\n\nPlease restart the application for this change to take full effect.")
+    data_root_reset_btn.clicked.connect(reset_data_root)
+    button_hbox.addWidget(data_root_reset_btn) # Add to HBox
+    # --- END ADDED: Reset Button ---
 
     data_root_open_btn = QPushButton("Open")
     data_root_open_btn.setStyleSheet(BUTTON_STYLE)
     def open_data_root():
         open_folder(data_root_field.text())
     data_root_open_btn.clicked.connect(open_data_root)
-    storage_layout.addWidget(data_root_open_btn, row, 3)
+    # storage_layout.addWidget(data_root_open_btn, row, 3) # Old position
+    button_hbox.addWidget(data_root_open_btn)
+
+    # Add the horizontal button layout to the grid
+    storage_layout.addLayout(button_hbox, row, 2, 1, 2) # Span across columns 2 and 3
+
     # --- END ADDED: Data Root Directory ---
 
     # --- REMOVED Old specific location rows ---
@@ -916,18 +952,23 @@ def show_preferences_dialog(parent=None):
     # --- END REMOVED ---
 
     # Add note about derived paths and restarting
+    # Adjusted row increment due to button row addition
     row += 1
     derived_paths_label = QLabel("Templates, Cache, Settings, Structures, etc., are stored in subdirectories within this Data Root Directory.")
     derived_paths_label.setStyleSheet(f"color: {colors['secondary_text']};")
     derived_paths_label.setWordWrap(True)
+    # Make note span all columns
     storage_layout.addWidget(derived_paths_label, row, 0, 1, 4)
 
-    row += 1
+    # Adjusted row increment
+    row += 1 
     note_label = QLabel("Note: Restart the application for path changes to take full effect.")
     note_label.setStyleSheet(f"color: {colors['secondary_text']}; font-style: italic;")
+    # Make note span all columns
     storage_layout.addWidget(note_label, row, 0, 1, 4)
 
     # Add stretch at the bottom
+    # Adjusted row increment
     row += 1
     storage_layout.setRowStretch(row, 1)
 
