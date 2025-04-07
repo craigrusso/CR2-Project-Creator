@@ -23,6 +23,7 @@ from PyQt5.QtGui import QFont, QCursor, QIcon, QColor, QPalette, QDragEnterEvent
 
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, LINEEDIT_STYLE, LABEL_STYLE
 from app.ui.tree_styling import apply_tree_styling, setup_tree_for_structure_editing
+from app.utils.utils import normalize_path_for_storage
 
 # Constants for styling
 BLUE_HIGHLIGHT = "#3066BE"
@@ -754,9 +755,9 @@ class StructureEditor(QDialog):
         if not current or current != root_item:
             return None
             
-        # Combine path parts
+        # Combine path parts and normalize
         if path_parts:
-            return os.path.join(*path_parts)
+            return normalize_path_for_storage(os.path.join(*path_parts))
         else:
             return None
     
@@ -1488,7 +1489,11 @@ class TemplateDirectoryEditor(QDialog):
             path_parts.insert(0, current.text(0))
             current = current.parent()
         
-        return os.path.join(*path_parts) if path_parts else ""
+        # Combine path parts and normalize
+        if path_parts:
+            return normalize_path_for_storage(os.path.join(*path_parts))
+        else:
+            return None
 
     def _add_file_to_template(self):
         """Add a file to the template"""

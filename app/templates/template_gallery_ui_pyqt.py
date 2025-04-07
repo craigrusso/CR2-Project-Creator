@@ -1320,11 +1320,12 @@ class TemplateListItem(QFrame):
                 return
             
             # Remove category parameter from save_template call
-            template_manager.save_template(
-                folder_name, 
-                import_path,  
-                "Standard"
-            )
+            template_data = {
+                "name": folder_name,
+                "structure": import_path,
+                "type": "Standard"
+            }
+            template_manager.save_template(template_data)
             
             # Get the newly created template
             new_template = template_manager.get_template_by_name(folder_name)
@@ -1398,7 +1399,12 @@ class TemplateListItem(QFrame):
             return
             
         # Save the updated template
-        self.template_manager.save_template(template_name, path, template_type)
+        template_data = {
+            "name": template_name,
+            "structure": path,  # In this context, path appears to be the structure
+            "type": template_type
+        }
+        self.template_manager.save_template(template_data)
     
     def _on_delete_template(self):
         """Delete the selected template"""

@@ -354,7 +354,12 @@ class TemplateHandler:
             
         # Save with the new name
         if self.template_manager and hasattr(self.template_manager, 'save_structure'):
-            return self.template_manager.save_structure(new_name, structure)
+            # Create a template data dictionary to pass to save_structure
+            template_data = {
+                "name": new_name,
+                "structure": structure
+            }
+            return self.template_manager.save_structure(template_data)
             
         return False
     

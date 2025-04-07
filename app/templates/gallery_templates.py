@@ -229,17 +229,24 @@ def handle_template_edit(gallery, template=None, selected_template=None, name=No
             
             # --- Save main template file (using save_template) ---
             print(f"🔷 GALLERY LISTENER: Saving main template file: Name='{updated_template_name}', Category='{saved_category}'")
-            # MODIFIED: Call save_template via template_io
-            template_save_success, save_message = template_manager.template_io.save_template(
-                template_name=updated_template_name,
-                structure=updated_structure,
-                category=saved_category,
-                description=saved_description,
-                tags=template.get('tags'),
-                template_type=template.get('type', 'Standard'),
-                original_name=original_template_name if is_rename else None,
-                files_to_cache=None
-            )
+            
+            # Create a template_data dictionary with all required fields
+            template_data = {
+                "name": updated_template_name,
+                "structure": updated_structure,
+                "category": saved_category,
+                "description": saved_description,
+                "tags": template.get('tags', []),
+                "type": template.get('type', 'Standard')
+            }
+            
+            # If this is a rename operation, include the original name
+            if is_rename:
+                template_data["original_name"] = original_template_name
+            
+            # Call save_template with the template_data dictionary
+            template_save_success = template_manager.template_io.save_template(template_data)
+            save_message = "Template saved successfully" if template_save_success else "Failed to save template"
             
             if template_save_success:
                 print(f"✅ GALLERY LISTENER: Successfully saved template '{updated_template_name}'")

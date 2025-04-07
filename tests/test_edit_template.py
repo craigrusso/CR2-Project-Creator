@@ -40,12 +40,17 @@ template = {
 # Save the template initially without files
 template_path = os.path.join(ops.paths["templates_dir"], f"{template_name}.json")
 print(f"\nSaving initial template to {template_path}...")
-ops.save_template(
-    template_name=template_name,
-    structure=template["structure"],
-    template_data=template,
-    cache_files=True
-)
+template_data = {
+    "name": template_name,
+    "structure": template["structure"],
+    "cache_files": True
+}
+# Copy any additional data from the template
+for key, value in template.items():
+    if key not in template_data:
+        template_data[key] = value
+
+ops.save_template(template_data)
 
 # Verify template was saved
 print(f"Checking if template exists at {template_path}...")

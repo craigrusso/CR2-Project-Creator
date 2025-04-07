@@ -189,12 +189,13 @@ def test_template_save(template_manager, name, with_structure=True):
     
     # Use template operations to save it
     to = TemplateOperations()
-    template_success = to.save_template(
-        name=name,
-        file_path=os.getcwd(),
-        structure_type="Standard",
-        description=template["description"]
-    )
+    template_data = {
+        "name": name,
+        "structure": os.getcwd(),
+        "type": "Standard",
+        "description": template["description"]
+    }
+    template_success = to.save_template(template_data)
     print(f"Template save result: {template_success}")
     
     # Verify files were created

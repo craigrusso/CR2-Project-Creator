@@ -9,6 +9,19 @@ import tempfile
 from datetime import datetime
 from PyQt5.QtWidgets import QFileDialog, QMessageBox, QDialog, QVBoxLayout, QLabel, QCheckBox, QDialogButtonBox
 from app.constants import APP_NAME # Import the APP_NAME constant
+import sys
+import re
+import time
+try:
+    from app.utils.utils import normalize_path_for_storage
+except ImportError:
+    # Fallback if not available
+    def normalize_path_for_storage(path):
+        """Normalize a path for storage with forward slashes"""
+        if not path:
+            return ""
+        norm_path = os.path.normpath(path)
+        return norm_path.replace('\\', '/')
 
 def export_package(app, include_settings=True, include_templates=True):
     """
@@ -1062,7 +1075,7 @@ def import_template(app, file_path=None):
                                 'file_type': os.path.splitext(rel_path)[1][1:] if os.path.splitext(rel_path)[1] else '',
                                 'size': os.path.getsize(src_path),
                                 'is_binary': src_path.endswith(('.bin', '.exe', '.dll', '.so', '.dylib', '.prproj', '.aep')),
-                                'path': rel_path.replace('\\', '/')  # Store relative path within template
+                                'path': normalize_path_for_storage(rel_path)  # Store relative path within template
                             }
                             
                             # Check if this file should be registered for automatic renaming
@@ -1074,7 +1087,7 @@ def import_template(app, file_path=None):
                                     file_path = file_info.get('path', '')
                                     if file_path:
                                         # Make file path matching consistent
-                                        file_path = file_path.replace('\\', '/')
+                                        file_path = normalize_path_for_storage(file_path)
                                         file_name = os.path.basename(file_path)
                                         folder_path = os.path.dirname(file_path)
                                         
@@ -1223,7 +1236,7 @@ def import_template(app, file_path=None):
             return False
             
         # Make file path matching consistent
-        file_path = file_path.replace('\\', '/')
+        file_path = normalize_path_for_storage(file_path)
         file_name = os.path.basename(file_path)
         folder_path = os.path.dirname(file_path)
         

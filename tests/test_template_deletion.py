@@ -87,7 +87,11 @@ class TestTemplateDeletion(unittest.TestCase):
             f.write("Test file content")
             
         # Save the template
-        success = self.template_ops.save_template(name, structure)
+        template_data = {
+            "name": name,
+            "structure": structure
+        }
+        success = self.template_ops.save_template(template_data)
         self.assertTrue(success, f"Failed to save test template '{name}'")
         
         # Verify template exists

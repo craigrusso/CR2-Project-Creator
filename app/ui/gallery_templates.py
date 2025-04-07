@@ -43,24 +43,18 @@ class TemplatesGallery(QWidget):
                     print(f"DEBUG: Failed to save structure for template '{new_name}'")
                     return False
                 
-                # Create template data
+                # Create a proper template data object
                 template_data = {
                     'name': new_name,
-                    'structure_name': f"Template_{new_name}",
                     'structure': structure,
                     'modified': time.time(),
-                    'category': 'Custom'  # Default category
+                    'category': 'Custom',  # Default category
+                    # Add original_name if this is a rename operation
+                    'original_name': template_name if template_name != new_name else None
                 }
                 
                 # Save the template with the updated structure
-                template_save_success = self.app.template_manager.save_template(
-                    template_name=new_name,
-                    structure=structure,
-                    template_data=template_data,
-                    category='Custom',
-                    is_update=True,
-                    original_name=template_name if template_name != new_name else None
-                )
+                template_save_success = self.app.template_manager.save_template(template_data)
                 
                 if template_save_success:
                     print(f"DEBUG: Successfully saved template '{new_name}'")

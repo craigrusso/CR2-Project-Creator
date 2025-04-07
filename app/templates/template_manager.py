@@ -606,7 +606,7 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
             if original_name:
                 template_data["original_name"] = original_name
                 
-            # Call the template_io save_template method
+            # Call the template_io save_template method with the template_data object
             success = self.template_io.save_template(template_data)
             message = "Template saved successfully" if success else "Failed to save template"
             

@@ -2,8 +2,21 @@ import os
 import json
 import shutil
 import time
+from pathlib import Path
 
 from app.templates.template_utils import _guess_file_type # Import necessary utils
+
+# Import utility functions
+try:
+    from app.utils.utils import normalize_path_for_storage
+except ImportError:
+    # Fallback if not available
+    def normalize_path_for_storage(path):
+        """Normalize a path for storage with forward slashes"""
+        if not path:
+            return ""
+        norm_path = os.path.normpath(path)
+        return norm_path.replace('\\', '/')
 
 class TemplateStructureOps:
     """Handles operations related to template folder structures."""
@@ -131,7 +144,7 @@ class TemplateStructureOps:
                             'file_type': _guess_file_type(file_name),
                             'size': os.path.getsize(original_path),
                             'is_binary': file_data.get('is_binary', False),
-                            'path': os.path.join(folder, file_name).replace('\\\\', '/')
+                            'path': normalize_path_for_storage(os.path.join(folder, file_name))
                         }
                         
                         # Add rename flag if filename contains project name variable
@@ -185,7 +198,7 @@ class TemplateStructureOps:
                 # If still no original path and we have files_to_cache, try to find it there
                 if not original_path and files_to_cache:
                     # Construct the relative path as known within the structure
-                    rel_path_in_structure = os.path.join(parent_path, file_name).replace('\\', '/')
+                    rel_path_in_structure = normalize_path_for_storage(os.path.join(parent_path, file_name))
                     
                     # Check if this relative path exists in files_to_cache
                     if rel_path_in_structure in files_to_cache:
@@ -217,7 +230,7 @@ class TemplateStructureOps:
                     'file_type': _guess_file_type(file_name),
                     'size': os.path.getsize(original_path),
                     'is_binary': item.get('is_binary', False),
-                    'path': os.path.join(folder, file_name).replace('\\\\', '/')
+                    'path': normalize_path_for_storage(os.path.join(folder, file_name))
                 }
                 
                 # Add rename flag if filename contains project name variable
@@ -235,7 +248,7 @@ class TemplateStructureOps:
             elif item.get('type') == 'folder' and 'children' in item:
                 folder_name = item.get('name', '')
                 if folder_name: # Only append folder name if it exists
-                    new_parent = os.path.join(parent_path, folder_name).replace('\\', '/')
+                    new_parent = normalize_path_for_storage(os.path.join(parent_path, folder_name))
                     self._extract_files_from_structure(item.get('children', []), files_array, files_to_cache, new_parent)
                 else:
                      print(f"WARN: Folder item without a name encountered at path '{parent_path}'")

@@ -290,6 +290,27 @@ def safe_path_join(*paths):
     joined_path = os.path.join(*paths)
     return os.path.normpath(joined_path)
 
+def normalize_path_for_storage(path):
+    """
+    Normalizes a path for storage in a platform-independent way.
+    Converts Windows backslashes to forward slashes for consistency.
+    
+    Args:
+        path (str): The path to normalize
+        
+    Returns:
+        str: Normalized path with forward slashes
+    """
+    if not path:
+        return ""
+    
+    # Normalize the path according to OS conventions
+    norm_path = os.path.normpath(path)
+    
+    # Convert backslashes to forward slashes for storage
+    # This ensures paths are stored consistently across platforms
+    return norm_path.replace('\\', '/')
+
 def ensure_directory_exists(directory):
     """
     Ensure a directory exists, creating it if necessary.

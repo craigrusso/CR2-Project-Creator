@@ -35,7 +35,12 @@ def test_template_update():
     }
     
     print(f"Creating template '{template_name}'...")
-    success = ops.save_template(template_name, structure, cache_files=True)
+    template_data = {
+        "name": template_name,
+        "structure": structure,
+        "cache_files": True
+    }
+    success = ops.save_template(template_data)
     print(f"Template created successfully: {success}")
     
     # Get the template file path

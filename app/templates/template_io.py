@@ -449,27 +449,22 @@ class TemplateIO:
              return False, "Template data is missing the 'name' field."
 
         # 2. Use save_template to handle the rename logic
-        # Pass the exact old name as original_name
-        # Keep other metadata from the existing template
-        save_success, message = self.save_template(
-            template_name=new_name_clean,
-            structure=template_data.get('structure'),
-            category=template_data.get('category'),
-            description=template_data.get('description'),
-            tags=template_data.get('tags'),
-            template_type=template_data.get('type'),
-            original_name=exact_old_name, # Crucial: pass the original name for cleanup
-            files_to_cache=None # Let save_template re-evaluate files based on structure
-        )
+        # Create a modified copy of the template data with the new name
+        new_template_data = template_data.copy()
+        new_template_data['name'] = new_name_clean
+        new_template_data['original_name'] = exact_old_name  # Keep track of original name for cleanup
 
+        # Call save_template with the template data object
+        save_success = self.save_template(new_template_data)
+        
         if save_success:
             print(f"✅ TemplateIO: Successfully renamed template '{exact_old_name}' to '{new_name_clean}' via save_template.")
-            return True, message
+            return True, "Template renamed successfully"
         else:
-            print(f"ERROR: TemplateIO: Rename failed during save_template call for '{exact_old_name}' -> '{new_name_clean}'. Message: {message}")
+            print(f"ERROR: TemplateIO: Rename failed during save_template call for '{exact_old_name}' -> '{new_name_clean}'")
             # save_template should ideally handle its own rollback if possible,
             # but state might be inconsistent here.
-            return False, f"Failed to rename: {message}"
+            return False, "Failed to rename template"
 
 
     def duplicate_template(self, original_template_name, new_name=None):
