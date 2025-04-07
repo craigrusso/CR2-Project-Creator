@@ -425,7 +425,7 @@ def configure_styles(app):
         
         # Set up painter
         pen = QPen(QColor("white"))
-        pen.setWidth(1.5)
+        pen.setWidth(2)
         painter.setPen(pen)
         
         # Draw the path
@@ -441,12 +441,35 @@ def configure_styles(app):
             self.checkmark = create_checkmark_icon()
             
         def eventFilter(self, obj, event):
-            from PyQt5.QtWidgets import QCheckBox, QStyle
+            from PyQt5.QtWidgets import QCheckBox
             if isinstance(obj, QCheckBox) and event.type() == QEvent.Paint:
                 if obj.isChecked():
-                    # Draw the checkmark on top after the regular painting is done
-                    obj.style().drawPrimitive(QStyle.PE_IndicatorCheckBox, None, obj)
-            return False
+                    # Get the current state of the checkbox
+                    painter = QPainter(obj)
+                    
+                    # Get the indicator rect
+                    option = QStyle.QStyleOptionButton()
+                    option.initFrom(obj)
+                    if obj.isChecked():
+                        option.state |= QStyle.State_On
+                    else:
+                        option.state |= QStyle.State_Off
+                    
+                    # Get the indicator rect from style
+                    rect = obj.style().subElementRect(QStyle.SE_CheckBoxIndicator, option, obj)
+                    
+                    # Draw the checkmark centered in the checkbox
+                    painter.drawPixmap(
+                        rect.x() + (rect.width() - self.checkmark.width()) // 2,
+                        rect.y() + (rect.height() - self.checkmark.height()) // 2,
+                        self.checkmark
+                    )
+                    return True  # Event handled
+            return False  # Let event propagate
+    
+    # Create and install the checkbox style filter
+    checkbox_filter = CheckboxStyleFilter()
+    app.installEventFilter(checkbox_filter)
     
     # Install a global event filter to catch combo box popups
     popup_filter = ComboBoxPopupFilter()
