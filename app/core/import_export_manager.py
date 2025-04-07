@@ -464,7 +464,6 @@ def export_template(app, template_name, include_files=True):
     
     # --- DEBUG LOGGING START ---
     print(f"[EXPORT_DEBUG] Exporting template: {template_name}")
-    print(f"[EXPORT_DEBUG] Template data: {json.dumps(template, indent=2)}")
     print(f"[EXPORT_DEBUG] include_files flag: {include_files}")
     # --- DEBUG LOGGING END ---
     
@@ -534,104 +533,157 @@ def export_template(app, template_name, include_files=True):
         if include_files:
             files_dir = os.path.join(template_export_dir, "files")
             os.makedirs(files_dir, exist_ok=True)
-            # --- DEBUG LOGGING START ---
             print(f"[EXPORT_DEBUG] Created files directory: {files_dir}")
-            # --- DEBUG LOGGING END ---
             
-            # First check if we have cached files
-            has_cached_files = False
-            cached_path = template.get("cached_path")
-            original_path_from_template = template.get("path")
-            # --- DEBUG LOGGING START ---
-            print(f"[EXPORT_DEBUG] Checking for cached files. Cached path from template: {cached_path}")
-            # --- DEBUG LOGGING END ---
+            # Track file export success
+            files_exported = 0
+            files_failed = 0
             
-            if cached_path and os.path.exists(cached_path):
-                try:
-                    # --- DEBUG LOGGING START ---
-                    print(f"[EXPORT_DEBUG] Cached path exists: {cached_path}")
-                    # --- DEBUG LOGGING END ---
-                    # Use cached files if available
-                    if os.path.isdir(cached_path) and os.listdir(cached_path):  # Check if directory and not empty
-                        has_cached_files = True
-                        print(f"[EXPORT_DEBUG] Using cached files from: {cached_path}")
+            # APPROACH 1: First try using the files array from the template, which should have original paths
+            file_entries = template.get("files", [])
+            if file_entries and isinstance(file_entries, list):
+                print(f"[EXPORT_DEBUG] Template has {len(file_entries)} file entries in its files array")
+                
+                for file_entry in file_entries:
+                    if not isinstance(file_entry, dict):
+                        print(f"[EXPORT_DEBUG] Skipping non-dictionary file entry: {file_entry}")
+                        continue
+                    
+                    # Get the original path and check if it exists
+                    original_path = file_entry.get("original_path")
+                    if original_path and os.path.exists(original_path):
+                        # Determine folder structure within the export
+                        folder_in_template = file_entry.get("folder", "")
+                        file_name = file_entry.get("file_name", os.path.basename(original_path))
                         
-                        # --- CORRECTED: Define source as the 'files' subdirectory within the cache ---
-                        cached_files_source_dir = os.path.join(cached_path, 'files')
-                        
-                        # Check if the actual files subdirectory exists
-                        if os.path.isdir(cached_files_source_dir):
-                            print(f"[EXPORT_DEBUG] Copying contents from: {cached_files_source_dir}")
-                            # Copy all cached files from the 'files' subdirectory
-                            for item in os.listdir(cached_files_source_dir):
-                                # --- CORRECTED: Source path is now inside cache's 'files' dir ---
-                                src_path = os.path.join(cached_files_source_dir, item)
-                                dst_path = os.path.join(files_dir, item) # Destination remains the temp 'files' dir
-                                
-                                try:
-                                    if os.path.isfile(src_path):
-                                        print(f"[EXPORT_DEBUG] Copying cached file: {src_path} -> {dst_path}")
-                                        shutil.copy2(src_path, dst_path)
-                                    elif os.path.isdir(src_path):
-                                        print(f"[EXPORT_DEBUG] Copying cached directory: {src_path} -> {dst_path}")
-                                        # --- CORRECTED: Ensure destination doesn't exist for copytree ---
-                                        if os.path.exists(dst_path):
-                                            shutil.rmtree(dst_path)
-                                        shutil.copytree(src_path, dst_path)
-                                except Exception as copy_error:
-                                    print(f"[EXPORT_DEBUG] ERROR copying cached item {item}: {copy_error}")
+                        # Create target directory structure if needed
+                        if folder_in_template:
+                            target_dir = os.path.join(files_dir, folder_in_template)
+                            os.makedirs(target_dir, exist_ok=True)
+                            dest_path = os.path.join(target_dir, file_name)
                         else:
-                             print(f"[EXPORT_DEBUG] WARN: 'files' subdirectory not found within cache path: {cached_files_source_dir}")
-                             has_cached_files = False # Mark as failed if files dir is missing
-                    else:
-                        print(f"[EXPORT_DEBUG] Cached path is not a directory or is empty: {cached_path}")
-                except Exception as e:
-                    print(f"[EXPORT_DEBUG] Error processing cached files from {cached_path}: {e}")
-                    has_cached_files = False
-            else:
-                print(f"[EXPORT_DEBUG] Cached path not found or doesn't exist: {cached_path}")
+                            dest_path = os.path.join(files_dir, file_name)
+                            
+                        try:
+                            print(f"[EXPORT_DEBUG] Copying original file: {original_path} -> {dest_path}")
+                            shutil.copy2(original_path, dest_path)
+                            files_exported += 1
+                        except Exception as e:
+                            print(f"[EXPORT_DEBUG] Error copying file {original_path}: {e}")
+                            files_failed += 1
+                            
+                    elif file_entry.get("cached_path") and os.path.exists(file_entry.get("cached_path")):
+                        # Try to use cached path from the file entry if original path fails
+                        cached_path = file_entry.get("cached_path")
+                        folder_in_template = file_entry.get("folder", "")
+                        file_name = file_entry.get("file_name", os.path.basename(cached_path))
+                        
+                        # Create target directory structure if needed
+                        if folder_in_template:
+                            target_dir = os.path.join(files_dir, folder_in_template)
+                            os.makedirs(target_dir, exist_ok=True)
+                            dest_path = os.path.join(target_dir, file_name)
+                        else:
+                            dest_path = os.path.join(files_dir, file_name)
+                            
+                        try:
+                            print(f"[EXPORT_DEBUG] Copying cached file (from file entry): {cached_path} -> {dest_path}")
+                            shutil.copy2(cached_path, dest_path)
+                            files_exported += 1
+                        except Exception as e:
+                            print(f"[EXPORT_DEBUG] Error copying cached file {cached_path}: {e}")
+                            files_failed += 1
             
-            # Fall back to original path if needed
-            # --- DEBUG LOGGING START ---
-            print(f"[EXPORT_DEBUG] Checking fallback path. has_cached_files: {has_cached_files}, original_path: {original_path_from_template}")
-            # --- DEBUG LOGGING END ---
-            if not has_cached_files and original_path_from_template and os.path.exists(original_path_from_template):
-                original_path = original_path_from_template
-                print(f"[EXPORT_DEBUG] Using original files (fallback) from: {original_path}")
+            # APPROACH 2: Try to use the template's main path if it has one and if we haven't exported any files yet
+            if files_exported == 0 and template.get("path") and os.path.exists(template.get("path")):
+                original_path = template.get("path")
+                print(f"[EXPORT_DEBUG] Using template's main path: {original_path}")
                 
                 # Check if path is a file or directory
                 if os.path.isfile(original_path):
                     try:
                         # Single file template
-                        dst_path = os.path.join(files_dir, os.path.basename(original_path))
-                        print(f"[EXPORT_DEBUG] Copying original file: {original_path} -> {dst_path}")
-                        shutil.copy2(original_path, dst_path)
-                    except Exception as copy_error:
-                        print(f"[EXPORT_DEBUG] ERROR copying original file {original_path}: {copy_error}")
+                        dest_path = os.path.join(files_dir, os.path.basename(original_path))
+                        print(f"[EXPORT_DEBUG] Copying template file: {original_path} -> {dest_path}")
+                        shutil.copy2(original_path, dest_path)
+                        files_exported += 1
+                    except Exception as e:
+                        print(f"[EXPORT_DEBUG] Error copying template file {original_path}: {e}")
+                        files_failed += 1
                 elif os.path.isdir(original_path):
                     # Directory template - copy all contents
                     try:
                         for item in os.listdir(original_path):
                             src_path = os.path.join(original_path, item)
-                            dst_path = os.path.join(files_dir, item)
+                            dest_path = os.path.join(files_dir, item)
                             
                             try:
                                 if os.path.isfile(src_path):
-                                    print(f"[EXPORT_DEBUG] Copying original dir item (file): {src_path} -> {dst_path}")
-                                    shutil.copy2(src_path, dst_path)
+                                    print(f"[EXPORT_DEBUG] Copying directory item (file): {src_path} -> {dest_path}")
+                                    shutil.copy2(src_path, dest_path)
+                                    files_exported += 1
                                 elif os.path.isdir(src_path):
-                                    print(f"[EXPORT_DEBUG] Copying original dir item (dir): {src_path} -> {dst_path}")
-                                    shutil.copytree(src_path, dst_path)
-                            except Exception as copy_error:
-                                print(f"[EXPORT_DEBUG] ERROR copying original directory item {item}: {copy_error}")
-                    except Exception as list_error:
-                         print(f"[EXPORT_DEBUG] ERROR listing original directory {original_path}: {list_error}")
+                                    print(f"[EXPORT_DEBUG] Copying directory item (dir): {src_path} -> {dest_path}")
+                                    shutil.copytree(src_path, dest_path)
+                                    files_exported += 1  # Count directory as one file for simplicity
+                            except Exception as e:
+                                print(f"[EXPORT_DEBUG] Error copying directory item {item}: {e}")
+                                files_failed += 1
+                    except Exception as e:
+                        print(f"[EXPORT_DEBUG] Error processing directory {original_path}: {e}")
+            
+            # APPROACH 3: Last resort - try to use the cached files if available
+            if files_exported == 0:
+                # Try to find the template's cached files
+                # First, determine the cache dir from the template
+                base_cache_dir = template.get("cached_path")
+                template_name_safe = template_name.replace(" ", "_").replace("/", "_").replace("\\", "_")
+                
+                if base_cache_dir and os.path.exists(base_cache_dir):
+                    # Look for the template's cache directory
+                    template_cache_dir = os.path.join(base_cache_dir, template_name_safe)
+                    cached_files_dir = os.path.join(template_cache_dir, "files")
+                    
+                    if os.path.exists(cached_files_dir) and os.path.isdir(cached_files_dir):
+                        print(f"[EXPORT_DEBUG] Using cache directory: {cached_files_dir}")
+                        
+                        try:
+                            # Copy all files from the cache directory
+                            for root, dirs, files in os.walk(cached_files_dir):
+                                for file in files:
+                                    src_path = os.path.join(root, file)
+                                    # Preserve the folder structure relative to the cache directory
+                                    rel_path = os.path.relpath(src_path, cached_files_dir)
+                                    dest_path = os.path.join(files_dir, rel_path)
+                                    
+                                    # Ensure the destination directory exists
+                                    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                                    
+                                    try:
+                                        print(f"[EXPORT_DEBUG] Copying cached file: {src_path} -> {dest_path}")
+                                        shutil.copy2(src_path, dest_path)
+                                        files_exported += 1
+                                    except Exception as e:
+                                        print(f"[EXPORT_DEBUG] Error copying cached file {src_path}: {e}")
+                                        files_failed += 1
+                        except Exception as e:
+                            print(f"[EXPORT_DEBUG] Error processing cache directory {cached_files_dir}: {e}")
+                    else:
+                        print(f"[EXPORT_DEBUG] Cache directory not found or not a directory: {cached_files_dir}")
+                else:
+                    print(f"[EXPORT_DEBUG] Base cache directory not found: {base_cache_dir}")
+            
+            # Summary of file export
+            if files_exported > 0:
+                print(f"[EXPORT_DEBUG] Successfully exported {files_exported} files (failed: {files_failed})")
             else:
-                 print(f"[EXPORT_DEBUG] Not falling back to original path.")
+                print(f"[EXPORT_DEBUG] Warning: No files were exported (failed attempts: {files_failed})")
+                if not include_files:
+                    print(f"[EXPORT_DEBUG] Note: Files were not included because include_files=False")
         else:
-             print(f"[EXPORT_DEBUG] include_files is False, skipping file export.")
+            print(f"[EXPORT_DEBUG] include_files is False, skipping file export.")
         
-        # --- DEBUG LOGGING START ---
+        # --- DEBUG LOGGING: Show contents of temp directory before zipping ---
         print(f"[EXPORT_DEBUG] Contents of temp directory ({temp_dir}) before zipping:")
         for root, dirs, files in os.walk(temp_dir):
             level = root.replace(temp_dir, '').count(os.sep)
@@ -640,7 +692,6 @@ def export_template(app, template_name, include_files=True):
             subindent = ' ' * 4 * (level + 1)
             for f in files:
                 print(f'{subindent}{f}')
-        # --- DEBUG LOGGING END ---
         
         # Create ZIP file with all exported data
         try:
