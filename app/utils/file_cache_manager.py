@@ -103,8 +103,17 @@ class FileCacheManager:
         # Get filename and determine destination path
         file_name = os.path.basename(file_path)
         
-        # Destination path in cache (flattened structure)
-        cache_path = os.path.join(template_files_dir, file_name)
+        # Determine the destination path with proper folder structure
+        if folder_path:
+            # Clean up folder path and ensure it doesn't have leading/trailing slashes
+            folder_path = folder_path.replace('\\', '/').strip('/')
+            # Create the folder structure inside the files directory
+            cache_folder = os.path.join(template_files_dir, folder_path)
+            os.makedirs(cache_folder, exist_ok=True)
+            cache_path = os.path.join(cache_folder, file_name)
+        else:
+            # No folder, store directly in files directory
+            cache_path = os.path.join(template_files_dir, file_name)
         
         # Determine file type and attributes
         file_extension = os.path.splitext(file_name)[1].lower()

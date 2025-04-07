@@ -122,221 +122,203 @@ class TemplateIO:
         filtered_templates.sort(key=lambda x: x.get('name', '').lower())
         return filtered_templates
 
-    def save_template_to_file(self, template_data, file_path):
-        """Saves a template dictionary to a specific JSON file path using utility."""
-        return save_json_file(file_path, template_data) # Delegate to utility
-
-    def save_template(self, template_name, structure, category=None, description="", tags=None, template_type="Standard", original_name=None, files_to_cache=None):
-        """Saves a template definition (JSON file) and handles file caching.
-
-        Args:
-            template_name (str): The name for the template.
-            structure (list or dict): The folder structure associated with the template.
-            category (str, optional): Category for the template. Defaults to "Uncategorized".
-            description (str, optional): Description for the template.
-            tags (list, optional): List of tags for the template. Defaults to [].
-            template_type (str, optional): Type of template (e.g., 'Standard').
-            original_name (str, optional): The previous name if renaming, used for cleanup.
-            files_to_cache (dict, optional): Dictionary of files provided by an editor/UI
-                                           to ensure they are included and cached.
-                                           Format: { 'relative/path/in/structure.txt': 'absolute/source/path.txt' }
-
-        Returns:
-            tuple: (bool, str) indicating success/failure and a message.
+    def save_template(self, template_data):
         """
-        print(f"DEBUG: TemplateIO: Starting save_template for '{template_name}'")
-        files_to_cache = files_to_cache or {} # Ensure it's a dict
-
-        # --- Validation ---
-        if not template_name:
-            print("ERROR: TemplateIO: Cannot save template without a name.")
-            return False, "Template name is required."
-        # --- END Validation ---
-
-        sanitized_name = sanitize_filename(template_name)
-        if not sanitized_name:
-            print(f"ERROR: TemplateIO: Template name '{template_name}' resulted in an empty sanitized name.")
-            return False, "Invalid template name after sanitization."
-
-        original_sanitized_name = sanitize_filename(original_name) if original_name else None
-        is_rename = bool(original_name and original_sanitized_name and original_sanitized_name != sanitized_name)
-
-        # --- Handle Rename/Deletion (Filesystem Part - Before Saving New) ---
-        if is_rename:
-            print(f"DEBUG: TemplateIO: Renaming template from '{original_sanitized_name}' to '{sanitized_name}'")
-            # Delete the old template file
-            old_file_path = os.path.join(self.paths["templates_dir"], f"{original_sanitized_name}.json")
-            if os.path.exists(old_file_path):
-                try:
-                    os.remove(old_file_path)
-                    print(f"DEBUG: TemplateIO: Removed old template file: {old_file_path}")
-                except Exception as e:
-                    print(f"ERROR: TemplateIO: Failed to remove old template file '{old_file_path}': {e}")
-                    # Decide if this is critical? Proceed with caution.
-
-            # Delete the old cache directory
-            if self.file_cache_manager and self.file_cache_manager.cache_dir:
-                old_template_cache_path = os.path.join(self.file_cache_manager.cache_dir, original_sanitized_name)
-                if os.path.isdir(old_template_cache_path):
-                    try:
-                        shutil.rmtree(old_template_cache_path)
-                        print(f"DEBUG: TemplateIO: Removed old template cache directory: {old_template_cache_path}")
-                    except Exception as e:
-                        print(f"ERROR: TemplateIO: Failed to remove old template cache directory '{old_template_cache_path}': {e}")
+        Save a template dictionary to the templates directory and cache its files
+        
+        Args:
+            template_data (dict): The template data to save
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if not isinstance(template_data, dict):
+                print("ERROR: Template data must be a dictionary")
+                return False
+                
+            # Get template name
+            name = template_data.get("name")
+            if not name:
+                print("ERROR: Template name is required")
+                return False
+                
+            # Start debug message
+            print(f"DEBUG: TemplateIO: Starting save_template for '{name}'")
+            
+            # Skip extraction of files if this is called from import_template
+            # Files would have already been processed and added to the template_data
+            if 'files' not in template_data or not template_data.get('files'):
+                # Extract all files from the structure and cache them
+                files_array = []
+                
+                # Try to extract files from the structure and if provided, any files_to_cache
+                structure = template_data.get("structure")
+                files_to_cache = template_data.get("files_to_cache", {})
+                
+                # Extract folder structure to process reference files
+                self.structure_ops._extract_files_from_structure(structure, files_array, files_to_cache)
+                print(f"DEBUG: TemplateIO: Extracted {len(files_array)} file entries from structure and files_to_cache.")
+                
+                # Set of already processed file paths to avoid duplicates
+                processed_files = set()
+                
+                # Process the files - cache them to appropriate directories
+                updated_files_array = []
+                if self.file_cache_manager:
+                    # Get a clean template name for filesystem use
+                    safe_name = name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+                    print(f"DEBUG: TemplateIO: Caching files for template '{safe_name}'")
+                    
+                    for file_info in files_array:
+                        # Skip if we've already processed this file
+                        file_path = file_info.get('path', '')
+                        if file_path in processed_files:
+                            print(f"DEBUG: TemplateIO: Skipping duplicate file path: {file_path}")
+                            continue
+                        
+                        # Get original file path and folder information
+                        original_path = file_info.get('original_path', '')
+                        folder_path = file_info.get('folder', '')
+                        
+                        # If no folder path but we have a file_path with directories, extract folder from path
+                        if not folder_path and '/' in file_path:
+                            folder_path = os.path.dirname(file_path)
+                            file_info['folder'] = folder_path
+                        
+                        # Check if this is a valid file path or an import reference
+                        is_import_reference = isinstance(original_path, str) and original_path.startswith("Imported from:")
+                        if is_import_reference:
+                            print(f"DEBUG: TemplateIO: Skipping cached file from import: {original_path}")
+                            # For imported files, just add to the updated array without re-caching
+                            updated_files_array.append(file_info)
+                            processed_files.add(file_path)
+                            continue
+                        
+                        # Skip invalid files
+                        if not original_path or not os.path.exists(original_path):
+                            print(f"DEBUG: TemplateIO: Skipping file with invalid original path: {original_path}")
+                            continue
+                        
+                        # Cache the file to the hierarchical structure in cache
+                        cached_path = self.file_cache_manager.cache_file(
+                            file_path=original_path,
+                            template_name=safe_name,
+                            folder_path=folder_path,
+                            rename_flag=file_info.get('rename_flag', False),
+                            file_metadata=file_info
+                        )
+                        
+                        if cached_path:
+                            # Update file info with cached path
+                            file_info['cached_path'] = cached_path
+                            updated_files_array.append(file_info)
+                            processed_files.add(file_path)
+                        else:
+                            print(f"DEBUG: TemplateIO: Failed to cache file: {original_path}")
+                else:
+                    updated_files_array = files_array
+                    
+                print(f"DEBUG: TemplateIO: Final files_array count for JSON: {len(updated_files_array)}")
+                
+                # Update the template data with the cached files only if we extracted new files
+                if updated_files_array:
+                    template_data["files"] = updated_files_array
             else:
-                print("WARN: TemplateIO: File cache manager not available or has no cache_dir, cannot clear old cache during rename.")
-        # --- End Rename/Deletion (Filesystem Part) ---
-
-        # --- Extract and Cache Files ---
-        files_array = []
-        # Pass structure and any externally provided files to structure ops
-        # structure_ops._extract_files_from_structure should handle None structure safely
-        self.structure_ops._extract_files_from_structure(structure, files_array, files_to_cache)
-        print(f"DEBUG: TemplateIO: Extracted {len(files_array)} file entries from structure and files_to_cache.")
-
-        updated_files_array = []
-        if self.file_cache_manager:
-            print(f"DEBUG: TemplateIO: Caching files for template '{sanitized_name}'")
-            for file_info in files_array:
-                current_file_info = file_info.copy()
-                original_path = current_file_info.get('original_path')
-                content = current_file_info.get('content') # Support for in-memory content
-
-                # Determine the target relative path within the cache/structure
-                # This should ideally be derived reliably, perhaps always present in file_info['path']?
-                relative_path_in_cache = current_file_info.get('path', current_file_info.get('name'))
-
-                if not relative_path_in_cache:
-                     print(f"  WARN: TemplateIO: Skipping entry, no relative path determined: {current_file_info}")
-                     continue
-
-                cached_path = None
-                if original_path and os.path.exists(original_path):
-                    # File exists on disk, cache it
-                    cached_path = self.file_cache_manager.cache_file(
-                        file_path=original_path, 
-                        template_name=sanitized_name,
-                        folder_path=relative_path_in_cache, 
-                        file_metadata=current_file_info # Pass metadata which might contain rename flags etc.
-                    )
-                elif content is not None:
-                    # Content is provided directly (e.g., from an editor)
-                    cached_path = self.file_cache_manager.cache_content(
-                        content=content,
-                        template_name=sanitized_name,
-                        relative_path_in_cache=relative_path_in_cache,
-                        file_metadata=current_file_info
-                    )
-                elif current_file_info.get('type') == 'folder':
-                     # It's just a folder definition, keep it but no caching needed
-                     updated_files_array.append(current_file_info)
-                     continue # Skip caching steps for folders
-                else:
-                     print(f"  WARN: TemplateIO: Skipping entry, no valid source (original_path or content): {current_file_info}")
-                     continue # Skip if no source
-
-                if cached_path:
-                    # print(f"  Successfully cached to '{cached_path}'")
-                    current_file_info['cached_path'] = cached_path
-                    updated_files_array.append(current_file_info)
-                else:
-                    # Only warn if we expected a path (i.e., had source)
-                    if original_path or content is not None:
-                         print(f"  WARN: TemplateIO: Failed to cache '{relative_path_in_cache}'. Skipping this file in the final template.")
-        else:
-            print("WARN: TemplateIO: File cache manager not available. Cannot cache files.")
-            updated_files_array = files_array # Use original array if cache manager is missing
-
-        files_array_for_json = updated_files_array
-        print(f"DEBUG: TemplateIO: Final files_array count for JSON: {len(files_array_for_json)}")
-        # --- END Extract and Cache Files ---
-
-        # --- Get Template Cache Directory Path (MODIFIED) ---
-        # The 'cached_path' in the JSON should store the BASE cache directory
-        # managed by config_manager, not a template-specific sub-path.
-        base_cache_directory = self.paths.get('cache_dir')
-        if not base_cache_directory:
-            print("ERROR: TemplateIO: Cache directory path ('cache_dir') not found in self.paths.")
-            # Fallback or error handling needed? For now, set to None.
-            base_cache_directory = None 
-        # template_cache_directory = None # OLD
-        # if self.file_cache_manager and self.file_cache_manager.cache_dir:
-        #     template_cache_directory = os.path.join(self.file_cache_manager.cache_dir, sanitized_name) # OLD - Incorrect path calculation
-        # --- END Get Template Cache Directory Path ---
-
-        # --- Prepare Template Data ---
-        # Use the templates_dir from self.paths
-        templates_dir = self.paths.get('templates_dir')
-        if not templates_dir:
-             print("ERROR: TemplateIO: Templates directory path ('templates_dir') not found in self.paths.")
-             return False, "Templates directory configuration missing." # Critical error
-
-        file_path = os.path.join(templates_dir, f"{sanitized_name}.json")
-        template_data = {
-            'name': template_name,
-            'structure_name': sanitized_name,
-            'structure': structure,
-            'category': category or "Uncategorized",
-            'description': description,
-            'created': datetime.datetime.now().timestamp(),
-            'modified': datetime.datetime.now().timestamp(),
-            'tags': tags or [],
-            'files': files_array_for_json,
-            'type': template_type,
-            # --- MODIFIED: Store the BASE cache directory --- 
-            'cached_path': base_cache_directory,
-            # --- END MODIFIED ---
-            'file_path': file_path
-        }
-        # --- END Prepare Template Data ---
-
-        # --- Preserve Creation Time ---
-        preserve_creation_path = None
-        if is_rename:
-             preserve_creation_path = os.path.join(self.paths["templates_dir"], f"{original_sanitized_name}.json")
-        elif os.path.exists(file_path):
-             preserve_creation_path = file_path # Existing file path for overwrite
-
-        if preserve_creation_path and os.path.exists(preserve_creation_path):
-            try:
-                existing_data = load_json_file(preserve_creation_path)
-                if existing_data and 'created' in existing_data:
-                    template_data['created'] = existing_data['created'] # Overwrite with preserved time
-                    print(f"DEBUG: TemplateIO: Preserved creation time from {preserve_creation_path}")
-            except Exception as e:
-                print(f"WARN: TemplateIO: Could not read file '{preserve_creation_path}' to preserve creation time: {e}")
-        # --- End Preserve Creation Time ---
-
-        # --- Save JSON File ---
-        save_success = self.save_template_to_file(template_data, file_path)
-        if not save_success:
-            # Attempt to rollback cache deletion? Maybe not necessary if save fails.
-            return False, f"Failed to save template file '{file_path}'"
-        # --- End Save JSON File ---
-
-        # ----- Update In-Memory Cache (self.templates dict) -----
-        # Use the *actual* name provided for the dict keys
-        key_to_remove = None
-        if is_rename:
-            # Find the key in the dict matching original_name (case-insensitive)
-             original_name_lower = original_name.lower()
-             for key in list(self.templates.keys()): # Use list to avoid runtime dict size change error
-                  if key.lower() == original_name_lower:
-                       key_to_remove = key
-                       break
-             if key_to_remove:
-                 del self.templates[key_to_remove]
-                 print(f"DEBUG: TemplateIO: Removed old template '{key_to_remove}' from memory dict.")
-             else:
-                 print(f"WARN: TemplateIO: Original template '{original_name}' not found in memory dict during rename.")
-
-        # Add or update the template in the dictionary using the current template_name
-        self.templates[template_name] = template_data
-        print(f"DEBUG: TemplateIO: Added/Updated template '{template_name}' in memory dict.")
-        # ----- End In-Memory Cache Update -----
-
-        print(f"✅ TemplateIO: Successfully saved template '{template_name}'")
-        return True, "Template saved successfully."
+                # Even when files are already in the template_data, we need to process imported files correctly
+                files_array = template_data.get("files", [])
+                structure = template_data.get("structure", [])
+                
+                # Function to find original path in structure
+                def find_original_path_in_structure(items, file_name, folder_path):
+                    if not items:
+                        return None
+                        
+                    for item in items:
+                        if item.get('type') == 'folder' and item.get('name') == folder_path.split('/')[0]:
+                            # Check children of this folder
+                            children = item.get('children', [])
+                            
+                            # If this is a multi-level folder path, recurse into the structure
+                            folder_parts = folder_path.split('/')
+                            if len(folder_parts) > 1:
+                                sub_folder_path = '/'.join(folder_parts[1:])
+                                return find_original_path_in_structure(children, file_name, sub_folder_path)
+                            
+                            # Otherwise look for the file in this folder's direct children
+                            for child in children:
+                                if child.get('type') == 'file' and child.get('name') == file_name:
+                                    return child.get('original_path')
+                        
+                        # Also check if this is a top-level file
+                        if item.get('type') == 'file' and item.get('name') == file_name and not folder_path:
+                            return item.get('original_path')
+                    
+                    return None
+                
+                for file_info in files_array:
+                    file_name = file_info.get('file_name', '')
+                    folder_path = file_info.get('folder', '')
+                    original_path = file_info.get('original_path', '')
+                    
+                    # Check if this is from an import (starts with "Imported from:")
+                    if isinstance(original_path, str) and original_path.startswith("Imported from:"):
+                        # Try to find the true original path in the structure
+                        true_original_path = find_original_path_in_structure(structure, file_name, folder_path)
+                        
+                        if true_original_path:
+                            print(f"DEBUG: TemplateIO: Updating original path for {file_name} from '{original_path}' to '{true_original_path}'")
+                            file_info['original_path'] = true_original_path
+                        
+                    # Make sure cached_path is accurate and exists
+                    cached_path = file_info.get('cached_path', '')
+                    if cached_path and not os.path.exists(cached_path):
+                        print(f"WARNING: TemplateIO: Cached file doesn't exist at expected path: {cached_path}")
+                        # You could take additional actions here if needed
+            
+            # Set the template's cached_path to the base cache directory
+            template_data["cached_path"] = self.paths.get("cache_dir")
+            
+            # Preserve creation time if template already exists
+            sanitized_name = name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+            file_path = os.path.join(self.paths["templates_dir"], f"{sanitized_name}.json")
+            
+            if os.path.exists(file_path):
+                try:
+                    with open(file_path, 'r') as f:
+                        existing_data = json.load(f)
+                        if existing_data and 'created' in existing_data:
+                            template_data['created'] = existing_data['created']
+                            print(f"DEBUG: TemplateIO: Preserved creation time from {file_path}")
+                except Exception as e:
+                    print(f"WARNING: Could not read existing template file: {e}")
+            
+            # If no creation time is set, add it now
+            if 'created' not in template_data:
+                template_data['created'] = time.time()
+                
+            # Always update modification time
+            template_data['modified'] = time.time()
+            
+            # Save the template to disk
+            template_data['file_path'] = file_path
+            success = save_json_file(file_path, template_data)
+            
+            if success:
+                # Add or update template in memory dictionary
+                self.templates[name] = template_data
+                print(f"DEBUG: TemplateIO: Added/Updated template '{name}' in memory dict.")
+                print(f"✅ TemplateIO: Successfully saved template '{name}'")
+                return True
+            else:
+                print(f"ERROR: TemplateIO: Failed to save template '{name}' to {file_path}")
+                return False
+                
+        except Exception as e:
+            print(f"ERROR: TemplateIO: Error saving template: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
     def delete_template(self, template_name):
         """Deletes a template's JSON file, its cache directory, and removes it from memory."""

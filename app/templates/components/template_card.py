@@ -662,6 +662,23 @@ class TemplateCard(QFrame):
         export_action.triggered.connect(lambda: self._export_template())
         context_menu.addAction(export_action)
         
+        # Add cache management submenu
+        cache_menu = ContextMenu(context_menu)
+        cache_menu.setTitle("Cache Management")
+        
+        # Add cache management actions
+        recache_action = QAction("Recache Template", self)
+        recache_action.triggered.connect(lambda: self._recache_template())
+        cache_menu.addAction(recache_action)
+        
+        clear_cache_action = QAction("Clear Template Cache", self)
+        clear_cache_action.triggered.connect(lambda: self._clear_template_cache())
+        cache_menu.addAction(clear_cache_action)
+        
+        # Add cache management submenu to main menu
+        context_menu.addSeparator()
+        context_menu.addMenu(cache_menu)
+        
         # --- Keep reference to action during exec_ ---
         self._temp_duplicate_action = duplicate_action 
         # --- END ---
@@ -1085,28 +1102,92 @@ class TemplateCard(QFrame):
         return self.multi_selected
 
     def _export_template(self):
-        """Export the template to a package file"""
-        template_name = self.template_name()
-        if not template_name or not self.app:
-            return
-            
-        # Use the export_template function from import_export_manager
+        """Export this template to a file"""
         from app.core.import_export_manager import export_template
         
-        # Show dialog to ask if files should be included
-        from PyQt5.QtWidgets import QMessageBox
+        # Call the export_template function with the application and template name
+        export_template(self.app, self.template_name())
+    
+    def _recache_template(self):
+        """Recache this template's files"""
+        if not self.app or not hasattr(self.app, 'template_manager'):
+            return
+            
+        template_name = self.template_name()
         
-        include_files = QMessageBox.question(
-            self,
-            "Export Template",
-            f"Would you like to include files with this template?\n\n"
-            f"Including files will allow others to import the template with all its attached assets.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes
-        ) == QMessageBox.Yes
+        # Check if template manager has cache_manager
+        if not hasattr(self.app.template_manager, 'cache_manager'):
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self, 
+                "Cache Manager Not Available", 
+                "The cache manager is not available. Cannot recache template.",
+                QMessageBox.Ok
+            )
+            return
         
-        # Export the template
-        export_template(self.app, template_name, include_files)
+        # Show progress dialog
+        from app.templates.cache_manager import RecacheProgressDialog
+        
+        dialog = RecacheProgressDialog(
+            self.app.template_manager.cache_manager,
+            [template_name],
+            self
+        )
+        dialog.exec_()
+    
+    def _clear_template_cache(self):
+        """Safely clear this template's cache"""
+        if not self.app or not hasattr(self.app, 'template_manager'):
+            return
+            
+        template_name = self.template_name()
+        
+        # Use the safe_clear_template_cache method to ensure we don't lose important files
+        if hasattr(self.app.template_manager, 'safe_clear_template_cache'):
+            success = self.app.template_manager.safe_clear_template_cache(template_name)
+            
+            if success:
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.information(
+                    self, 
+                    "Cache Cleared", 
+                    f"Cache for template '{template_name}' has been cleared.",
+                    QMessageBox.Ok
+                )
+        else:
+            # Fallback to regular clear_template_cache if safe version not available
+            if (hasattr(self.app.template_manager, 'file_cache_manager') and 
+                hasattr(self.app.template_manager.file_cache_manager, 'clear_template_cache')):
+                
+                from PyQt5.QtWidgets import QMessageBox
+                
+                result = QMessageBox.question(
+                    self, 
+                    "Clear Template Cache", 
+                    f"Are you sure you want to clear the cache for template '{template_name}'?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                
+                if result == QMessageBox.Yes:
+                    success = self.app.template_manager.file_cache_manager.clear_template_cache(template_name)
+                    
+                    if success:
+                        QMessageBox.information(
+                            self, 
+                            "Cache Cleared", 
+                            f"Cache for template '{template_name}' has been cleared.",
+                            QMessageBox.Ok
+                        )
+            else:
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    self, 
+                    "Cache Manager Not Available", 
+                    "The cache manager is not available. Cannot clear template cache.",
+                    QMessageBox.Ok
+                )
 
 # Utility function for QIcon cache (Optional but good practice)
 icon_cache = {}

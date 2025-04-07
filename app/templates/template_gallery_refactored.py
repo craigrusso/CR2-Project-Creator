@@ -586,16 +586,58 @@ class TemplateGallery(QWidget):
                                         print(f"BasicTemplateManager: Found built-in structure: {key}")
                                         return DEFAULT_STRUCTURES[key]
                                 
+                                # Look in our stored custom structures
+                                if name in self.custom_structures:
+                                    print(f"BasicTemplateManager: Found stored structure: {name}")
+                                    return self.custom_structures[name]
+                                
                                 print(f"BasicTemplateManager: Structure not found: {name}")
                                 return []
+                            
+                            def save_custom_structure(self, name, structure, category="General"):
+                                """Save a custom structure in memory (doesn't persist to disk)"""
+                                print(f"BasicTemplateManager: Saving structure {name} with {len(structure)} items")
+                                self.custom_structures[name] = structure
+                                return True
+                            
+                            def get_categories(self):
+                                """Return available categories"""
+                                return ["General", "Custom", "Web Development", "Motion Graphics", "Video Editing", "VFX"]
                         
                         parent.template_manager = BasicTemplateManager()
                     
                     # Call the original constructor
                     super().__init__(parent, **kwargs)
                     
-                    # No need to populate structure dropdown explicitly, it will be handled by the parent class
-                    # if available, otherwise just skip it
+                    # Store the parent's template manager in the editor
+                    self.template_manager = parent.template_manager
+                
+                def accept(self):
+                    """Override accept to ensure template_manager is available"""
+                    try:
+                        # Ensure template_manager is accessible in the parent class accept method
+                        print("[DEBUG] EnhancedStructureEditorWithFallback.accept: Ensuring template_manager is available")
+                        
+                        if not hasattr(self, 'template_manager') or self.template_manager is None:
+                            print("[DEBUG] EnhancedStructureEditorWithFallback.accept: template_manager not found, getting from parent")
+                            if hasattr(self.parent(), 'template_manager'):
+                                self.template_manager = self.parent().template_manager
+                        
+                        # Call parent class accept method
+                        super().accept()
+                        
+                    except AttributeError as e:
+                        if "Template manager instance is not available" in str(e):
+                            # Show a user-friendly message
+                            QMessageBox.warning(self, "Save Error", 
+                                "Cannot save structure: Template manager is not available. Changes will be lost.")
+                            
+                            print("[ERROR] Failed to save structure: Template manager instance is not available.")
+                            # Just close the dialog without saving
+                            super(EnhancedStructureEditor, self).accept()
+                        else:
+                            # Re-raise any other AttributeError
+                            raise e
             
             # Load the structure if template_name is provided
             structure_name = None
@@ -1333,6 +1375,25 @@ class TemplateGallery(QWidget):
         duplicate_action.setEnabled(not is_multi_select)
         export_action.setEnabled(not is_multi_select)
 
+        # Add separator before Cache Management
+        menu.addSeparator()
+        
+        # Add Cache Management section (consistent with list view)
+        # Only enable for single selection to match list view behavior
+        if not is_multi_select and primary_template:
+            primary_name = primary_template.get('name')
+            cache_menu = menu.addMenu("Cache Management")
+            
+            # Add recache option
+            recache_action = QAction("Recache Template", self)
+            recache_action.triggered.connect(lambda: self._on_recache_template(primary_name))
+            cache_menu.addAction(recache_action)
+            
+            # Add clear cache option
+            clear_cache_action = QAction("Clear Template Cache", self)
+            clear_cache_action.triggered.connect(lambda: self._on_clear_template_cache(primary_name))
+            cache_menu.addAction(clear_cache_action)
+
         # Add separator (before Move To)
         menu.addSeparator()
 
@@ -1764,3 +1825,105 @@ class TemplateGallery(QWidget):
         print(f"🔍 LISTENER: Finished updating card visuals")
         # Force UI update if necessary (though set_selected/set_multi_selected should handle it)
         # self.templates_scroll_content.update()
+
+    def _filter_templates(self):
+        """Filter templates based on search text and category"""
+        # Delegate to gallery_events
+        from app.templates.gallery_events import GalleryEvents
+        GalleryEvents.on_filter_templates(self)
+    
+    def _on_recache_all_templates(self):
+        """Handle recaching all templates"""
+        from app.templates.gallery_events import GalleryEvents
+        GalleryEvents.on_recache_all_templates(self)
+    
+    def _on_clear_all_caches(self):
+        """Handle clearing all template caches"""
+        from app.templates.gallery_events import GalleryEvents
+        GalleryEvents.on_clear_all_caches(self)
+    
+    def _on_check_missing_originals(self):
+        """Handle checking for templates with missing original files"""
+        from app.templates.gallery_events import GalleryEvents
+        GalleryEvents.on_check_missing_originals(self)
+    
+    def _set_view_mode(self, mode):
+        """Change the view mode"""
+        # Check if we have a view mode property
+        if not hasattr(self, 'view_mode'):
+            self.view_mode = "card"
+        
+        # Only proceed if the mode is different
+        if self.view_mode == mode:
+            return
+        
+        # Update the view mode
+        self.view_mode = mode
+        
+        # Update UI to reflect the change
+        if hasattr(self, 'card_view_action'):
+            self.card_view_action.setChecked(mode == "card")
+        if hasattr(self, 'list_view_action'):
+            self.list_view_action.setChecked(mode == "list")
+        if hasattr(self, 'table_view_action'):
+            self.table_view_action.setChecked(mode == "table")
+        
+        # Refresh the gallery with the new view mode
+        self.populate_gallery(force_refresh=True)
+    
+    def _toggle_animations(self, enabled=None):
+        """Toggle animations on or off"""
+        # Check if we have an animations_enabled property
+        if not hasattr(self, 'animations_enabled'):
+            self.animations_enabled = True
+        
+        # If enabled is provided, use it; otherwise toggle
+        if enabled is not None:
+            self.animations_enabled = enabled
+        else:
+            self.animations_enabled = not self.animations_enabled
+        
+        # Update UI to reflect the change
+        if hasattr(self, 'animations_action'):
+            self.animations_action.setChecked(self.animations_enabled)
+    
+    def statusBar(self):
+        """Get the status bar from the parent application"""
+        if hasattr(self, 'app') and hasattr(self.app, 'statusBar'):
+            return self.app.statusBar()
+        return None
+
+    def _on_recache_template(self, template_name):
+        """Recache a specific template to update from original sources"""
+        print(f"[ACTION] Recaching template: {template_name}")
+        
+        # Call the template manager's recache method
+        if hasattr(self.template_manager, 'recache_template'):
+            success = self.template_manager.recache_template(template_name)
+            
+            # Show feedback to user
+            from PyQt5.QtWidgets import QMessageBox
+            if success:
+                QMessageBox.information(self, "Recache Complete", 
+                    f"Template '{template_name}' has been recached successfully.")
+            else:
+                QMessageBox.warning(self, "Recache Failed", 
+                    f"Failed to recache template '{template_name}'.")
+        else:
+            print(f"[ERROR] Template manager does not support recaching")
+    
+    def _on_clear_template_cache(self, template_name):
+        """Clear the cache for a specific template"""
+        print(f"[ACTION] Clearing cache for template: {template_name}")
+        
+        # Call the template manager's safe clear cache method
+        if hasattr(self.template_manager, 'safe_clear_template_cache'):
+            success = self.template_manager.safe_clear_template_cache(template_name)
+            
+            # Show feedback to user (only on success, since the safe method shows its own warnings)
+            from PyQt5.QtWidgets import QMessageBox
+            if success:
+                QMessageBox.information(self, "Cache Cleared", 
+                    f"Cache for template '{template_name}' has been cleared successfully.")
+        else:
+            print(f"[ERROR] Template manager does not support safe cache clearing")

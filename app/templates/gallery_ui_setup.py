@@ -3,7 +3,7 @@
 
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
                            QFrame, QScrollArea, QGridLayout, QComboBox, QButtonGroup, 
-                           QToolButton, QSlider, QSizePolicy, QSplitter)
+                           QToolButton, QSlider, QSizePolicy, QSplitter, QMenu)
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
 
@@ -102,6 +102,16 @@ class GalleryUISetup:
                                     
                                     print(f"BasicTemplateManager: Structure not found: {name}")
                                     return []
+                                
+                                def save_custom_structure(self, name, structure, category="General"):
+                                    """Save a custom structure in memory (doesn't persist to disk)"""
+                                    print(f"BasicTemplateManager: Saving structure {name} with {len(structure)} items")
+                                    self.custom_structures[name] = structure
+                                    return True
+                                    
+                                def get_categories(self):
+                                    """Return available categories"""
+                                    return ["General", "Custom", "Web Development", "Motion Graphics", "Video Editing", "VFX"]
                             
                             parent.template_manager = BasicTemplateManager()
                         
@@ -110,6 +120,41 @@ class GalleryUISetup:
                         
                         # Ensure dropdown is populated with built-in structures
                         self.populate_structure_dropdown()
+                        
+                        # Store the parent's template manager in the editor
+                        self.template_manager = parent.template_manager
+                    
+                    def accept(self):
+                        """Override accept to ensure template_manager is available"""
+                        try:
+                            # Ensure template_manager is accessible in the parent class accept method
+                            if not hasattr(self, 'template_manager') or self.template_manager is None:
+                                print("EnhancedStructureEditorWithFallback.accept: template_manager not found, getting from parent")
+                                if hasattr(self.parent(), 'template_manager'):
+                                    self.template_manager = self.parent().template_manager
+                                else:
+                                    # No template_manager available in parent
+                                    from PyQt5.QtWidgets import QMessageBox
+                                    QMessageBox.warning(self, "Save Error", 
+                                        "Cannot save structure: Template manager is not available in the parent application. Changes will be lost.")
+                                    # Just close the dialog without saving
+                                    super(EnhancedStructureEditor, self).accept()
+                                    return
+                            
+                            # Call parent class accept method
+                            super().accept()
+                            
+                        except AttributeError as e:
+                            if "Template manager instance is not available" in str(e):
+                                # Show a user-friendly message
+                                from PyQt5.QtWidgets import QMessageBox
+                                QMessageBox.warning(self, "Save Error", 
+                                    "Cannot save structure: Template manager is not available. Changes will be lost.")
+                                # Just close the dialog without saving
+                                super(EnhancedStructureEditor, self).accept()
+                            else:
+                                # Re-raise any other AttributeError
+                                raise e
                 
                 # Create and show the editor
                 editor = EnhancedStructureEditorWithFallback(
@@ -139,43 +184,113 @@ class GalleryUISetup:
     @staticmethod
     def setup_action_bar(gallery):
         """Set up the action bar with buttons for templates and folders"""
-        # Action buttons - folders, templates, etc.
-        gallery.action_bar = QWidget()
-        gallery.action_bar.setStyleSheet("background: transparent;")
-        gallery.action_bar_layout = QHBoxLayout(gallery.action_bar)
-        gallery.action_bar_layout.setContentsMargins(10, 0, 10, 0)
+        from PyQt5.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QComboBox, QLineEdit, QMenu, QToolButton
+        from PyQt5.QtCore import Qt
+        from app.ui.color_scheme_pyqt import BUTTON_STYLE, ACCENT_BUTTON_STYLE
         
-        # Folder navigation (shown when in a folder)
-        gallery.folder_nav = QWidget()
-        gallery.folder_nav.setStyleSheet("background: transparent;")
-        gallery.folder_nav_layout = QHBoxLayout(gallery.folder_nav)
-        gallery.folder_nav_layout.setContentsMargins(0, 0, 0, 0)
+        # Create the action bar
+        gallery.action_bar = QFrame()
+        gallery.action_bar.setFrameShape(QFrame.NoFrame)
+        gallery.action_bar.setFrameShadow(QFrame.Plain)
+        gallery.action_bar.setLineWidth(0)
         
-        gallery.back_button = QPushButton("« Back to All")
-        gallery.back_button.setStyleSheet(BUTTON_STYLE)
-        gallery.back_button.clicked.connect(gallery._on_back_to_all)
-        gallery.folder_nav_layout.addWidget(gallery.back_button)
+        # Action bar layout
+        gallery.action_bar_layout = QVBoxLayout(gallery.action_bar)
+        gallery.action_bar_layout.setContentsMargins(10, 5, 10, 5)
         
-        gallery.folder_label = QLabel("Current Folder: None")
-        gallery.folder_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold; background: transparent;")
-        gallery.folder_nav_layout.addWidget(gallery.folder_label)
+        # Filtering and search
+        gallery.filter_frame = QFrame()
+        gallery.filter_frame.setFrameShape(QFrame.NoFrame)
+        gallery.filter_frame.setFrameShadow(QFrame.Plain)
         
-        # Also assign to breadcrumb_label for code consistency
-        gallery.breadcrumb_label = gallery.folder_label
+        gallery.filter_layout = QHBoxLayout(gallery.filter_frame)
+        gallery.filter_layout.setContentsMargins(0, 0, 0, 0)
         
-        gallery.folder_nav_layout.addStretch()
-        gallery.folder_nav.setVisible(False)  # Hidden by default
+        gallery.category_filter_label = QLabel("Category:")
+        gallery.category_filter_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        gallery.filter_layout.addWidget(gallery.category_filter_label)
         
-        gallery.action_bar_layout.addWidget(gallery.folder_nav)
+        gallery.category_filter = QComboBox()
+        gallery.category_filter.addItem("All")
+        gallery.category_filter.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        gallery.category_filter.setMinimumWidth(150)
+        gallery.category_filter.currentIndexChanged.connect(gallery._filter_templates)
+        gallery.filter_layout.addWidget(gallery.category_filter)
         
-        # Template/folder buttons
-        gallery.button_frame = QWidget()
-        gallery.button_frame.setStyleSheet("background: transparent;")
+        gallery.filter_layout.addSpacing(15)
+        
+        gallery.search_label = QLabel("Search:")
+        gallery.search_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        gallery.filter_layout.addWidget(gallery.search_label)
+        
+        gallery.search_box = QLineEdit()
+        gallery.search_box.setPlaceholderText("Search templates...")
+        gallery.search_box.textChanged.connect(gallery._filter_templates)
+        gallery.filter_layout.addWidget(gallery.search_box)
+        
+        gallery.action_bar_layout.addWidget(gallery.filter_frame)
+        
+        # Button row
+        gallery.button_frame = QFrame()
+        gallery.button_frame.setFrameShape(QFrame.NoFrame)
+        gallery.button_frame.setFrameShadow(QFrame.Plain)
         gallery.button_layout = QHBoxLayout(gallery.button_frame)
         gallery.button_layout.setContentsMargins(0, 0, 0, 0)
-        gallery.button_layout.setSpacing(10)
         
-        gallery.button_layout.addStretch(1)  # Push buttons to the right
+        # View mode button
+        gallery.view_mode_button = QToolButton()
+        gallery.view_mode_button.setText("View")
+        gallery.view_mode_button.setPopupMode(QToolButton.InstantPopup)
+        gallery.view_mode_button.setStyleSheet(BUTTON_STYLE)
+        gallery.view_mode_menu = QMenu(gallery.view_mode_button)
+        
+        # Set up view mode menu actions
+        gallery.card_view_action = gallery.view_mode_menu.addAction("Card View")
+        gallery.card_view_action.setCheckable(True)
+        gallery.card_view_action.triggered.connect(lambda: gallery._set_view_mode("card"))
+        
+        gallery.list_view_action = gallery.view_mode_menu.addAction("List View")
+        gallery.list_view_action.setCheckable(True)
+        gallery.list_view_action.triggered.connect(lambda: gallery._set_view_mode("list"))
+        
+        gallery.table_view_action = gallery.view_mode_menu.addAction("Table View")
+        gallery.table_view_action.setCheckable(True)
+        gallery.table_view_action.triggered.connect(lambda: gallery._set_view_mode("table"))
+        
+        # Add separator
+        gallery.view_mode_menu.addSeparator()
+        
+        # Add animation toggle option
+        gallery.animations_action = gallery.view_mode_menu.addAction("Enable Animations")
+        gallery.animations_action.setCheckable(True)
+        gallery.animations_action.triggered.connect(gallery._toggle_animations)
+        
+        gallery.view_mode_button.setMenu(gallery.view_mode_menu)
+        gallery.button_layout.addWidget(gallery.view_mode_button)
+        
+        # Add a Cache Management button with dropdown menu
+        gallery.cache_management_button = QToolButton()
+        gallery.cache_management_button.setText("Cache Management")
+        gallery.cache_management_button.setPopupMode(QToolButton.InstantPopup)
+        gallery.cache_management_button.setStyleSheet(BUTTON_STYLE)
+        gallery.cache_management_menu = QMenu(gallery.cache_management_button)
+        
+        # Add cache management menu actions
+        gallery.recache_all_action = gallery.cache_management_menu.addAction("Recache All Templates")
+        gallery.recache_all_action.triggered.connect(gallery._on_recache_all_templates)
+        
+        gallery.clear_all_caches_action = gallery.cache_management_menu.addAction("Clear All Caches")
+        gallery.clear_all_caches_action.triggered.connect(gallery._on_clear_all_caches)
+        
+        gallery.cache_management_menu.addSeparator()
+        
+        gallery.check_missing_originals_action = gallery.cache_management_menu.addAction("Check for Missing Originals")
+        gallery.check_missing_originals_action.triggered.connect(gallery._on_check_missing_originals)
+        
+        gallery.cache_management_button.setMenu(gallery.cache_management_menu)
+        gallery.button_layout.addWidget(gallery.cache_management_button)
+        
+        # Push buttons to the right
         
         # Folder management buttons - moved to folders header
         # Rename folder button is kept for context menu/keyboard shortcut functionality

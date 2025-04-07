@@ -567,7 +567,7 @@ class GalleryTemplatesSetup:
         gallery.template_grid_view_btn.setCheckable(True)
         gallery.template_grid_view_btn.setToolTip("Grid View")
         gallery.template_grid_view_btn.setText("Grid")
-        gallery.template_grid_view_btn.setChecked(gallery.template_view_mode == "grid")
+        gallery.template_grid_view_btn.setChecked(gallery.view_mode == "grid")
         gallery.template_grid_view_btn.clicked.connect(lambda: gallery._set_template_view_mode("grid"))
         gallery.template_grid_view_btn.setFixedSize(65, 24)
         
@@ -599,7 +599,7 @@ class GalleryTemplatesSetup:
         gallery.template_list_view_btn.setCheckable(True)
         gallery.template_list_view_btn.setToolTip("List View")
         gallery.template_list_view_btn.setText("List")
-        gallery.template_list_view_btn.setChecked(gallery.template_view_mode == "list")
+        gallery.template_list_view_btn.setChecked(gallery.view_mode == "list")
         gallery.template_list_view_btn.clicked.connect(lambda: gallery._set_template_view_mode("list"))
         gallery.template_list_view_btn.setFixedSize(65, 24)
         
@@ -807,13 +807,13 @@ class GalleryTemplatesSetup:
         """Set the template view mode between grid and list (table)."""
         print(f"DEBUG: Setting template view mode to: {mode}")
         
-        if mode != gallery.template_view_mode:
+        if mode != gallery.view_mode:
             # Update button states
             gallery.template_grid_view_btn.setChecked(mode == "grid")
             gallery.template_list_view_btn.setChecked(mode == "list")
             
             # Store the new mode
-            gallery.template_view_mode = mode
+            gallery.view_mode = mode
             
             # Show the appropriate view
             if mode == "grid":
@@ -920,7 +920,7 @@ class GalleryTemplatesSetup:
                      print(f"Error updating item style: {style_e}")
 
         # --- Update Table View Selection ---
-        if gallery.template_view_mode == "list" and hasattr(gallery, 'template_table_view'):
+        if gallery.view_mode == "list" and hasattr(gallery, 'template_table_view'):
             table_view = gallery.template_table_view
             proxy_model = table_view.model()
             # Get the source model for itemFromIndex operations
@@ -984,7 +984,7 @@ class GalleryTemplatesSetup:
 
         # --- Existing Grid View Update Logic ---
         # For grid view - update template cards
-        if gallery.template_view_mode == "grid" and hasattr(gallery, 'template_cards'):
+        if gallery.view_mode == "grid" and hasattr(gallery, 'template_cards'):
              for card in gallery.template_cards:
                  if not card or not hasattr(card, 'template'):
                      continue
@@ -1001,9 +1001,9 @@ class GalleryTemplatesSetup:
         # Force immediate UI refresh for the active view container
         # This might need adjustment based on the container used
         active_container = None
-        if gallery.template_view_mode == "list" and hasattr(gallery, 'templates_list_container'):
+        if gallery.view_mode == "list" and hasattr(gallery, 'templates_list_container'):
              active_container = gallery.templates_list_container
-        elif gallery.template_view_mode == "grid" and hasattr(gallery, 'templates_scroll'):
+        elif gallery.view_mode == "grid" and hasattr(gallery, 'templates_scroll'):
              active_container = gallery.templates_scroll
              
         if active_container:
@@ -1156,7 +1156,7 @@ class GalleryTemplatesSetup:
         print(f"[DEBUG] Setting template sort: Field='{gallery.current_sort_field}', Order='{gallery.current_sort_order}'")
 
         # Trigger a refresh of the current view to apply sorting
-        if gallery.template_view_mode == 'list':
+        if gallery.view_mode == 'list':
             # --- Get the templates currently being displayed ---
             current_templates_data = []
             current_folder = getattr(gallery, 'current_folder', None)
@@ -1214,7 +1214,7 @@ class GalleryTemplatesSetup:
                       print(f"[WARN] Could not map sort field '{sort_field}' to a table column index.")
                       header.setSortIndicatorShown(False) # Hide if field doesn't match
 
-        elif gallery.template_view_mode == 'grid':
+        elif gallery.view_mode == 'grid':
             # Repopulate grid view (ensure populate_templates_grid uses sorting)
             print("[DEBUG] Triggering grid repopulation for sorting.")
             # TODO: Ensure populate_gallery uses the new sort order.
@@ -1235,7 +1235,7 @@ class GalleryTemplatesSetup:
              pass # Add pass statement to fix indentation error
 
         # Clear selection in Table View
-        if gallery.template_view_mode == "list" and hasattr(gallery, 'template_table_view'):
+        if gallery.view_mode == "list" and hasattr(gallery, 'template_table_view'):
             selection_model = gallery.template_table_view.selectionModel()
             if selection_model:
                 selection_model.clearSelection()

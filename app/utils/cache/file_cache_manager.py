@@ -75,102 +75,78 @@ class FileCacheManager:
     
     def cache_file(self, file_path, template_name, folder_path='', rename_flag=False, file_metadata=None):
         """
-        Cache a file for a template
+        Cache a file to the template cache directory, with hierarchical folder structure support
         
         Args:
-            file_path: Path to the file to cache
-            template_name: Name of the template this file belongs to
-            folder_path: Optional relative folder path within the template
-            rename_flag: Whether the file should be renamed with the project name
-            file_metadata: Optional additional metadata for the file
+            file_path (str): Path to the file to cache
+            template_name (str): Name of the template the file belongs to
+            folder_path (str, optional): Path within the template structure where this file belongs
+            rename_flag (bool, optional): Whether to use a template variable in the filename (for project files)
+            file_metadata (dict, optional): Additional metadata about the file
             
         Returns:
-            str: Path to the cached file, or None if caching failed
+            str: Path to the cached file, or None if unsuccessful
         """
-        # Ensure paths don't have problematic characters
-        template_name = template_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
-        
-        # Check if the file exists
-        if not os.path.exists(file_path):
-            print(f"Error: File does not exist: {file_path}")
+        if not file_path or not template_name:
+            print(f"ERROR: FileCacheManager: Missing required parameters: file_path={file_path}, template_name={template_name}")
             return None
             
-        # Create cache directory for this template if it doesn't exist
+        # Ensure template cache directory exists
         template_cache_dir = os.path.join(self.cache_dir, template_name)
-        template_files_dir = os.path.join(template_cache_dir, 'files')
-        os.makedirs(template_files_dir, exist_ok=True)
+        if not os.path.exists(template_cache_dir):
+            try:
+                os.makedirs(template_cache_dir, exist_ok=True)
+                print(f"DEBUG: FileCacheManager: Created template cache directory: {template_cache_dir}")
+            except Exception as e:
+                print(f"ERROR: FileCacheManager: Failed to create template cache directory: {e}")
+                return None
+                
+        # Check if the file exists
+        if not os.path.exists(file_path):
+            print(f"ERROR: FileCacheManager: File does not exist: {file_path}")
+            return None
+            
+        # Get the source filename while respecting rename flags
+        filename = os.path.basename(file_path)
+        if rename_flag:
+            # Special handling for primary project files that should use ${PROJECT_NAME}
+            # This requires custom handling when extracting files later
+            base, ext = os.path.splitext(filename)
+            filename = f"${{PROJECT_NAME}}{ext}"
+            print(f"DEBUG: FileCacheManager: Using template variable for filename: {filename}")
         
-        # Get filename and determine destination path
-        file_name = os.path.basename(file_path)
-        
-        # Destination path in cache (flattened structure)
-        cache_path = os.path.join(template_files_dir, file_name)
-        
-        # Determine file type and attributes
-        file_extension = os.path.splitext(file_name)[1].lower()
-        file_size = os.path.getsize(file_path)
-        file_type = self._determine_file_type(file_extension)
-        is_binary = self._is_binary_file(file_path, file_extension)
-        
-        # Get file hash for tracking duplicates and updates
-        file_hash = self._get_file_hash(file_path)
-        
-        # Copy file to cache location
+        # Determine target directory - use folder_path if provided, otherwise store directly in template directory
+        if folder_path:
+            # Normalize folder path to ensure consistent directory separators
+            normalized_folder_path = folder_path.replace('\\', '/').strip('/')
+            target_dir = os.path.join(template_cache_dir, normalized_folder_path)
+        else:
+            # Store directly in template directory rather than in a flat "files" directory
+            target_dir = template_cache_dir
+            
+        # Create the directory structure
         try:
-            # First ensure any parent directories exist
-            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-            shutil.copy2(file_path, cache_path)
-            
-            # Update statistics
-            if template_name not in self.cache_stats:
-                self.cache_stats[template_name] = {
-                    'file_count': 0,
-                    'total_size': 0,
-                    'file_types': {},
-                    'last_updated': time.time()
-                }
-                
-            self.cache_stats[template_name]['file_count'] += 1
-            self.cache_stats[template_name]['total_size'] += file_size
-            
-            if file_type not in self.cache_stats[template_name]['file_types']:
-                self.cache_stats[template_name]['file_types'][file_type] = 0
-            self.cache_stats[template_name]['file_types'][file_type] += 1
-            
-            self.cache_stats[template_name]['last_updated'] = time.time()
-            
-            # Save updated statistics
-            self._save_stats()
-            
-            # Save metadata for this file
-            metadata_file = os.path.join(template_cache_dir, 'metadata.json')
-            file_metadata_entry = {
-                'file_name': file_name,
-                'original_path': file_path,
-                'cached_path': cache_path,
-                'folder': folder_path,
-                'file_size': file_size,
-                'file_type': file_type,
-                'file_hash': file_hash,
-                'is_binary': is_binary,
-                'extension': file_extension,
-                'rename_flag': rename_flag,
-                'cache_time': time.time()
-            }
-            
-            # Add any additional metadata
-            if file_metadata:
-                file_metadata_entry.update(file_metadata)
-                
-            self._update_file_metadata(metadata_file, file_name, file_metadata_entry)
-            
-            # Return the path to the cached file
-            return cache_path
-            
+            os.makedirs(target_dir, exist_ok=True)
+            print(f"DEBUG: FileCacheManager: Created directory structure: {target_dir}")
         except Exception as e:
-            print(f"Error caching file {file_path}: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            print(f"ERROR: FileCacheManager: Failed to create directory structure: {e}")
+            return None
+            
+        # Set the target path for the file
+        cached_file_path = os.path.join(target_dir, filename)
+        
+        # Copy the file to the cache
+        try:
+            shutil.copy2(file_path, cached_file_path)
+            print(f"DEBUG: FileCacheManager: Cached file to: {cached_file_path}")
+            
+            # Track the file in cache statistics
+            self._update_cache_stats(file_path, cached_file_path, template_name)
+            
+            # Return the cached file path
+            return cached_file_path
+        except Exception as e:
+            print(f"ERROR: FileCacheManager: Failed to cache file: {e}")
             return None
         
     def _determine_file_type(self, extension):
@@ -748,3 +724,87 @@ class FileCacheManager:
             import traceback
             traceback.print_exc()
             return False 
+
+    def _update_cache_stats(self, source_path, cached_path, template_name):
+        """
+        Update cache statistics for a cached file
+        
+        Args:
+            source_path (str): Original file path
+            cached_path (str): Path to the cached file
+            template_name (str): Name of the template
+        """
+        try:
+            # Get file information
+            file_name = os.path.basename(source_path)
+            file_size = os.path.getsize(source_path if os.path.exists(source_path) else cached_path)
+            file_extension = os.path.splitext(file_name)[1].lower()
+            file_type = self._determine_file_type(file_extension)
+            
+            # Check if source_path is from a zip import (starts with "Imported from:")
+            is_from_import = False
+            if isinstance(source_path, str) and source_path.startswith("Imported from:"):
+                is_from_import = True
+                # Don't try to get file hash or check binary status from a non-existent path
+                is_binary = self._is_binary_file(cached_path, file_extension)
+                file_hash = self._get_file_hash(cached_path)
+            else:
+                # Normal direct file access
+                is_binary = self._is_binary_file(source_path, file_extension)
+                file_hash = self._get_file_hash(source_path)
+            
+            # Initialize template stats if needed
+            if template_name not in self.cache_stats:
+                self.cache_stats[template_name] = {
+                    'file_count': 0,
+                    'total_size': 0,
+                    'file_types': {},
+                    'last_updated': time.time()
+                }
+                
+            # Update statistics
+            self.cache_stats[template_name]['file_count'] += 1
+            self.cache_stats[template_name]['total_size'] += file_size
+            
+            if file_type not in self.cache_stats[template_name]['file_types']:
+                self.cache_stats[template_name]['file_types'][file_type] = 0
+            self.cache_stats[template_name]['file_types'][file_type] += 1
+            
+            self.cache_stats[template_name]['last_updated'] = time.time()
+            
+            # Save updated statistics
+            self._save_stats()
+            
+            # Save file metadata
+            template_cache_dir = os.path.join(self.cache_dir, template_name)
+            metadata_file = os.path.join(template_cache_dir, 'metadata.json')
+            
+            folder_path = os.path.dirname(cached_path)
+            if folder_path.startswith(template_cache_dir):
+                # Extract relative folder path from the cache directory
+                relative_folder = folder_path[len(template_cache_dir):].lstrip(os.path.sep)
+            else:
+                relative_folder = ""
+                
+            # Create metadata entry
+            file_metadata_entry = {
+                'file_name': file_name,
+                'original_path': source_path,
+                'cached_path': cached_path,
+                'folder': relative_folder,
+                'file_size': file_size,
+                'file_type': file_type,
+                'file_hash': file_hash,
+                'is_binary': is_binary,
+                'extension': file_extension,
+                'cache_time': time.time(),
+                'from_import': is_from_import
+            }
+            
+            # Update file metadata record
+            self._update_file_metadata(metadata_file, file_name, file_metadata_entry)
+            
+        except Exception as e:
+            print(f"ERROR: FileCacheManager: Failed to update cache stats: {e}")
+            import traceback
+            traceback.print_exc() 

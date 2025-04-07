@@ -508,26 +508,21 @@ class TemplateFolderCard(QFrame):
         if not self.app:
             return
             
-        # Show confirmation dialog
-        confirm = QMessageBox.question(
-            self,
-            "Confirm Delete",
-            f"Are you sure you want to delete folder '{self.folder_name}'?\n"
-            "Templates in this folder will remain available but will be moved to the root.",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        
-        if confirm == QMessageBox.Yes:
-            # Delete folder
-            success = self.app.template_manager.delete_folder(self.folder_name)
+        # Don't allow deleting default folders
+        if self.folder_name in ["General", "Development", "Business"]:
+            QMessageBox.warning(self, "Error", f"'{self.folder_name}' is a default folder and cannot be deleted.")
+            return
             
-            if success:
-                # Refresh the gallery
-                parent = self.parent()
-                if parent and hasattr(parent, 'populate_gallery'):
-                    parent.populate_gallery()
-            else:
-                QMessageBox.warning(self, "Error", f"Failed to delete folder '{self.folder_name}'.")
+        # Delete folder without confirmation dialog
+        success = self.app.template_manager.delete_folder(self.folder_name)
+        
+        if success:
+            # Refresh the gallery
+            parent = self.parent()
+            if parent and hasattr(parent, 'populate_gallery'):
+                parent.populate_gallery()
+        else:
+            QMessageBox.warning(self, "Error", f"Failed to delete folder '{self.folder_name}'.")
 
 class TemplateFolderListItem(QFrame):
     """Template folder list item widget for displaying a folder in list view"""
@@ -1032,26 +1027,21 @@ class TemplateFolderListItem(QFrame):
         if not self.app:
             return
             
-        # Show confirmation dialog
-        confirm = QMessageBox.question(
-            self,
-            "Confirm Delete",
-            f"Are you sure you want to delete folder '{self.folder_name}'?\n"
-            "Templates in this folder will remain available but will be moved to the root.",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        
-        if confirm == QMessageBox.Yes:
-            # Delete folder
-            success = self.app.template_manager.delete_folder(self.folder_name)
+        # Don't allow deleting default folders
+        if self.folder_name in ["General", "Development", "Business"]:
+            QMessageBox.warning(self, "Error", f"'{self.folder_name}' is a default folder and cannot be deleted.")
+            return
             
-            if success:
-                # Refresh the gallery
-                parent = self.parent()
-                if parent and hasattr(parent, 'populate_gallery'):
-                    parent.populate_gallery()
-            else:
-                QMessageBox.warning(self, "Error", f"Failed to delete folder '{self.folder_name}'.")
+        # Delete folder without confirmation dialog
+        success = self.app.template_manager.delete_folder(self.folder_name)
+        
+        if success:
+            # Refresh the gallery
+            parent = self.parent()
+            if parent and hasattr(parent, 'populate_gallery'):
+                parent.populate_gallery()
+        else:
+            QMessageBox.warning(self, "Error", f"Failed to delete folder '{self.folder_name}'.")
 
 class TemplateListItem(QFrame):
     """Template list item widget for displaying a template in list view"""
@@ -1343,6 +1333,25 @@ class TemplateListItem(QFrame):
                 QMessageBox.warning(self, "Error", f"Failed to retrieve template '{folder_name}' after creation.")
                 self.populate_gallery()
                 return
+            
+            # If we're in a folder, add the new template to the current folder
+            if hasattr(self, 'current_folder') and self.current_folder:
+                print(f"[DEBUG] Adding new template '{folder_name}' to current folder '{self.current_folder}'")
+                
+                # Use the move_template_to_folder method which removes it from any other folders first
+                if hasattr(template_manager, 'move_template_to_folder'):
+                    success = template_manager.move_template_to_folder(folder_name, self.current_folder)
+                    if success:
+                        print(f"[DEBUG] Successfully added template '{folder_name}' to folder '{self.current_folder}'")
+                    else:
+                        print(f"[DEBUG] Failed to add template '{folder_name}' to folder '{self.current_folder}'")
+                # Fallback to add_to_folder if move_template_to_folder isn't available
+                elif hasattr(template_manager, 'add_to_folder'):
+                    success = template_manager.add_to_folder(self.current_folder, folder_name)
+                    if success:
+                        print(f"[DEBUG] Successfully added template '{folder_name}' to folder '{self.current_folder}'")
+                    else:
+                        print(f"[DEBUG] Failed to add template '{folder_name}' to folder '{self.current_folder}'")
             
             # Open the editor immediately so user can add files and set up structure
             from app.dialogs.dialog_windows_pyqt import show_edit_template
@@ -1765,20 +1774,10 @@ class TemplateListItem(QFrame):
                 QMessageBox.warning(self, "Error", f"'{self.selected_folder}' is a default folder and cannot be deleted.")
                 return
                 
-            # Show confirmation dialog
-            confirm = QMessageBox.question(
-                self,
-                "Confirm Delete",
-                f"Are you sure you want to delete folder '{self.selected_folder}'?\n"
-                "Templates in this folder will remain available but will be moved to the root.",
-                QMessageBox.Yes | QMessageBox.No
-            )
-            
-            if confirm == QMessageBox.Yes:
-                # Delete folder
-                self.template_manager.delete_folder(self.selected_folder)
-                self.selected_folder = None
-                self.populate_gallery()
+            # Delete folder without confirmation dialog
+            self.template_manager.delete_folder(self.selected_folder)
+            self.selected_folder = None
+            self.populate_gallery()
         else:
             super().keyPressEvent(event)
 

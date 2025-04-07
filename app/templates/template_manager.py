@@ -13,6 +13,7 @@ from app.templates.template_manager_core import TemplateManagerCore
 from app.templates.structure_operations import StructureOperations
 from app.templates.folder_operations import FolderOperations
 from app.templates.ui_operations import UIOperations
+from app.templates.cache_manager import TemplateCacheManager
 
 class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations, UIOperations, QObject):
     """
@@ -38,6 +39,9 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
         
         # Initialize additional attributes specific to TemplateManager
         self.multi_selected_templates = []
+        
+        # Initialize the template cache manager with a reference to this instance
+        self.cache_manager = TemplateCacheManager(self)
 
     def move_template_to_folder(self, template_name, folder_name):
         """Move a template to a folder, ensuring it's removed from other folders first"""
@@ -561,68 +565,58 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
         
         return None
 
-    def save_template(self, template_data):
+    def save_template(self, template_name, structure, category=None, description="", tags=None, template_type="Standard", original_name=None, files_to_cache=None):
         """
-        Save a template using a template data dictionary.
+        Save a template by name and structure
         
         Args:
-            template_data (dict): Dictionary containing template information
-                Required keys: 'name', 'structure'
-                Optional keys: 'category', 'description', 'tags', 'type', etc.
-                
+            template_name (str): Name of the template
+            structure (dict/list): Folder structure for the template
+            category (str, optional): Template category
+            description (str, optional): Template description
+            tags (list, optional): Template tags
+            template_type (str, optional): Type of template
+            original_name (str, optional): Previous name if renaming
+            files_to_cache (dict, optional): Files to include in the template
+            
         Returns:
-            bool: True if saved successfully, False otherwise
+            tuple: (success, message)
         """
-        print(f"UIOperations.save_template: Calling save_template with name='{template_data.get('name', 'UNNAMED')}', path='{template_data.get('path', '')}', type='{template_data.get('type', 'Standard')}'")
-        
-        # Validate required template data
-        if not isinstance(template_data, dict):
-            print(f"Error: template_data must be a dictionary")
-            return False
-            
-        if 'name' not in template_data:
-            print(f"Error: template_data missing required 'name' field")
-            return False
-            
-        if 'structure' not in template_data:
-            print(f"Error: template_data missing required 'structure' field")
-            return False
-        
-        # Extract required properties
-        name = template_data.get('name')
-        structure = template_data.get('structure')
-        
-        # Extract optional properties with defaults
-        category = template_data.get('category', 'General')
-        description = template_data.get('description', '')
-        tags = template_data.get('tags', [])
-        template_type = template_data.get('type', 'Standard')
-        original_name = template_data.get('original_name', None)  # For rename operations
-        files_to_cache = template_data.get('files_to_cache', None)
-        
-        # Call the template_io's save_template method with the extracted parameters
         try:
-            success, message = self.template_io.save_template(
-                template_name=name,
-                structure=structure,
-                category=category,
-                description=description,
-                tags=tags,
-                template_type=template_type,
-                original_name=original_name,
-                files_to_cache=files_to_cache
-            )
+            print(f"UIOperations.save_template: Calling save_template with name='{template_name}', path='', type='{template_type}'")
             
-            if not success:
-                print(f"Error saving template: {message}")
+            # Check if we're dealing with a template dictionary already
+            if isinstance(template_name, dict) and 'name' in template_name:
+                # This is a template dictionary, pass it directly
+                template_data = template_name
+                return self.template_io.save_template(template_data), "Template saved successfully"
+                
+            # Create a new template dictionary with the provided parameters
+            template_data = {
+                "name": template_name,
+                "structure": structure,
+                "category": category or "General",
+                "description": description,
+                "tags": tags or [],
+                "type": template_type,
+                "files_to_cache": files_to_cache or {}
+            }
             
-            return success
+            # If renaming, include the original name
+            if original_name:
+                template_data["original_name"] = original_name
+                
+            # Call the template_io save_template method
+            success = self.template_io.save_template(template_data)
+            message = "Template saved successfully" if success else "Failed to save template"
+            
+            return success, message
             
         except Exception as e:
             print(f"Error saving template: {e}")
             import traceback
             traceback.print_exc()
-            return False
+            return False, f"Error saving template: {str(e)}"
 
     def get_categories(self):
         """
@@ -641,3 +635,87 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
         from app.constants import DEFAULT_TEMPLATE_CATEGORIES
         print("TemplateManager.get_categories: Using default categories from constants")
         return list(DEFAULT_TEMPLATE_CATEGORIES)
+
+    def safe_clear_template_cache(self, template_name):
+        """
+        Safely clear a template's cache by checking for missing originals first
+        
+        Args:
+            template_name (str): Name of the template to clear
+            
+        Returns:
+            bool: True if cache was cleared, False otherwise
+        """
+        if not hasattr(self, 'cache_manager') or not self.cache_manager:
+            # Fallback to direct file_cache_manager.clear_template_cache if no cache_manager
+            if hasattr(self, 'file_cache_manager') and self.file_cache_manager:
+                return self.file_cache_manager.clear_template_cache(template_name)
+            return False
+        
+        # Use the cache manager to safely clear the cache
+        success, _ = self.cache_manager.safe_clear_template_cache(template_name)
+        return success
+    
+    def safe_clear_all_caches(self):
+        """
+        Safely clear all template caches by checking for missing originals first
+        
+        Returns:
+            bool: True if caches were cleared, False otherwise
+        """
+        if not hasattr(self, 'cache_manager') or not self.cache_manager:
+            # Fallback to direct file_cache_manager.clear_all_caches if no cache_manager
+            if hasattr(self, 'file_cache_manager') and self.file_cache_manager:
+                return self.file_cache_manager.clear_all_caches()
+            return False
+        
+        # Use the cache manager to safely clear all caches
+        success, _ = self.cache_manager.safe_clear_all_caches()
+        return success
+    
+    def recache_template(self, template_name):
+        """
+        Recache a template by finding and caching original files again
+        
+        Args:
+            template_name (str): Name of the template to recache
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not hasattr(self, 'cache_manager') or not self.cache_manager:
+            print(f"[ERROR] Cannot recache template: cache_manager not available")
+            return False
+        
+        # Use the cache manager to recache the template
+        success, _ = self.cache_manager.recache_template(template_name)
+        return success
+    
+    def recache_all_templates(self):
+        """
+        Recache all templates
+        
+        Returns:
+            bool: True if operation started successfully, False otherwise
+        """
+        if not hasattr(self, 'cache_manager') or not self.cache_manager:
+            print(f"[ERROR] Cannot recache templates: cache_manager not available")
+            return False
+        
+        # Use the cache manager to recache all templates
+        success, _ = self.cache_manager.recache_all_templates()
+        return success
+    
+    def find_templates_with_missing_originals(self):
+        """
+        Find all templates that have cached files without original sources
+        
+        Returns:
+            dict: Dict mapping template names to their missing file info
+        """
+        if not hasattr(self, 'cache_manager') or not self.cache_manager:
+            print(f"[ERROR] Cannot find templates with missing originals: cache_manager not available")
+            return {}
+        
+        # Use the cache manager to find templates with missing originals
+        return self.cache_manager.find_all_templates_with_missing_originals()

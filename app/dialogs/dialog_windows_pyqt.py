@@ -2045,56 +2045,55 @@ def rename_folder(parent, template_manager, folder_list, dialog):
 
 def delete_folder(parent, template_manager, folder_list, dialog):
     """Delete selected template folder(s)"""
+    if not folder_list or not template_manager:
+        return
+    
+    # Get selected items
     selected_items = folder_list.selectedItems()
     if not selected_items:
-        QMessageBox.warning(parent, "Warning", "Please select at least one folder to delete.")
         return
     
     # Check if any default folders are selected
-    default_folders = ["General", "Development", "Business"]
-    selected_default_folders = [item.text() for item in selected_items if item.text() in default_folders]
-    
-    if selected_default_folders:
-        if len(selected_default_folders) == 1:
-            QMessageBox.warning(parent, "Error", f"'{selected_default_folders[0]}' is a default folder and cannot be deleted.")
+    default_folders = []
+    non_default_folders = []
+    for item in selected_items:
+        folder_name = item.text()
+        if folder_name in ["General", "Development", "Business"]:
+            default_folders.append(folder_name)
         else:
-            QMessageBox.warning(parent, "Error", f"The following are default folders and cannot be deleted:\n• {', '.join(selected_default_folders)}")
-        return
+            non_default_folders.append(folder_name)
     
-    # Confirm deletion
-    if len(selected_items) > 1:
-        confirm = QMessageBox.question(
+    # Show warning if default folders are selected
+    if default_folders:
+        folder_names = ", ".join([f"'{folder}'" for folder in default_folders])
+        QMessageBox.warning(
             parent,
-            "Confirm Delete",
-            f"Are you sure you want to delete {len(selected_items)} folders?\n"
-            "Templates in these folders will remain available but will be moved to the root.",
-            QMessageBox.Yes | QMessageBox.No
+            "Cannot Delete Default Folders",
+            f"The following folders cannot be deleted because they are default folders: {folder_names}"
         )
-    else:
-        folder_name = selected_items[0].text()
-        confirm = QMessageBox.question(
-            parent,
-            "Confirm Delete",
-            f"Are you sure you want to delete folder '{folder_name}'?\n"
-            "Templates in this folder will remain available but will be moved to the root.",
-            QMessageBox.Yes | QMessageBox.No
-        )
+        
+        # If only default folders were selected, we're done
+        if not non_default_folders:
+            return
     
-    if confirm == QMessageBox.Yes:
-        # Process deletions in reverse order to maintain valid indices
-        for i in range(len(selected_items) - 1, -1, -1):
-            item = selected_items[i]
-            folder_name = item.text()
-            
-            # Delete the folder
-            success = template_manager.delete_folder(folder_name)
-            
-            if success:
-                # Remove from list
-                row = folder_list.row(item)
-                folder_list.takeItem(row)
-            else:
-                QMessageBox.warning(parent, "Error", f"Failed to delete folder '{folder_name}'.")
+    # Process deletions in reverse order to maintain valid indices
+    for i in range(len(selected_items) - 1, -1, -1):
+        item = selected_items[i]
+        folder_name = item.text()
+        
+        # Skip default folders
+        if folder_name in ["General", "Development", "Business"]:
+            continue
+        
+        # Delete the folder
+        success = template_manager.delete_folder(folder_name)
+        
+        if success:
+            # Remove from list
+            row = folder_list.row(item)
+            folder_list.takeItem(row)
+        else:
+            QMessageBox.warning(parent, "Error", f"Failed to delete folder '{folder_name}'.")
 
 def process_dropped_file(file_path, parent_item):
     """Process a file dropped onto the tree"""

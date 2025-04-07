@@ -48,6 +48,13 @@ def show_enhanced_structure_editor(
     Returns:
         tuple: (success, updated_structure, updated_structure_name, category, description)
     """
+    import traceback
+    print(f"🚨 STRUCTURE EDITOR TRACE: Called for '{structure_name}' (is_new={is_new})")
+    stack = traceback.extract_stack()
+    print(f"🚨 STRUCTURE EDITOR TRACE: Call stack:")
+    for frame in stack[:-1]:  # Skip current function
+        print(f"   - File: {frame.filename}, Line: {frame.lineno}, Function: {frame.name}")
+    
     print(f"🔧 STRUCTURE EDITOR: Showing editor for '{structure_name}' (is_new={is_new})")
     
     try:

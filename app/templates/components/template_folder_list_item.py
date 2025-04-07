@@ -1,7 +1,7 @@
 from app.constants import get_resource_path
-from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QSizePolicy
+from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QApplication, QStyle, QMessageBox
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QEvent, QMimeData, QByteArray
-from PyQt5.QtGui import QFont, QIcon, QPixmap
+from PyQt5.QtGui import QFont, QIcon, QPixmap, QPainter, QColor
 import json
 
 from app.ui.color_scheme_pyqt import colors
@@ -25,10 +25,151 @@ class TemplateFolderListItem(QFrame):
         self.setAcceptDrops(True)  # Enable drops
         self.setCursor(Qt.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setFixedHeight(40)
-        # ... (rest of __init__)
+        # Increase the fixed height to accommodate the larger icon
+        self.setFixedHeight(44)
+        
+        # Create layout with better vertical centering
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(10, 6, 10, 6)
+        self.layout.setSpacing(10)
+        
+        # Create icon label with larger size (32x32 instead of 24x24)
+        self.icon_label = QLabel()
+        self.icon_label.setFixedSize(32, 32)
+        
+        # Use system folder icon instead of custom drawn icon
+        self._create_folder_icon(32, 32)
+        
+        self.layout.addWidget(self.icon_label)
+        
+        # Create folder name label
+        self.folder_name_label = QLabel(folder_name)
+        self.folder_name_label.setStyleSheet(f"color: {colors.get('text', '#FFFFFF')}; background-color: transparent;")
+        # Increase font size to better match grid view (was 10)
+        self.folder_name_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        self.layout.addWidget(self.folder_name_label, 1)  # Stretch factor
+        
+        # Create rename field (hidden by default)
+        self.rename_edit = QLineEdit(folder_name)
+        # Match the font size of the label
+        self.rename_edit.setFont(QFont("Segoe UI", 11))
+        self.rename_edit.setStyleSheet(f"color: {colors.get('text', '#FFFFFF')}; background-color: rgba(50, 50, 50, 0.8); border: 1px solid {colors.get('border', '#555555')};")
+        self.rename_edit.editingFinished.connect(self._finish_rename)
+        self.rename_edit.hide()
+        self.layout.addWidget(self.rename_edit, 1)
+        
+        # Apply initial styling
+        self._update_styling()
+        
+        # Set up event connections
+        self.installEventFilter(self)
 
-    # ... (existing methods)
+    def _create_folder_icon(self, width, height):
+        """Create a system folder icon for list view that exactly matches the grid view macOS icons"""
+        try:
+            # Get standard system folder icon
+            style = QApplication.style()
+            icon = style.standardIcon(QStyle.SP_DirIcon)
+            original_pixmap = icon.pixmap(width, height)
+            
+            if not original_pixmap.isNull():
+                # Create a copy of the pixmap that we can modify
+                pixmap = QPixmap(original_pixmap)
+                
+                # Create a mask from non-transparent pixels
+                # This ensures we only color the actual folder shape
+                mask = pixmap.createMaskFromColor(Qt.transparent, Qt.MaskOutColor)
+                
+                # Create painter to modify the pixmap
+                painter = QPainter(pixmap)
+                
+                # Get the system macOS folder color from our color scheme
+                # Using the exact same color key as used in grid view
+                folder_color = QColor(colors.get('macos_folder_icon', '#3897F0'))
+                
+                # Use CompositionMode_SourceIn to preserve transparency
+                painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+                painter.fillRect(pixmap.rect(), folder_color)
+                painter.end()
+                
+                # Set the icon with our consistent color
+                self.icon_label.setPixmap(pixmap)
+                
+                # Remove any styling that could affect appearance
+                self.icon_label.setStyleSheet("background-color: transparent;")
+                
+                # Set fixed size to match pixmap dimensions
+                self.icon_label.setFixedSize(width, height)
+            else:
+                print(f"ERROR (FolderListItem): Failed to get standard system folder icon pixmap.")
+                # Use identical fallback as in the card implementation
+                self.icon_label.setText("??")
+                self.icon_label.setStyleSheet("background-color: transparent;")
+        except Exception as e:
+            print(f"ERROR (FolderListItem): Exception getting system icon: {e}")
+            # Use identical fallback as in the card implementation
+            self.icon_label.setText("SYSERR")
+            self.icon_label.setStyleSheet("background-color: transparent;")
+
+    def _update_styling(self):
+        """Update styling based on state (hover, selected)"""
+        # Get current state
+        is_selected = self.selected
+        is_hover = self.hover
+        
+        # Determine base background color based on row type
+        if self.property("row_type") == "odd":
+            bg_color = colors.get("card_bg", "#252526")
+        else:
+            bg_color = colors.get("bg", "#1E1E1E")
+        
+        # Frame styling based on state
+        if is_selected:
+            # Selected state
+            self.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {colors.get('accent', '#2C4F76')};
+                    border: none;
+                    border-radius: 0px;
+                }}
+            """)
+            
+            # Style text but preserve icon
+            self.folder_name_label.setStyleSheet(f"color: {colors.get('highlight_text', '#FFFFFF')}; background-color: transparent;")
+            
+        elif is_hover:
+            # Hover state
+            self.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {colors.get('hover_bg', '#3E3E3E')};
+                    border: none;
+                    border-radius: 0px;
+                }}
+            """)
+            
+            # Style text but preserve icon
+            self.folder_name_label.setStyleSheet(f"color: {colors.get('text', '#FFFFFF')}; background-color: transparent;")
+            
+        else:
+            # Normal state
+            self.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {bg_color};
+                    border: none;
+                    border-radius: 0px;
+                }}
+            """)
+            
+            # Style text but preserve icon
+            self.folder_name_label.setStyleSheet(f"color: {colors.get('text', '#FFFFFF')}; background-color: transparent;")
+            
+        # Ensure icon label always has transparent background and no styling override
+        self.icon_label.setStyleSheet("background-color: transparent;")
+        
+        # Process events to ensure immediate visual update
+        QApplication.processEvents()
+
+    # ... (rest of existing methods)
 
     # --- Drag and Drop Handling ---
     def dragEnterEvent(self, event):
@@ -41,19 +182,23 @@ class TemplateFolderListItem(QFrame):
             mime_data.hasFormat(TEMPLATE_MULTI_DRAG_MIME_TYPE) or
             mime_data.hasText()):
             
-            # Provide visual feedback with solid border (was dashed)
+            # Provide visual feedback with solid border
             self.hover = True
+            
+            # Apply drag enter styling to frame only, not labels
             self.setStyleSheet(f"""
                 QFrame {{
                     background-color: {colors.get('accent_hover', '#5A5A5A')};
                     border: 2px solid {colors.get('accent', '#FFFFFF')};
                     border-radius: 3px;
                 }}
-                QLabel {{
-                    color: {colors.get('highlight_text', '#FFFFFF')};
-                    background-color: transparent;
-                }}
             """)
+            
+            # Apply text styling separately but preserve icon
+            self.folder_name_label.setStyleSheet(f"color: {colors.get('highlight_text', '#FFFFFF')}; background-color: transparent;")
+            
+            # Ensure the icon label isn't affected
+            self.icon_label.setStyleSheet("background-color: transparent;")
             
             # Accept the drag
             event.acceptProposedAction()
@@ -90,6 +235,39 @@ class TemplateFolderListItem(QFrame):
         self.hover = False
         self._update_styling()  # Restore normal style
         event.accept()
+        
+    def mouseDoubleClickEvent(self, event):
+        """Handle double-click to enter the folder, just like grid view"""
+        if not self.is_renaming:
+            print(f"[DEBUG] ListItem: Double-clicked folder '{self.folder_name}', emitting signal to navigate into folder")
+            # Emit the doubleClicked signal to navigate into this folder
+            self.doubleClicked.emit(self.folder_name)
+            event.accept()
+        
+    def _finish_rename(self):
+        """Finish inline renaming and apply the change"""
+        try:
+            self.editing = False
+            new_name = self.rename_edit.text().strip()
+            
+            # Hide edit field, show label
+            self.rename_edit.hide()
+            self.folder_name_label.show()
+            
+            # If name is empty or unchanged, do nothing
+            if not new_name or new_name == self.folder_name:
+                return
+                
+            # Emit signal with old and new name
+            self.renameDone.emit(self.folder_name, new_name)
+            
+            # Update internal folder name - will be reset by gallery when refreshed
+            self.folder_name = new_name
+            self.folder_name_label.setText(new_name)
+        except Exception as e:
+            print(f"Error in _finish_rename: {e}")
+            import traceback
+            traceback.print_exc()
 
     def dropEvent(self, event):
         """Handle drop event"""
@@ -259,3 +437,38 @@ class TemplateFolderListItem(QFrame):
             parent = parent.parent()
         return gallery
     # --- End Drag and Drop --- 
+
+    def keyPressEvent(self, event):
+        """Handle key press events for rename operation and deletion"""
+        if self.is_renaming:
+            if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+                # Finish renaming
+                self._finish_rename()
+            elif event.key() == Qt.Key_Escape:
+                # Cancel renaming
+                self.is_renaming = False
+                # Hide rename field, show original label
+                if hasattr(self, 'rename_edit'):
+                    self.rename_edit.hide()
+                if hasattr(self, 'title'):
+                    self.title.show()
+        # Handle both Delete and Backspace (for Mac) for folder deletion when selected
+        elif (event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace) and self.selected:
+            # Don't allow deleting default folders
+            if self.folder_name in ["General", "Development", "Business"]:
+                QMessageBox.warning(self, "Error", f"'{self.folder_name}' is a default folder and cannot be deleted.")
+                return
+            
+            # Delete folder without confirmation dialog
+            if self.app and hasattr(self.app, 'template_manager'):
+                success = self.app.template_manager.delete_folder(self.folder_name)
+                
+                if success:
+                    # Refresh the gallery
+                    parent = self.parent()
+                    if parent and hasattr(parent, 'populate_gallery'):
+                        parent.populate_gallery(force_refresh=True)
+                else:
+                    QMessageBox.warning(self, "Error", f"Failed to delete folder '{self.folder_name}'.")
+        
+        super().keyPressEvent(event) 

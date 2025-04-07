@@ -9,7 +9,8 @@ from PyQt5.QtGui import QFont
 
 from app.ui.color_scheme_pyqt import colors, ACCENT_BUTTON_STYLE
 from .components.utils import SYSTEM_FONT
-from .components.template_folder_card import TemplateFolderCard, TemplateFolderListItem
+from .components.template_folder_card import TemplateFolderCard
+from .components.template_folder_list_item import TemplateFolderListItem
 
 class GalleryFoldersSetup:
     """Folder-related functionality for the Template Gallery"""

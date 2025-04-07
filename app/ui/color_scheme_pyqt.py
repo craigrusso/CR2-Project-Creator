@@ -48,6 +48,7 @@ APP_COLORS = {
     
     # File browser colors
     "folder_icon": "#E8BA36",     # Golden yellow for folder icons
+    "macos_folder_icon": "#3897F0",  # Exact match for macOS folder icon blue
 }
 
 # Function to get a specific color by name

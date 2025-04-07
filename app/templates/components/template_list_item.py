@@ -248,6 +248,22 @@ class TemplateListItem(QFrame):
             # Add separator
             menu.addSeparator()
             
+            # Add cache management options (consistent with other views)
+            cache_menu = menu.addMenu("Cache Management")
+            
+            # Add recache option
+            recache_action = QAction("Recache Template", self)
+            recache_action.triggered.connect(lambda: self._recache_template(template_name))
+            cache_menu.addAction(recache_action)
+            
+            # Add clear cache option
+            clear_cache_action = QAction("Clear Template Cache", self)
+            clear_cache_action.triggered.connect(lambda: self._clear_template_cache(template_name))
+            cache_menu.addAction(clear_cache_action)
+            
+            # Add separator
+            menu.addSeparator()
+            
             # Add move actions if gallery has template_manager 
             if gallery and hasattr(gallery, 'app') and hasattr(gallery.app, 'template_manager'):
                 template_manager = gallery.app.template_manager
@@ -1229,3 +1245,78 @@ class TemplateListItem(QFrame):
             except Exception as e2:
                 print(f"[ERROR] Even direct deleteRequested signal failed: {e2}")
                 traceback.print_exc() 
+
+    def _recache_template(self, template_name):
+        """Recache a template to update from original sources"""
+        print(f"[ACTION] Recaching template: {template_name}")
+        
+        # Find the gallery for app reference
+        gallery = None
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'app'):
+                gallery = parent
+                break
+            parent = parent.parent()
+            
+        if not gallery or not hasattr(gallery, 'app'):
+            print(f"[ERROR] Cannot find app reference for recaching")
+            return
+            
+        app = gallery.app
+        
+        # Check if template manager is available
+        if not hasattr(app, 'template_manager'):
+            print(f"[ERROR] No template manager available for recaching")
+            return
+            
+        # Use the template manager to recache the template
+        if hasattr(app.template_manager, 'recache_template'):
+            success = app.template_manager.recache_template(template_name)
+            
+            # Show feedback to user
+            from PyQt5.QtWidgets import QMessageBox
+            if success:
+                QMessageBox.information(None, "Recache Complete", 
+                    f"Template '{template_name}' has been recached successfully.")
+            else:
+                QMessageBox.warning(None, "Recache Failed", 
+                    f"Failed to recache template '{template_name}'.")
+        else:
+            print(f"[ERROR] Template manager does not support recaching")
+    
+    def _clear_template_cache(self, template_name):
+        """Clear the cache for a template"""
+        print(f"[ACTION] Clearing cache for template: {template_name}")
+        
+        # Find the gallery for app reference
+        gallery = None
+        parent = self.parent()
+        while parent:
+            if hasattr(parent, 'app'):
+                gallery = parent
+                break
+            parent = parent.parent()
+            
+        if not gallery or not hasattr(gallery, 'app'):
+            print(f"[ERROR] Cannot find app reference for clearing cache")
+            return
+            
+        app = gallery.app
+        
+        # Check if template manager is available
+        if not hasattr(app, 'template_manager'):
+            print(f"[ERROR] No template manager available for clearing cache")
+            return
+            
+        # Use the template manager to safely clear the cache
+        if hasattr(app.template_manager, 'safe_clear_template_cache'):
+            success = app.template_manager.safe_clear_template_cache(template_name)
+            
+            # Show feedback to user
+            from PyQt5.QtWidgets import QMessageBox
+            if success:
+                QMessageBox.information(None, "Cache Cleared", 
+                    f"Cache for template '{template_name}' has been cleared successfully.")
+        else:
+            print(f"[ERROR] Template manager does not support safe cache clearing") 

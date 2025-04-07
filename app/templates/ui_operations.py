@@ -2,16 +2,29 @@
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
 import os
-from PyQt5.QtWidgets import QFileDialog, QMessageBox, QInputDialog, QFrame, QLabel, QVBoxLayout, QHBoxLayout
-from PyQt5.QtCore import Qt, QByteArray, QEvent
+import sys
+import time
+import shutil
+import json
+import inspect
+import traceback
+from pathlib import Path
+from datetime import datetime
+from typing import Dict, List, Any, Optional, Tuple, Union
+
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QPushButton, 
+    QLabel, QFileDialog, QMessageBox, QDialog
+)
+from PyQt5.QtCore import Qt, QSize, QTimer, pyqtSignal
 from PyQt5.QtGui import QPixmap, QPainter, QIcon, QFont
 
 # Import QtWidgets conditionally - for compatibility with different PyQt versions
 try:
-    from PyQt5.QtWidgets import QLineEdit, QPushButton
+    from PyQt5.QtWidgets import QLineEdit, QComboBox
 except ImportError:
     # Fallback for older PyQt versions
-    from PyQt5.QtGui import QLineEdit, QPushButton
+    from PyQt5.QtGui import QLineEdit, QComboBox
 
 from app.ui.ui_components_pyqt import ScrollableFrame
 from app.templates.components import TemplateCard
@@ -119,37 +132,174 @@ class UIOperations:
             print(f"Error adding template: {e}")
             return False
     
-    def edit_template(self, template):
-        """Show dialog to edit an existing template"""
-        if not template:
-            return False
+    def update_template(self, template):
+        """
+        Update or save an existing template
+        
+        Args:
+            template (dict): Template data
             
+        Returns:
+            bool: True if successful, False otherwise
+        """
         try:
-            # Import here to avoid circular imports
-            from app.ui.structure_editor_functions import show_enhanced_structure_editor
-            
-            # Show the enhanced structure editor directly
-            success, structure, structure_name, _, _, _, _ = show_enhanced_structure_editor(
-                None, 
-                structure_name=template.get('structure_name', f"Template_{template.get('name', 'Unknown')}"),
-                structure=template.get('structure', []),
-                is_new=False
-            )
-            
-            if success and structure:
-                # Update the template with the structure
-                updated_template = template.copy()
-                updated_template['structure'] = structure
-                updated_template['structure_name'] = structure_name
+            # Validate template has required fields
+            if not isinstance(template, dict) or 'name' not in template or 'structure' not in template:
+                print(f"Error: Invalid template data for update")
+                return False
                 
-                # Save the template
-                self.update_template(updated_template)
-                
-                return True
+            # Log the save action
+            print(f"UIOperations.update_template: Saving template '{template.get('name')}'")
             
-            return False
+            # Call save_template to persist the template
+            return self.save_template(template)
+            
         except Exception as e:
-            print(f"Error editing template: {e}")
+            print(f"Error updating template: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
+            
+    def import_template(self, template_data):
+        """
+        Import a template and save it to disk, handling UI updates
+        
+        Args:
+            template_data (dict): Template data to import
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if not isinstance(template_data, dict):
+                print("ERROR: UIOperations: Template data must be a dictionary")
+                return False
+                
+            template_name = template_data.get('name')
+            if not template_name:
+                print("ERROR: UIOperations: Template name is required")
+                return False
+                
+            print(f"DEBUG: UIOperations: Importing template '{template_name}'")
+            
+            # Save the template using template_io.save_template
+            if hasattr(self.template_manager, 'template_io') and hasattr(self.template_manager.template_io, 'save_template'):
+                success = self.template_manager.template_io.save_template(template_data)
+                
+                if success:
+                    print(f"✅ UIOperations: Successfully imported template '{template_name}'")
+                    
+                    # Update UI
+                    if self.gallery_manager:
+                        print(f"DEBUG: UIOperations: Refreshing gallery after template import")
+                        self.gallery_manager.refresh_gallery()
+                        
+                        # Emit template updated signal if available
+                        if hasattr(self.app, 'template_updated') and self.app.template_updated is not None:
+                            self.app.template_updated.emit()
+                    
+                    return True
+                else:
+                    print(f"ERROR: UIOperations: Failed to import template '{template_name}'")
+                    return False
+            else:
+                print("ERROR: UIOperations: template_io.save_template not available")
+                return False
+        except Exception as e:
+            print(f"ERROR: UIOperations: Error importing template: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def edit_template(self, template_data):
+        """
+        Edit an existing template. This opens the Structure Editor by default,
+        unless called from import_template (then it skips that step).
+        
+        Args:
+            template_data: The template data to edit
+            
+        Returns:
+            bool: True if the edit was successful, False otherwise
+        """
+        caller = inspect.currentframe().f_back.f_code.co_name
+        print(f"🔍 EDIT_TEMPLATE: Called from {caller}")
+        
+        # Skip showing structure editor if called from import_template
+        if caller == "import_template":
+            print(f"🔍 EDIT_TEMPLATE: Detected call from import_template, skipping structure editor")
+            return self.update_template(template_data)
+            
+        # Continue with normal structure editor flow
+        try:
+            # Get or create structure name
+            template_name = template_data.get("name", "")
+            structure_name = template_data.get("structure_name", "")
+            
+            if not structure_name:
+                structure_name = template_name.replace(" ", "_").replace("/", "_").replace("\\", "_")
+                
+            # Configure the structure editor
+            show_editor = True
+            structure_editor_result = False
+            
+            # Show the structure editor
+            if show_editor:
+                structure = template_data.get("structure", [])
+                
+                editor = EnhancedStructureEditor(
+                    parent=self.app,
+                    structure_name=structure_name,
+                    template_name=template_name,
+                    is_new=False
+                )
+                
+                editor.set_template_data(template_data)
+                
+                if structure:
+                    editor.set_initial_structure(structure)
+                    
+                # Show the editor dialog
+                if editor.exec_() == QDialog.Accepted:
+                    # Get updated data
+                    updated_structure = editor.get_structure()
+                    updated_name = editor.get_template_name()
+                    updated_category = editor.get_category()
+                    updated_description = editor.get_description()
+                    
+                    # Update the template data
+                    updated_template = template_data.copy()
+                    updated_template["name"] = updated_name
+                    updated_template["structure"] = updated_structure
+                    updated_template["category"] = updated_category
+                    updated_template["description"] = updated_description
+                    updated_template["modified"] = time.time()
+                    
+                    # Handle rename if needed
+                    if template_name != updated_name:
+                        # TBD: Handle rename logic
+                        pass
+                        
+                    # Save the updated template
+                    structure_editor_result = self.update_template(updated_template)
+                    
+                    if not structure_editor_result:
+                        # Show error
+                        QMessageBox.warning(
+                            self.app,
+                            "Template Update Failed",
+                            f"Failed to update template '{template_name}'."
+                        )
+                
+                return structure_editor_result
+            else:
+                # Skip editor, just update 
+                return self.update_template(template_data)
+                
+        except Exception as e:
+            print(f"Error editing template: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def create_template_list_frame(self, parent):
