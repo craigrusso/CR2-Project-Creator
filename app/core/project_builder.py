@@ -321,25 +321,23 @@ class ProjectBuilder:
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 backup_dir = f"{project_dir}_backup_{timestamp}"
                 try:
+                    print(f"Creating backup at {backup_dir}")
                     shutil.copytree(project_dir, backup_dir)
                     # Also try to copy hidden files which might be missed by copytree
                     os.system(f'cp -r "{project_dir}/."* "{backup_dir}" 2>/dev/null || true')
                     print(f"Created backup at {backup_dir}")
-                except Exception as e:
-                    print(f"Failed to create backup: {e}")
-                    return False, f"Failed to create backup: {e}"
                     
-                # Remove old directory contents but keep the directory
-                try:
-                    for item in os.listdir(project_dir):
-                        item_path = os.path.join(project_dir, item)
-                        if os.path.isdir(item_path):
-                            shutil.rmtree(item_path)
-                        else:
-                            os.remove(item_path)
+                    # Remove old directory completely instead of just emptying it
+                    shutil.rmtree(project_dir)
+                    print(f"Removed old project directory: {project_dir}")
+                    
+                    # Create a fresh empty directory
+                    os.makedirs(project_dir, exist_ok=True)
+                    print(f"Created fresh project directory: {project_dir}")
+                    
                 except Exception as e:
-                    print(f"Failed to clean project directory: {e}")
-                    return False, f"Failed to clean project directory: {e}"
+                    print(f"Failed to create backup or prepare project directory: {e}")
+                    return False, f"Failed to create backup: {e}"
             else:
                 # If we're not creating a backup, fail
                 return False, f"Project directory '{project_dir}' already exists"
@@ -1693,6 +1691,7 @@ class ProjectBuilder:
                 # Get file info
                 file_name = file_data.get('file_name')
                 original_path = file_data.get('original_path')
+                cached_path = file_data.get('cached_path')  # Get cached_path directly from file_data
                 folder = file_data.get('folder', '')
                 rename_flag = file_data.get('rename_flag', False)
                 uses_project_name = file_data.get('uses_project_name', False)
@@ -1736,52 +1735,69 @@ class ProjectBuilder:
                 # --- MODIFIED --- Source Path Determination Logic
                 print(f"DEBUG: Determining source path for: {original_filename_for_debug} (output: {file_name})")
 
-                # 1. Try cache first
-                if use_cached_files and template_name and cache_manager:
+                # 1. PRIORITY 1: Check cached_path directly from file_data
+                if cached_path and os.path.exists(cached_path):
+                    source_path = cached_path
+                    source_path_used = "Direct Cache"
+                    cached_path_attempted = cached_path
+                    print(f"  ✅ Using DIRECT CACHE file: {source_path}")
+                    if cache_manager and hasattr(cache_manager, 'cache_stats'): 
+                        cache_manager.cache_stats['hits'] += 1
+                
+                # 2. PRIORITY 2: Try looking up in cache manager using original_path
+                elif use_cached_files and not source_path and template_name and cache_manager:
                     try:
                         # Use original_path as the key to find the file in the specific template's cache metadata
-                        # --- MODIFIED --- get_cached_file returns a dict, not just a path
                         file_info_from_cache = cache_manager.get_cached_file(template_name, file_path=original_path)
-                        cached_path = None
+                        lookup_cached_path = None
                         if file_info_from_cache:
-                            cached_path = file_info_from_cache.get('cached_path')
-                        # --- END MODIFIED ---
+                            lookup_cached_path = file_info_from_cache.get('cached_path')
                         
-                        cached_path_attempted = cached_path # Store for logging
+                        cached_path_attempted = lookup_cached_path # Store for logging
                         
-                        # --- MODIFIED --- Check if the extracted cached_path exists
-                        if cached_path and os.path.exists(cached_path):
-                        # --- END MODIFIED ---
-                            source_path = cached_path
-                            source_path_used = "Cache"
-                            print(f"  ✅ Using CACHED file: {source_path}")
-                            if hasattr(cache_manager, 'cache_stats'): cache_manager.cache_stats['hits'] += 1
-                        elif cached_path:
-                            print(f"  ⚠️ Cache path found ({cached_path}) but file does not exist.")
-                        # else:
-                            # print(f"  ℹ️ File not found in cache metadata for template '{template_name}' using original_path '{original_path}'.")
+                        if lookup_cached_path and os.path.exists(lookup_cached_path):
+                            source_path = lookup_cached_path
+                            source_path_used = "Cache Lookup"
+                            print(f"  ✅ Using CACHE LOOKUP file: {source_path}")
+                            if hasattr(cache_manager, 'cache_stats'): 
+                                cache_manager.cache_stats['hits'] += 1
+                        elif lookup_cached_path:
+                            print(f"  ⚠️ Cache path found via lookup ({lookup_cached_path}) but file does not exist.")
                     except Exception as cache_err:
                         print(f"  ⚠️ Error looking up file in cache: {cache_err}")
                         cached_path_attempted = f"Error: {cache_err}" # Store error for logging
 
-                # 2. Fall back to original path
+                # 3. PRIORITY 3: Fall back to original path
                 if not source_path and original_path:
                     original_path_attempted = original_path # Store for logging
                     if os.path.exists(original_path):
                         source_path = original_path
                         source_path_used = "Original"
                         print(f"  ✅ Using ORIGINAL file: {source_path}")
-                        if cache_manager and hasattr(cache_manager, 'cache_stats'): cache_manager.cache_stats['misses'] += 1
+                        if cache_manager and hasattr(cache_manager, 'cache_stats'): 
+                            cache_manager.cache_stats['misses'] += 1
                     else:
                         print(f"  ⚠️ Original path ({original_path}) does not exist.")
-                elif not source_path:
+                elif not source_path and not original_path:
                     print(f"  ℹ️ Original path was not provided in template data.")
                     
+                # 4. PRIORITY 4: Special handling for imported files
+                if not source_path and original_path and "Imported from:" in original_path and cached_path:
+                    # For imported files, always try the cached path as last resort
+                    if os.path.exists(cached_path):
+                        source_path = cached_path
+                        source_path_used = "Import Cache"
+                        print(f"  ✅ Using IMPORT CACHE file for imported file: {source_path}")
+                        if cache_manager and hasattr(cache_manager, 'cache_stats'): 
+                            cache_manager.cache_stats['hits'] += 1
+                    else:
+                        print(f"  ⚠️ Import cache path ({cached_path}) does not exist.")
 
-                # 3. Skip if no valid source path found
+                # Final check - Skip if no valid source path found
                 if not source_path:
                     print(f"  ❌ ERROR: No valid source path found for file '{original_filename_for_debug}'.")
                     print(f"      Attempted Cache Path: {cached_path_attempted}")
+                    print(f"      Attempted Lookup Path: {cached_path}")
                     print(f"      Attempted Original Path: {original_path_attempted}")
                     continue
 
