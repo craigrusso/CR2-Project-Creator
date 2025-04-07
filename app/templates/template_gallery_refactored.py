@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import QDesktopWidget, QWidget, QVBoxLayout, QHBoxLayout, Q
      QPushButton, QLineEdit, QFrame, QGridLayout, QMessageBox, QApplication, QSizePolicy, QTabWidget, QMainWindow, QDockWidget, QToolButton, QButtonGroup, QMenu, QAction, QShortcut, QInputDialog, QAbstractItemView
 from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSignal, QPoint, QModelIndex, QItemSelectionModel
 from PyQt5.QtGui import QKeySequence, QDrag, QPixmap, QPainter, QColor, QPalette
+import re
 
 # Import modular components
 from .gallery_ui_setup import GalleryUISetup
@@ -170,10 +171,10 @@ class TemplateGallery(QWidget):
                     self.back_button.setVisible(True)
                     print(f"🔍 LISTENER: Ensuring back button is visible in populate_gallery for folder '{self.current_folder}'")
                 
-                # Set the breadcrumb text
-                if hasattr(self, 'breadcrumb_label'):
-                    self.breadcrumb_label.setText(f"Folder: {self.current_folder}")
-                    self.breadcrumb_label.show()
+                # Set the folder label text
+                if hasattr(self, 'folder_label'):
+                    self.folder_label.setText(f"Folder: {self.current_folder}")
+                    self.folder_label.show()
                 
                 # Get templates in the current folder
                 templates_to_show = GalleryTemplatesSetup.get_templates_in_folder(self, self.current_folder)
@@ -1664,95 +1665,75 @@ class TemplateGallery(QWidget):
             print("[WARNING] Duplicate request with no template name.")
             return
 
-        new_name = None  # Initialize new_name to track the duplicated template
+        # Generate new name using finder-like naming pattern (name, name copy, name copy 2, etc.)
+        base_name = template_name
         
-        if hasattr(self.template_manager, 'duplicate_template'):
-            try:
-                new_name = self.template_manager.duplicate_template(template_name)
-                if new_name:
-                    print(f"[INFO] Successfully duplicated '{template_name}' as '{new_name}'")
-                    if hasattr(self.app, 'show_status_message'):
-                        self.app.show_status_message(f"Duplicated '{template_name}' as '{new_name}'", "success")
-                    # Don't populate gallery yet - we'll do it after we update selection
-                else:
-                    print(f"[ERROR] Failed to duplicate '{template_name}'. Method returned None.")
-                    if hasattr(self.app, 'show_status_message'):
-                        self.app.show_status_message(f"Failed to duplicate '{template_name}'.", "error")
-                    return
-            except Exception as e:
-                print(f"[ERROR] Exception while duplicating '{template_name}': {e}")
-                import traceback
-                traceback.print_exc()
-                if hasattr(self.app, 'show_status_message'):
-                    self.app.show_status_message(f"Error duplicating '{template_name}': {e}", "error")
-                return
-        elif hasattr(self.template_manager, 'template_io') and hasattr(self.template_manager.template_io, 'duplicate_template'):
-            # Try using template_io directly
-            try:
-                success, result = self.template_manager.template_io.duplicate_template(template_name)
-                if success:
-                    new_name = result
-                    print(f"[INFO] Successfully duplicated '{template_name}' as '{new_name}' via template_io")
-                    if hasattr(self.app, 'show_status_message'):
-                        self.app.show_status_message(f"Duplicated '{template_name}' as '{new_name}'", "success")
-                    # Don't populate gallery yet - we'll do it after we update selection
-                else:
-                    print(f"[ERROR] Failed to duplicate '{template_name}' via template_io. Result: {result}")
-                    if hasattr(self.app, 'show_status_message'):
-                        self.app.show_status_message(f"Failed to duplicate '{template_name}': {result}", "error")
-                    return
-            except Exception as e:
-                print(f"[ERROR] Exception while duplicating '{template_name}' via template_io: {e}")
-                import traceback
-                traceback.print_exc()
-                if hasattr(self.app, 'show_status_message'):
-                    self.app.show_status_message(f"Error duplicating '{template_name}': {e}", "error")
-                return
-        else:
-            print("[ERROR] Template manager does not have 'duplicate_template' method.")
-            if hasattr(self.app, 'show_status_message'):
-                 self.app.show_status_message("Duplicate feature not available.", "error")
-            return
-                 
-        # If we have a new name, refresh the gallery and update selection
-        if new_name:
-            # First refresh the gallery to ensure the new template is loaded
-            self.populate_gallery(force_refresh=True)
+        # Check if the template name already ends with " copy" or " copy N"
+        import re
+        copy_pattern = re.compile(r'^(.*?) copy( \d+)?$')
+        match = copy_pattern.match(template_name)
+        
+        if match:
+            # If it's already a copy, use the original base name
+            base_name = match.group(1)
             
-            # Now select the newly created template - this is critical for list view
-            # Fetch the template data for the new template
-            new_template = None
-            if hasattr(self.app.template_manager, 'get_template'):
-                new_template = self.app.template_manager.get_template(new_name)
-            elif hasattr(self.app.template_manager, 'template_io') and hasattr(self.app.template_manager.template_io, 'get_template'):
-                new_template = self.app.template_manager.template_io.get_template(new_name)
-            elif hasattr(self.app.template_manager, 'templates'):
-                # Check if templates is a dict or list and handle accordingly
-                templates = self.app.template_manager.templates
-                if isinstance(templates, dict):
-                    new_template = templates.get(new_name)
-                elif isinstance(templates, list):
-                    # Find template by name in the list
-                    for template in templates:
-                        if isinstance(template, dict) and template.get('name') == new_name:
-                            new_template = template
-                            break
+        # Start with "base_name copy"
+        new_name = f"{base_name} copy"
+        
+        # If that name exists, try "base_name copy 2", "base_name copy 3", etc.
+        if any(t.get('name') == new_name for t in self.template_manager.template_io.templates.values()):
+            counter = 1
+            while True:
+                new_name = f"{base_name} copy {counter}"
+                if not any(t.get('name') == new_name for t in self.template_manager.template_io.templates.values()):
+                    break
+                counter += 1
+            
+        # Proceed with duplication
+        try:
+            # Check if we're in a folder and should place the duplicate there
+            current_folder = self.current_folder if hasattr(self, 'current_folder') else None
+            
+            # Duplicate the template
+            success = self.template_manager.duplicate_template(template_name, new_name)
+            if success:
+                print(f"[INFO] Successfully duplicated '{template_name}' as '{new_name}'")
                 
-            if new_template:
-                print(f"[DEBUG] Setting newly duplicated template '{new_name}' as selected")
+                # If we're in a folder, add the new template to this folder
+                if current_folder:
+                    print(f"[DEBUG] Adding duplicated template '{new_name}' to current folder '{current_folder}'")
+                    if hasattr(self.template_manager, 'move_template_to_folder'):
+                        self.template_manager.move_template_to_folder(new_name, current_folder)
                 
-                # Update both primary and multi-selection
-                self.selected_template = new_template
-                self.multi_selected_templates = [new_template]
+                # Refresh the gallery to show the new template
+                self.populate_gallery(force_refresh=True)
                 
-                # Update the UI to show the new selection
-                self._update_selection_ui()
+                # Select the newly created template
+                self.select_template(new_name)
                 
-                # Emit selection signal to notify listeners
-                self.template_selected.emit(new_template)
-                print(f"[DEBUG] Emitted selection signal for newly duplicated template '{new_name}'")
+                # Update selected template (property) so subsequent duplications use this template
+                template = self.template_manager.get_template_by_name(new_name)
+                if template:
+                    self.selected_template = template
+                    # Make sure the UI knows this is the selected template
+                    self._update_selection_ui()
+                    # Emit signal that this template was selected
+                    self.template_selected.emit(template)
+                
+                print(f"[DEBUG] Set newly duplicated template '{new_name}' as selected")
+                
+                if hasattr(self.app, 'show_status_message'):
+                    self.app.show_status_message(f"Duplicated '{template_name}' as '{new_name}'", "success")
             else:
-                print(f"[WARNING] Could not find newly duplicated template '{new_name}' for selection")
+                print(f"[ERROR] Failed to duplicate '{template_name}'")
+                if hasattr(self.app, 'show_status_message'):
+                    self.app.show_status_message(f"Failed to duplicate '{template_name}'", "error")
+        except Exception as e:
+            print(f"[ERROR] Exception while duplicating '{template_name}': {e}")
+            import traceback
+            traceback.print_exc()
+            if hasattr(self.app, 'show_status_message'):
+                self.app.show_status_message(f"Error duplicating '{template_name}': {e}", "error")
     # --- End Duplicate Template Handler ---
     
     # --- Shortcut Setup and Handling (Restored) ---

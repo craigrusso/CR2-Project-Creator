@@ -230,10 +230,10 @@ class GalleryEvents:
         # Update UI and populate templates in this folder
         gallery.populate_gallery(force_refresh=True)
         
-        # Update breadcrumb
-        if hasattr(gallery, 'breadcrumb_label'):
-            gallery.breadcrumb_label.setText(f"Folder: {folder_name}")
-            gallery.breadcrumb_label.show()
+        # Update folder label
+        if hasattr(gallery, 'folder_label'):
+            gallery.folder_label.setText(f"Folder: {folder_name}")
+            gallery.folder_label.show()
             
         # Show back button
         if hasattr(gallery, 'back_button'):
@@ -255,9 +255,10 @@ class GalleryEvents:
         # Update UI
         gallery.populate_gallery(force_refresh=True)
         
-        # Hide breadcrumb
-        if hasattr(gallery, 'breadcrumb_label'):
-            gallery.breadcrumb_label.hide()
+        # Hide folder label
+        if hasattr(gallery, 'folder_label'):
+            gallery.folder_label.setText("")
+            gallery.folder_label.hide()
             
         # Hide back button
         if hasattr(gallery, 'back_button'):
@@ -318,8 +319,14 @@ class GalleryEvents:
                     # created/modified timestamps are likely handled within save_template
                 }
                 
-                # Call save_template with the dictionary
-                save_success = gallery.app.template_manager.save_template(template_data)
+                # Call save_template with the individual parameters instead of the dictionary
+                save_success, save_message = gallery.app.template_manager.save_template(
+                    template_name=updated_template_name,
+                    structure=updated_structure,
+                    category=saved_category,
+                    description=saved_description,
+                    template_type="Standard"
+                )
 
                 if save_success:
                     print(f"🔍 LISTENER: Successfully created template '{updated_template_name}'")
@@ -354,7 +361,7 @@ class GalleryEvents:
                         print("🔍 LISTENER: Gallery object not available for refresh")
                 else:
                     print(f"❌ LISTENER: Failed to save new template '{updated_template_name}'")
-                    error_message = "Failed to save template. Please check that the template has a valid name and structure."
+                    error_message = save_message if save_message else "Failed to save template. Please check that the template has a valid name and structure."
                     QMessageBox.warning(gallery, "Save Error", f"Could not save the new template file for {updated_template_name}. Error: {error_message}")
             else:
                 print("🔍 LISTENER: Add template cancelled or failed")

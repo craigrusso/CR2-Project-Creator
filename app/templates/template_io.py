@@ -472,80 +472,74 @@ class TemplateIO:
             return False, f"Failed to rename: {message}"
 
 
-    def duplicate_template(self, original_template_name):
-        """Duplicates an existing template, creating new files, cache, and memory entry."""
-        print(f"[DEBUG] TemplateIO: Attempting to duplicate template: '{original_template_name}'")
-
-        # 1. Get original template data
+    def duplicate_template(self, original_template_name, new_name=None):
+        """
+        Duplicates a template with a new name, re-caching all files
+        
+        Args:
+            original_template_name (str): The name of the template to duplicate
+            new_name (str, optional): The name for the duplicate template. If not provided, a name will be auto-generated.
+            
+        Returns:
+            bool or tuple: If new_name is provided, returns a bool indicating success. 
+                          If new_name is not provided, returns a tuple (success_bool, new_name_or_error_message)
+        """
+        # 1. Get the original template data
         original_data = self.get_template(original_template_name)
         if not original_data:
-            print(f"[ERROR] TemplateIO: Original template '{original_template_name}' not found for duplication.")
-            return False, f"Original template '{original_template_name}' not found."
+            print(f"[ERROR] TemplateIO: Template '{original_template_name}' not found")
+            return False if new_name else (False, f"Template '{original_template_name}' not found")
+        
+        print(f"[DEBUG] TemplateIO: Attempting to duplicate template: '{original_template_name}'")
+            
+        # 2. Generate a new name for the duplicate if not provided
+        if not new_name:
+            base_name = original_template_name
+            existing_names = [name.lower() for name in self.templates.keys()]
+            existing_names_lower = [name.lower() for name in existing_names]
+            
+            counter = 1
+            while True:
+                suffix = f" copy"
+                if counter > 1:
+                     suffix += f" {counter}"
+                potential_new_name = f"{base_name}{suffix}"
 
-        exact_original_name = original_data.get('name', original_template_name) # Fallback just in case
+                if potential_new_name.lower() not in existing_names_lower:
+                    new_name = potential_new_name
+                    break
+                counter += 1
+                if counter > 1000: # Safety break
+                     print("[ERROR] TemplateIO: Could not find a unique name after 1000 attempts.")
+                     return False, "Could not determine a unique name for the duplicate."
 
-        # 2. Determine new unique name
-        existing_names_lower = {name.lower() for name in self.templates.keys()}
-        base_name = exact_original_name
-        # Regex to find ' copy' or ' copy N' at the end (case-insensitive)
-        match_copy = re.match(r"^(.*?) copy(?: (\d+))?$", exact_original_name, re.IGNORECASE)
-        start_counter = 1
-        if match_copy:
-             base_name = match_copy.group(1).strip()
-             num_str = match_copy.group(2)
-             start_counter = int(num_str) + 1 if num_str else 2 # Start with 'copy 2' or N+1
-             print(f"[DEBUG] TemplateIO: Detected copy name: Base='{base_name}', Next counter={start_counter}")
-
-        counter = start_counter
-        new_name = "" # Initialize new_name
-        while True:
-            suffix = f" copy"
-            if counter > 1:
-                 suffix += f" {counter}"
-            potential_new_name = f"{base_name}{suffix}"
-
-            if potential_new_name.lower() not in existing_names_lower:
-                new_name = potential_new_name
-                break
-            counter += 1
-            if counter > 1000: # Safety break
-                 print("[ERROR] TemplateIO: Could not find a unique name after 1000 attempts.")
-                 return False, "Could not determine a unique name for the duplicate."
-
-        new_sanitized_name = sanitize_filename(new_name)
-        print(f"[DEBUG] TemplateIO: Determined new name: '{new_name}' (Sanitized: '{new_sanitized_name}')")
+            new_sanitized_name = sanitize_filename(new_name)
+            print(f"[DEBUG] TemplateIO: Determined new name: '{new_name}' (Sanitized: '{new_sanitized_name}')")
+        else:
+            print(f"[DEBUG] TemplateIO: Using provided name: '{new_name}'")
 
         # 3. Create new template data (deep copy)
         try:
             new_data = copy.deepcopy(original_data)
+            
+            # 4. Update the new template data with the new name
+            new_data["name"] = new_name
+            
+            # 5. Use save_template to create the new template
+            save_success = self.save_template(new_data)
+            
+            if save_success:
+                 print(f"[INFO] TemplateIO: Successfully duplicated template '{original_template_name}' as '{new_name}' using save_template.")
+                 # The save_template call already updated self.templates
+                 # Fetch the created template data again for the return value.
+                 created_template_data = self.get_template(new_name)
+                 return True if new_name else (True, new_name) # Return success and the new name if auto-generated
+            else:
+                 print(f"[ERROR] TemplateIO: Duplication failed during save_template call for new template '{new_name}'.")
+                 # Rollback is difficult here as save_template might have partially completed.
+                 # Attempt to delete the potentially created template as cleanup.
+                 self.delete_template(new_name) # Use delete_template which handles file/cache/memory
+                 return False if new_name else (False, "Failed to save duplicated template") 
         except Exception as e:
-            print(f"[ERROR] TemplateIO: Failed to deep copy template data: {e}")
-            return False, f"Failed to copy template data: {e}"
-
-        # 4. Use save_template to create the new template
-        # This leverages the file caching, structure extraction, and saving logic
-        # We pass the deep-copied structure and other relevant fields.
-        # Crucially, original_name is None, indicating a new save, not a rename.
-        save_success, message = self.save_template(
-            template_name=new_name, # The newly generated unique name
-            structure=new_data.get('structure'), # The copied structure
-            category=new_data.get('category'),
-            description=new_data.get('description'),
-            tags=new_data.get('tags'),
-            template_type=new_data.get('type'),
-            original_name=None, # Indicate this is a new template save
-            files_to_cache=None # Let save_template find files from structure (important for cache copy)
-        )
-
-        if save_success:
-             print(f"[INFO] TemplateIO: Successfully duplicated template '{original_template_name}' as '{new_name}' using save_template.")
-             # The save_template call already updated self.templates
-             # Fetch the created template data again for the return value.
-             created_template_data = self.get_template(new_name)
-             return True, new_name # Return success and the new name
-        else:
-             print(f"[ERROR] TemplateIO: Duplication failed during save_template call for new template '{new_name}'. Message: {message}")
-             # Rollback is difficult here as save_template might have partially completed.
-             # Attempt to delete the potentially created template as cleanup.
-             self.delete_template(new_name) # Use delete_template which handles file/cache/memory
-             return False, f"Failed to save duplicated template: {message}" 
+            print(f"[ERROR] TemplateIO: Failed to duplicate template: {e}")
+            return False if new_name else (False, f"Failed to duplicate template: {e}") 

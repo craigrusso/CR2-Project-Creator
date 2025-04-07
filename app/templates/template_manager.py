@@ -719,3 +719,42 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
         
         # Use the cache manager to find templates with missing originals
         return self.cache_manager.find_all_templates_with_missing_originals()
+        
+    def duplicate_template(self, template_name, new_name):
+        """
+        Duplicate a template with a new name
+        
+        Args:
+            template_name (str): Name of the template to duplicate
+            new_name (str): Name for the duplicate template
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        print(f"[DEBUG] TemplateManager: Duplicating template '{template_name}' to '{new_name}'")
+        
+        if not hasattr(self, 'template_io'):
+            print(f"[ERROR] Cannot duplicate template: template_io not available")
+            return False
+            
+        try:
+            # Call the template_io duplicate_template method with both parameters
+            success = self.template_io.duplicate_template(template_name, new_name)
+            
+            # If duplication is successful, update any internal data structures
+            if success:
+                print(f"[INFO] TemplateManager: Successfully duplicated template to '{new_name}'")
+                
+                # Force reload templates from template_io to ensure the new template is loaded
+                self.template_io.load_templates()
+                
+                # Notify any listeners that templates have been updated
+                if hasattr(self, 'on_templates_updated') and callable(self.on_templates_updated):
+                    self.on_templates_updated()
+                
+            return success
+        except Exception as e:
+            print(f"[ERROR] Template duplication failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return False

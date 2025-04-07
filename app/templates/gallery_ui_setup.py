@@ -22,7 +22,7 @@ class GalleryUISetup:
         gallery.layout.setContentsMargins(0, 0, 0, 0)
         gallery.layout.setSpacing(0)  # No space between components
         
-        # Top bar with project type filter and search
+        # Top bar with search
         GalleryUISetup.setup_top_bar(gallery)
         
         # Add spacing between search bar and folder header
@@ -30,9 +30,6 @@ class GalleryUISetup:
         spacer.setFixedHeight(15)  # Match the spacing between sections
         spacer.setStyleSheet("background: transparent;")
         gallery.layout.addWidget(spacer)
-        
-        # Action bar with buttons
-        GalleryUISetup.setup_action_bar(gallery)
         
         # Set up the gallery containers
         GalleryUISetup.setup_gallery_containers(gallery)
@@ -186,9 +183,11 @@ class GalleryUISetup:
         """Set up the action bar with buttons for templates and folders"""
         from PyQt5.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QComboBox, QLineEdit, QMenu, QToolButton
         from PyQt5.QtCore import Qt
+        from PyQt5.QtGui import QAction
         from app.ui.color_scheme_pyqt import BUTTON_STYLE, ACCENT_BUTTON_STYLE
         
-        # Create the action bar
+        # Create the action bar - KEEPING THIS CODE BUT NOT USING IT
+        # This allows backward compatibility with code that might expect these objects
         gallery.action_bar = QFrame()
         gallery.action_bar.setFrameShape(QFrame.NoFrame)
         gallery.action_bar.setFrameShadow(QFrame.Plain)
@@ -198,127 +197,45 @@ class GalleryUISetup:
         gallery.action_bar_layout = QVBoxLayout(gallery.action_bar)
         gallery.action_bar_layout.setContentsMargins(10, 5, 10, 5)
         
-        # Filtering and search
+        # Create empty frames for backward compatibility
         gallery.filter_frame = QFrame()
-        gallery.filter_frame.setFrameShape(QFrame.NoFrame)
-        gallery.filter_frame.setFrameShadow(QFrame.Plain)
-        
-        gallery.filter_layout = QHBoxLayout(gallery.filter_frame)
-        gallery.filter_layout.setContentsMargins(0, 0, 0, 0)
-        
-        gallery.category_filter_label = QLabel("Category:")
-        gallery.category_filter_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
-        gallery.filter_layout.addWidget(gallery.category_filter_label)
-        
-        gallery.category_filter = QComboBox()
-        gallery.category_filter.addItem("All")
-        gallery.category_filter.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        gallery.category_filter.setMinimumWidth(150)
-        gallery.category_filter.currentIndexChanged.connect(gallery._filter_templates)
-        gallery.filter_layout.addWidget(gallery.category_filter)
-        
-        gallery.filter_layout.addSpacing(15)
-        
-        gallery.search_label = QLabel("Search:")
-        gallery.search_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
-        gallery.filter_layout.addWidget(gallery.search_label)
-        
-        gallery.search_box = QLineEdit()
-        gallery.search_box.setPlaceholderText("Search templates...")
-        gallery.search_box.textChanged.connect(gallery._filter_templates)
-        gallery.filter_layout.addWidget(gallery.search_box)
-        
-        gallery.action_bar_layout.addWidget(gallery.filter_frame)
-        
-        # Button row
         gallery.button_frame = QFrame()
-        gallery.button_frame.setFrameShape(QFrame.NoFrame)
-        gallery.button_frame.setFrameShadow(QFrame.Plain)
-        gallery.button_layout = QHBoxLayout(gallery.button_frame)
-        gallery.button_layout.setContentsMargins(0, 0, 0, 0)
         
-        # View mode button
-        gallery.view_mode_button = QToolButton()
-        gallery.view_mode_button.setText("View")
-        gallery.view_mode_button.setPopupMode(QToolButton.InstantPopup)
-        gallery.view_mode_button.setStyleSheet(BUTTON_STYLE)
-        gallery.view_mode_menu = QMenu(gallery.view_mode_button)
-        
-        # Set up view mode menu actions
-        gallery.card_view_action = gallery.view_mode_menu.addAction("Card View")
-        gallery.card_view_action.setCheckable(True)
-        gallery.card_view_action.triggered.connect(lambda: gallery._set_view_mode("card"))
-        
-        gallery.list_view_action = gallery.view_mode_menu.addAction("List View")
-        gallery.list_view_action.setCheckable(True)
-        gallery.list_view_action.triggered.connect(lambda: gallery._set_view_mode("list"))
-        
-        gallery.table_view_action = gallery.view_mode_menu.addAction("Table View")
-        gallery.table_view_action.setCheckable(True)
-        gallery.table_view_action.triggered.connect(lambda: gallery._set_view_mode("table"))
-        
-        # Add separator
-        gallery.view_mode_menu.addSeparator()
-        
-        # Add animation toggle option
-        gallery.animations_action = gallery.view_mode_menu.addAction("Enable Animations")
-        gallery.animations_action.setCheckable(True)
-        gallery.animations_action.triggered.connect(gallery._toggle_animations)
-        
-        gallery.view_mode_button.setMenu(gallery.view_mode_menu)
-        gallery.button_layout.addWidget(gallery.view_mode_button)
-        
-        # Add a Cache Management button with dropdown menu
-        gallery.cache_management_button = QToolButton()
-        gallery.cache_management_button.setText("Cache Management")
-        gallery.cache_management_button.setPopupMode(QToolButton.InstantPopup)
-        gallery.cache_management_button.setStyleSheet(BUTTON_STYLE)
-        gallery.cache_management_menu = QMenu(gallery.cache_management_button)
-        
-        # Add cache management menu actions
-        gallery.recache_all_action = gallery.cache_management_menu.addAction("Recache All Templates")
-        gallery.recache_all_action.triggered.connect(gallery._on_recache_all_templates)
-        
-        gallery.clear_all_caches_action = gallery.cache_management_menu.addAction("Clear All Caches")
-        gallery.clear_all_caches_action.triggered.connect(gallery._on_clear_all_caches)
-        
-        gallery.cache_management_menu.addSeparator()
-        
-        gallery.check_missing_originals_action = gallery.cache_management_menu.addAction("Check for Missing Originals")
-        gallery.check_missing_originals_action.triggered.connect(gallery._on_check_missing_originals)
-        
-        gallery.cache_management_button.setMenu(gallery.cache_management_menu)
-        gallery.button_layout.addWidget(gallery.cache_management_button)
-        
-        # Push buttons to the right
-        
-        # Folder management buttons - moved to folders header
-        # Rename folder button is kept for context menu/keyboard shortcut functionality
+        # Create hidden button for keyboard shortcut functionality
         gallery.rename_folder_button = QPushButton("Rename Folder")
         gallery.rename_folder_button.setStyleSheet(BUTTON_STYLE)
         gallery.rename_folder_button.clicked.connect(gallery._on_rename_folder)
         gallery.rename_folder_button.setEnabled(False)
-        # Not adding to layout as per original code
+        gallery.rename_folder_button.setVisible(False)
         
-        # Delete folder button removed as it's not needed - we can delete with keystroke and context menu
+        # Set up view mode actions for compatibility
+        gallery.card_view_action = QAction("Card View")
+        gallery.card_view_action.setCheckable(True)
+        gallery.card_view_action.triggered.connect(lambda: gallery._set_view_mode("card"))
         
-        gallery.button_layout.addStretch()
+        gallery.list_view_action = QAction("List View")
+        gallery.list_view_action.setCheckable(True)
+        gallery.list_view_action.triggered.connect(lambda: gallery._set_view_mode("list"))
         
-        # Template buttons
-        # Moved to templates header area for better UX
-        # gallery.add_button = QPushButton("Add Template")
-        # gallery.add_button.setStyleSheet(ACCENT_BUTTON_STYLE)
-        # gallery.add_button.clicked.connect(gallery._on_add_template)
-        # gallery.button_layout.addWidget(gallery.add_button)
+        gallery.table_view_action = QAction("Table View")
+        gallery.table_view_action.setCheckable(True)
+        gallery.table_view_action.triggered.connect(lambda: gallery._set_view_mode("table"))
         
-        # Removing the "Manage All" button as it's redundant with other functionality
-        # gallery.manage_button = QPushButton("Manage All")
-        # gallery.manage_button.setStyleSheet(BUTTON_STYLE)
-        # gallery.manage_button.clicked.connect(gallery._on_manage_templates)
-        # gallery.button_layout.addWidget(gallery.manage_button)
+        gallery.animations_action = QAction("Enable Animations")
+        gallery.animations_action.setCheckable(True)
+        gallery.animations_action.triggered.connect(gallery._toggle_animations)
         
-        gallery.action_bar_layout.addWidget(gallery.button_frame)
-        gallery.layout.addWidget(gallery.action_bar)
+        # Set up cache management actions for compatibility
+        gallery.recache_all_action = QAction("Recache All Templates")
+        gallery.recache_all_action.triggered.connect(gallery._on_recache_all_templates)
+        
+        gallery.clear_all_caches_action = QAction("Clear All Caches")
+        gallery.clear_all_caches_action.triggered.connect(gallery._on_clear_all_caches)
+        
+        gallery.check_missing_originals_action = QAction("Check for Missing Originals")
+        gallery.check_missing_originals_action.triggered.connect(gallery._on_check_missing_originals)
+        
+        # Note: We're not adding the action_bar to the layout anymore
 
     @staticmethod
     def setup_gallery_containers(gallery):
@@ -343,6 +260,47 @@ class GalleryUISetup:
         gallery.main_layout = QVBoxLayout(gallery.gallery_widget)
         gallery.main_layout.setContentsMargins(0, 0, 0, 0)  # No margins on the main layout
         gallery.main_layout.setSpacing(15)  # Space between sections
+        
+        # Create folder navigation bar (will be hidden initially)
+        gallery.folder_nav = QFrame()
+        gallery.folder_nav.setFrameShape(QFrame.NoFrame)
+        gallery.folder_nav.setStyleSheet("background: transparent;")
+        gallery.folder_nav.setMaximumHeight(40)
+        gallery.folder_nav_layout = QHBoxLayout(gallery.folder_nav)
+        gallery.folder_nav_layout.setContentsMargins(5, 2, 5, 2)
+        gallery.folder_nav_layout.setSpacing(10)
+        
+        # Add back button with double angle quotes
+        gallery.back_button = QPushButton("« Back to All")
+        gallery.back_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {colors['hover_bg']};
+            }}
+            QPushButton:pressed {{
+                background-color: {colors['bg']};
+            }}
+        """)
+        gallery.back_button.clicked.connect(lambda: gallery._on_back_to_all())
+        gallery.folder_nav_layout.addWidget(gallery.back_button)
+        
+        # Add folder label
+        gallery.folder_label = QLabel("")
+        gallery.folder_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold;")
+        gallery.folder_nav_layout.addWidget(gallery.folder_label)
+        
+        # Add spacer to push content to the left
+        gallery.folder_nav_layout.addStretch()
+        
+        # Add folder navigation to main layout (but hide it initially)
+        gallery.main_layout.addWidget(gallery.folder_nav)
+        gallery.folder_nav.setVisible(False)
         
         # Import the setup classes here to avoid circular imports
         from .gallery_folders import GalleryFoldersSetup
