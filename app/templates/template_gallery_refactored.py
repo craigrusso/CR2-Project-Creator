@@ -1335,15 +1335,42 @@ class TemplateGallery(QWidget):
                          selected_templates.append(template_data)
 
         num_selected = len(selected_templates)
+        # Check if index at click position is valid
+        index_at_pos = table_view.indexAt(position)
+        is_blank_area = not index_at_pos.isValid()
+        
         print(f"DEBUG: Showing table context menu for: {[t.get('name') for t in selected_templates]}")
         print(f"DEBUG: Number of selected templates for context menu: {num_selected}")
-
-        if num_selected == 0:
-            return # Don't show menu if nothing is selected
+        print(f"DEBUG: Clicked on blank area: {is_blank_area}")
 
         # Use the custom ContextMenu for consistent styling
         menu = ContextMenu(self.template_table_view)
         
+        # --- If clicked on a blank area, show background context menu ---
+        if is_blank_area:
+            print("DEBUG: Showing context menu for table background")
+            import_action = menu.addAction("Import Template...")
+            add_folder_action = menu.addAction("Add Folder")
+            add_template_action = menu.addAction("Add Template")
+            
+            # Ensure self.app exists and is valid
+            if hasattr(self, 'app') and self.app:
+                import_action.triggered.connect(lambda: import_template(self.app))
+                add_folder_action.triggered.connect(self._on_add_folder)
+                add_template_action.triggered.connect(self._on_add_template)
+            else:
+                print("[WARNING] Table context menu: Cannot connect actions, self.app is not available.")
+                import_action.setEnabled(False)
+                add_folder_action.setEnabled(False)
+                add_template_action.setEnabled(False)
+            
+            menu.exec_(self.template_table_view.viewport().mapToGlobal(position))
+            return
+        
+        # If no items are selected, don't show the item context menu
+        if num_selected == 0:
+            return
+            
         # Determine template names for actions
         if is_multi_select := (num_selected > 1):
              names_to_process = [t.get('name') for t in selected_templates if t and t.get('name')]

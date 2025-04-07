@@ -615,56 +615,17 @@ class TemplateTableView(QTableView):
         drag.exec_(supportedActions, Qt.MoveAction)
 
     def mousePressEvent(self, event):
-        """
-        Override mousePressEvent to implement cmd/ctrl+click multi-selection behavior
-        that matches the grid view implementation.
-        """
-        # Save last position and modifier state
-        self._last_mouse_press_pos = event.pos()
-        modifiers = QApplication.keyboardModifiers()
-        self._is_cmd_ctrl_pressed = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier))
-        is_shift_pressed = bool(modifiers & Qt.ShiftModifier)
+        # Get the index at the click position
+        index = self.indexAt(event.pos())
         
-        # If this is a left click with cmd/ctrl pressed
-        if event.button() == Qt.LeftButton and self._is_cmd_ctrl_pressed:
-            # Get the index under the mouse
-            index = self.indexAt(event.pos())
-            if index.isValid():
-                # Get the current selection model
-                selection_model = self.selectionModel()
-                if selection_model:
-                    # Block signals temporarily to avoid recursion
-                    selection_model.blockSignals(True)
-                    
-                    # Get the actual row index
-                    row = index.row()
-                    
-                    # Check if the row is already selected
-                    is_selected = selection_model.isRowSelected(row, QModelIndex())
-                    
-                    # Toggle the selection state for this row
-                    if is_selected:
-                        selection_model.select(index, QItemSelectionModel.Deselect | QItemSelectionModel.Rows)
-                    else:
-                        selection_model.select(index, QItemSelectionModel.Select | QItemSelectionModel.Rows)
-                    
-                    # Always update the current index for keyboard navigation
-                    selection_model.setCurrentIndex(index, QItemSelectionModel.Current)
-                    
-                    # Unblock signals
-                    selection_model.blockSignals(False)
-                    
-                    # Force view update
-                    self.viewport().update()
-                    
-                    # Log for debugging
-                    print(f"[DEBUG] List View: Cmd/Ctrl+Click selection toggled for row {row}")
-                    
-                    # Handle the event and don't propagate
-                    event.accept()
-                    return
+        # Handle right-click on blank area (no valid index)
+        if event.button() == Qt.RightButton and not index.isValid():
+            # Let the parent class handle non-table click events (like context menu)
+            if hasattr(self, 'customContextMenuRequested'):
+                self.customContextMenuRequested.emit(event.pos())
+            return
         
-        # For all other cases, call the parent implementation
+        # For other cases, use the standard handler
         super().mousePressEvent(event)
 
 
