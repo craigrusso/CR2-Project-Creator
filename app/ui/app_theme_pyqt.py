@@ -395,6 +395,7 @@ def configure_styles(app):
         QCheckBox::indicator:checked {{
             background-color: {colors['accent']};
             border: 1px solid {colors['accent']};
+            image: url("/Users/craigrusso/SynologyDrive/SCRIPTS/CLAUSE PROJECT CREATOR/V4/app/assets/css/check.svg");
         }}
         QCheckBox::indicator:disabled {{
             border: 1px solid {colors['secondary_text']};
@@ -402,6 +403,7 @@ def configure_styles(app):
         }}
         QCheckBox::indicator:checked:disabled {{
             background-color: {colors['secondary_text']};
+            image: url("/Users/craigrusso/SynologyDrive/SCRIPTS/CLAUSE PROJECT CREATOR/V4/app/assets/css/check.svg");
         }}
     """
 
@@ -434,42 +436,46 @@ def configure_styles(app):
         
         return pixmap
     
-    # Install event filter to add checkmark to checkboxes
-    class CheckboxStyleFilter(QObject):
-        def __init__(self, parent=None):
-            super().__init__(parent)
+    # Create a custom checkbox style that adds the checkmark directly
+    class CheckboxStyle(QProxyStyle):
+        def __init__(self):
+            super().__init__()
             self.checkmark = create_checkmark_icon()
+        
+        def drawControl(self, element, option, painter, widget=None):
+            # First draw the checkbox normally
+            super().drawControl(element, option, painter, widget)
             
-        def eventFilter(self, obj, event):
-            from PyQt5.QtWidgets import QCheckBox
-            if isinstance(obj, QCheckBox) and event.type() == QEvent.Paint:
-                if obj.isChecked():
-                    # Get the current state of the checkbox
-                    painter = QPainter(obj)
-                    
+            # If this is a checkbox indicator and it's checked, draw our checkmark
+            if element == QStyle.CE_CheckBox or element == QStyle.CE_CheckBoxLabel:
+                if option.state & QStyle.State_On:  # If checked
                     # Get the indicator rect
-                    option = QStyle.QStyleOptionButton()
-                    option.initFrom(obj)
-                    if obj.isChecked():
-                        option.state |= QStyle.State_On
-                    else:
-                        option.state |= QStyle.State_Off
+                    rect = self.subElementRect(QStyle.SE_CheckBoxIndicator, option, widget)
                     
-                    # Get the indicator rect from style
-                    rect = obj.style().subElementRect(QStyle.SE_CheckBoxIndicator, option, obj)
+                    # Calculate position to center the checkmark in the indicator
+                    x = rect.x() + (rect.width() - self.checkmark.width()) // 2
+                    y = rect.y() + (rect.height() - self.checkmark.height()) // 2
                     
-                    # Draw the checkmark centered in the checkbox
-                    painter.drawPixmap(
-                        rect.x() + (rect.width() - self.checkmark.width()) // 2,
-                        rect.y() + (rect.height() - self.checkmark.height()) // 2,
-                        self.checkmark
-                    )
-                    return True  # Event handled
-            return False  # Let event propagate
+                    # Draw the checkmark
+                    painter.drawPixmap(x, y, self.checkmark)
+            
+        def drawPrimitive(self, element, option, painter, widget=None):
+            # If this is a checkbox indicator and it's checked, handle custom drawing
+            if element == QStyle.PE_IndicatorCheckBox and option.state & QStyle.State_On:
+                # Draw the blue background and border (already done by stylesheet)
+                super().drawPrimitive(element, option, painter, widget)
+                
+                # Draw our checkmark on top
+                rect = option.rect
+                x = rect.x() + (rect.width() - self.checkmark.width()) // 2
+                y = rect.y() + (rect.height() - self.checkmark.height()) // 2
+                painter.drawPixmap(x, y, self.checkmark)
+            else:
+                # For all other elements, use default drawing
+                super().drawPrimitive(element, option, painter, widget)
     
-    # Create and install the checkbox style filter
-    checkbox_filter = CheckboxStyleFilter()
-    app.installEventFilter(checkbox_filter)
+    # Install custom style for all checkboxes
+    app.setStyle(CheckboxStyle())
     
     # Install a global event filter to catch combo box popups
     popup_filter = ComboBoxPopupFilter()
