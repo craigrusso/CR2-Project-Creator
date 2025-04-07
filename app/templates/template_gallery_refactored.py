@@ -13,6 +13,7 @@ from .gallery_templates import GalleryTemplatesSetup
 from .gallery_events import GalleryEvents
 from app.core.import_export_manager import import_template
 from app.ui.views.template_table_view import TemplateTableView
+from app.templates.components.template_card import TemplateCard
 from app.templates.components.template_folder_card import TemplateFolderCard
 from app.templates.components.template_folder_list_item import TemplateFolderListItem
 from app.templates.components.menu_actions import ContextMenu  # Import ContextMenu for context menus
@@ -963,7 +964,7 @@ class TemplateGallery(QWidget):
                 no_folders_action.setEnabled(False)
 
             # --- Connect Actions ---
-            primary_template = selected_templates[0] if num_selected > 0 else None
+            primary_template = self.multi_selected_templates[0] if num_selected > 0 else None
             primary_name = primary_template.get('name') if primary_template else None
             
             if primary_name:
@@ -1385,7 +1386,7 @@ class TemplateGallery(QWidget):
                 )
 
         # --- Connect Actions ---
-        primary_template = selected_templates[0] if num_selected > 0 else None
+        primary_template = self.multi_selected_templates[0] if num_selected > 0 else None
         primary_name = primary_template.get('name') if primary_template else None
         
         if primary_name:

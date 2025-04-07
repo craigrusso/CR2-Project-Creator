@@ -931,7 +931,7 @@ def import_template(app, file_path=None):
                 template_data["cached_path"] = cache_dir
             
             # Import the template
-            success = app.template_manager.update_template(template_data)
+            success = app.template_manager.edit_template(template_data)
             
             if success:
                 QMessageBox.information(
