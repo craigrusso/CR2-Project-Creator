@@ -15,7 +15,7 @@ APP_CERT_IDENTITY="Apple Distribution: craig russo (5926DW86QY)"
 # Use the Installer certificate for the .pkg installer
 INSTALLER_CERT_IDENTITY="3rd Party Mac Developer Installer: craig russo (5926DW86QY)"
 # TARGET_ARCH="arm64" # Specified in setup.py and forced via arch command
-ENTITLEMENTS_FILE="entitlements.plist"
+ENTITLEMENTS_FILE="build-tools/entitlements/entitlements.plist"
 APP_VERSION="0.95" # Fetched from constants.py
 
 # --- Virtual Environment Path ---

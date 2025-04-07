@@ -8,7 +8,7 @@ import os
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt, QCoreApplication
 from app.core.app_module_pyqt import ProjectCreatorApp
-from app.core.app_config import APP_NAME, APP_VERSION, setup_dpi_awareness
+from app.config.app_config import APP_NAME, APP_VERSION, setup_dpi_awareness
 from app.ui.app_theme_pyqt import apply_dark_theme_to_template_section, force_app_palette, configure_styles
 from app.templates.template_manager_migration import TemplateManagerMigration
 from app.ui.tree_styling import apply_styling_to_all_tree_widgets

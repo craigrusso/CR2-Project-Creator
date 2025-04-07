@@ -8,7 +8,7 @@ SIGNING_IDENTITY_INTERNAL="Developer ID Application: craig russo (5926DW86QY)" #
 SIGNING_IDENTITY_APP="Developer ID Application: craig russo (5926DW86QY)"    # Use Developer ID for everything in this step
 # INSTALLER_IDENTITY="3rd Party Mac Developer Installer: craig russo (5926DW86QY)" # Not needed for zip
 # ENTITLEMENTS_FILE="app_store_entitlements.plist" # Use minimal/no entitlements for Developer ID signing initially
-ENTITLEMENTS_FILE="developer_id_entitlements.plist" # We'll create a basic one
+ENTITLEMENTS_FILE="build-tools/entitlements/developer_id_entitlements.plist" # Updated path to entitlements file
 
 # Check if the app exists
 if [ ! -d "$APP_PATH" ]; then
@@ -29,7 +29,7 @@ echo "Signing application bundle..."
 echo "Signing application bundle contents comprehensively..."
 
 # Find and sign all frameworks first (deepest first implicitly due to find)
-find "$APP_PATH/Contents" -depth -type d -name "*.framework" -print0 | while IFS= read -r -d $'\\0' framework; do
+find "$APP_PATH/Contents" -depth -type d -name "*.framework" -print0 | while IFS= read -r -d $'\0' framework; do
     # Check if it's a Mach-O binary first (frameworks directory might contain non-code files)
     codesign_target="$framework/Versions/Current/$(basename "$framework" .framework)"
     if [ ! -f "$codesign_target" ]; then
@@ -56,7 +56,7 @@ find "$APP_PATH/Contents" -depth -type d -name "*.framework" -print0 | while IFS
 done
 
 # Find and sign all dylibs, shared objects, and executables
-find "$APP_PATH/Contents" -type f \( -name "*.dylib" -o -name "*.so" -o -perm +111 \) -print0 | while IFS= read -r -d $'\\0' file; do
+find "$APP_PATH/Contents" -type f \( -name "*.dylib" -o -name "*.so" -o -perm +111 \) -print0 | while IFS= read -r -d $'\0' file; do
     # Exclude files within already signed frameworks/apps if possible? Maybe not needed with --force
     # Check if it's a Mach-O binary before signing
     if file "$file" | grep -qE 'Mach-O.*executable|Mach-O.*dylib|Mach-O.*bundle'; then
@@ -76,7 +76,7 @@ find "$APP_PATH/Contents" -type f \( -name "*.dylib" -o -name "*.so" -o -perm +1
 done
 
 # Find and sign helper apps
-find "$APP_PATH/Contents" -depth -type d -name "*.app" -print0 | while IFS= read -r -d $'\\0' helper_app; do
+find "$APP_PATH/Contents" -depth -type d -name "*.app" -print0 | while IFS= read -r -d $'\0' helper_app; do
     echo "Signing helper app: $helper_app"
     # Sign helper app with INTERNAL identity, NO specific entitlements needed usually for DevID unless hardened runtime etc.
     codesign --force --sign "$SIGNING_IDENTITY_INTERNAL" --timestamp --options runtime "$helper_app" || echo "Failed to sign helper app $helper_app"

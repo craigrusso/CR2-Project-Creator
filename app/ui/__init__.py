@@ -6,7 +6,7 @@ UI components and functionality for the application
 """
 
 # Import main UI components for easy access
-from app.ui.app_theme_pyqt import configure_styles, apply_dark_theme_to_template_section
+from app.ui.app_theme_pyqt import configure_styles, apply_dark_theme_to_template_section, force_app_palette
 from app.ui.color_scheme_pyqt import colors
 from app.ui.ui_components_pyqt import ScrollableFrame, ToolTip, CardFrame, SearchBox, TemplateFileCard
 
@@ -29,6 +29,7 @@ except ImportError as e:
 __all__ = [
     'configure_styles',
     'apply_dark_theme_to_template_section',
+    'force_app_palette',
     'colors',
     'ScrollableFrame',
     'ToolTip',
