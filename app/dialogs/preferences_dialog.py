@@ -184,15 +184,41 @@ def show_preferences_dialog(parent=None):
     caching_group.setStyleSheet(GROUPBOX_STYLE) # Apply the imported style
     caching_layout = QVBoxLayout(caching_group)
 
+    # Fix for checkbox styling - use direct styling to ensure checkmarks display properly
+    checkbox_direct_style = f"""
+        QCheckBox {{
+            color: {colors['text']};
+            spacing: 5px;
+        }}
+        
+        QCheckBox::indicator {{
+            width: 16px;
+            height: 16px;
+            border: 1px solid {colors['border']};
+            border-radius: 3px;
+            background-color: {colors['card_bg']};
+        }}
+        
+        QCheckBox::indicator:checked {{
+            background-color: {colors['accent']};
+            border: 1px solid {colors['accent']};
+            image: url(app/assets/css/check.svg);
+        }}
+        
+        QCheckBox::indicator:hover {{
+            border: 1px solid {colors['accent']};
+        }}
+    """
+
     enable_caching_check = QCheckBox("Enable file caching")
-    enable_caching_check.setStyleSheet(CHECKBOX_STYLE)
+    enable_caching_check.setStyleSheet(checkbox_direct_style)
     enable_caching_check.setChecked(cache_prefs.should_cache_files() if cache_prefs_available else True)
     enable_caching_check.setToolTip("Cache files used in templates for better performance")
     enable_caching_check.setEnabled(cache_prefs_available)
     caching_layout.addWidget(enable_caching_check)
 
     auto_clean_check = QCheckBox("Automatically clean cache periodically")
-    auto_clean_check.setStyleSheet(CHECKBOX_STYLE)
+    auto_clean_check.setStyleSheet(checkbox_direct_style)
     auto_clean_check.setChecked(cache_prefs.should_clean_cache() if cache_prefs_available else True)
     auto_clean_check.setToolTip("Remove old and unused cached files")
     auto_clean_check.setEnabled(cache_prefs_available)
