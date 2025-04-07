@@ -323,6 +323,27 @@ class GalleryEvents:
 
                 if save_success:
                     print(f"🔍 LISTENER: Successfully created template '{updated_template_name}'")
+                    
+                    # If we're in a folder, add the new template to the current folder
+                    if hasattr(gallery, 'current_folder') and gallery.current_folder:
+                        print(f"[DEBUG] Adding new template '{updated_template_name}' to current folder '{gallery.current_folder}'")
+                        
+                        template_manager = gallery.app.template_manager
+                        # Use the move_template_to_folder method which removes it from any other folders first
+                        if hasattr(template_manager, 'move_template_to_folder'):
+                            success = template_manager.move_template_to_folder(updated_template_name, gallery.current_folder)
+                            if success:
+                                print(f"[DEBUG] Successfully added template '{updated_template_name}' to folder '{gallery.current_folder}'")
+                            else:
+                                print(f"[DEBUG] Failed to add template '{updated_template_name}' to folder '{gallery.current_folder}'")
+                        # Fallback to add_to_folder if move_template_to_folder isn't available
+                        elif hasattr(template_manager, 'add_to_folder'):
+                            success = template_manager.add_to_folder(gallery.current_folder, updated_template_name)
+                            if success:
+                                print(f"[DEBUG] Successfully added template '{updated_template_name}' to folder '{gallery.current_folder}'")
+                            else:
+                                print(f"[DEBUG] Failed to add template '{updated_template_name}' to folder '{gallery.current_folder}'")
+                    
                     # Refresh the gallery view
                     if gallery and hasattr(gallery, 'populate_gallery'):
                         print("🔍 LISTENER: Forcing gallery refresh to show new template")
@@ -732,10 +753,48 @@ class GalleryEvents:
             gallery._handle_shift_arrow_selection(key)
             return True
                 
-        # Handle template deletion with backspace and delete keys
+        # Handle template and folder deletion with backspace and delete keys
         if key in (Qt.Key_Delete, Qt.Key_Backspace):
             print(f"🔍 LISTENER: Delete key pressed")
 
+            # First, check if a folder is selected
+            if hasattr(gallery, 'selected_folder') and gallery.selected_folder:
+                print(f"🔍 LISTENER: Folder selected for deletion: {gallery.selected_folder}")
+                
+                # Don't allow deleting default folders
+                if gallery.selected_folder in ["General", "Development", "Business"]:
+                    QMessageBox.warning(gallery, "Error", f"'{gallery.selected_folder}' is a default folder and cannot be deleted.")
+                    return True
+                    
+                # Delete folder without confirmation dialog
+                if (hasattr(gallery.app, 'template_manager') and 
+                    hasattr(gallery.app.template_manager, 'delete_folder')):
+                    success = gallery.app.template_manager.delete_folder(gallery.selected_folder)
+                    
+                    if success:
+                        print(f"🔍 LISTENER: Successfully deleted folder '{gallery.selected_folder}'")
+                        # Clear the selected folder
+                        gallery.selected_folder = None
+                        
+                        # Reload folders
+                        if hasattr(gallery.app.template_manager, 'load_folders'):
+                            gallery.app.template_manager.load_folders()
+                        
+                        # Refresh the gallery
+                        gallery.populate_gallery(force_refresh=True)
+                        
+                        # Show success message
+                        if hasattr(gallery.app, 'show_status_message'):
+                            gallery.app.show_status_message(f"Deleted folder", "success")
+                    else:
+                        print(f"🔍 LISTENER: Failed to delete folder '{gallery.selected_folder}'")
+                        # Show error message
+                        if hasattr(gallery.app, 'show_status_message'):
+                            gallery.app.show_status_message(f"Failed to delete folder", "error")
+                    
+                    return True
+            
+            # If no folder is selected, then check for template deletion
             # First, determine what we'll be deleting
             has_primary = hasattr(gallery, 'selected_template') and gallery.selected_template is not None
             has_multi = (hasattr(gallery, 'multi_selected_templates') and 
