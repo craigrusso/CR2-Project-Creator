@@ -395,14 +395,16 @@ def configure_styles(app):
         QCheckBox::indicator:checked {{
             background-color: {colors['accent']};
             border: 1px solid {colors['accent']};
-            image: url(app/assets/css/check.svg); /* Use the check icon */
+            /* Use a direct path for the image to ensure it loads correctly */
+            image: url({app.applicationDirPath() + "/app/assets/css/check.svg"});
         }}
         QCheckBox::indicator:disabled {{
             border: 1px solid {colors['secondary_text']};
             background-color: {colors['bg']};
         }}
         QCheckBox::indicator:checked:disabled {{
-            image: url(app/assets/css/check_disabled.svg); /* Optional: Add a disabled check icon if needed */
+            /* Use a direct path for the disabled check icon if it exists */
+            image: url({app.applicationDirPath() + "/app/assets/css/check_disabled.svg"});
             background-color: {colors['secondary_text']};
         }}
     """

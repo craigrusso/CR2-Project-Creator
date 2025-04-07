@@ -202,7 +202,15 @@ def show_preferences_dialog(parent=None):
         QCheckBox::indicator:checked {{
             background-color: {colors['accent']};
             border: 1px solid {colors['accent']};
-            image: url(app/assets/css/check.svg);
+        }}
+        
+        QCheckBox::indicator:checked::after {{
+            content: "✓";
+            color: white;
+            position: absolute;
+            left: 3px;
+            top: -2px;
+            font-size: 14px;
         }}
         
         QCheckBox::indicator:hover {{
