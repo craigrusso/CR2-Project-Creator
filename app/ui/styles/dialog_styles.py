@@ -59,15 +59,7 @@ CHECKBOX_STYLE = f"""
     QCheckBox::indicator:checked {{
         background-color: {colors['accent']};
         border: 1px solid {colors['accent']};
-    }}
-    
-    QCheckBox::indicator:checked::after {{
-        content: "X";
-        color: white;
-        position: absolute;
-        left: 4px;
-        top: -1px;
-        font-size: 14px;
+        image: url(app/assets/css/check.svg);
     }}
     
     QCheckBox::indicator:hover {{

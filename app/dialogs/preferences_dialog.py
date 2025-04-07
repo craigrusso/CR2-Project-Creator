@@ -24,44 +24,8 @@ def show_preferences_dialog(parent=None):
     dialog.setMinimumWidth(500)
     base_style = f"background-color: {colors['bg']}; color: {colors['text']};"
     
-    # Define improved Checkbox QSS (using colors dict)
-    checkbox_qss = f'''
-        QCheckBox {{
-            spacing: 5px; 
-            color: {colors['text']};
-        }}
-        
-        /* Unchecked state */
-        QCheckBox::indicator {{
-            width: 16px;
-            height: 16px;
-            border: 1px solid {colors.get('border', '#555555')};
-            background-color: {colors.get('card_bg', '#404040')};
-            border-radius: 3px;
-        }}
-        
-        /* Checked state - X in center */
-        QCheckBox::indicator:checked {{
-            background-color: {colors['accent']};
-            border: 1px solid {colors['accent']};
-        }}
-        
-        QCheckBox::indicator:checked::after {{
-            content: "X";
-            color: white;
-            position: absolute;
-            left: 4px;
-            top: -1px;
-            font-size: 14px;
-        }}
-        
-        /* Hover states */
-        QCheckBox::indicator:hover {{
-            border: 1px solid {colors['accent']};
-        }}
-    '''
-    # Combine base style with checkbox style
-    dialog.setStyleSheet(base_style + checkbox_qss)
+    # Apply the base style without overriding the CHECKBOX_STYLE which is imported
+    dialog.setStyleSheet(base_style)
 
     main_layout = QVBoxLayout(dialog)
     tabs = QTabWidget()
@@ -105,7 +69,7 @@ def show_preferences_dialog(parent=None):
             margin-bottom: -1px; 
         }}
     '''
-    tabs.setStyleSheet(tab_qss) 
+    tabs.setStyleSheet(tab_qss)
 
     # --- Storage Location Tab (MODIFIED) ---
     storage_tab = QWidget()
