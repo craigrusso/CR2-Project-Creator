@@ -665,7 +665,7 @@ class TemplateGallery(QWidget):
         # Get categories from project_type_manager (preferred way)
         categories = set()
         
-        if hasattr(self.app, 'template_manager'):
+        if hasattr(self, 'app') and hasattr(self.app, 'template_manager'):
             # Get categories from project type manager if available
             if hasattr(self.app.template_manager, 'project_type_manager'):
                 project_types = self.app.template_manager.project_type_manager.get_all_project_types()
@@ -678,7 +678,7 @@ class TemplateGallery(QWidget):
                 print(f"Found {len(category_list)} categories from get_categories")
                 
         # If no categories found yet, extract from templates as last resort
-        if not categories and hasattr(self.app, 'template_manager') and hasattr(self.app.template_manager, 'templates'):
+        if not categories and hasattr(self, 'app') and hasattr(self.app, 'template_manager') and hasattr(self.app.template_manager, 'templates'):
             templates = self.app.template_manager.templates
             
             # Handle templates as dict or list
@@ -818,74 +818,6 @@ class TemplateGallery(QWidget):
         # Let parent handle remaining events
         QWidget.mousePressEvent(self, event)
         
-    def _update_template_card_selection(self):
-        """Update all template card selection states based on current selection"""
-        # Make sure we have cards
-        if not hasattr(self, 'template_cards') or not self.template_cards:
-            return
-            
-        print(f"🔍 LISTENER: Updating selection state for {len(self.template_cards)} template cards")
-        
-        # Check if we're in multi-selection mode
-        in_multi_select = getattr(self, 'is_multi_selecting', False)
-        print(f"🔍 LISTENER: In multi-selection mode: {in_multi_select}")
-        
-        # Track the primary selection for debugging
-        primary_selection = None
-        if hasattr(self, 'selected_template') and self.selected_template:
-            primary_selection = self.selected_template.get('name', 'Unknown') if hasattr(self.selected_template, 'get') else str(self.selected_template)
-        
-        print(f"🔍 LISTENER: Primary selection: {primary_selection}")
-        print(f"🔍 LISTENER: Multi-selection count: {len(self.multi_selected_templates) if hasattr(self, 'multi_selected_templates') else 0}")
-            
-        # Update each card's selection state
-        for card in self.template_cards:
-            # Must have template property and set_selected method
-            if hasattr(card, 'template') and hasattr(card, 'set_selected'):
-                # Get card's template name for debugging
-                card_name = card.template.get('name', 'Unknown') if hasattr(card.template, 'get') else str(card.template)
-                
-                # Determine selection state
-                is_primary_selected = False
-                is_multi_selected = False
-                
-                # Check if this card's template is the selected one (primary selection)
-                if hasattr(self, 'selected_template') and self.selected_template:
-                    is_primary_selected = (card.template == self.selected_template)
-                
-                # Check for multi-selection
-                if hasattr(self, 'multi_selected_templates') and self.multi_selected_templates:
-                    is_multi_selected = (card.template in self.multi_selected_templates)
-                
-                # First update multi-selection state if supported
-                if hasattr(card, 'set_multi_selected'):
-                    card.set_multi_selected(is_multi_selected)
-                    if is_multi_selected:
-                        print(f"🔍 LISTENER: Setting '{card_name}' as multi-selected")
-                        
-                # Set the primary selection state:
-                # 1. If it's the primary selected template, select it
-                # 2. If it's in multi-selection list, select it 
-                # 3. Otherwise deselect only if not in multi-selection mode
-                should_be_selected = is_primary_selected or is_multi_selected
-                current_selected = getattr(card, 'selected', False)
-                
-                # In multi-selection mode, we only change selection state from false→true, never true→false
-                if in_multi_select:
-                    if should_be_selected:
-                        # Only set if it should be selected
-                        card.set_selected(True)
-                        print(f"🔍 LISTENER: Setting '{card_name}' as selected in multi-select mode")
-                    # Skip deselection in multi-select mode
-                else:
-                    # Standard mode - set selection state directly
-                    if should_be_selected:
-                        print(f"🔍 LISTENER: Setting '{card_name}' as selected")
-                        card.set_selected(True)
-                    else:
-                        print(f"🔍 LISTENER: Setting '{card_name}' as NOT selected")
-                        card.set_selected(False)
-    
     def mouseReleaseEvent(self, event):
         """Handle mouse release in the gallery without interfering with card selections"""
         if event.button() == Qt.LeftButton:
@@ -922,44 +854,155 @@ class TemplateGallery(QWidget):
 
     # Context Menu Method
     def _show_gallery_context_menu(self, position):
-        """Show context menu when right-clicking the gallery background"""
-        # Determine if the click was on an item or background
-        # In grid view, check if click is outside any card bounding box (simplification: assume background if not on a known card area)
-        # In list view, check template_list_widget.itemAt(position)
-        # For simplicity, we'll initially assume right-click on the container is background
-        # (A more robust check would involve iterating items/cards and their geometry)
-        
-        # Check if the click is on a specific item (folder or template)
-        item_clicked = False
-        # Check folder cards
-        for card in self.folder_cards:
-            if card.geometry().contains(self.mapFromGlobal(self.mapToGlobal(position))):
-                item_clicked = True
-                break
-        # Check template cards
-        if not item_clicked:
-            for card in self.template_cards:
-                 if card.geometry().contains(self.mapFromGlobal(self.mapToGlobal(position))):
-                     item_clicked = True
-                     break
-                     
-        # TODO: Add check for list view items if list view is active
+        # Determine the widget clicked (could be background or a card)
+        widget = self.childAt(position)
+        parent_widget = self # Default parent for the menu
+        template_card = None
+        template_name = None
+        folder_card = None
+        folder_name = None
 
-        # Only show the 'Import Template' menu if clicking on the background
-        if not item_clicked:
-            menu = QMenu(self)
-            import_action = QAction("Import Template...", self)
+        # Traverse up to find the TemplateCard or TemplateFolderCard
+        temp_widget = widget
+        while temp_widget is not None and temp_widget != self:
+            if isinstance(temp_widget, TemplateCard):
+                template_card = temp_widget
+                template_name = template_card.template_name() if template_card else None
+                parent_widget = template_card # Anchor menu to card
+                break
+            if isinstance(temp_widget, TemplateFolderCard):
+                folder_card = temp_widget
+                folder_name = folder_card.folder_name # Assuming folder_card has this attribute
+                parent_widget = folder_card # Anchor menu to card
+                break
+            temp_widget = temp_widget.parent()
+
+        # Get global position for the menu
+        global_position = self.mapToGlobal(position)
+
+        # --- Template Card Context Menu ---
+        if template_card and template_name:
+            print(f"DEBUG: Showing context menu for template card: '{template_name}'")
+            menu = ContextMenu(parent_widget) # Use the custom menu
+            
+            # Determine if multi-select is active and if this card is part of it
+            num_selected = len(self.multi_selected_templates) if hasattr(self, 'multi_selected_templates') else 0
+            # Multi-select is true if > 1 selected, OR if 1 is selected but it's NOT the card clicked on
+            is_multi_select = num_selected > 1 or (num_selected == 1 and self.multi_selected_templates[0].get('name') != template_name)
+            print(f"DEBUG: Multi-select active: {is_multi_select}, Count: {num_selected}")
+
+            # Determine which template names to process (single or multi)
+            if is_multi_select:
+                names_to_process = [t.get('name') for t in self.multi_selected_templates if t and t.get('name')]
+                # Ensure the right-clicked card's template is included if multi-select is active
+                if template_name not in names_to_process:
+                     names_to_process.append(template_name) 
+            else:
+                names_to_process = [template_name]
+            print(f"DEBUG: Names to process for Move/Delete: {names_to_process}")
+
+            # --- Standard Actions ---
+            edit_action = menu.addAction("Edit")
+            
+            # Use a helper function for deletion to handle single/multi logic clearly
+            def delete_selected():
+                 print(f"DEBUG: Context Menu Delete Triggered for: {names_to_process}")
+                 GalleryEvents.on_delete_template(self, names_to_process)
+
+            # Define the text for the delete action based on selection
+            delete_action_text = "Delete Selected Templates" if is_multi_select else "Delete Template"
+
+            # Add Delete action styled in red - Match position to List View
+            menu.addRedDeleteAction(self, callback=delete_selected, text=delete_action_text)
+            
+            # Always add Duplicate and Export options (like in List View)
+            duplicate_action = menu.addAction("Duplicate")
+            export_action = menu.addAction("Export Template...")
+            
+            # Disable Edit action if multi-select
+            edit_action.setEnabled(not is_multi_select)
+            # Disable Duplicate and Export if multi-select (matching List View behavior)
+            duplicate_action.setEnabled(not is_multi_select)
+            export_action.setEnabled(not is_multi_select)
+
+            # --- Move to Folder Submenu ---
+            menu.addSeparator()
+            move_menu = menu.addMenu("Move to...")
+            folders = self.template_manager.get_folders() if self.template_manager else []
+
+            # Add "Root (No Folder)" option
+            root_action = move_menu.addAction("Root (No Folder)")
+            root_action.triggered.connect(lambda: GalleryEvents.on_move_template_to_folder(
+                self, names_to_process, 'root' # Pass the list of names
+            ))
+            move_menu.addSeparator()
+
+            # Add folder options
+            if folders:
+                folder_names_to_iterate = []
+                if isinstance(folders, dict):
+                    folder_names_to_iterate = sorted(folders.keys())
+                elif isinstance(folders, list):
+                    folder_names_to_iterate = sorted(folders)
+                
+                for folder_name_iter in folder_names_to_iterate:
+                    move_action = move_menu.addAction(folder_name_iter)
+                    # Ensure lambda captures current folder name and correct names list
+                    move_action.triggered.connect(lambda checked, fn=folder_name_iter, ntp=list(names_to_process): \
+                        GalleryEvents.on_move_template_to_folder(self, ntp, fn))
+            else:
+                no_folders_action = move_menu.addAction("No folders available")
+                no_folders_action.setEnabled(False)
+
+            # --- Connect Actions ---
+            primary_template = selected_templates[0] if num_selected > 0 else None
+            primary_name = primary_template.get('name') if primary_template else None
+            
+            if primary_name:
+                 edit_action.triggered.connect(lambda: self._on_edit_template(primary_name))
+                 duplicate_action.triggered.connect(lambda: self._on_duplicate_template(primary_name))
+                 export_action.triggered.connect(lambda: GalleryEvents.on_export_template(self, primary_name))
+
+            # --- Show Menu --- 
+            menu.exec_(global_position)
+
+        # --- Folder Card Context Menu ---
+        elif folder_card and folder_name:
+            print(f"DEBUG: Showing context menu for folder card: '{folder_name}'")
+            menu = ContextMenu(parent_widget) # Use the custom menu
+            # TODO: Add folder-specific actions (Rename, Delete Folder?)
+            rename_action = menu.addAction("Rename")
+            # delete_folder_action = menu.addAction("Delete Folder") # Consider using addRedDeleteAction
+            rename_action.triggered.connect(folder_card._start_rename) # Trigger rename on the card
+            
+            # Placeholder for delete action
+            menu.addSeparator()
+            def delete_this_folder():
+                GalleryEvents.on_delete_folder(self, folder_name) # Pass name
+            menu.addRedDeleteAction(self, callback=delete_this_folder, text="Delete Folder")
+
+            menu.exec_(global_position)
+
+        # --- Background Context Menu ---
+        else:
+            print("DEBUG: Showing context menu for gallery background")
+            menu = ContextMenu(parent_widget) # Use the custom menu
+            import_action = menu.addAction("Import Template...")
+            add_folder_action = menu.addAction("Add Folder")
+            add_template_action = menu.addAction("Add Template")
+            
             # Ensure self.app exists and is valid
             if hasattr(self, 'app') and self.app:
                 import_action.triggered.connect(lambda: import_template(self.app))
+                add_folder_action.triggered.connect(self._on_add_folder)
+                add_template_action.triggered.connect(self._on_add_template)
             else:
-                print("[WARNING] Gallery context menu: Cannot connect import action, self.app is not available.")
+                print("[WARNING] Gallery context menu: Cannot connect actions, self.app is not available.")
                 import_action.setEnabled(False)
+                add_folder_action.setEnabled(False)
+                add_template_action.setEnabled(False)
             
-            menu.addAction(import_action)
-            menu.exec_(self.mapToGlobal(position))
-        # If an item was clicked, let the item's own context menu handle it (if it has one)
-        # Otherwise, do nothing for right-clicks on items without specific context menus.
+            menu.exec_(global_position)
 
     def _on_sort_column(self, field):
         """Sort the templates list by the given field"""
@@ -1223,7 +1266,7 @@ class TemplateGallery(QWidget):
         table_view = self.template_table_view
         selected_indexes = table_view.selectionModel().selectedRows() # Get selected row indexes (Column 0)
         
-        template_names = []
+        selected_templates = []
         if selected_indexes:
              proxy_model = table_view.model()
              source_model = proxy_model.sourceModel()
@@ -1234,124 +1277,119 @@ class TemplateGallery(QWidget):
                  # Get item from source model
                  name_item = source_model.item(source_index.row(), 0) # Assuming Name is column 0
                  if name_item:
-                     template_names.append(name_item.text())
+                     template_name = name_item.text()
+                     template_data = self.template_manager.get_template_by_name(template_name)
+                     if template_data:
+                         selected_templates.append(template_data)
 
-        if not template_names:
-            print("DEBUG: Table context menu requested, but no rows selected.")
-            # Optionally show a generic menu (e.g., Add Template) or do nothing
-            self._show_gallery_context_menu(table_view.mapToGlobal(position)) # Fallback to gallery menu
-            return
+        num_selected = len(selected_templates)
+        print(f"DEBUG: Showing table context menu for: {[t.get('name') for t in selected_templates]}")
+        print(f"DEBUG: Number of selected templates for context menu: {num_selected}")
+
+        if num_selected == 0:
+            return # Don't show menu if nothing is selected
+
+        # Use the custom ContextMenu for consistent styling
+        menu = ContextMenu(self.template_table_view)
         
-        print(f"DEBUG: Showing table context menu for: {template_names}")
-        print(f"DEBUG: Number of selected templates for context menu: {len(template_names)}")
-        menu = ContextMenu(self)
+        # Determine template names for actions
+        if is_multi_select := (num_selected > 1):
+             names_to_process = [t.get('name') for t in selected_templates if t and t.get('name')]
+        else:
+             # If single select, use the primary template's name
+             primary_template = selected_templates[0] if selected_templates else None
+             names_to_process = [primary_template.get('name')] if primary_template and primary_template.get('name') else []
         
-        # --- Actions ---
-        if len(template_names) == 1:
-            template_name = template_names[0]
-            edit_action = QAction("Edit", self)
-            edit_action.triggered.connect(lambda: self._on_edit_template(template_name=template_name))
-            menu.addAction(edit_action)
-
-            # Duplicate Template action
-            duplicate_action = QAction("Duplicate", self)
-            duplicate_action.triggered.connect(lambda: self._on_duplicate_template(template_name=template_name))
-            menu.addAction(duplicate_action)
-
-            # Export Template action
-            export_action = QAction("Export Template...", self) # Match grid view text
-            export_action.triggered.connect(lambda: GalleryEvents.on_export_template(self, template_name))
-            menu.addAction(export_action)
-
-            # Rename Template action - Assuming GalleryEvents handles this based on grid view logic
-            # if hasattr(GalleryEvents, 'on_rename_template'):
-            #     rename_action = QAction("Rename", self)
-            #     rename_action.triggered.connect(lambda: GalleryEvents.on_rename_template(self, template_name))
-            #     menu.addAction(rename_action)
-
-            menu.addSeparator()
-
-        # Move to... (Submenu) - For single or multiple items
-        move_menu = menu.addMenu("Move to...") # Renamed submenu
-        folders = self.template_manager.get_folders() if self.template_manager else []
-
-        # Add "Root (No Folder)" option - This triggers removal from the current folder
-        if self.current_folder: # Only show Root if currently in a folder
-             root_action = QAction("Root (No Folder)", self)
-             # Connect to the new handler method, passing the list of names
-             root_action.triggered.connect(lambda checked=False, names=list(template_names):
-                 self._handle_remove_templates_from_current_folder(names))
-             move_menu.addAction(root_action)
-             if folders: # Add separator only if other folders exist
-                 move_menu.addSeparator()
-
-        if folders:
-            for folder_name in sorted(folders):
-                # Exclude the current folder from the list of destinations
-                if folder_name == self.current_folder:
-                    continue
-                move_action = QAction(folder_name, self)
-                # Use lambda with default args to capture current names and folder
-                move_action.triggered.connect(lambda checked=False, names=list(template_names), fn=folder_name:
-                    GalleryEvents.on_move_template_to_folder(self, names, fn))
-                move_menu.addAction(move_action)
-        elif not self.current_folder: # If no folders exist AND not in a folder, disable Move menu
-             move_menu.setEnabled(False)
-
-        menu.addSeparator() # Separator before delete
-
-        # Delete action (works for single or multiple)
-        delete_text = f"Delete Template" if len(template_names) == 1 else f"Delete {len(template_names)} Templates"
-
-        # Define a helper function to handle deletion of multiple items
+        # --- Standard Actions (Consistent with Grid View) ---
+        edit_action = menu.addAction("Edit")
+        
+        # Use a helper function for deletion to handle single/multi logic clearly
         def delete_selected():
-            print(f"DEBUG: Deleting templates: {template_names}")
-            # Confirm deletion before proceeding
-            confirm = QMessageBox.question(
-                self,
-                "Delete Templates",
-                f"Are you sure you want to delete {len(template_names)} selected templates?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            if confirm == QMessageBox.Yes:
-                for name in template_names:
-                    # Call the existing single-delete method for each selected template
-                    # Ensure GalleryEvents handles the actual deletion logic robustly
-                    if hasattr(GalleryEvents, 'on_delete_template'):
-                         GalleryEvents.on_delete_template(self, name)
-                    else:
-                         # Fallback or log error if handler missing
-                         print(f"[ERROR] Delete handler 'GalleryEvents.on_delete_template' not found.")
-                         self._on_delete_template(template_name=name) # Try original fallback
+             print(f"DEBUG: Context Menu Delete Triggered for: {names_to_process}")
+             GalleryEvents.on_delete_template(self, names_to_process)
+        
+        # Define the text for the delete action based on selection
+        delete_action_text = "Delete Selected Templates" if is_multi_select else "Delete Template"
+        
+        # Add Delete action styled in red - MOVED TO MATCH GRID VIEW ORDER
+        menu.addRedDeleteAction(self, callback=delete_selected, text=delete_action_text)
+        
+        # Always add Duplicate and Export Template options (consistent with Grid View)
+        duplicate_action = menu.addAction("Duplicate")
+        export_action = menu.addAction("Export Template...")
+        
+        # Disable Edit action if multi-select
+        edit_action.setEnabled(not is_multi_select)
+        # Disable Duplicate and Export if multi-select (matching Grid View behavior)
+        duplicate_action.setEnabled(not is_multi_select)
+        export_action.setEnabled(not is_multi_select)
 
-                # Optionally refresh gallery after deletion
-                self.populate_gallery(force_refresh=True)
-                # Optionally show status message
-                if hasattr(self.app, 'show_status_message'):
-                    self.app.show_status_message(f"Deleted {len(template_names)} templates", "success")
+        # Add separator (before Move To)
+        menu.addSeparator()
+
+        # --- Move to Folder Submenu ---
+        move_menu = menu.addMenu("Move to...")
+
+        # Determine template names for move action
+        # Ensure names_to_process is defined before being used in lambdas
+        if is_multi_select:
+             names_to_process = [t.get('name') for t in selected_templates if t and t.get('name')]
+        else:
+             # If single select, use the primary template's name
+             primary_template = selected_templates[0] if selected_templates else None
+             names_to_process = [primary_template.get('name')] if primary_template and primary_template.get('name') else []
+
+        # Add "Root (No Folder)" option - ALWAYS add this if items are selected
+        root_action = move_menu.addAction("Root (No Folder)")
+        # Ensure names_to_process is captured correctly by the lambda
+        root_action.triggered.connect(lambda checked, ntp=list(names_to_process): GalleryEvents.on_move_template_to_folder(
+            self, ntp, 'root'
+        ))
+        # Enable based on whether items are selected, not if in folder
+        root_action.setEnabled(bool(names_to_process)) 
+
+        # Add separator if folders exist
+        folders = self.template_manager.get_folders() if hasattr(self.template_manager, 'get_folders') else []
+        if folders:
+             move_menu.addSeparator()
+
+        # Get available folders and iterate
+        if folders:
+            folder_names_to_iterate = []
+            if isinstance(folders, dict):
+                folder_names_to_iterate = sorted(folders.keys())
+            elif isinstance(folders, list):
+                folder_names_to_iterate = sorted(folders) # Assume list of names
             else:
-                 print(f"DEBUG: Deletion cancelled for {template_names}")
+                print(f"[WARNING] _show_table_context_menu: Unexpected type for folders: {type(folders)}")
+                folder_names_to_iterate = []
+            
+            # Iterate over the determined list of folder names
+            for folder_name in folder_names_to_iterate:
+                # FIX: Explicitly skip the CURRENT folder as a destination
+                if self.current_folder and folder_name == self.current_folder:
+                     continue
+                      
+                folder_action = move_menu.addAction(folder_name)
+                # Ensure names_to_process is captured correctly by the lambda
+                folder_action.triggered.connect(lambda checked, name=folder_name, ntp=list(names_to_process): 
+                    GalleryEvents.on_move_template_to_folder(self, ntp, name)
+                )
 
-
-        # Use addRedDeleteAction for proper styling of the delete option
-        menu.addRedDeleteAction(
-            parent=self,
-            callback=delete_selected, # Use the helper function
-            text=delete_text
-        )
+        # --- Connect Actions ---
+        primary_template = selected_templates[0] if num_selected > 0 else None
+        primary_name = primary_template.get('name') if primary_template else None
+        
+        if primary_name:
+             edit_action.triggered.connect(lambda: self._on_edit_template(primary_name))
+             # Connect duplicate/export only if they were created
+             duplicate_action.triggered.connect(lambda: self._on_duplicate_template(primary_name))
+             export_action.triggered.connect(lambda: GalleryEvents.on_export_template(self, primary_name))
         
         # --- Show Menu --- 
-        global_position = table_view.viewport().mapToGlobal(position)
-        menu.exec_(global_position)
-    # ----------------------------------------------
+        menu.exec_(self.template_table_view.viewport().mapToGlobal(position))
 
-    # Additional methods and properties
-    # ... (keep the existing methods and properties)
-    # ...
-    # ... 
-
-    # --- Unified Selection Handler ---
+    # --- Unified Selection Handler (Restored) ---
     def handle_template_item_press(self, template, is_modifier_click):
         """Handles clicks on template items (cards or list rows) for selection."""
         template_name = template.get('name') if isinstance(template, dict) else None
@@ -1367,59 +1405,45 @@ class TemplateGallery(QWidget):
 
         if not is_modifier_click:
             # --- Single Click (No Modifiers) ---
-            # Only clear multi-selection if the clicked item WASN'T already part of it.
-            # This allows starting a drag on a multi-selected group even if the modifier key
-            # was released before the drag starts.
             if not is_currently_multi_selected:
                  self.multi_selected_templates = []
                  print(f"🔍 LISTENER: Single click on non-multi-selected item - clearing multi-select.")
             else:
                  print(f"🔍 LISTENER: Single click on multi-selected item - preserving multi-select for potential drag.")
                  
-            # Set this template as the primary selection
             self.selected_template = template
             print(f"🔍 LISTENER: Single click - setting primary selection to '{template_name}'")
 
         else:
             # --- Modifier Click (Ctrl/Cmd or Shift) ---
             if is_currently_primary_selected and len(self.multi_selected_templates) <= 1:
-                 # If clicking the already primary-selected item with a modifier,
-                 # start multi-selection with this item.
                  if template not in self.multi_selected_templates:
                       self.multi_selected_templates.append(template)
                  print(f"🔍 LISTENER: Modifier click on primary - starting multi-select with '{template_name}'")
             elif is_currently_multi_selected:
-                 # If clicking an already multi-selected item, deselect it
                  self.multi_selected_templates.remove(template)
-                 # If this was also the primary selection, clear primary
                  if is_currently_primary_selected:
                       self.selected_template = None
                  print(f"🔍 LISTENER: Modifier click - deselecting '{template_name}' from multi-select")
             else:
-                 # --- Modifier click on a NEW item --- 
-                 # Add the new item to the multi-selection list
                  if template not in self.multi_selected_templates:
                       self.multi_selected_templates.append(template)
-                 # IMPORTANT: DO NOT change self.selected_template here.
-                 # Keep the original primary selection unless a non-modifier click occurs.
-                 # This allows adding multiple items while preserving the initial anchor.
                  print(f"🔍 LISTENER: Modifier click - adding '{template_name}' to multi-select")
-                 # If this is the *second* item selected (first modifier click after initial click),
-                 # ensure the *original* primary selection is also in the multi-select list.
                  if len(self.multi_selected_templates) == 1 and self.selected_template and self.selected_template not in self.multi_selected_templates:
                      self.multi_selected_templates.insert(0, self.selected_template)
                      print(f"🔍 LISTENER: Ensuring original primary '{self.selected_template.get('name')}' is in multi-select")
 
-        # Update UI based on new selection state
         self._update_selection_ui()
-
-        # Emit signals as needed
         self.template_selected.emit(self.selected_template if self.selected_template else {}) # Emit primary selection
 
     # --- End Unified Selection Handler ---
-
+    
+    # --- Update Selection UI (Restored) ---
     def _update_selection_ui(self):
         """Updates the visual selection state of all items (cards/rows)."""
+        from PyQt5.QtCore import QModelIndex, QItemSelectionModel, Qt
+        from PyQt5.QtWidgets import QAbstractItemView
+        
         print(f"🔍 LISTENER: Updating template selection UI")
         is_multi_select_mode = len(self.multi_selected_templates) > 1
         primary_selected_name = self.selected_template.get('name') if self.selected_template else None
@@ -1442,7 +1466,6 @@ class TemplateGallery(QWidget):
                  print(f"🔍 LISTENER: Setting '{card_template_name}' as selected")
                  card.set_selected(True)
             else:
-                 # Only deselect if not part of the multi-selection group
                  if not is_multi:
                      print(f"🔍 LISTENER: Setting '{card_template_name}' as NOT selected")
                      card.set_selected(False)
@@ -1451,24 +1474,21 @@ class TemplateGallery(QWidget):
         if self.template_table_view and self.template_table_view.isVisible():
             model = self.template_table_view.model() # Use the proxy model
             selection_model = self.template_table_view.selectionModel()
-            if not selection_model:
-                print("WARNING: No selection model found for table view")
+            if not model or not selection_model:
+                print("WARNING: No model or selection model found for table view during UI update")
                 return
 
-            # Block signals to prevent recursive calls during manual selection update
             selection_model.blockSignals(True)
             selection_model.clear() # Clear existing selection first
             print(f"🔍 LISTENER (UI Update): Cleared table selection model.")
 
-            # Select rows corresponding to the multi_selected_templates OR the primary selection
-            rows_to_select = []
             primary_row_index = -1 # Track the row index of the primary selection
 
             for row in range(model.rowCount()):
                 index = model.index(row, 0) # Get index for the Name column
+                if not index.isValid(): continue
                 item_name = model.data(index, Qt.DisplayRole)
 
-                # Check if this item should be selected (either primary or multi-selected)
                 should_select_row = False
                 if item_name == primary_selected_name:
                      should_select_row = True
@@ -1479,166 +1499,44 @@ class TemplateGallery(QWidget):
                      print(f"🔍 LISTENER (UI Update): Marking row {row} ({item_name}) for selection (Multi).")
 
                 if should_select_row:
-                    # Select the entire row
                     selection_model.select(index, QItemSelectionModel.Select | QItemSelectionModel.Rows)
                     print(f"🔍 LISTENER (UI Update): Selected row {row} in table model.")
 
-            # Ensure the primary selected item is also the current index for focus/highlight
             if primary_row_index != -1:
                  primary_model_index = model.index(primary_row_index, 0)
-                 self.template_table_view.setFocus() # Ensure table has focus before setting index/scrolling
-                 self.template_table_view.setCurrentIndex(primary_model_index)
-                 print(f"🔍 LISTENER (UI Update): Set current table index to row {primary_row_index}.")
-                 self.template_table_view.scrollTo(primary_model_index, QAbstractItemView.PositionAtCenter) # Scroll to selected
+                 if primary_model_index.isValid():
+                     self.template_table_view.setFocus() # Ensure table has focus before setting index/scrolling
+                     self.template_table_view.setCurrentIndex(primary_model_index)
+                     print(f"🔍 LISTENER (UI Update): Set current table index to row {primary_row_index}.")
+                     self.template_table_view.scrollTo(primary_model_index, QAbstractItemView.PositionAtCenter) # Scroll to selected
             else:
                  self.template_table_view.setCurrentIndex(QModelIndex()) # Clear current index if no primary selection
                  print(f"🔍 LISTENER (UI Update): Cleared current table index.")
 
-            # Unblock signals
             selection_model.blockSignals(False)
             print(f"🔍 LISTENER (UI Update): Unblocked table selection signals.")
 
         print(f"DEBUG: Finished updating selection UI")
-
-        # --- FIX: Unblock signals --- 
-        self.template_table_view.selectionModel().blockSignals(False)
-        # --------------------------
-
-    def _on_folder_card_clicked(self, folder_name):
-        """Handle clicks on folder cards."""
-        # Implement the logic to handle folder card clicks
-        print(f"🔍 LISTENER: Folder card clicked: {folder_name}")
-        # This method should be implemented to handle folder card clicks
-
-    # ... (keep the existing methods and properties)
-    # ...
-    # ... 
-
-    # --- Add Handler for Duplication ---
-    def _on_duplicate_template(self, template_name=None):
-        """Handles the request to duplicate a template."""
-        print(f"[DEBUG GALLERY HANDLER] _on_duplicate_template called for '{template_name}'")
-        if not template_name:
-            print("[WARNING] Duplicate template requested without a name.")
-            return
-
-        print(f"[DEBUG] Gallery: Duplicate request for template '{template_name}'")
-        try:
-            # MODIFIED: Handle tuple return (success, result_data)
-            success, result_data = self.app.template_manager.template_io.duplicate_template(template_name)
-            if success:
-                new_name = result_data # result_data is the new name string
-                print(f"[INFO] Gallery: Successfully duplicated template '{template_name}' as '{new_name}'")
-                # Refresh the gallery to show the new template
-                self.populate_gallery(force_refresh=True)
-
-                # --- NEW: Select the duplicated template AFTER population ---
-                try:
-                    # Ensure templates are loaded/accessible to find the new one
-                    # MODIFIED: Use template_io for get_template
-                    new_template_data = self.app.template_manager.template_io.get_template(new_name)
-                    if new_template_data:
-                        print(f"[DEBUG] Gallery: Selecting newly created template '{new_name}' after refresh")
-                        self.selected_template = new_template_data
-                        self._clear_multi_selection() # Clear multi-select
-                        self._update_selection_ui() # Update UI immediately
-                    else:
-                        print(f"[WARNING] Gallery: Could not find data for new template '{new_name}' after duplication and refresh.")
-                        self.selected_template = None # Clear selection if new template not found
-                        self._update_selection_ui() # Update UI to reflect cleared selection
-                except Exception as e:
-                    print(f"[ERROR] Gallery: Error selecting new template '{new_name}' after refresh: {e}")
-                    self.selected_template = None # Clear selection on error
-                    self._update_selection_ui() # Update UI to reflect cleared selection
-                # --- END NEW ---
-
-                # Optionally notify user via status bar
-                if hasattr(self.app, 'show_status_message'):
-                    self.app.show_status_message(f"Duplicated '{template_name}' as '{new_name}'", "success")
-
-            else:
-                # Duplication failed, result_data is the error message
-                error_message = result_data
-                print(f"[ERROR] Gallery: Failed to duplicate template '{template_name}': {error_message}")
-                QMessageBox.warning(self, "Duplication Failed", f"Could not duplicate template '{template_name}':\\n{error_message}")
-
-        except Exception as e:
-            # Catch unexpected errors during the call itself
-            print(f"[ERROR] Gallery: Exception during duplication call for '{template_name}': {e}")
-            QMessageBox.warning(self, "Duplication Failed", f"An unexpected error occurred while duplicating '{template_name}':\\n{e}")
-        print(f"[DEBUG GALLERY HANDLER] _on_duplicate_template finished for '{template_name}'")
-    # --- End Handler for Duplication ---
-
-    # --- Add Handler for Removing Templates from Folder ---
-    def _handle_remove_templates_from_current_folder(self, template_names):
-        """Handles the action of moving selected templates to the root (removing from current folder)."""
-        if not self.current_folder:
-            print("[WARNING] Attempted to remove templates from folder, but no current folder is set.")
-            return
-        if not template_names:
-            print("[WARNING] Attempted to remove templates from folder, but no templates were provided.")
-            return
-
-        print(f"🔍 LISTENER: Request to remove {len(template_names)} templates from folder '{self.current_folder}': {template_names}")
-        
-        success_count = 0
-        failed_names = []
-        
-        # Iterate and call the template manager's remove function for each template
-        for name in template_names:
-            try:
-                # Assuming FolderOperations is mixed into TemplateManager
-                if hasattr(self.app.template_manager, 'remove_from_folder'):
-                    success = self.app.template_manager.remove_from_folder(self.current_folder, name)
-                    if success:
-                        print(f"  -> Successfully removed '{name}' from '{self.current_folder}'")
-                        success_count += 1
-                    else:
-                        print(f"  -> Failed to remove '{name}' from '{self.current_folder}' (manager returned False)")
-                        failed_names.append(name)
-                else:
-                    print(f"  -> ERROR: Template manager does not have 'remove_from_folder' method.")
-                    failed_names.append(name)
-            except Exception as e:
-                print(f"  -> ERROR removing '{name}' from '{self.current_folder}': {e}")
-                failed_names.append(name)
-
-        # Show status message
-        if hasattr(self.app, 'show_status_message'):
-            if success_count == len(template_names):
-                message = f"Moved {success_count} template(s) to root."
-                status = "success"
-            elif success_count > 0:
-                message = f"Moved {success_count} template(s) to root. Failed for: {', '.join(failed_names)}."
-                status = "warning"
-            else:
-                message = f"Failed to move any templates from folder '{self.current_folder}'."
-                status = "error"
-            self.app.show_status_message(message, status)
-        
-        # Refresh the gallery to reflect changes
-        print("Refreshing gallery after removing templates from folder.")
-        self.populate_gallery(force_refresh=True)
-    # --- End Handler for Removing Templates from Folder ---
-
-    def _on_move_template_to_folder(self, template_name, folder_name):
-        # Implement the logic to handle moving a template to a folder
-        print(f"🔍 LISTENER: Moving template '{template_name}' to folder '{folder_name}'")
-        # This method should be implemented to handle moving a template to a folder
-
-    # ... (keep the existing methods and properties)
-    # ...
-    # ... 
-
-    # --- Table Selection Handler (Added) ---
+    # --- End Update Selection UI ---
+    
+    # --- Table Selection Handler (Restored) ---
     def _on_table_selection_changed(self, selected, deselected):
         """Handles selection changes in the TemplateTableView."""
-        # Block signals temporarily to prevent recursion during UI update
-        self.template_table_view.selectionModel().blockSignals(True)
+        if self.template_table_view and self.template_table_view.selectionModel():
+             self.template_table_view.selectionModel().blockSignals(True)
         
         selected_indexes = self.template_table_view.selectionModel().selectedRows() 
         proxy_model = self.template_table_view.model()
+        if not proxy_model:
+             if self.template_table_view and self.template_table_view.selectionModel():
+                  self.template_table_view.selectionModel().blockSignals(False) # Unblock before returning
+             return 
+             
         source_model = proxy_model.sourceModel()
+        if not source_model:
+             if self.template_table_view and self.template_table_view.selectionModel():
+                  self.template_table_view.selectionModel().blockSignals(False) # Unblock before returning
+             return
         
         current_selection_names = set()
         new_multi_selected_templates = []
@@ -1652,15 +1550,17 @@ class TemplateGallery(QWidget):
                 if name_item:
                     template_name = name_item.text()
                     current_selection_names.add(template_name)
-                    # MODIFIED: Call get_template via template_io
-                    template_data = self.template_manager.template_io.get_template(template_name)
+                    template_data = None
+                    if hasattr(self.template_manager, 'template_io') and self.template_manager.template_io:
+                         template_data = self.template_manager.template_io.get_template(template_name)
+                         
                     if template_data:
                         if template_data not in new_multi_selected_templates:
                              new_multi_selected_templates.append(template_data)
-                        if index.row() == primary_index.row():
+                        if source_index.row() == proxy_model.mapToSource(primary_index).row():
                              primary_selection_candidate = template_data
                     else:
-                         print(f"[WARNING] _on_table_selection_changed: Could not find template data for '{template_name}'")
+                         print(f"[WARNING] _on_table_selection_changed: Could not find template data for '{template_name}' via template_io")
 
         print(f"[DEBUG] Table Selection Changed. Names: {current_selection_names}")
         self.multi_selected_templates = new_multi_selected_templates
@@ -1672,40 +1572,65 @@ class TemplateGallery(QWidget):
              self.selected_template = self.multi_selected_templates[0]
              print(f"[DEBUG] Table Selection: Primary set to single selected item '{self.selected_template.get('name')}'")
         elif len(self.multi_selected_templates) > 1:
-             # If multiple items are selected, but none have primary focus (e.g., shift-click range),
-             # keep the *last* selected item as primary for consistency?
-             self.selected_template = self.multi_selected_templates[-1]
+             self.selected_template = self.multi_selected_templates[-1] 
              print(f"[DEBUG] Table Selection: Primary set to last of multi-select '{self.selected_template.get('name')}'")
         else:
              self.selected_template = None # Clear primary if selection is cleared
              print(f"[DEBUG] Table Selection: Primary selection cleared.")
 
-        # Update UI and emit signals
         self._update_selection_ui() # Ensure UI reflects the potentially changed selection
         self.template_selected.emit(self.selected_template if self.selected_template else {}) # Emit primary
 
-        # --- FIX: Unblock signals --- 
-        self.template_table_view.selectionModel().blockSignals(False)
-        # --------------------------
-
+        if self.template_table_view and self.template_table_view.selectionModel():
+             self.template_table_view.selectionModel().blockSignals(False)
+             
     # --- End Table Selection Handler ---
 
-    # --- Add Shortcut Setup and Handling ---
+    # --- Duplicate Template Handler (Restored) ---
+    def _on_duplicate_template(self, template_name):
+        """Handles the request to duplicate a template."""
+        print(f"[DEBUG] Received duplicate request for '{template_name}'")
+        if not template_name:
+            print("[WARNING] Duplicate request with no template name.")
+            return
+
+        if hasattr(self.template_manager, 'duplicate_template'):
+            try:
+                new_name = self.template_manager.duplicate_template(template_name)
+                if new_name:
+                    print(f"[INFO] Successfully duplicated '{template_name}' as '{new_name}'")
+                    if hasattr(self.app, 'show_status_message'):
+                        self.app.show_status_message(f"Duplicated '{template_name}' as '{new_name}'", "success")
+                    self.populate_gallery(force_refresh=True)
+                else:
+                    print(f"[ERROR] Failed to duplicate '{template_name}'. Method returned None.")
+                    if hasattr(self.app, 'show_status_message'):
+                        self.app.show_status_message(f"Failed to duplicate '{template_name}'.", "error")
+            except Exception as e:
+                print(f"[ERROR] Exception while duplicating '{template_name}': {e}")
+                import traceback
+                traceback.print_exc()
+                if hasattr(self.app, 'show_status_message'):
+                    self.app.show_status_message(f"Error duplicating '{template_name}': {e}", "error")
+        else:
+            print("[ERROR] Template manager does not have 'duplicate_template' method.")
+            if hasattr(self.app, 'show_status_message'):
+                 self.app.show_status_message("Duplicate feature not available.", "error")
+    # --- End Duplicate Template Handler ---
+    
+    # --- Shortcut Setup and Handling (Restored) ---
     def _setup_shortcuts(self):
         """Sets up keyboard shortcuts for the gallery."""
-        # Duplicate Shortcut (Cmd+D on Mac, Ctrl+D elsewhere)
-        # Use the standard string representation "Ctrl+D". Qt maps this correctly.
+        from PyQt5.QtWidgets import QShortcut
+        from PyQt5.QtGui import QKeySequence
         duplicate_shortcut = QShortcut(QKeySequence("Ctrl+D"), self)
         duplicate_shortcut.activated.connect(self._handle_duplicate_shortcut)
         print("[DEBUG] Duplicate shortcut (Ctrl+D / Cmd+D) connected.")
         
-        # You can add other shortcuts here as needed
-
     def _handle_duplicate_shortcut(self):
         """Handles the activation of the duplicate keyboard shortcut."""
         print("[DEBUG] Duplicate shortcut activated.")
         
-        # Check if exactly one template is selected
         selected_template = self.get_primary_selected_template() # Use helper to get primary selection
         multi_select_count = len(self.multi_selected_templates)
 
@@ -1718,20 +1643,48 @@ class TemplateGallery(QWidget):
                  print("[WARNING] Duplicate shortcut: Selected item has no name.")
         elif multi_select_count > 1:
              print("[DEBUG] Duplicate shortcut ignored: Multiple templates selected.")
-             # Optionally show a status tip or message
-             # self.parent_window.statusBar().showMessage("Duplicate shortcut requires a single selection.", 2000)
+             if hasattr(self.app, 'show_status_message'):
+                 self.app.show_status_message("Duplicate shortcut requires a single selection.", "info", 2000)
         else:
              print("[DEBUG] Duplicate shortcut ignored: No template selected.")
-    # --- End Shortcut Setup and Handling ---
-
-    # Helper to get primary selection consistently
+             if hasattr(self.app, 'show_status_message'):
+                 self.app.show_status_message("Select a template to duplicate.", "info", 2000)
+                 
     def get_primary_selected_template(self):
-         # Prioritize self.selected_template if it exists
          if self.selected_template:
              return self.selected_template
-         # Fallback for table view single selection if necessary (adapt based on actual selection logic)
-         # This depends on how your selection model updates self.selected_template
-         # Maybe check table view selection directly if self.selected_template isn't reliable?
+         if len(self.multi_selected_templates) == 1:
+             return self.multi_selected_templates[0]
          return None 
+    # --- End Shortcut Setup and Handling ---
 
-    # ... rest of TemplateGallery methods ...
+    # ... (Keep remaining class methods like __init__, populate_gallery, clear_gallery, event handlers, context menus etc.) ...
+
+    def _update_template_card_selection(self):
+        """Updates the visual selection state of template cards in the grid view."""
+        print(f"🔍 LISTENER: Updating template card selection visuals")
+        primary_selected_name = self.selected_template.get('name') if self.selected_template else None
+        multi_selected_names = {t.get('name') for t in self.multi_selected_templates if isinstance(t, dict)}
+
+        for card in self.template_cards:
+            if not hasattr(card, 'template') or not hasattr(card, 'template_name'):
+                continue # Skip invalid cards
+                
+            card_template_name = card.template_name()
+            is_primary = card_template_name == primary_selected_name
+            is_multi = card_template_name in multi_selected_names
+
+            # Set multi-selected state first (for styling priority)
+            if hasattr(card, 'set_multi_selected'):
+                card.set_multi_selected(is_multi)
+
+            # Set primary selection state
+            if hasattr(card, 'set_selected'):
+                if is_primary:
+                    card.set_selected(True)
+                elif not is_multi: # Only deselect if not multi-selected either
+                    card.set_selected(False)
+            
+        print(f"🔍 LISTENER: Finished updating card visuals")
+        # Force UI update if necessary (though set_selected/set_multi_selected should handle it)
+        # self.templates_scroll_content.update()
