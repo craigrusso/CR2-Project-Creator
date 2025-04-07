@@ -13,7 +13,8 @@ from .gallery_templates import GalleryTemplatesSetup
 from .gallery_events import GalleryEvents
 from app.core.import_export_manager import import_template
 from app.ui.views.template_table_view import TemplateTableView
-from app.templates.components.template_folder_card import TemplateFolderCard, TemplateFolderListItem
+from app.templates.components.template_folder_card import TemplateFolderCard
+from app.templates.components.template_folder_list_item import TemplateFolderListItem
 from app.templates.components.menu_actions import ContextMenu  # Import ContextMenu for context menus
 
 class TemplateGallery(QWidget):
@@ -39,7 +40,7 @@ class TemplateGallery(QWidget):
         self.multi_selected_templates = []  # Track multi-selected templates
         self.icon_scale = 100  # Default scale in percentage
         self.folder_view_mode = "grid"  # Default to grid view for folders
-        self.template_view_mode = "grid"  # Default to grid view for templates
+        self.view_mode = "grid"  # Default to grid view for templates
         self.templates_loaded = False  # Track if templates have been loaded
         
         # Add placeholder for table view instance (will be created in setup_ui)
@@ -117,7 +118,7 @@ class TemplateGallery(QWidget):
         self.clear_gallery()
         
         # Check if we have a template_manager attribute in the app
-        if hasattr(self.app, 'template_manager'):
+        if hasattr(self, 'template_manager'):
             # Use template_manager if available
             # Always fetch fresh templates using the getter method
             print(f"[DEBUG] Gallery: Fetching templates using get_all_templates()...")
@@ -177,7 +178,7 @@ class TemplateGallery(QWidget):
                 templates_to_show = GalleryTemplatesSetup.get_templates_in_folder(self, self.current_folder)
                 
                 # Populate templates section
-                if self.template_view_mode == "grid":
+                if self.view_mode == "grid":
                     GalleryTemplatesSetup.populate_templates_grid(self, templates_to_show)
                 else:  # list mode
                     GalleryTemplatesSetup.populate_templates_list(self, templates_to_show)
@@ -253,7 +254,7 @@ class TemplateGallery(QWidget):
                     self.folders_section.setVisible(False)
                 
                 # Populate templates section based on view mode
-                if self.template_view_mode == "grid":
+                if self.view_mode == "grid":
                     GalleryTemplatesSetup.populate_templates_grid(self, templates_to_show)
                 else:  # list mode
                     GalleryTemplatesSetup.populate_templates_list(self, templates_to_show)
@@ -293,7 +294,7 @@ class TemplateGallery(QWidget):
             # --- END Re-add Connection block ---
 
             # --- NEW: Explicitly select in List View --- 
-            if self.template_view_mode == "list" and templates_to_show:
+            if self.view_mode == "list" and templates_to_show:
                  try:
                      model = self.template_table_view.model()
                      if model:
@@ -735,7 +736,7 @@ class TemplateGallery(QWidget):
         self._update_card_sizes()
         
         # For list view, ensure horizontal scrolling is disabled
-        if hasattr(self, 'template_view_mode') and self.template_view_mode == "list":
+        if hasattr(self, 'view_mode') and self.view_mode == "list":
             # Find the scroll area in the templates section
             if hasattr(self, 'templates_scroll'):
                 self.templates_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -806,13 +807,20 @@ class TemplateGallery(QWidget):
                 
                 # Clear multi-selection if any exists
                 had_multi_selection = False
-                if hasattr(self, 'multi_selected_templates') and self.multi_selected_templates:
-                    had_multi_selection = True
+                if hasattr(self, 'multi_selected_templates'):
+                    had_multi_selection = len(self.multi_selected_templates) > 0
                     self.multi_selected_templates.clear()
                 
                 # Update card styling - essential to ensure visual state updates
                 if had_selection or had_multi_selection:
+                    # Update card visuals
                     self._update_template_card_selection()
+                    
+                    # Also update table view if it exists and we're in list view mode
+                    if hasattr(self, 'template_table_view') and self.template_table_view and self.view_mode == 'list':
+                        if self.template_table_view.selectionModel():
+                            self.template_table_view.selectionModel().clearSelection()
+                            
                     print(f"🔍 LISTENER: Cleared all selections")
         
         # Let parent handle remaining events
@@ -1594,6 +1602,8 @@ class TemplateGallery(QWidget):
             print("[WARNING] Duplicate request with no template name.")
             return
 
+        new_name = None  # Initialize new_name to track the duplicated template
+        
         if hasattr(self.template_manager, 'duplicate_template'):
             try:
                 new_name = self.template_manager.duplicate_template(template_name)
@@ -1601,21 +1611,86 @@ class TemplateGallery(QWidget):
                     print(f"[INFO] Successfully duplicated '{template_name}' as '{new_name}'")
                     if hasattr(self.app, 'show_status_message'):
                         self.app.show_status_message(f"Duplicated '{template_name}' as '{new_name}'", "success")
-                    self.populate_gallery(force_refresh=True)
+                    # Don't populate gallery yet - we'll do it after we update selection
                 else:
                     print(f"[ERROR] Failed to duplicate '{template_name}'. Method returned None.")
                     if hasattr(self.app, 'show_status_message'):
                         self.app.show_status_message(f"Failed to duplicate '{template_name}'.", "error")
+                    return
             except Exception as e:
                 print(f"[ERROR] Exception while duplicating '{template_name}': {e}")
                 import traceback
                 traceback.print_exc()
                 if hasattr(self.app, 'show_status_message'):
                     self.app.show_status_message(f"Error duplicating '{template_name}': {e}", "error")
+                return
+        elif hasattr(self.template_manager, 'template_io') and hasattr(self.template_manager.template_io, 'duplicate_template'):
+            # Try using template_io directly
+            try:
+                success, result = self.template_manager.template_io.duplicate_template(template_name)
+                if success:
+                    new_name = result
+                    print(f"[INFO] Successfully duplicated '{template_name}' as '{new_name}' via template_io")
+                    if hasattr(self.app, 'show_status_message'):
+                        self.app.show_status_message(f"Duplicated '{template_name}' as '{new_name}'", "success")
+                    # Don't populate gallery yet - we'll do it after we update selection
+                else:
+                    print(f"[ERROR] Failed to duplicate '{template_name}' via template_io. Result: {result}")
+                    if hasattr(self.app, 'show_status_message'):
+                        self.app.show_status_message(f"Failed to duplicate '{template_name}': {result}", "error")
+                    return
+            except Exception as e:
+                print(f"[ERROR] Exception while duplicating '{template_name}' via template_io: {e}")
+                import traceback
+                traceback.print_exc()
+                if hasattr(self.app, 'show_status_message'):
+                    self.app.show_status_message(f"Error duplicating '{template_name}': {e}", "error")
+                return
         else:
             print("[ERROR] Template manager does not have 'duplicate_template' method.")
             if hasattr(self.app, 'show_status_message'):
                  self.app.show_status_message("Duplicate feature not available.", "error")
+            return
+                 
+        # If we have a new name, refresh the gallery and update selection
+        if new_name:
+            # First refresh the gallery to ensure the new template is loaded
+            self.populate_gallery(force_refresh=True)
+            
+            # Now select the newly created template - this is critical for list view
+            # Fetch the template data for the new template
+            new_template = None
+            if hasattr(self.app.template_manager, 'get_template'):
+                new_template = self.app.template_manager.get_template(new_name)
+            elif hasattr(self.app.template_manager, 'template_io') and hasattr(self.app.template_manager.template_io, 'get_template'):
+                new_template = self.app.template_manager.template_io.get_template(new_name)
+            elif hasattr(self.app.template_manager, 'templates'):
+                # Check if templates is a dict or list and handle accordingly
+                templates = self.app.template_manager.templates
+                if isinstance(templates, dict):
+                    new_template = templates.get(new_name)
+                elif isinstance(templates, list):
+                    # Find template by name in the list
+                    for template in templates:
+                        if isinstance(template, dict) and template.get('name') == new_name:
+                            new_template = template
+                            break
+                
+            if new_template:
+                print(f"[DEBUG] Setting newly duplicated template '{new_name}' as selected")
+                
+                # Update both primary and multi-selection
+                self.selected_template = new_template
+                self.multi_selected_templates = [new_template]
+                
+                # Update the UI to show the new selection
+                self._update_selection_ui()
+                
+                # Emit selection signal to notify listeners
+                self.template_selected.emit(new_template)
+                print(f"[DEBUG] Emitted selection signal for newly duplicated template '{new_name}'")
+            else:
+                print(f"[WARNING] Could not find newly duplicated template '{new_name}' for selection")
     # --- End Duplicate Template Handler ---
     
     # --- Shortcut Setup and Handling (Restored) ---

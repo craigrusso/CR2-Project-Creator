@@ -8,8 +8,8 @@ QTableView subclass for displaying templates with spreadsheet-like column behavi
 import os
 from PyQt5.QtWidgets import (QTableView, QHeaderView, QAbstractItemView, 
                              QStyledItemDelegate, QStyleOptionViewItem, QStyle,
-                             QStyleOptionHeader)
-from PyQt5.QtCore import Qt, QSettings, QModelIndex, QSize, QRect, QPoint, QSortFilterProxyModel, QByteArray, QMimeData
+                             QStyleOptionHeader, QApplication)
+from PyQt5.QtCore import Qt, QSettings, QModelIndex, QSize, QRect, QPoint, QSortFilterProxyModel, QByteArray, QMimeData, QItemSelectionModel
 from PyQt5.QtGui import QStandardItemModel, QStandardItem, QColor, QPalette, QIcon, QBrush, QPainter, QFontMetrics, QFont, QDrag, QPixmap
 
 from app.constants import get_resource_path
@@ -59,11 +59,34 @@ class IconNameDelegate(QStyledItemDelegate):
         # Get the cell rectangle
         rect = option.rect
         
-        # --- Draw Background (Handles selection, alternating rows) ---
-        # Let the default delegate handle background drawing
-        option.text = "" # Prevent default text drawing
-        option.icon = QIcon() # Prevent default icon drawing by base class
-        option.widget.style().drawControl(QStyle.CE_ItemViewItem, option, painter, option.widget)
+        # Save painter state to restore later
+        painter.save()
+        
+        # --- Check Selection Status (Multiple Ways) ---
+        # 1. First check the selection model directly (most reliable)
+        is_selected = False
+        if option.widget:
+            view = option.widget
+            if hasattr(view, 'selectionModel'):
+                selection_model = view.selectionModel()
+                if selection_model:
+                    # Check if this row is selected in the model
+                    is_selected = selection_model.isSelected(index)
+                    
+        # 2. Also check the option state as fallback
+        if not is_selected:
+            is_selected = bool(option.state & QStyle.State_Selected)
+        
+        # --- Draw Background ---
+        if is_selected:
+            # Use the standard highlight color for selected items
+            highlight_brush = option.palette.highlight()
+            painter.fillRect(rect, highlight_brush)
+        else:
+            # For non-selected items, use the default style
+            option.text = "" # Prevent default text drawing
+            option.icon = QIcon() # Prevent default icon drawing
+            option.widget.style().drawControl(QStyle.CE_ItemViewItem, option, painter, option.widget)
         
         # --- Draw Icon or Warning Character --- 
         icon_offset = self.padding # Default to only left padding
@@ -91,9 +114,9 @@ class IconNameDelegate(QStyledItemDelegate):
             
         elif isinstance(icon, QIcon) and not icon.isNull(): # Draw default icon if not warning
             icon_rect = QRect(QPoint(h_pos, v_center), self.icon_size)
-            pixmap = icon.pixmap(self.icon_size, 
-                                 QIcon.Normal if (option.state & QStyle.State_Selected) == 0 else QIcon.Selected,
-                                 QIcon.On if (option.state & QStyle.State_Selected) != 0 else QIcon.Off)
+            icon_mode = QIcon.Selected if is_selected else QIcon.Normal
+            icon_state = QIcon.On if is_selected else QIcon.Off
+            pixmap = icon.pixmap(self.icon_size, icon_mode, icon_state)
             painter.drawPixmap(icon_rect, pixmap)
             icon_offset = self.icon_size.width() + self.padding * 2 # Icon width + padding on both sides
         
@@ -105,13 +128,16 @@ class IconNameDelegate(QStyledItemDelegate):
             text_rect = QRect(text_x, rect.y(), rect.width() - icon_offset - self.padding, rect.height())
             
             # Set text color based on selection
-            text_color = option.palette.highlightedText().color() if (option.state & QStyle.State_Selected) else option.palette.text().color()
+            text_color = option.palette.highlightedText().color() if is_selected else option.palette.text().color()
             painter.setPen(text_color)
             
             # Use style options for font, alignment etc.
             # Elide text if it overflows
             elided_text = option.fontMetrics.elidedText(text, Qt.ElideRight, text_rect.width())
             painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, elided_text)
+            
+        # Restore painter state
+        painter.restore()
 
     def sizeHint(self, option, index):
         # Provide a size hint, potentially adding padding
@@ -283,7 +309,11 @@ class TemplateTableView(QTableView):
         self.verticalHeader().hide()
         
         # Variable to store the current sort column index
-        self._current_sort_column = -1 
+        self._current_sort_column = -1
+        
+        # Track last mouse press for multi-selection
+        self._last_mouse_press_pos = QPoint()
+        self._is_cmd_ctrl_pressed = False
 
     def _load_icons(self):
         """Load icons used in the table view."""
@@ -583,6 +613,59 @@ class TemplateTableView(QTableView):
         
         # Execute the drag
         drag.exec_(supportedActions, Qt.MoveAction)
+
+    def mousePressEvent(self, event):
+        """
+        Override mousePressEvent to implement cmd/ctrl+click multi-selection behavior
+        that matches the grid view implementation.
+        """
+        # Save last position and modifier state
+        self._last_mouse_press_pos = event.pos()
+        modifiers = QApplication.keyboardModifiers()
+        self._is_cmd_ctrl_pressed = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier))
+        is_shift_pressed = bool(modifiers & Qt.ShiftModifier)
+        
+        # If this is a left click with cmd/ctrl pressed
+        if event.button() == Qt.LeftButton and self._is_cmd_ctrl_pressed:
+            # Get the index under the mouse
+            index = self.indexAt(event.pos())
+            if index.isValid():
+                # Get the current selection model
+                selection_model = self.selectionModel()
+                if selection_model:
+                    # Block signals temporarily to avoid recursion
+                    selection_model.blockSignals(True)
+                    
+                    # Get the actual row index
+                    row = index.row()
+                    
+                    # Check if the row is already selected
+                    is_selected = selection_model.isRowSelected(row, QModelIndex())
+                    
+                    # Toggle the selection state for this row
+                    if is_selected:
+                        selection_model.select(index, QItemSelectionModel.Deselect | QItemSelectionModel.Rows)
+                    else:
+                        selection_model.select(index, QItemSelectionModel.Select | QItemSelectionModel.Rows)
+                    
+                    # Always update the current index for keyboard navigation
+                    selection_model.setCurrentIndex(index, QItemSelectionModel.Current)
+                    
+                    # Unblock signals
+                    selection_model.blockSignals(False)
+                    
+                    # Force view update
+                    self.viewport().update()
+                    
+                    # Log for debugging
+                    print(f"[DEBUG] List View: Cmd/Ctrl+Click selection toggled for row {row}")
+                    
+                    # Handle the event and don't propagate
+                    event.accept()
+                    return
+        
+        # For all other cases, call the parent implementation
+        super().mousePressEvent(event)
 
 
 # Optional: Delegate for adding padding (can be removed if not needed)
