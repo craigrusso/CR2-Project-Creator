@@ -121,18 +121,28 @@ class FolderOperations:
     
     def remove_from_folder(self, folder_name, template_name):
         """Remove a template from a folder"""
-        if not folder_name or not template_name or folder_name not in self.folders:
+        if not folder_name or not template_name:
+            print(f"[DEBUG] FolderOps: Invalid folder or template name: '{folder_name}', '{template_name}'")
             return False
-            
-        # Skip if template is not in folder
-        if template_name not in self.folders[folder_name]:
+        
+        # Skip if folder doesn't exist - but return True since the template isn't in the folder
+        if folder_name not in self.folders:
+            print(f"[DEBUG] FolderOps: Folder '{folder_name}' doesn't exist, template already not in folder")
             return True
-            
+        
+        # Skip if template is not in folder - also return True since it's already not in the folder
+        if template_name not in self.folders[folder_name]:
+            print(f"[DEBUG] FolderOps: Template '{template_name}' not in folder '{folder_name}', nothing to remove")
+            return True
+        
         # Remove template from folder
+        print(f"[DEBUG] FolderOps: Removing template '{template_name}' from folder '{folder_name}'")
         self.folders[folder_name].remove(template_name)
         
         # Save folders
-        return self.save_folders()
+        saved = self.save_folders()
+        print(f"[DEBUG] FolderOps: Folders saved: {saved}")
+        return saved
     
     def get_folder_templates(self, folder_name):
         """Get all templates in a folder"""
@@ -229,4 +239,46 @@ class FolderOperations:
         
         # Save folders
         print(f"[DEBUG] FolderOps: Saving folders after move")
-        return self.save_folders() 
+        return self.save_folders()
+    
+    def get_folder_containing_template(self, template_name):
+        """Find which folder contains the given template.
+        
+        Args:
+            template_name (str): Name of the template to find
+            
+        Returns:
+            str or None: Name of the folder containing the template, or None if not in any folder
+        """
+        if not template_name or not hasattr(self, 'folders'):
+            return None
+        
+        # Normalize template name to improve matching
+        template_name = template_name.strip()
+        if not template_name:
+            return None
+        
+        # Try to find the template in any folder by exact match
+        for folder_name, templates in self.folders.items():
+            if template_name in templates:
+                print(f"[DEBUG] FolderOps: Found template '{template_name}' in folder '{folder_name}'")
+                return folder_name
+            
+        # If we have a template manager with get_template_by_name, try to get the real template name
+        template = None
+        if hasattr(self, 'get_template_by_name'):
+            template = self.get_template_by_name(template_name)
+        
+        # If we found a template, try with its real name
+        if template and isinstance(template, dict) and 'name' in template:
+            real_name = template['name']
+            if real_name and real_name != template_name:
+                print(f"[DEBUG] FolderOps: Using real template name '{real_name}' to find folder")
+                for folder_name, templates in self.folders.items():
+                    if real_name in templates:
+                        print(f"[DEBUG] FolderOps: Found template '{real_name}' in folder '{folder_name}'")
+                        return folder_name
+        
+        # Template not found in any folder
+        print(f"[DEBUG] FolderOps: Template '{template_name}' not found in any folder")
+        return None 

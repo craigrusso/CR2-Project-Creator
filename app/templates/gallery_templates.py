@@ -1025,12 +1025,24 @@ class GalleryTemplatesSetup:
             # Get templates directly from the template manager
             template_manager = gallery.app.template_manager
             
-            # Get all template objects first
+            # Get all template objects from all available sources
             all_templates = []
+            
+            # Add templates from the most reliable source first - TemplateIO
+            if hasattr(template_manager, 'template_io') and hasattr(template_manager.template_io, 'templates'):
+                for name, template in template_manager.template_io.templates.items():
+                    all_templates.append(template)
+                print(f"[DEBUG] Gallery: Added {len(template_manager.template_io.templates)} templates from template_io")
+            
+            # Then add any templates from the templates attribute
             if hasattr(template_manager, 'templates'):
                 all_templates.extend(template_manager.templates)
+                print(f"[DEBUG] Gallery: Added {len(template_manager.templates)} templates from templates attribute")
+                
+            # Then add any templates from template_directories
             if hasattr(template_manager, 'template_directories'):
                 all_templates.extend(template_manager.template_directories)
+                print(f"[DEBUG] Gallery: Added {len(template_manager.template_directories)} templates from template_directories")
             
             # Get the list of template names in this folder
             template_names_in_folder = []
@@ -1045,14 +1057,38 @@ class GalleryTemplatesSetup:
             
             # Process each template name and find the actual template objects
             if template_names_in_folder:
+                # Create a case-insensitive lookup map for faster template matching
+                template_name_map = {}
+                for template in all_templates:
+                    if isinstance(template, dict) and 'name' in template:
+                        template_name = template.get('name')
+                        template_name_map[template_name.lower()] = template
+                
                 for template_name in template_names_in_folder:
-                    # Find the actual template object by name
+                    if not template_name:
+                        continue
+                        
+                    # Try exact match first
                     matching_template = None
                     for template in all_templates:
-                        if template.get('name') == template_name:
+                        if isinstance(template, dict) and template.get('name') == template_name:
                             matching_template = template
                             break
                     
+                    # If no exact match, try case-insensitive match
+                    if not matching_template:
+                        template_name_lower = template_name.lower()
+                        if template_name_lower in template_name_map:
+                            matching_template = template_name_map[template_name_lower]
+                            print(f"[DEBUG] Gallery: Found template '{template_name}' using case-insensitive match")
+                    
+                    # If still no match and we have template_io, try to get the template directly
+                    if not matching_template and hasattr(template_manager, 'template_io') and hasattr(template_manager.template_io, 'templates'):
+                        matching_template = template_manager.template_io.templates.get(template_name)
+                        if matching_template:
+                            print(f"[DEBUG] Gallery: Found template '{template_name}' directly from template_io")
+                    
+                    # If we found a template, add it to our results
                     if matching_template:
                         # Use the real template name as the key, never generate random keys
                         real_name = matching_template.get('name')
@@ -1076,10 +1112,7 @@ class GalleryTemplatesSetup:
             
             # Final debug output
             print(f"[DEBUG] Gallery: Returning {len(templates_dict)} templates for folder '{folder_name}'")
-            template_names = list(templates_dict.keys())
-            print(f"[DEBUG] Gallery: Template names: {template_names}")
-        
-        return templates_dict 
+            return templates_dict
 
     @staticmethod
     def create_template_card(gallery, template_data):

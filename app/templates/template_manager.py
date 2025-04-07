@@ -49,21 +49,40 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
             return False
         
         try:
-            # Make sure the template exists
+            # Make sure the template exists - using more robust template lookup
             template = None
-            for t in self.templates + self.template_directories:
-                if isinstance(t, dict) and t.get('name') == template_name:
-                    template = t
-                    break
+            
+            # First, try direct lookup through get_template_by_name
+            if hasattr(self, 'get_template_by_name'):
+                template = self.get_template_by_name(template_name)
+            
+            # If template not found, try more exhaustive search methods
+            if not template:
+                # Try searching case-insensitive in templates list
+                template_name_lower = template_name.lower()
+                for t in self.templates + self.template_directories:
+                    if isinstance(t, dict) and t.get('name', '').lower() == template_name_lower:
+                        template = t
+                        print(f"[DEBUG] FolderOps: Found template '{template_name}' using case-insensitive search")
+                        break
+            
+            # If still not found, try checking if the template name contains partial matches
+            if not template and hasattr(self, 'template_io') and hasattr(self.template_io, 'templates'):
+                for name, t in self.template_io.templates.items():
+                    if name.lower() == template_name_lower or template_name_lower in name.lower():
+                        template = t
+                        template_name = name  # Update template_name to the actual name
+                        print(f"[DEBUG] FolderOps: Found template using partial match: '{name}'")
+                        break
             
             if not template:
-                print(f"[DEBUG] FolderOps: Template '{template_name}' not found")
+                print(f"[DEBUG] FolderOps: Template '{template_name}' not found after exhaustive search")
                 return False
             
             # Make sure the folder exists
             if folder_name not in self.folders:
-                print(f"[DEBUG] FolderOps: Folder '{folder_name}' not found")
-                return False
+                print(f"[DEBUG] FolderOps: Folder '{folder_name}' not found - creating it")
+                self.folders[folder_name] = []
             
             # First, remove the template from all folders to avoid duplicates
             for f in self.folders:

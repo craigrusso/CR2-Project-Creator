@@ -38,10 +38,13 @@ def save_json_file(file_path, data):
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         
         with open(file_path, 'w') as f:
-            json.dump(data, f, indent=2)
+            json.dump(data, f, indent=4)
+        print(f"DEBUG: Saved {os.path.basename(file_path)} to {file_path}")
         return True
     except Exception as e:
-        print(f"Error saving file {file_path}: {e}")
+        print(f"CRITICAL ERROR: Failed to save JSON file {file_path}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def load_pickle_file(file_path, default_value=None):

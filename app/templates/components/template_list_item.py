@@ -11,11 +11,12 @@ import time
 import datetime
 import os
 from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QApplication, QMenu, QAction
-from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QMimeData, QSize
+from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QMimeData, QSize, QByteArray
 from PyQt5.QtGui import QFont, QPalette, QColor, QDrag, QPixmap, QIcon
 
 from app.ui.color_scheme_pyqt import colors  # Add missing colors import
 from app.constants import get_resource_path # Added get_resource_path import
+from app.templates.mime_types import TEMPLATE_NAMES_MIME_TYPE, TEMPLATE_MULTI_DRAG_MIME_TYPE, TEMPLATE_MULTI_SELECTION_MIME_TYPE
 
 # Simple, stable implementation with minimal dependencies
 class TemplateListItem(QFrame):
@@ -896,22 +897,32 @@ class TemplateListItem(QFrame):
 
         # Prepare mime data
         if is_multi_drag:
+            # Set special mime type for multi-drag
+            mime_data.setData(TEMPLATE_MULTI_DRAG_MIME_TYPE, QByteArray(b'1'))
+            
             # Store multi-selection as JSON string
             if templates_to_drag:
                 import json
                 json_data = json.dumps(templates_to_drag)
-                mime_data.setData("application/x-template-multi-selection", json_data.encode())
-                mime_data.setText("\n".join(templates_to_drag))  # For plain text fallback
+                mime_data.setData(TEMPLATE_MULTI_SELECTION_MIME_TYPE, json_data.encode())
+                
+                # Set newline-separated text format
+                template_names_text = "\n".join(templates_to_drag)
+                mime_data.setText(template_names_text)  # For plain text fallback
+                
+                # Set standardized MIME type for template names
+                mime_data.setData(TEMPLATE_NAMES_MIME_TYPE, QByteArray(template_names_text.encode('utf-8')))
+                
                 print(f"🔍 LISTENER: Multi-selection drag mime data set for {len(templates_to_drag)} templates")
             else:
                 # Should not happen, but fallback to single
                 mime_data.setText(template_name)
-                mime_data.setObjectName("template")
+                mime_data.setData(TEMPLATE_NAMES_MIME_TYPE, QByteArray(template_name.encode('utf-8')))
                 print(f"🔍 LISTENER: Multi-drag identified but no names collected - fallback to single: {template_name}")
         else:
             # Single template drag
             mime_data.setText(template_name)
-            mime_data.setObjectName("template")
+            mime_data.setData(TEMPLATE_NAMES_MIME_TYPE, QByteArray(template_name.encode('utf-8')))
             print(f"🔍 LISTENER: Single template drag: {template_name}")
         
         drag.setMimeData(mime_data)
@@ -947,11 +958,34 @@ class TemplateListItem(QFrame):
             event.ignore()
             return
             
-        # Check for multi-selection data first
-        if mime_data.hasFormat("application/x-template-multi-selection"):
+        # First check for our standardized MIME type
+        if mime_data.hasFormat(TEMPLATE_NAMES_MIME_TYPE):
+            try:
+                # Get template names from MIME data
+                template_names_data = mime_data.data(TEMPLATE_NAMES_MIME_TYPE).data().decode('utf-8')
+                template_names = template_names_data.strip().split('\n')
+                
+                print(f"🔍 LISTENER: Drop detected with {len(template_names)} templates using {TEMPLATE_NAMES_MIME_TYPE}")
+                
+                # Move all templates to the folder
+                success_count = 0
+                for template_name in template_names:
+                    if template_name.strip():
+                        self.moveToFolderRequested.emit(template_name, folder_name)
+                        success_count += 1
+                        
+                if success_count > 0:
+                    print(f"🔍 LISTENER: Moved {success_count} templates to folder '{folder_name}'")
+                    event.acceptProposedAction()
+                    return
+            except Exception as e:
+                print(f"Error processing {TEMPLATE_NAMES_MIME_TYPE} drop: {e}")
+                
+        # Check for multi-selection data format (fallback)
+        elif mime_data.hasFormat(TEMPLATE_MULTI_SELECTION_MIME_TYPE):
             try:
                 # Get JSON data with multi-selected templates
-                multi_data = mime_data.data("application/x-template-multi-selection").data()
+                multi_data = mime_data.data(TEMPLATE_MULTI_SELECTION_MIME_TYPE).data()
                 import json
                 template_names = json.loads(multi_data.decode())
                 
@@ -970,16 +1004,31 @@ class TemplateListItem(QFrame):
             except Exception as e:
                 print(f"Error processing multi-selection drop: {e}")
                 
-        # Fallback to single template
-        if mime_data.hasText():
+        # Fallback to plain text (for backward compatibility)
+        elif mime_data.hasText():
             template_name = mime_data.text().strip()
             # Handle multiple lines (sometimes drag text has newlines)
             if "\n" in template_name:
-                template_name = template_name.split("\n")[0].strip()
+                template_names = template_name.split("\n")
+                success_count = 0
+                for name in template_names:
+                    if name.strip():
+                        self.moveToFolderRequested.emit(name.strip(), folder_name)
+                        success_count += 1
                 
-            print(f"🔍 LISTENER: Dropped single template '{template_name}' onto folder '{folder_name}'")
-            self.moveToFolderRequested.emit(template_name, folder_name)
-            event.acceptProposedAction()
+                if success_count > 0:
+                    print(f"🔍 LISTENER: Moved {success_count} templates to folder '{folder_name}' (from text data)")
+                    event.acceptProposedAction()
+                    return
+            else:
+                # Handle single template name
+                print(f"🔍 LISTENER: Dropped single template '{template_name}' onto folder '{folder_name}'")
+                self.moveToFolderRequested.emit(template_name, folder_name)
+                event.acceptProposedAction()
+                return
+            
+        # If we got here, we couldn't handle the drop
+        event.ignore()
             
     def dragEnterEvent(self, event):
         """Handle incoming drags"""
@@ -993,11 +1042,27 @@ class TemplateListItem(QFrame):
             if is_folder:
                 folder_name = self.template.get('name', '')
                 
-        if is_folder and (mime_data.hasText() or mime_data.hasFormat("application/x-template-multi-selection")):
-            if mime_data.hasFormat("application/x-template-multi-selection"):
-                print(f"🔍 LISTENER: Drag entered folder '{folder_name}' with data: {mime_data.text()}")
-            else:
-                print(f"🔍 LISTENER: Drag entered folder '{folder_name}' with data: {mime_data.text()}")
+        # Accept drags with any of our supported MIME types
+        if is_folder and (mime_data.hasText() or 
+                         mime_data.hasFormat(TEMPLATE_NAMES_MIME_TYPE) or 
+                         mime_data.hasFormat(TEMPLATE_MULTI_SELECTION_MIME_TYPE) or
+                         mime_data.hasFormat(TEMPLATE_MULTI_DRAG_MIME_TYPE)):
+            # Provide visual feedback
+            self.hover = True
+            self._update_styling()
+            
+            # Log the drag event
+            if mime_data.hasFormat(TEMPLATE_NAMES_MIME_TYPE):
+                try:
+                    data = mime_data.data(TEMPLATE_NAMES_MIME_TYPE).data().decode('utf-8')
+                    print(f"🔍 LISTENER: Drag entered folder '{folder_name}' with data: {data}")
+                except:
+                    print(f"🔍 LISTENER: Drag entered folder '{folder_name}' with TEMPLATE_NAMES_MIME_TYPE (data error)")
+            elif mime_data.hasFormat(TEMPLATE_MULTI_SELECTION_MIME_TYPE):
+                print(f"🔍 LISTENER: Drag entered folder '{folder_name}' with TEMPLATE_MULTI_SELECTION_MIME_TYPE")
+            elif mime_data.hasText():
+                print(f"🔍 LISTENER: Drag entered folder '{folder_name}' with text data: {mime_data.text()}")
+                
             event.acceptProposedAction()
         else:
             event.ignore()
@@ -1013,6 +1078,9 @@ class TemplateListItem(QFrame):
                 
         if is_folder:
             print(f"🔍 LISTENER: Drag left folder '{folder_name}'")
+            self.hover = False
+            self._update_styling()
+            
         super().dragLeaveEvent(event)
     
     def mouseReleaseEvent(self, event):

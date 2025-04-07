@@ -122,9 +122,13 @@ class TemplateManagerCore(TemplateOperations):
         """Save folder organization to folders.json in the settings directory."""
         settings_dir = config_manager.get_settings_path()
         folders_path = os.path.join(settings_dir, "folders.json")
-        if save_json_file(folders_path, self.folders):
-             print(f"DEBUG: Saved folder structures to {folders_path}")
-        # else: save_json_file prints error
+        # Call save_json_file and directly return its result
+        success = save_json_file(folders_path, self.folders)
+        if success:
+             print(f"DEBUG: Save Folders: Successfully saved to {folders_path}")
+        else:
+             print(f"ERROR: Save Folders: Failed to save to {folders_path} (check utils.save_json_file logs)")
+        return success # Return the boolean result
     
     def get_all_templates(self):
         """Returns all loaded templates from TemplateIO."""
@@ -145,12 +149,29 @@ class TemplateManagerCore(TemplateOperations):
         Returns:
             dict or None: The template data dictionary if found, otherwise None.
         """
-        if self.template_io:
-            # TemplateIO stores templates by name in a dict
-            return self.template_io.templates.get(template_name)
-        else:
-            print(f"WARN: TemplateIO not initialized. Cannot get template '{template_name}'.")
+        if not template_name or not self.template_io:
+            print(f"WARN: TemplateIO not initialized or empty template name. Cannot get template '{template_name}'.")
             return None
+            
+        # First try exact match (fastest)
+        if template_name in self.template_io.templates:
+            return self.template_io.templates.get(template_name)
+            
+        # Try case-insensitive match if exact match fails
+        template_name_lower = template_name.lower()
+        for key, template in self.template_io.templates.items():
+            if key.lower() == template_name_lower:
+                print(f"[DEBUG] TemplateManager: Found template '{key}' via case-insensitive match for '{template_name}'")
+                return template
+                
+        # Try partial match as last resort
+        for key, template in self.template_io.templates.items():
+            if template_name_lower in key.lower() or key.lower() in template_name_lower:
+                print(f"[DEBUG] TemplateManager: Found template '{key}' via partial match for '{template_name}'")
+                return template
+        
+        print(f"[DEBUG] TemplateManager: Template '{template_name}' not found after exhaustive search")
+        return None
     
     def cleanup_templates(self):
         """Clean up templates, e.g., remove duplicates based on name."""

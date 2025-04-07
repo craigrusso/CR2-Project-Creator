@@ -869,86 +869,166 @@ class GalleryEvents:
             return False
 
     @staticmethod
-    def on_move_template_to_folder(gallery, template_name, folder_name):
-        """Handle moving a template to a folder"""
-        print(f"🔍 LISTENER: Moving template '{template_name}' to folder '{folder_name}'")
-        
+    def on_move_template_to_folder(gallery, template_name, target_folder_name):
+        """Handle moving templates to a folder (or to root).
+
+        Args:
+            gallery: The TemplateGallery instance
+            template_name: A single template name or a list of template names
+            target_folder_name: The target folder name, or 'root' to remove from folder.
+
+        Returns:
+            bool: True if the overall operation had at least one success, False otherwise.
+        """
         # Validate inputs
         if not template_name:
-            print(f"🔍 LISTENER: Invalid template name: '{template_name}'")
+            print(f"🔍 LISTENER (Move): Invalid template name: '{template_name}'")
             return False
-        
-        # Get template manager
+
+        # Get template manager (FolderOperations should be mixed in)
         if not hasattr(gallery.app, 'template_manager'):
-            print(f"🔍 LISTENER: Template manager not available")
-            return False
-        
-        template_manager = gallery.app.template_manager
-        
-        # Process the single template name received from the signal
-        success_count = 0
-        single_template_name = template_name # Rename for clarity within this block
-        
-        # Skip empty names
-        if not single_template_name:
-            print(f"🔍 LISTENER: Invalid template name received: '{single_template_name}'")
-            return False
-            
-        # Check for special folder names ("Root" means move out of current folder)
-        # Note: folder_name comes directly from the signal emitter
-        # In _move_template_out_of_folder, it's always ""
-        if folder_name == "" or folder_name == "Root" or folder_name == "Up a Level":
-            print(f"🔍 LISTENER: Moving template '{single_template_name}' to root (removing from folders)")
-            
-            # Find which folder the template is currently in
-            current_folder_of_template = None
-            if hasattr(template_manager, 'folders'):
-                for folder, templates in template_manager.folders.items():
-                    if single_template_name in templates:
-                        current_folder_of_template = folder
-                        break
-            
-            # Remove from the folder it was found in
-            if current_folder_of_template:
-                print(f"🔍 LISTENER: Removing template '{single_template_name}' from folder '{current_folder_of_template}'")
-                result = template_manager.remove_from_folder(current_folder_of_template, single_template_name)
-                if result:
-                    success_count = 1 # Only one template processed per call
-            else:
-                print(f"🔍 LISTENER: Template '{single_template_name}' not found in any folder, cannot move to root.")
-        else:
-            # Normal folder move (to a specific named folder)
-            print(f"🔍 LISTENER: Moving template '{single_template_name}' to specific folder '{folder_name}'")
-            try:
-                result = template_manager.move_template_to_folder(single_template_name, folder_name)
-                if result:
-                    success_count = 1 # Only one template processed per call
-            except Exception as e:
-                print(f"🔍 LISTENER: Error moving template '{single_template_name}' to folder '{folder_name}': {e}")
-        
-        # Update UI only if the move was successful for this template
-        if success_count > 0:
-            target_display = "root" if folder_name == "" else folder_name
-            message = f"Template '{single_template_name}' moved to {target_display}"
-            print(f"🔍 LISTENER: {message}")
-            
-            # Show success message
+            print(f"🔍 LISTENER (Move): Template manager not available")
             if hasattr(gallery.app, 'show_status_message'):
-                gallery.app.show_status_message(message, "info")
-            
-            # Make sure the back button is visible if we're in a folder
-            if hasattr(gallery, 'current_folder') and gallery.current_folder:
-                if hasattr(gallery, 'back_button'):
-                    gallery.back_button.setVisible(True)
-                if hasattr(gallery, 'breadcrumb_label'):
-                    gallery.breadcrumb_label.show()
-            
-            # Force refresh the gallery - Delay slightly to allow multiple moves to potentially complete
-            # before the full refresh happens. This might make the UI feel slightly smoother.
-            QTimer.singleShot(50, lambda: gallery.populate_gallery(force_refresh=True))
-            return True
+                 gallery.app.show_status_message("Error: Template manager not available.", "error")
+            return False
+
+        folder_ops = gallery.app.template_manager
+
+        # Handle both single template name and list of names
+        if isinstance(template_name, str):
+            template_names = [template_name]
+        elif isinstance(template_name, list):
+            template_names = template_name
         else:
-            print(f"🔍 LISTENER: Template '{single_template_name}' move failed or was unnecessary.")
+            print(f"🔍 LISTENER (Move): Invalid type for template_name: {type(template_name)}")
+            if hasattr(gallery.app, 'show_status_message'):
+                 gallery.app.show_status_message("Error: Invalid template input.", "error")
+            return False
+
+        if not template_names:
+            print(f"🔍 LISTENER (Move): No template names provided.")
+            return False # Nothing to do
+
+        success_count = 0
+        failed_details = [] # Store tuples of (name, reason)
+
+        # --- Handle moving to the root (removing from any folder) ---
+        if target_folder_name and target_folder_name.lower() == 'root':
+            print(f"🔍 LISTENER (Move to Root): Processing {len(template_names)} templates.")
+
+            if not hasattr(folder_ops, 'get_folder_containing_template') or not hasattr(folder_ops, 'remove_from_folder'):
+                 print("ERROR: Template manager missing required folder operation methods (get_folder_containing_template or remove_from_folder).")
+                 if hasattr(gallery.app, 'show_status_message'):
+                      gallery.app.show_status_message("Error: Cannot perform remove operation due to missing methods.", "error")
+                 gallery.populate_gallery(force_refresh=True) # Refresh to show current state
+                 return False
+
+            for name in template_names:
+                current_folder = folder_ops.get_folder_containing_template(name)
+
+                if not current_folder:
+                    print(f"  -> Template '{name}' is already at root (no folder found). Skipping.")
+                    success_count += 1 # Count as success as it's already where it should be
+                    continue
+
+                print(f"  -> Attempting to remove '{name}' from folder '{current_folder}'.")
+                try:
+                    # remove_from_folder returns True if save succeeds, False otherwise
+                    result = folder_ops.remove_from_folder(current_folder, name)
+                    if result:
+                        print(f"  -> Successfully removed '{name}' from folder '{current_folder}' and saved.")
+                        success_count += 1
+                    else:
+                        # If remove_from_folder returns False, it means the save failed
+                        print(f"  -> Removed '{name}' from folder '{current_folder}' BUT FAILED TO SAVE changes.")
+                        # Treat as partial success visually, but record the save failure
+                        success_count += 1 # Count as processed, but note failure
+                        failed_details.append((name, "Save Failed"))
+                except Exception as e:
+                    print(f"  -> ERROR removing '{name}' from folder '{current_folder}': {e}")
+                    import traceback
+                    traceback.print_exc()
+                    failed_details.append((name, f"Exception: {e}"))
+
+            # --- Status Message Logic for Root Removal ---
+            if hasattr(gallery.app, 'show_status_message'):
+                 total_processed = len(template_names)
+                 failed_names = [f"{name} ({reason})" for name, reason in failed_details]
+
+                 if success_count > 0:
+                     if success_count == total_processed and not failed_details:
+                         message = f"Moved {success_count} template(s) to root successfully."
+                         status = "info"
+                     elif success_count == total_processed and failed_details: # All processed, but some saves failed
+                         message = f"Moved {success_count} template(s) to root, but failed to save changes for: {', '.join(failed_names)}."
+                         status = "warning"
+                     elif failed_details: # Some succeeded completely, some failed (exceptions or save issues)
+                         processed_ok = success_count - len(failed_details) # Templates that were fully processed ok
+                         if processed_ok < 0: processed_ok = 0 # Ensure non-negative
+                         message = f"Processed {total_processed} templates. {processed_ok} OK. Failed: {', '.join(failed_names)}."
+                         status = "warning"
+                     else: # Should only happen if success_count > 0 and no failures
+                         message = f"Moved {success_count} template(s) to root."
+                         status = "success"
+                 else: # success_count is 0
+                     message = f"Failed to process removal for any selected templates. Errors: {', '.join(failed_names)}"
+                     status = "error"
+                 gallery.app.show_status_message(message, status)
+            # -------------------------------------------
+
+        # --- Handle moving to a specific folder (existing logic adapted) ---
+        else:
+            print(f"🔍 LISTENER (Move to Folder): Moving {len(template_names)} templates to folder '{target_folder_name}'")
+
+            if not hasattr(folder_ops, 'move_template_to_folder'):
+                print("ERROR: Template manager missing 'move_template_to_folder' method.")
+                if hasattr(gallery.app, 'show_status_message'):
+                     gallery.app.show_status_message("Error: Cannot perform move operation due to missing method.", "error")
+                gallery.populate_gallery(force_refresh=True)
+                return False
+
+            for name in template_names:
+                print(f"  -> Attempting to move '{name}' to folder '{target_folder_name}'.")
+                try:
+                    # move_template_to_folder returns True if successful (including save)
+                    result = folder_ops.move_template_to_folder(name, target_folder_name)
+                    if result:
+                        print(f"  -> Successfully moved template '{name}' to folder '{target_folder_name}'.")
+                        success_count += 1
+                    else:
+                        # Assume False means failure (could be various reasons, including save fail)
+                        print(f"  -> Failed to move '{name}' to '{target_folder_name}' (manager returned False/None). Check logs.")
+                        failed_details.append((name, "Move Failed"))
+                except Exception as e:
+                    print(f"  -> ERROR moving '{name}' to folder '{target_folder_name}': {e}")
+                    import traceback
+                    traceback.print_exc()
+                    failed_details.append((name, f"Exception: {e}"))
+
+            # --- Status Message Logic for moving to specific folder ---
+            if hasattr(gallery.app, 'show_status_message'):
+                total_processed = len(template_names)
+                failed_names = [f"{name} ({reason})" for name, reason in failed_details]
+
+                if success_count == total_processed:
+                    message = f"Successfully moved {success_count} template(s) to '{target_folder_name}'"
+                    status = "success"
+                elif success_count > 0:
+                    message = f"Moved {success_count}/{total_processed} templates to '{target_folder_name}'. Failed: {', '.join(failed_names)}."
+                    status = "warning"
+                else: # success_count is 0
+                    message = f"Failed to move any templates to folder '{target_folder_name}'. Errors: {', '.join(failed_names)}"
+                    status = "error"
+                gallery.app.show_status_message(message, status)
+            # ----------------------------------------------------------
+
+        # Refresh gallery view regardless of success/failure
+        print(f"[DEBUG] GalleryEvents: Refreshing gallery after move operation (Target: {target_folder_name})")
+        # Use QTimer to ensure refresh happens after status message might appear
+        QTimer.singleShot(50, lambda: gallery.populate_gallery(force_refresh=True))
+
+        # Return True if at least one template was successfully processed (even if save failed)
+        return success_count > 0
 
     @staticmethod
     def _save_template_and_structure(gallery, data):
