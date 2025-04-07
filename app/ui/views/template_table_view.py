@@ -10,11 +10,13 @@ from PyQt5.QtWidgets import (QTableView, QHeaderView, QAbstractItemView,
                              QStyledItemDelegate, QStyleOptionViewItem, QStyle,
                              QStyleOptionHeader)
 from PyQt5.QtCore import Qt, QSettings, QModelIndex, QSize, QRect, QPoint, QSortFilterProxyModel, QByteArray, QMimeData
-from PyQt5.QtGui import QStandardItemModel, QStandardItem, QColor, QPalette, QIcon, QBrush, QPainter, QFontMetrics, QFont, QDrag
+from PyQt5.QtGui import QStandardItemModel, QStandardItem, QColor, QPalette, QIcon, QBrush, QPainter, QFontMetrics, QFont, QDrag, QPixmap
 
 from app.constants import get_resource_path
 try:
     from app.ui.color_scheme_pyqt import colors
+    from app.templates.drag_helpers import setup_drag_mime_data, create_drag_pixmap
+    from app.templates.mime_types import TEMPLATE_NAMES_MIME_TYPE
 except ImportError:
     # Define fallback colors if the import fails
     colors = {
@@ -27,6 +29,8 @@ except ImportError:
         'bg_dark': '#1E1E1E',
         'bg_medium': '#2A2A2A'
     }
+    # For import failures, define the MIME type constant here as fallback
+    TEMPLATE_NAMES_MIME_TYPE = "application/x-echelon-template-names"
 
 # Placeholder for future model if needed separately
 # class TemplateTableModel(QStandardItemModel):
@@ -525,30 +529,59 @@ class TemplateTableView(QTableView):
             print("[ERROR] startDrag: No model assigned to TableView via self.model()")
             return
         
+        # Get the template names and row data for selected items
+        templates_to_drag = []
         for index in selected_indexes:
             # Get data directly from the model's DisplayRole (proxy should handle this)
             name = model.data(index, Qt.DisplayRole)
             if name:
-                template_names.append(name)
+                # Create a simple template dict for consistency with TemplateCard drag
+                template_dict = {'name': name}
+                templates_to_drag.append(template_dict)
             else:
-                 # Use the proxy index row for warning
-                 print(f"[WARNING] startDrag: Could not get template name for proxy row {index.row()}")
+                # Use the proxy index row for warning
+                print(f"[WARNING] startDrag: Could not get template name for proxy row {index.row()}")
 
-        if not template_names:
+        if not templates_to_drag:
             print("[WARNING] startDrag: No template names found for selected rows.")
             return
 
         drag = QDrag(self)
         mime_data = QMimeData()
         
-        # Encode template names, separated by newline
-        encoded_data = "\n".join(template_names).encode('utf-8')
-        mime_data.setData("application/x-echelon-template-names", QByteArray(encoded_data))
-        
-        print(f"[DEBUG] Starting drag for templates: {template_names}")
+        # Use helper to setup mime data consistently
+        template_names = setup_drag_mime_data(templates_to_drag, mime_data)
         drag.setMimeData(mime_data)
         
-        # Default drag action
+        # Create custom drag pixmap with count indicator for multi-selection
+        item_count = len(template_names)
+        
+        # Create a representative pixmap for the drag (a colored rectangle with text)
+        base_pixmap = QPixmap(200, 40)
+        base_pixmap.fill(QColor(colors.get('card_bg', '#252526')))
+        
+        # Add text showing first template name
+        painter = QPainter(base_pixmap)
+        painter.setPen(QColor(colors.get('text', '#FFFFFF')))
+        painter.setFont(QFont("Arial", 10))
+        
+        # Show first template name, possibly truncated
+        display_text = template_names[0]
+        if len(display_text) > 20:
+            display_text = display_text[:18] + "..."
+            
+        # Position text with padding
+        painter.drawText(10, 25, display_text)
+        painter.end()
+        
+        # Use helper to create final drag pixmap with count
+        drag_pixmap = create_drag_pixmap(self, source_pixmap=base_pixmap, item_count=item_count)
+        drag.setPixmap(drag_pixmap)
+        drag.setHotSpot(QPoint(10, 20))  # Set hotspot in a sensible position
+        
+        print(f"[DEBUG] Starting drag for {item_count} templates")
+        
+        # Execute the drag
         drag.exec_(supportedActions, Qt.MoveAction)
 
 

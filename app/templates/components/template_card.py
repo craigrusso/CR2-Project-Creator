@@ -14,6 +14,8 @@ from app.ui.color_scheme_pyqt import MENU_DESTRUCTIVE_ITEM_STYLE, DELETE_TEXT_ST
 from app.templates.components.menu_actions import ContextMenu
 from app.constants import get_resource_path
 from PyQt5.QtWidgets import QApplication, QStyle
+from app.templates.mime_types import TEMPLATE_NAMES_MIME_TYPE, TEMPLATE_MULTI_DRAG_MIME_TYPE
+from app.templates.drag_helpers import setup_drag_mime_data, create_drag_pixmap
 
 def template_icon_path(template_name=None):
     """Return the path to the template icon."""
@@ -375,17 +377,16 @@ class TemplateCard(QFrame):
                 templates_to_drag = [self.template]
                 print(f"🔍 LISTENER: Single template drag: {self.template.get('name')}")
 
-            # Encode template names (newline separated)
-            template_names = [t.get('name', '') for t in templates_to_drag if isinstance(t, dict)]
-            encoded_data = QByteArray(bytes('\n'.join(template_names), 'utf-8'))
-            mime_data.setData('application/x-echelon-template-names', encoded_data)
-            
+            # Setup MIME data with our helper
+            template_names = setup_drag_mime_data(templates_to_drag, mime_data)
             drag.setMimeData(mime_data)
             
-            # Create a pixmap for the drag preview (optional, could show multiple items)
-            pixmap = QPixmap(self.size())
-            self.render(pixmap)
-            drag.setPixmap(pixmap)
+            # Create a custom drag pixmap with count indicator
+            item_count = len(template_names)
+            drag_pixmap = create_drag_pixmap(self, item_count=item_count)
+            drag.setPixmap(drag_pixmap)
+            
+            # Set the hotspot to be the mouse position relative to the top-left of the pixmap
             drag.setHotSpot(event.pos() - self.rect().topLeft())
 
             # Execute the drag operation

@@ -1,14 +1,16 @@
 # template_folder_card.py
 
 from PyQt5.QtWidgets import QFrame, QLabel, QLineEdit, QVBoxLayout, QHBoxLayout, QMessageBox, QMenu, QAction, QWidget, QApplication, QStyle
-from PyQt5.QtCore import pyqtSignal, Qt, QTimer, QEvent, QPoint, QRect, QRectF
-from PyQt5.QtGui import QFont, QIcon, QPixmap, QCursor, QColor, QFontMetrics, QPainter, QBrush, QPen, QPainterPath, QLinearGradient
+from PyQt5.QtCore import pyqtSignal, Qt, QTimer, QEvent, QPoint, QRect, QRectF, QMimeData, QByteArray
+from PyQt5.QtGui import QFont, QIcon, QPixmap, QCursor, QColor, QFontMetrics, QPainter, QBrush, QPen, QPainterPath, QDrag
 from .utils import SYSTEM_FONT
 from .common_styles import CARD_NORMAL, CARD_HOVER, CARD_SELECTED
 from app.ui.color_scheme_pyqt import colors, MENU_DESTRUCTIVE_ITEM_STYLE, DELETE_TEXT_STYLE
 from app.templates.components.menu_actions import ContextMenu
 from app.constants import get_resource_path
+from app.templates.mime_types import TEMPLATE_NAMES_MIME_TYPE, TEMPLATE_MULTI_DRAG_MIME_TYPE, TEMPLATE_MULTI_SELECTION_MIME_TYPE
 import os
+import json
 
 class TemplateFolderCard(QFrame):
     clicked = pyqtSignal(str)
@@ -193,83 +195,228 @@ class TemplateFolderCard(QFrame):
             self.doubleClicked.emit(self.folder_name)
 
     def dragEnterEvent(self, event):
-        """Accept drops if they contain template names."""
-        if event.mimeData().hasFormat('application/x-echelon-template-names'):
-            event.setDropAction(Qt.MoveAction)
-            event.accept()
-            # Add visual feedback (e.g., highlight)
-            self.setStyleSheet(f"background-color: {colors.get('highlight_bg', '#4A90E2')}; border-radius: 6px; border: 1px solid {colors.get('highlight_border', '#FFFFFF')};")
+        """Accept drag if it contains template data"""
+        mime_data = event.mimeData()
+        
+        # Accept if any of our supported MIME types are present
+        if (mime_data.hasFormat(TEMPLATE_NAMES_MIME_TYPE) or 
+            mime_data.hasFormat(TEMPLATE_MULTI_SELECTION_MIME_TYPE) or
+            mime_data.hasFormat(TEMPLATE_MULTI_DRAG_MIME_TYPE) or
+            mime_data.hasText()):
+                
+            # Apply visual feedback with solid border (was dashed)
+            self.setStyleSheet(f"""
+                QFrame {{
+                    background-color: {colors.get('accent_hover', '#5A5A5A')};
+                    border: 2px solid {colors.get('accent', '#FFFFFF')};
+                    border-radius: 8px;
+                }}
+                QLabel {{
+                    color: {colors.get('highlight_text', '#FFFFFF')};
+                    background-color: transparent;
+                }}
+            """)
+            
+            # Accept the drag
+            event.acceptProposedAction()
+            
+            # Log the event
+            if mime_data.hasFormat(TEMPLATE_NAMES_MIME_TYPE):
+                try:
+                    data = mime_data.data(TEMPLATE_NAMES_MIME_TYPE).data().decode('utf-8')
+                    print(f"[DEBUG] DragEnter: Drag entered folder '{self.folder_name}' with TEMPLATE_NAMES_MIME_TYPE: {data}")
+                except Exception as e:
+                    print(f"[DEBUG] DragEnter: Drag entered folder '{self.folder_name}' with TEMPLATE_NAMES_MIME_TYPE (decode error: {e})")
+            elif mime_data.hasText():
+                print(f"[DEBUG] DragEnter: Drag entered folder '{self.folder_name}' with text: {mime_data.text()}")
+            else:
+                print(f"[DEBUG] DragEnter: Drag entered folder '{self.folder_name}' with supported MIME type")
+            
+        else:
+            print(f"[DEBUG] DragEnter: Rejected drag for folder '{self.folder_name}' - invalid mime data")
+            event.ignore()
+    
+    def dragMoveEvent(self, event):
+        """Continue accepting the drag"""
+        mime_data = event.mimeData()
+        
+        # Accept if any of our supported MIME types are present
+        if (mime_data.hasFormat(TEMPLATE_NAMES_MIME_TYPE) or 
+            mime_data.hasFormat(TEMPLATE_MULTI_SELECTION_MIME_TYPE) or
+            mime_data.hasFormat(TEMPLATE_MULTI_DRAG_MIME_TYPE) or
+            mime_data.hasText()):
+            event.acceptProposedAction()
         else:
             event.ignore()
-
+    
     def dragLeaveEvent(self, event):
-        """Remove visual feedback when drag leaves."""
-        self._update_styling() # Restore normal style
+        """Reset styling when drag leaves"""
+        self._update_styling()
         event.accept()
-
+    
     def dropEvent(self, event):
         """Handle the drop event to move templates."""
-        if event.mimeData().hasFormat('application/x-echelon-template-names'):
-            encoded_data = event.mimeData().data('application/x-echelon-template-names')
-            try:
-                template_names_str = bytes(encoded_data).decode('utf-8')
-                template_names = template_names_str.split('\n')
-                template_names = [name for name in template_names if name] # Remove empty strings
+        mime_data = event.mimeData()
+        
+        try:
+            # First priority: check for our standardized MIME type
+            if mime_data.hasFormat(TEMPLATE_NAMES_MIME_TYPE):
+                template_names_data = mime_data.data(TEMPLATE_NAMES_MIME_TYPE).data().decode('utf-8')
+                template_names = template_names_data.strip().split('\n')
                 
-                print(f"[DEBUG] FolderCard '{self.folder_name}': Dropped {len(template_names)} templates: {template_names}")
-
-                # Call the gallery/app handler to move the templates
-                gallery = self._find_gallery()
-                # Ensure gallery and template_manager exist
-                template_manager = None
-                if gallery and hasattr(gallery, 'template_manager'):
-                    template_manager = gallery.template_manager
-                elif gallery and hasattr(gallery, 'app') and hasattr(gallery.app, 'template_manager'):
-                    template_manager = gallery.app.template_manager
+                print(f"[DEBUG] Drop: Processing {len(template_names)} templates from {TEMPLATE_NAMES_MIME_TYPE}")
                 
-                if template_manager and hasattr(template_manager, 'move_template_to_folder'):
-                    success_count = 0
-                    for template_name in template_names:
-                        try:
-                            # Call the move function for each template
-                            success = template_manager.move_template_to_folder(template_name, self.folder_name)
-                            if success:
-                                success_count += 1
-                            else:
-                                print(f"[WARNING] Failed to move template '{template_name}' to folder '{self.folder_name}'")
-                        except Exception as move_error:
-                            print(f"[ERROR] Error moving template '{template_name}': {move_error}")
-
-                    if success_count > 0:
-                        print(f"Successfully moved {success_count}/{len(template_names)} templates to {self.folder_name}")
-                        event.setDropAction(Qt.MoveAction)
-                        event.accept()
-                        # Refresh the gallery view after move
-                        if hasattr(gallery, 'populate_gallery'):
-                            gallery.populate_gallery(force_refresh=True)
-                    else:
-                        print(f"[ERROR] Failed to move any templates.")
-                        event.ignore()
+                # Process the templates
+                self._process_template_names(template_names, event)
+                return
+                
+            # Second priority: check for multi-selection data
+            elif mime_data.hasFormat(TEMPLATE_MULTI_SELECTION_MIME_TYPE):
+                multi_data = mime_data.data(TEMPLATE_MULTI_SELECTION_MIME_TYPE).data()
+                template_names = json.loads(multi_data.decode())
+                
+                print(f"[DEBUG] Drop: Processing {len(template_names)} templates from {TEMPLATE_MULTI_SELECTION_MIME_TYPE}")
+                
+                # Process the templates
+                self._process_template_names(template_names, event)
+                return
+                
+            # Fallback to plain text
+            elif mime_data.hasText():
+                text_data = mime_data.text().strip()
+                
+                # Check if it contains multiple templates (newline-separated)
+                if '\n' in text_data:
+                    template_names = text_data.split('\n')
+                    print(f"[DEBUG] Drop: Processing {len(template_names)} templates from text data (multiple)")
+                    
+                    # Process the templates
+                    self._process_template_names(template_names, event)
                 else:
-                    print("[ERROR] Could not find template_manager or move_template_to_folder method.")
-                    event.ignore()
+                    # Single template
+                    template_name = text_data
+                    print(f"[DEBUG] Drop: Processing single template from text data: {template_name}")
+                    
+                    # Use existing single template processing
+                    result = self._add_template_to_folder(template_name)
+                    
+                    if result:
+                        print(f"[DEBUG] Card: Successfully moved template")
+                        # Show success message in status bar
+                        if hasattr(self.app, 'show_status_message'):
+                            self.app.show_status_message(f"Template '{template_name}' added to folder '{self.folder_name}'", "info")
+                        
+                        # Refresh the gallery
+                        gallery = self._find_gallery()
+                        if gallery and hasattr(gallery, 'populate_gallery'):
+                            gallery.populate_gallery(force_refresh=True)
+                        
+                        # Accept the drop
+                        event.acceptProposedAction()
+                        return True
+                    else:
+                        print(f"[DEBUG] Card: Failed to move template")
+            
+            # If we get here, we couldn't handle the drop
+            event.ignore()
+            return False
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to process drop data: {e}")
+            import traceback
+            traceback.print_exc()
+            event.ignore()
+            return False
+            
+        # Always reset styling
+        self._update_styling()
+        
+    def _process_template_names(self, template_names, event):
+        """Process a list of template names for the drop event"""
+        # Find the template manager
+        template_manager = None
+        gallery = self._find_gallery()
+        
+        if gallery and hasattr(gallery, 'app') and hasattr(gallery.app, 'template_manager'):
+            template_manager = gallery.app.template_manager
+        elif self.app and hasattr(self.app, 'template_manager'):
+            template_manager = self.app.template_manager
+            
+        if template_manager and hasattr(template_manager, 'move_template_to_folder'):
+            success_count = 0
+            # Process only unique template names to avoid duplicate operations
+            processed_names = set()
+            
+            for template_name in template_names:
+                if not template_name or not template_name.strip():
+                    continue
+                    
+                # Sanitize the template name
+                sanitized_name = template_name.strip()
+                
+                # Skip if we've already processed this template in this batch
+                if sanitized_name in processed_names:
+                    print(f"[DEBUG] Skipping duplicate template name: '{sanitized_name}'")
+                    continue
+                
+                processed_names.add(sanitized_name)
+                
+                try:
+                    # Try to find the actual template first to verify it exists
+                    template = None
+                    if hasattr(template_manager, 'get_template_by_name'):
+                        template = template_manager.get_template_by_name(sanitized_name)
+                    
+                    if template:
+                        # If found, use the real template name from the template object
+                        real_name = template.get('name', sanitized_name)
+                        print(f"[DEBUG] Found template '{real_name}' for drop operation")
+                        
+                        # Call the move function for the template
+                        success = template_manager.move_template_to_folder(real_name, self.folder_name)
+                    else:
+                        # If not found, try with the provided name anyway (our improved move_template_to_folder will handle it)
+                        print(f"[DEBUG] Template lookup failed for '{sanitized_name}', trying move operation directly")
+                        success = template_manager.move_template_to_folder(sanitized_name, self.folder_name)
+                    
+                    if success:
+                        success_count += 1
+                    else:
+                        print(f"[WARNING] Failed to move template '{sanitized_name}' to folder '{self.folder_name}'")
+                except Exception as move_error:
+                    print(f"[ERROR] Error moving template '{sanitized_name}': {move_error}")
+                    import traceback
+                    traceback.print_exc()
 
-            except Exception as e:
-                print(f"[ERROR] Failed to process drop data: {e}")
+            if success_count > 0:
+                print(f"Successfully moved {success_count}/{len(processed_names)} templates to {self.folder_name}")
+                event.setDropAction(Qt.MoveAction)
+                event.accept()
+                
+                # Show success message in status bar
+                if hasattr(self.app, 'show_status_message'):
+                    self.app.show_status_message(f"Added {success_count} templates to folder '{self.folder_name}'", "info")
+                
+                # Refresh the gallery view after move
+                if gallery and hasattr(gallery, 'populate_gallery'):
+                    gallery.populate_gallery(force_refresh=True)
+            else:
+                print(f"[ERROR] Failed to move any templates.")
                 event.ignore()
         else:
+            print("[ERROR] Could not find template_manager or move_template_to_folder method.")
             event.ignore()
-        
-        self._update_styling() # Restore normal style
-
+            
     def _find_gallery(self):
-        """Helper to find the parent TemplateGallery instance."""
+        """Helper method to find the parent gallery"""
+        gallery = None
         parent = self.parent()
         while parent:
-            if isinstance(parent, QWidget) and hasattr(parent, 'multi_selected_templates'): # Check for a known gallery attribute
-                return parent
+            if hasattr(parent, 'populate_gallery'):
+                gallery = parent
+                break
             parent = parent.parent()
-        return None
+        return gallery
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton and not self.editing:
