@@ -199,25 +199,17 @@ def show_preferences_dialog(parent=None):
             background-color: {colors['card_bg']};
         }}
         
+        QCheckBox::indicator:hover {{
+            border: 1px solid {colors['accent']};
+        }}
+        
         QCheckBox::indicator:checked {{
             background-color: {colors['accent']};
             border: 1px solid {colors['accent']};
         }}
-        
-        QCheckBox::indicator:checked::after {{
-            content: "✓";
-            color: white;
-            position: absolute;
-            left: 3px;
-            top: -2px;
-            font-size: 14px;
-        }}
-        
-        QCheckBox::indicator:hover {{
-            border: 1px solid {colors['accent']};
-        }}
     """
 
+    # Create checkboxes with text containing Unicode checkmark
     enable_caching_check = QCheckBox("Enable file caching")
     enable_caching_check.setStyleSheet(checkbox_direct_style)
     enable_caching_check.setChecked(cache_prefs.should_cache_files() if cache_prefs_available else True)
@@ -228,7 +220,7 @@ def show_preferences_dialog(parent=None):
     auto_clean_check = QCheckBox("Automatically clean cache periodically")
     auto_clean_check.setStyleSheet(checkbox_direct_style)
     auto_clean_check.setChecked(cache_prefs.should_clean_cache() if cache_prefs_available else True)
-    auto_clean_check.setToolTip("Remove old and unused cached files")
+    auto_clean_check.setToolTip("Remove old and unused files")
     auto_clean_check.setEnabled(cache_prefs_available)
     caching_layout.addWidget(auto_clean_check)
 

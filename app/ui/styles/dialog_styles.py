@@ -59,7 +59,8 @@ CHECKBOX_STYLE = f"""
     QCheckBox::indicator:checked {{
         background-color: {colors['accent']};
         border: 1px solid {colors['accent']};
-        image: url(app/assets/css/check.svg);
+        image: none;
+        background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path fill="white" d="M6.5,12.5 L3,9 L4.5,7.5 L6.5,9.5 L11.5,4.5 L13,6 L6.5,12.5 Z"/></svg>');
     }}
     
     QCheckBox::indicator:hover {{

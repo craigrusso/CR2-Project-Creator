@@ -3,7 +3,7 @@
 
 from PyQt5.QtWidgets import QWidget, QLabel, QLineEdit, QPushButton, QComboBox, QFrame, QListView, QAbstractItemView, QStyledItemDelegate, QApplication, QProxyStyle, QStyle
 from PyQt5.QtCore import Qt, QEvent, QObject, QRect, QSize
-from PyQt5.QtGui import QPalette, QColor, QPainter, QBrush, QPen, QFont
+from PyQt5.QtGui import QPalette, QColor, QPainter, QBrush, QPen, QFont, QPixmap, QPainterPath
 import sys, time
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE, LINEEDIT_STYLE, LABEL_STYLE, LISTVIEW_POPUP_STYLE
 import platform
@@ -395,22 +395,58 @@ def configure_styles(app):
         QCheckBox::indicator:checked {{
             background-color: {colors['accent']};
             border: 1px solid {colors['accent']};
-            /* Use a direct path for the image to ensure it loads correctly */
-            image: url({app.applicationDirPath() + "/app/assets/css/check.svg"});
         }}
         QCheckBox::indicator:disabled {{
             border: 1px solid {colors['secondary_text']};
             background-color: {colors['bg']};
         }}
         QCheckBox::indicator:checked:disabled {{
-            /* Use a direct path for the disabled check icon if it exists */
-            image: url({app.applicationDirPath() + "/app/assets/css/check_disabled.svg"});
             background-color: {colors['secondary_text']};
         }}
     """
 
     # Append checkbox QSS to the main stylesheet
     app.setStyleSheet(app.styleSheet() + checkbox_qss)
+    
+    # Create programmatic checkmark icon for checkboxes
+    def create_checkmark_icon():
+        size = 14  # Size of the checkmark icon
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.transparent)  # Start with transparent background
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        
+        # Draw checkmark path
+        path = QPainterPath()
+        path.moveTo(3, 7)
+        path.lineTo(6, 10)
+        path.lineTo(11, 4)
+        
+        # Set up painter
+        pen = QPen(QColor("white"))
+        pen.setWidth(1.5)
+        painter.setPen(pen)
+        
+        # Draw the path
+        painter.drawPath(path)
+        painter.end()
+        
+        return pixmap
+    
+    # Install event filter to add checkmark to checkboxes
+    class CheckboxStyleFilter(QObject):
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self.checkmark = create_checkmark_icon()
+            
+        def eventFilter(self, obj, event):
+            from PyQt5.QtWidgets import QCheckBox, QStyle
+            if isinstance(obj, QCheckBox) and event.type() == QEvent.Paint:
+                if obj.isChecked():
+                    # Draw the checkmark on top after the regular painting is done
+                    obj.style().drawPrimitive(QStyle.PE_IndicatorCheckBox, None, obj)
+            return False
     
     # Install a global event filter to catch combo box popups
     popup_filter = ComboBoxPopupFilter()
