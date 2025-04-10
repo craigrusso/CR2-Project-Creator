@@ -931,4 +931,42 @@ class GalleryEvents:
             else:
                 QMessageBox.warning(gallery, "Not Implemented", "Rename functionality is not implemented yet.")
         except Exception as e:
-            QMessageBox.critical(gallery, "Error", f"Error renaming template: {str(e)}") 
+            QMessageBox.critical(gallery, "Error", f"Error renaming template: {str(e)}")
+
+    @staticmethod
+    def key_press_event(gallery, event):
+        """Handle keyboard events in the gallery
+        
+        Args:
+            gallery: The gallery instance
+            event: The key event
+        """
+        from PyQt5.QtCore import Qt
+        
+        try:
+            # Handle both Delete and Backspace (for Mac) keys for template deletion
+            if event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
+                # Get the currently selected template or templates
+                selected_templates = []
+                
+                # Get multi-selected templates if available
+                if hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
+                    selected_templates = [t.get('name') for t in gallery.multi_selected_templates if t and t.get('name')]
+                # Get primary selected template if available and no multi-selection
+                elif hasattr(gallery, 'selected_template') and gallery.selected_template:
+                    template_name = gallery.selected_template.get('name')
+                    if template_name:
+                        selected_templates = [template_name]
+                        
+                # Delete selected templates if any
+                if selected_templates:
+                    print(f"[DEBUG] Delete/Backspace key pressed, deleting templates: {selected_templates}")
+                    GalleryEvents.on_delete_template(gallery, selected_templates)
+            
+            # Important: Don't return True or False as this affects event propagation
+            # Let the event continue to be processed by parent handlers
+            
+        except Exception as e:
+            print(f"[ERROR] Error handling key press event: {e}")
+            import traceback
+            traceback.print_exc() 

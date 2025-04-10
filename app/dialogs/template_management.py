@@ -279,7 +279,7 @@ def show_manage_templates(parent, template_manager, callback=None):
     """Show the template management dialog"""
     dialog = QDialog(parent)
     dialog.setWindowTitle("Manage Templates")
-    dialog.resize(600, 500)
+    dialog.resize(600, 700)
     
     layout = QVBoxLayout(dialog)
     layout.setContentsMargins(15, 15, 15, 15)

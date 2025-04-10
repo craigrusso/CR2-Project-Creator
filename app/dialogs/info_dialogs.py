@@ -9,21 +9,35 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                            QPushButton, QTabWidget, QWidget)
 from PyQt5.QtCore import Qt
 
-from app.core.app_config import APP_NAME, APP_VERSION
+# Import from the same place as APP_NAME and APP_VERSION for consistency
+from app.config.app_config import APP_NAME, APP_VERSION
+# Define a fallback build number in case import fails
+APP_BUILD_NUMBER = "250"
+try:
+    # Try to import from constants if available
+    from app.constants import APP_BUILD_NUMBER
+except ImportError:
+    try:
+        # Try alternative location if first import fails
+        from app.config.constants import APP_BUILD_NUMBER
+    except ImportError:
+        # Keep the fallback value if both imports fail
+        pass
+
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE
 
 def show_about(app):
     """Show the about dialog"""
     dialog = QDialog(app)
     dialog.setWindowTitle("About")
-    dialog.resize(450, 300)
+    dialog.resize(450, 320)
     
     layout = QVBoxLayout(dialog)
     layout.setContentsMargins(20, 20, 20, 20)
     layout.setSpacing(10)
     
-    # App name and version
-    title_label = QLabel(f"{APP_NAME} {APP_VERSION}")
+    # App name and version with build number
+    title_label = QLabel(f"{APP_NAME}")
     font = title_label.font()
     font.setBold(True)
     font.setPointSize(16)
@@ -31,6 +45,12 @@ def show_about(app):
     title_label.setAlignment(Qt.AlignCenter)
     title_label.setStyleSheet(f"color: {colors['text']};")
     layout.addWidget(title_label)
+    
+    # Version with build in parentheses
+    version_label = QLabel(f"{APP_VERSION} <span style='color: {colors['secondary_text']}; font-size: 10px;'>(build {APP_BUILD_NUMBER})</span>")
+    version_label.setAlignment(Qt.AlignCenter)
+    version_label.setStyleSheet(f"color: {colors['text']};")
+    layout.addWidget(version_label)
     
     # Copyright info
     copyright_label = QLabel("© 2023-present Craig P. Russo and CR2 Creative")
@@ -40,7 +60,7 @@ def show_about(app):
     
     # Description
     description = QLabel(
-        "CR2 Creative Pro is a professional project creation tool designed to "
+        "Echelon is a professional project creation tool designed to "
         "streamline your workflow by creating consistent project structures and files "
         "from customizable templates."
     )
@@ -71,7 +91,7 @@ def show_tutorial(app):
     layout.setSpacing(10)
     
     # Title
-    title_label = QLabel("Getting Started with CR2 Creative Pro")
+    title_label = QLabel("Getting Started with Echelon")
     font = title_label.font()
     font.setBold(True)
     font.setPointSize(14)

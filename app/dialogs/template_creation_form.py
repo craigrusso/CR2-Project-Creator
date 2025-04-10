@@ -26,7 +26,7 @@ class TemplateCreationForm(QDialog):
     def __init__(self, parent=None, template=None, template_manager=None, callback=None):
         super().__init__(parent)
         self.setWindowTitle("Template Creator")
-        self.resize(700, 600)
+        self.resize(700, 800)
         self.template = template or {}
         self.template_manager = template_manager
         self.callback = callback

@@ -38,6 +38,41 @@ class TemplateStructureOps:
         # Return an empty list as default structures are no longer defined here
         return []
 
+    def validate_structure_file(self, structure_data):
+        """
+        Validate a structure file to ensure it has the necessary fields.
+        
+        Args:
+            structure_data (dict): The structure data to validate
+            
+        Returns:
+            tuple: (is_valid, structure, message)
+                - is_valid: True if the structure is valid, False otherwise
+                - structure: The extracted structure data or None if invalid
+                - message: A message describing the validation result
+        """
+        if not isinstance(structure_data, dict):
+            return False, None, "Structure data is not a dictionary"
+            
+        # Check for name field
+        if 'name' not in structure_data:
+            return False, None, "Structure data missing 'name' field"
+            
+        # Look for structure in either 'structure' or 'directories' field
+        structure = None
+        if 'structure' in structure_data:
+            structure = structure_data['structure']
+        elif 'directories' in structure_data:
+            structure = structure_data['directories']
+        else:
+            return False, None, f"Structure data for '{structure_data.get('name', 'unknown')}' missing both 'structure' and 'directories' fields"
+            
+        # Basic validation on the structure
+        if not isinstance(structure, list):
+            return False, None, f"Structure for '{structure_data.get('name', 'unknown')}' is not a list"
+            
+        return True, structure, "Structure is valid"
+
     def get_structure(self, structure_name):
         """Get the folder structure for a template."""
         print(f"DEBUG: get_structure called with structure_name='{structure_name}'")
@@ -79,8 +114,13 @@ class TemplateStructureOps:
             
             if found_in_memory:
                 print(f"DEBUG: Found custom structure in memory: {name_to_try}")
-                # Return the 'structure' field which holds the actual list/dict
-                return found_in_memory.get('structure', [])
+                # Validate structure before returning
+                is_valid, structure, message = self.validate_structure_file(found_in_memory)
+                if is_valid:
+                    return structure
+                else:
+                    print(f"DEBUG: {message}")
+                    continue
 
             # Check on disk
             custom_structure_path = os.path.join(self.paths["custom_structures_dir"], f"{name_to_try}.json")
@@ -89,8 +129,14 @@ class TemplateStructureOps:
                     with open(custom_structure_path, 'r') as f:
                         structure_data = json.load(f)
                         print(f"DEBUG: Found custom structure on disk: {name_to_try}")
-                        # Return the 'structure' field if it exists
-                        return structure_data.get('structure', [])
+                        
+                        # Validate structure before returning
+                        is_valid, structure, message = self.validate_structure_file(structure_data)
+                        if is_valid:
+                            return structure
+                        else:
+                            print(f"DEBUG: {message}")
+                            continue
                 except Exception as e:
                     print(f"Error loading structure {name_to_try}: {e}")
 
@@ -510,8 +556,16 @@ class TemplateStructureOps:
                     with open(filepath, 'r') as f:
                         structure_data = json.load(f)
                         
-                    # Basic validation: check if it has 'name' and 'structure' keys
-                    if isinstance(structure_data, dict) and 'name' in structure_data and 'structure' in structure_data:
+                    # Use our validation function for consistent checking
+                    is_valid, structure, message = self.validate_structure_file(structure_data)
+                    if is_valid:
+                        # If only directories field is present but not structure, add structure field
+                        if 'directories' in structure_data and 'structure' not in structure_data:
+                            structure_data['structure'] = structure_data['directories']
+                        # If only structure field is present but not directories, add directories field
+                        elif 'structure' in structure_data and 'directories' not in structure_data:
+                            structure_data['directories'] = structure_data['structure']
+                            
                         # Check for duplicates by name before adding
                         if not any(s.get('name') == structure_data['name'] for s in self.custom_structures):
                             self.custom_structures.append(structure_data)
@@ -520,7 +574,7 @@ class TemplateStructureOps:
                         else:
                             print(f"WARN: Duplicate custom structure name '{structure_data.get('name')}' found in {filename}. Skipping.")
                     else:
-                         print(f"WARN: Skipping invalid structure file (missing name/structure): {filename}")
+                        print(f"WARN: {message} in file: {filename}")
                 except json.JSONDecodeError as e:
                     print(f"ERROR: Failed to decode JSON from {filename}: {e}")
                 except Exception as e:

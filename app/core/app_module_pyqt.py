@@ -442,7 +442,7 @@ class ProjectCreatorApp(QMainWindow):
         if platform.system() != "Darwin":  # Not macOS
             about_action = QAction("About", self)
         else:
-            about_action = QAction("About CR2 Creative Pro", self)
+            about_action = QAction("About Echelon", self)
         about_action.triggered.connect(lambda: show_about(self))
         help_menu.addAction(about_action)
         

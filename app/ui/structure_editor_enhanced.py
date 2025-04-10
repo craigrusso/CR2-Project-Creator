@@ -64,7 +64,7 @@ class EnhancedStructureEditor(QDialog):
         # Set window properties
         self.is_new = is_new
         self.setWindowTitle("Structure Editor")
-        self.setMinimumSize(800, 600)
+        self.setMinimumSize(800, 800)
         
         print(f"DEBUG: Creating structure editor - structure_name: {structure_name}, is_new: {is_new}")
         
@@ -918,13 +918,21 @@ class EnhancedStructureEditor(QDialog):
                 raise AttributeError("Template manager instance is not available.")
 
             print(f"[DEBUG] Attempting to save structure: Name='{updated_structure_name}', TemplateName='{updated_template_name}'")
-            # Pass the category to the save function
-            # NOTE: We will modify save_custom_structure to accept 'category'
-            success = template_manager_instance.save_custom_structure(
-                name=updated_structure_name,
-                structure=updated_structure,
-                category=selected_category # Pass the category
-            )
+            
+            # Create save parameters with additional info for rename operations
+            save_params = {
+                "name": updated_structure_name,
+                "structure": updated_structure,
+                "category": selected_category
+            }
+            
+            # If this is a rename operation, add the original name to ensure proper cleanup
+            if is_rename:
+                save_params["original_name"] = self.original_structure_name
+                print(f"[DEBUG] Adding original_name '{self.original_structure_name}' for rename operation")
+            
+            # Pass the save parameters to the save function
+            success = template_manager_instance.save_custom_structure(**save_params)
 
             if not success:
                 raise RuntimeError("Failed to save the structure via Template Manager.")

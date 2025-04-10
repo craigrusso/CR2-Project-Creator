@@ -308,6 +308,27 @@ class TemplateIO:
                 # Add or update template in memory dictionary
                 self.templates[name] = template_data
                 print(f"DEBUG: TemplateIO: Added/Updated template '{name}' in memory dict.")
+                
+                # Check if this is a rename operation (original_name field exists and is different)
+                original_name = template_data.get("original_name")
+                if original_name and original_name != name:
+                    print(f"DEBUG: TemplateIO: Detected rename from '{original_name}' to '{name}'")
+                    # Generate old file path
+                    sanitized_old_name = original_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+                    old_file_path = os.path.join(self.paths["templates_dir"], f"{sanitized_old_name}.json")
+                    
+                    # Delete the old file if it exists and is different from the new one
+                    if old_file_path != file_path and os.path.exists(old_file_path):
+                        try:
+                            os.remove(old_file_path)
+                            print(f"✅ TemplateIO: Deleted old template file during rename: {old_file_path}")
+                            # Also remove the old entry from the templates dictionary
+                            if original_name in self.templates:
+                                del self.templates[original_name]
+                                print(f"✅ TemplateIO: Removed old template entry for '{original_name}' from memory dict")
+                        except Exception as e:
+                            print(f"⚠️ TemplateIO: Error deleting old template file during rename: {e}")
+                
                 print(f"✅ TemplateIO: Successfully saved template '{name}'")
                 return True
             else:

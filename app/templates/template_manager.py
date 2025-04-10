@@ -173,7 +173,7 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
             traceback.print_exc()
             return False
 
-    def save_custom_structure(self, name, structure, category="General", description=None):
+    def save_custom_structure(self, name, structure, category="General", description=None, original_name=None):
         """Save a custom structure to disk, now including category and description."""
         print(f"\n[DEBUG] TemplateManager.save_custom_structure: Starting save for '{name}' with received category '{category}'")
         
@@ -201,44 +201,47 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
                 "category": category, # Add the received category
                 "description": description if description is not None else f"Custom template: {name}", # Add description or default
                 "directories": structure,
+                "structure": structure, # Add structure field for compatibility
                 "created": datetime.datetime.now().isoformat()
             }
             
+            # If original_name is provided and different from current name, this is a rename
+            if original_name and original_name != name:
+                print(f"[DEBUG] This is a rename operation from '{original_name}' to '{name}'")
+                structure_data["original_name"] = original_name
+            
             print(f"[DEBUG] Initial structure_data prepared with category: '{structure_data.get('category')}'")
             
-            # If we're updating an existing file, read it to preserve metadata
+            # If this is an update, read the existing file to retain any metadata
             if is_update and existing_path:
                 try:
-                    print(f"[DEBUG] Reading existing structure '{existing_path}' to preserve metadata")
                     with open(existing_path, 'r') as f:
                         existing_data = json.load(f)
-                        print(f"[DEBUG] Existing data loaded. Existing category: '{existing_data.get('category')}'")
                         
-                    # Preserve creation timestamp if it exists
-                    if 'created' in existing_data:
-                        structure_data['created'] = existing_data['created']
-                    
-                    # Preserve any other metadata fields that aren't being explicitly updated
-                    # (like tags, potentially other future fields)
-                    preserved_keys = []
-                    for key, value in existing_data.items():
-                        if key not in ['name', 'type', 'category', 'description', 'directories', 'created', 'modified']:
-                            structure_data[key] = value
-                            preserved_keys.append(key)
-                    if preserved_keys:
-                        print(f"[DEBUG] Preserved existing metadata keys: {preserved_keys}")
-                    
-                    # Add/Update modified timestamp
-                    structure_data['modified'] = datetime.datetime.now().isoformat()
-                    print(f"[DEBUG] Preserved metadata and added/updated modified timestamp. Current category in structure_data: '{structure_data.get('category')}'")
+                    # Preserve creation timestamp and other important fields
+                    if isinstance(existing_data, dict):
+                        # Keep original creation time
+                        if 'created' in existing_data:
+                            structure_data['created'] = existing_data['created']
+                            
+                        # Copy over any other fields we want to preserve
+                        for field in ['uuid', 'version', 'author', 'import_time']:
+                            if field in existing_data:
+                                structure_data[field] = existing_data[field]
+                        
+                    print(f"[DEBUG] Loaded and merged existing data from {existing_path}")
                 except Exception as e:
-                    print(f"[ERROR] Error reading existing structure for metadata preservation: {e}")
-                    # Continue with saving as new if read fails, but log the error
+                    print(f"[WARNING] Failed to load/merge existing structure data: {e}")
             
-            # Store in memory - important to store the whole structure_data object
-            # Use the structure name (which starts with Template_) as the key
+            # Set modified timestamp
+            structure_data['modified'] = datetime.datetime.now().isoformat()
+            
+            # Update our custom_structures cache
+            if not hasattr(self, 'custom_structures'):
+                self.custom_structures = {}
+                
+            # Add to in-memory structure cache  
             self.custom_structures[name] = structure_data
-            print(f"[DEBUG] Updated in-memory structure cache for key '{name}'")
             
             # Determine file path - use existing path if updating, otherwise create new
             if is_update and existing_path:
@@ -726,35 +729,57 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
         
         Args:
             template_name (str): Name of the template to duplicate
-            new_name (str): Name for the duplicate template
+            new_name (str): New name for the duplicated template
             
         Returns:
             bool: True if successful, False otherwise
         """
-        print(f"[DEBUG] TemplateManager: Duplicating template '{template_name}' to '{new_name}'")
-        
         if not hasattr(self, 'template_io'):
             print(f"[ERROR] Cannot duplicate template: template_io not available")
             return False
+        
+        # Call the template_io duplicate_template method with both parameters
+        success = self.template_io.duplicate_template(template_name, new_name)
+        
+        # If successful, force reload templates to include the new duplicate
+        if success:
+            # Force reload templates from template_io to ensure the new template is loaded
+            self.template_io.load_templates()
             
-        try:
-            # Call the template_io duplicate_template method with both parameters
-            success = self.template_io.duplicate_template(template_name, new_name)
+        return success
+    
+    def delete_template(self, template_name):
+        """
+        Delete a template by name
+        
+        Args:
+            template_name (str): Name of the template to delete
             
-            # If duplication is successful, update any internal data structures
-            if success:
-                print(f"[INFO] TemplateManager: Successfully duplicated template to '{new_name}'")
-                
-                # Force reload templates from template_io to ensure the new template is loaded
-                self.template_io.load_templates()
-                
-                # Notify any listeners that templates have been updated
-                if hasattr(self, 'on_templates_updated') and callable(self.on_templates_updated):
-                    self.on_templates_updated()
-                
-            return success
-        except Exception as e:
-            print(f"[ERROR] Template duplication failed: {e}")
-            import traceback
-            traceback.print_exc()
+        Returns:
+            bool: True if deletion was successful, False otherwise
+        """
+        if not hasattr(self, 'template_io'):
+            print(f"[ERROR] Cannot delete template: template_io not available")
             return False
+        
+        print(f"DEBUG: TemplateManager.delete_template: Delegating deletion to template_io for '{template_name}'")
+        
+        # Call template_io's delete_template method
+        # In some implementations this returns a tuple (success, message)
+        result = self.template_io.delete_template(template_name)
+        
+        # Handle different return types
+        if isinstance(result, tuple):
+            success, _ = result  # Unpack the tuple, ignoring the message
+        else:
+            success = result  # Assume boolean return type
+            
+        # If successful, force reload templates to reflect the change
+        if success:
+            print(f"DEBUG: TemplateManager.delete_template: Successfully deleted template '{template_name}'")
+            # Force reload templates to ensure deleted template is removed from memory
+            self.template_io.load_templates()
+        else:
+            print(f"DEBUG: TemplateManager.delete_template: Failed to delete template '{template_name}'")
+            
+        return success
