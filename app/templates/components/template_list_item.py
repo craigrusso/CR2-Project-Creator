@@ -281,7 +281,7 @@ class TemplateListItem(QFrame):
                 
                 # Add "Move to Root" option if template is in a folder
                 if current_folder:
-                    move_to_root_action = QAction("Root (No Folder)", self)
+                    move_to_root_action = QAction("No Folder", self)
                     move_to_root_action.triggered.connect(lambda: self._move_template_out_of_folder(current_folder))
                     move_to_menu.addAction(move_to_root_action)
                     
@@ -375,6 +375,10 @@ class TemplateListItem(QFrame):
                     break
                 parent = parent.parent()
         
+        if not gallery:
+            print(f"[ERROR] Cannot move template: invalid gallery reference")
+            return
+        
         # Check if we need to move multiple templates
         if gallery and hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
             # Check if this template is part of the multi-selection or if we're in multi-select mode
@@ -408,18 +412,18 @@ class TemplateListItem(QFrame):
                             templates_to_move.add(t_name)
                             print(f"🔍 LISTENER: Adding multi-selected '{t_name}' to move list")
 
-                # Move each unique template in the combined list
-                success_count = 0
-                for name_to_move in templates_to_move:
-                    self.moveToFolderRequested.emit(name_to_move, "")
-                    success_count += 1
-                    
-                print(f"🔍 LISTENER: Requested move for {success_count} unique templates out of folder '{current_folder}'")
+                # Use the GalleryEvents class to handle the move operation
+                from app.templates.gallery_events import GalleryEvents
+                GalleryEvents.on_move_template_to_folder(gallery, list(templates_to_move), None)
+                print(f"🔍 LISTENER: Requested move for {len(templates_to_move)} unique templates out of folder '{current_folder}'")
                 return
         
         # Single template move (fallback if not multi-selection)
         print(f"🔍 LISTENER: Moving template '{template_name}' to root (no folder)")
-        self.moveToFolderRequested.emit(template_name, "")
+        
+        # Use the GalleryEvents class to handle the move operation
+        from app.templates.gallery_events import GalleryEvents
+        GalleryEvents.on_move_template_to_folder(gallery, template_name, None)
     
     def _export_template(self, template_name):
         """Export the template to a package file"""

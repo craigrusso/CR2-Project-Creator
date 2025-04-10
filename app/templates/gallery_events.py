@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt, QTimer
 import os
 from PyQt5.QtGui import QIcon, QFont, QPixmap
 import time
+import re
 
 # Import styling
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE
@@ -265,6 +266,184 @@ class GalleryEvents:
             gallery.back_button.setVisible(False)
             
         print(f"🔍 LISTENER: Successfully returned to root view from folder '{current_folder}'")
+    
+    @staticmethod
+    def on_add_folder(gallery):
+        """Handle adding a new folder"""
+        print(f"🔍 LISTENER: Adding a new folder")
+        
+        # Use QInputDialog to get the folder name
+        folder_name, ok = QInputDialog.getText(gallery, "Add Folder", "Enter folder name:")
+        
+        if ok and folder_name:
+            # Validate the folder name (allow letters, numbers, underscores, hyphens, and spaces)
+            if not re.match(r'^[a-zA-Z0-9_\- ]+$', folder_name):
+                QMessageBox.warning(gallery, "Invalid Folder Name", 
+                    "Folder name can only contain letters, numbers, underscores, hyphens, and spaces.")
+                return
+            
+            # Check if template_manager is available
+            if hasattr(gallery, 'template_manager') and gallery.template_manager:
+                if gallery.template_manager.folder_exists(folder_name):
+                    QMessageBox.warning(gallery, "Folder Exists", 
+                        f"A folder named '{folder_name}' already exists.")
+                    return
+                
+                # Create the folder using template_manager
+                success = gallery.template_manager.add_folder(folder_name)
+                if success:
+                    print(f"🔍 LISTENER: Successfully created folder '{folder_name}'")
+                    
+                    # Update the UI to reflect the change
+                    gallery.populate_gallery(force_refresh=True)
+                else:
+                    QMessageBox.warning(gallery, "Folder Creation Failed", 
+                        f"Could not create folder '{folder_name}'.")
+            else:
+                QMessageBox.warning(gallery, "Folder Creation Failed", 
+                    "Template manager is not available.")
+                print("❌ LISTENER: Template manager is not available")
+    
+    @staticmethod
+    def on_rename_folder(gallery):
+        """Handle rename folder button click"""
+        print(f"🔍 LISTENER: Rename folder requested")
+        
+        # Check if a folder is selected
+        if not hasattr(gallery, 'selected_folder') or not gallery.selected_folder:
+            QMessageBox.warning(gallery, "No Folder Selected", "Please select a folder to rename.")
+            return
+            
+        # Get the selected folder
+        folder_name = gallery.selected_folder
+        
+        # Trigger the rename process
+        GalleryEvents.on_rename_folder_requested(gallery, folder_name)
+                
+    @staticmethod
+    def on_rename_folder_requested(gallery, folder_name):
+        """Handle rename folder request for the specified folder"""
+        print(f"🔍 LISTENER: Rename folder requested for '{folder_name}'")
+        
+        # Use QInputDialog to get the new folder name
+        new_name, ok = QInputDialog.getText(gallery, "Rename Folder", 
+                                           "Enter new folder name:", 
+                                           text=folder_name)
+        
+        if ok and new_name:
+            # Validate the folder name (allow letters, numbers, underscores, hyphens, and spaces)
+            if not re.match(r'^[a-zA-Z0-9_\- ]+$', new_name):
+                QMessageBox.warning(gallery, "Invalid Folder Name", 
+                    "Folder name can only contain letters, numbers, underscores, hyphens, and spaces.")
+                return
+                
+            # Skip if name is the same
+            if new_name == folder_name:
+                return
+                
+            # Check if template manager is available
+            if hasattr(gallery, 'template_manager') and gallery.template_manager:
+                if gallery.template_manager.folder_exists(new_name):
+                    QMessageBox.warning(gallery, "Folder Exists", 
+                        f"A folder named '{new_name}' already exists.")
+                    return
+                    
+                # Proceed with folder rename
+                GalleryEvents.on_rename_folder_done(gallery, folder_name, new_name)
+            else:
+                QMessageBox.warning(gallery, "Folder Rename Failed", 
+                    "Template manager is not available.")
+                print("❌ LISTENER: Template manager is not available")
+                
+    @staticmethod
+    def on_rename_folder_done(gallery, old_name, new_name):
+        """Handle folder rename operation"""
+        print(f"🔍 LISTENER: Renaming folder from '{old_name}' to '{new_name}'")
+        
+        # Rename the folder using the template manager
+        if hasattr(gallery, 'template_manager') and gallery.template_manager:
+            success = gallery.template_manager.rename_folder(old_name, new_name)
+            
+            if success:
+                print(f"🔍 LISTENER: Successfully renamed folder from '{old_name}' to '{new_name}'")
+                
+                # Update the gallery to reflect changes
+                gallery.populate_gallery(force_refresh=True)
+                
+                # Update selected folder if needed
+                if gallery.selected_folder == old_name:
+                    gallery.selected_folder = new_name
+            else:
+                QMessageBox.warning(gallery, "Folder Rename Failed", 
+                    f"Could not rename folder from '{old_name}' to '{new_name}'.")
+        else:
+            QMessageBox.warning(gallery, "Folder Rename Failed", 
+                "Template manager is not available.")
+            print("❌ LISTENER: Template manager is not available")
+            
+    @staticmethod
+    def on_delete_folder(gallery, folder_name):
+        """Handle deletion of a folder."""
+        if not hasattr(gallery, 'template_manager') or not gallery.template_manager:
+            QMessageBox.warning(gallery, "Operation Failed", "Template manager is not available")
+            return
+            
+        # Ask for confirmation
+        confirm = QMessageBox.question(
+            gallery, 
+            "Confirm Delete", 
+            f"Are you sure you want to delete folder '{folder_name}'?\n\nTemplates inside will be moved to the root folder.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if confirm == QMessageBox.StandardButton.Yes:
+            # Delete the folder
+            success = gallery.template_manager.delete_folder(folder_name)
+            
+            if success:
+                # Update the UI (folder is gone)
+                gallery.populate_gallery()
+                # Notify user
+                QMessageBox.information(gallery, "Success", f"Folder '{folder_name}' has been deleted.")
+            else:
+                QMessageBox.warning(gallery, "Delete Failed", f"Failed to delete folder '{folder_name}'.")
+
+    @staticmethod
+    def on_move_template_to_folder(gallery, template_names, target_folder=None):
+        """Handle moving templates to a folder or to the root"""
+        if not hasattr(gallery, 'template_manager') or not gallery.template_manager:
+            QMessageBox.warning(gallery, "Operation Failed", "Template manager is not available")
+            return
+            
+        # Handle both single template name (string) and list of template names
+        if isinstance(template_names, str):
+            template_names = [template_names]
+            
+        if not template_names:
+            return
+            
+        # Treat 'root' folder name the same as None (no folder)
+        if target_folder == 'root' or target_folder == '':
+            target_folder = None
+            
+        if target_folder is None:
+            # Moving to no folder (removing from all folders)
+            for name in template_names:
+                gallery.template_manager.move_template_to_folder(name, None)
+        else:
+            # Moving to a specific folder
+            moved_count = 0
+            for name in template_names:
+                if gallery.template_manager.move_template_to_folder(name, target_folder):
+                    moved_count += 1
+                    
+            # Only show warning on complete failure
+            if moved_count == 0:
+                QMessageBox.warning(gallery, "Operation Failed", 
+                                   f"Failed to move templates to folder '{target_folder}'.")
+                
+        # Update the gallery to reflect changes
+        gallery.populate_gallery()
     
     @staticmethod
     def on_add_template(gallery):

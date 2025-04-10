@@ -1062,10 +1062,10 @@ class TemplateGallery(QWidget):
             move_menu = menu.addMenu("Move to...")
             folders = self.template_manager.get_folders() if self.template_manager else []
 
-            # Add "Root (No Folder)" option
-            root_action = move_menu.addAction("Root (No Folder)")
+            # Add "No Folder" option
+            root_action = move_menu.addAction("No Folder")
             root_action.triggered.connect(lambda: GalleryEvents.on_move_template_to_folder(
-                self, names_to_process, 'root' # Pass the list of names
+                self, names_to_process, None # Pass None instead of 'root'
             ))
             move_menu.addSeparator()
 
@@ -1588,11 +1588,11 @@ class TemplateGallery(QWidget):
              primary_template = selected_templates[0] if selected_templates else None
              names_to_process = [primary_template.get('name')] if primary_template and primary_template.get('name') else []
 
-        # Add "Root (No Folder)" option - ALWAYS add this if items are selected
-        root_action = move_menu.addAction("Root (No Folder)")
+        # Add "No Folder" option - ALWAYS add this if items are selected
+        root_action = move_menu.addAction("No Folder")
         # Ensure names_to_process is captured correctly by the lambda
         root_action.triggered.connect(lambda checked, ntp=list(names_to_process): GalleryEvents.on_move_template_to_folder(
-            self, ntp, 'root'
+            self, ntp, None # Pass None instead of 'root'
         ))
         # Enable based on whether items are selected, not if in folder
         root_action.setEnabled(bool(names_to_process)) 

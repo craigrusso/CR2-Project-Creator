@@ -701,7 +701,7 @@ class TemplateCard(QFrame):
         
         # Add "Move to Root" option if template is in a folder
         if current_folder:
-            move_to_root_action = QAction("Root (No Folder)", self)
+            move_to_root_action = QAction("No Folder", self)
             move_to_root_action.triggered.connect(lambda: self._move_template_out_of_folder(current_folder))
             move_to_menu.addAction(move_to_root_action)
             
@@ -741,6 +741,10 @@ class TemplateCard(QFrame):
                 break
             parent = parent.parent()
             
+        if not gallery:
+            print(f"[ERROR] Cannot move template: invalid gallery reference")
+            return
+            
         # Check if we should be handling multiple templates
         is_multi_selection = False
         templates_to_move = []
@@ -775,37 +779,28 @@ class TemplateCard(QFrame):
         count = len(templates_to_move)
         print(f"🔍 LISTENER: Moving {count} templates out of folder '{current_folder}'")
         
-        template_manager = self.app.template_manager
-        
-        # Process each template
+        # Extract template names for the GalleryEvents call
         template_names = []
         for template in templates_to_move:
             if isinstance(template, dict):
                 template_name = template.get('name', 'Unknown')
             else:
                 template_name = str(template)
-                
             template_names.append(template_name)
+        
+        # Hide this card for immediate visual feedback in grid view
+        self.hide()
             
-            # Remove template from the current folder
-            if hasattr(template_manager, 'folders') and current_folder in template_manager.folders:
-                if template_name in template_manager.folders[current_folder]:
-                    template_manager.folders[current_folder].remove(template_name)
-        
-        # Save changes to folders
-        if hasattr(template_manager, 'save_folders'):
-            template_manager.save_folders()
-        
-        # Show status message - BEFORE refreshing gallery to avoid visual jumping
+        # Show status message before gallery refresh to avoid visual jumping
         if hasattr(self.app, 'show_status_message'):
             if count > 1:
-                self.app.show_status_message(f"Moved {count} templates to root", "info")
+                self.app.show_status_message(f"Moving {count} templates out of folder", "info")
             else:
-                self.app.show_status_message(f"Template '{template_names[0]}' moved to root", "info")
+                self.app.show_status_message(f"Moving template '{template_names[0]}' out of folder", "info")
         
-        # IMPORTANT: Refresh gallery after ALL templates are moved
-        # Wait to refresh gallery until the end to ensure all templates are accounted for
-        QTimer.singleShot(50, lambda: self._refresh_gallery(gallery))
+        # Use the GalleryEvents class to handle the move operation
+        from app.templates.gallery_events import GalleryEvents
+        GalleryEvents.on_move_template_to_folder(gallery, template_names, None)
 
     def _refresh_gallery(self, gallery=None):
         """Helper method to refresh gallery properly after all operations"""
@@ -856,6 +851,10 @@ class TemplateCard(QFrame):
                 break
             parent = parent.parent()
             
+        if not gallery:
+            print(f"[ERROR] Cannot move template: invalid gallery reference")
+            return
+            
         # Check if we should be handling multiple templates
         is_multi_selection = False
         templates_to_move = []
@@ -890,35 +889,28 @@ class TemplateCard(QFrame):
         count = len(templates_to_move)
         print(f"🔍 LISTENER: Moving {count} templates to folder '{folder_name}'")
         
-        template_manager = self.app.template_manager
-        
-        # Process each template
+        # Extract template names for the GalleryEvents call
         template_names = []
         for template in templates_to_move:
             if isinstance(template, dict):
                 template_name = template.get('name', 'Unknown')
             else:
                 template_name = str(template)
-                
             template_names.append(template_name)
             
-            # Move template to folder
-            template_manager.move_template_to_folder(template_name, folder_name)
-        
-        # If we're in list view, we don't hide immediately since the gallery refresh will handle visibility
-        # In grid view (TemplateCard), hide this card for immediate feedback
-            self.hide()
-        
-        # Show status message - BEFORE refreshing gallery to avoid visual jumping
+        # If we're in grid view (TemplateCard), hide this card for immediate feedback
+        self.hide()
+            
+        # Show status message before gallery refresh to avoid visual jumping
         if hasattr(self.app, 'show_status_message'):
             if count > 1:
-                self.app.show_status_message(f"Moved {count} templates to folder '{folder_name}'", "info")
+                self.app.show_status_message(f"Moving {count} templates to folder '{folder_name}'", "info")
             else:
-                self.app.show_status_message(f"Template '{template_names[0]}' moved to folder '{folder_name}'", "info")
+                self.app.show_status_message(f"Moving template '{template_names[0]}' to folder '{folder_name}'", "info")
         
-        # IMPORTANT: Refresh gallery after ALL templates are moved
-        # Wait to refresh gallery until the end to ensure all templates are accounted for
-        QTimer.singleShot(50, lambda: self._refresh_gallery(gallery))
+        # Use the GalleryEvents class to handle the move operation
+        from app.templates.gallery_events import GalleryEvents
+        GalleryEvents.on_move_template_to_folder(gallery, template_names, folder_name)
 
     def _delete_multi_selected(self, gallery):
         """Delete all selected templates"""

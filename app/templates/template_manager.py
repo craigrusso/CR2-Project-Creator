@@ -47,9 +47,9 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
         """Move a template to a folder, ensuring it's removed from other folders first"""
         print(f"[DEBUG] FolderOps: Moving template '{template_name}' to folder '{folder_name}'")
         
-        # Validate input
-        if not template_name or not folder_name:
-            print(f"[DEBUG] FolderOps: Invalid template or folder name: '{template_name}', '{folder_name}'")
+        # Validate input - only template_name is required
+        if not template_name:
+            print(f"[DEBUG] FolderOps: Invalid template name: '{template_name}'")
             return False
         
         try:
@@ -82,6 +82,20 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
             if not template:
                 print(f"[DEBUG] FolderOps: Template '{template_name}' not found after exhaustive search")
                 return False
+            
+            # If folder_name is None, remove from all folders
+            if folder_name is None:
+                print(f"[DEBUG] FolderOps: Removing template '{template_name}' from all folders")
+                # Remove from all folders
+                for f in self.folders:
+                    if template_name in self.folders[f]:
+                        print(f"[DEBUG] FolderOps: Removing '{template_name}' from folder '{f}'")
+                        self.folders[f].remove(template_name)
+                
+                # Save the folders to disk
+                print(f"[DEBUG] FolderOps: Saving folders after removing from all")
+                self.save_folders()
+                return True
             
             # Make sure the folder exists
             if folder_name not in self.folders:
