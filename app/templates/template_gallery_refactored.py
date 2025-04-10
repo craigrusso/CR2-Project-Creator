@@ -6,6 +6,8 @@ from PyQt5.QtWidgets import QDesktopWidget, QWidget, QVBoxLayout, QHBoxLayout, Q
 from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSignal, QPoint, QModelIndex, QItemSelectionModel
 from PyQt5.QtGui import QKeySequence, QDrag, QPixmap, QPainter, QColor, QPalette
 import re
+import os
+import json
 
 # Import modular components
 from .gallery_ui_setup import GalleryUISetup
@@ -506,7 +508,85 @@ class TemplateGallery(QWidget):
     def _on_add_template(self):
         GalleryEvents.on_add_template(self)
     
-    def _on_edit_template(self, template_name=None):
+    def _on_edit_template(self, template_name=None, template=None):
+        """Handle edit template button click in template gallery
+        
+        Can be called with either:
+        - template_name: String name of the template to edit
+        - template: Complete template object dictionary including structure
+        
+        The function will ensure the proper structure is loaded in both cases.
+        """
+        print(f"🔹 GALLERY EVENTS: Edit template requested")
+        
+        # If a full template object is provided, use it directly
+        if template is not None and isinstance(template, dict):
+            print(f"🔹 GALLERY EVENTS: Using provided template object for '{template.get('name', 'Unknown')}'")
+            # Make sure the template has a structure (should have been loaded by the caller)
+            if 'structure' not in template or not template['structure']:
+                print(f"⚠️ GALLERY EVENTS: Template object doesn't have structure, loading it")
+                # Get structure name from template
+                structure_name = template.get('structure_name')
+                if not structure_name:
+                    template_name = template.get('name', '')
+                    structure_name = f"Template_{template_name}"
+                
+                # Try to load the structure
+                if hasattr(self, 'template_manager') and hasattr(self.template_manager, 'get_structure'):
+                    structure = self.template_manager.get_structure(structure_name)
+                    if structure:
+                        template['structure'] = structure
+                        print(f"🔹 GALLERY EVENTS: Successfully loaded structure for template")
+                    else:
+                        print(f"⚠️ GALLERY EVENTS: No structure found for template, using empty structure")
+                        template['structure'] = []
+            
+            # Now pass just the template name to GalleryEvents
+            template_name = template.get('name', '')
+            if template_name:
+                template_with_structure = template  # Save for later use
+                
+                try:
+                    # Call the gallery events handler with the template name first
+                    # This ensures it follows the correct code path for obtaining the structure
+                    GalleryEvents.on_edit_template(self, template_name)
+                except Exception as e:
+                    # If there's an error, we'll try a direct approach using our template with structure
+                    print(f"⚠️ GALLERY EVENTS: Error in regular edit path: {e}, trying direct approach")
+                    from app.ui.structure_editor_functions import show_enhanced_structure_editor
+                    
+                    # Open the structure editor directly with our template's structure
+                    result, updated_structure, updated_structure_name, _, updated_template_name, category, description = show_enhanced_structure_editor(
+                        parent=self,
+                        structure_name=template_with_structure.get('structure_name', f"Template_{template_name}"),
+                        structure=template_with_structure.get('structure', []),
+                        is_new=False,
+                        template_name=template_name,
+                        focus_name_field=False,
+                        template_manager=self.template_manager if hasattr(self, 'template_manager') else None
+                    )
+                    
+                    if result:
+                        print(f"🔍 LISTENER: Successfully edited template '{updated_template_name}'")
+                        
+                        # Force refresh gallery to show the updated template
+                        self.populate_gallery(force_refresh=True)
+                        
+                        # Select the updated template
+                        if hasattr(self, 'select_template'):
+                            self.select_template(updated_template_name)
+            return
+            
+        # Use either the provided template name or get it from the selected template
+        if template_name is None and hasattr(self, 'selected_template') and self.selected_template:
+            template_name = self.selected_template.get('name', '')
+            
+        # Make sure we have a template name
+        if not template_name:
+            print(f"⚠️ GALLERY EVENTS: No template selected for editing")
+            return
+            
+        # Delegate to the GalleryEvents handler which will load the structure
         GalleryEvents.on_edit_template(self, template_name)
     
     def _on_delete_template(self, template_name=None):
@@ -1274,10 +1354,41 @@ class TemplateGallery(QWidget):
             print(f"DEBUG: Table item clicked: {template_name}")
             
             # Get the full template data using the name
-            # MODIFIED: Call get_template via template_io
-            template_data = self.template_manager.template_io.get_template(template_name)
+            # MODIFIED: Get complete template data including structure
+            template_data = self.template_manager.get_template_by_name(template_name)
             
             if template_data:
+                # Try multiple approaches to get the structure
+                
+                # 1. First try explicitly getting the structure from template_manager
+                structure_name = template_data.get('structure_name', f"Template_{template_name}")
+                structure = self.template_manager.get_structure(structure_name)
+                
+                # 2. If that didn't work, try alternate structure name
+                if not structure:
+                    structure = self.template_manager.get_structure(template_name)
+                
+                # 3. If still no structure, try to extract it directly from the template file
+                if not structure and 'file_path' in template_data and os.path.exists(template_data['file_path']):
+                    try:
+                        print(f"DEBUG: Attempting to extract structure directly from template file: {template_data['file_path']}")
+                        with open(template_data['file_path'], 'r', encoding='utf-8') as f:
+                            raw_template_data = json.load(f)
+                            if isinstance(raw_template_data, dict) and 'structure' in raw_template_data:
+                                structure = raw_template_data['structure']
+                                print(f"DEBUG: Successfully extracted structure from template file")
+                    except Exception as extract_err:
+                        print(f"DEBUG: Error extracting structure from template file: {extract_err}")
+                
+                # 4. If we have a structure now, set it on the template data
+                if structure:
+                    template_data['structure'] = structure
+                    print(f"DEBUG: Successfully loaded structure for selected template '{template_name}'")
+                else:
+                    print(f"⚠️ GALLERY EVENTS: No structure found for template, using empty structure")
+                    # Initialize with empty structure - can be edited in the structure editor
+                    template_data['structure'] = []
+                
                 # Use the existing selection logic
                 self._on_template_select(template_data) 
             else:
@@ -1297,8 +1408,48 @@ class TemplateGallery(QWidget):
             template_name = name_item.text()
             print(f"DEBUG: Table item double-clicked: {template_name}")
             
-            # Trigger the edit action (or whatever double-click should do)
-            self._on_edit_template(template_name=template_name)
+            # Get the complete template data with structure
+            template_data = self.template_manager.get_template_by_name(template_name)
+            
+            # Ensure the structure is loaded
+            if template_data:
+                # Try multiple approaches to get the structure
+                
+                # 1. First try explicitly getting the structure from template_manager
+                structure_name = template_data.get('structure_name', f"Template_{template_name}")
+                structure = self.template_manager.get_structure(structure_name)
+                
+                # 2. If that didn't work, try alternate structure name
+                if not structure:
+                    structure = self.template_manager.get_structure(template_name)
+                
+                # 3. If still no structure, try to extract it directly from the template file
+                if not structure and 'file_path' in template_data and os.path.exists(template_data['file_path']):
+                    try:
+                        print(f"DEBUG: Attempting to extract structure directly from template file: {template_data['file_path']}")
+                        with open(template_data['file_path'], 'r', encoding='utf-8') as f:
+                            raw_template_data = json.load(f)
+                            if isinstance(raw_template_data, dict) and 'structure' in raw_template_data:
+                                structure = raw_template_data['structure']
+                                print(f"DEBUG: Successfully extracted structure from template file")
+                    except Exception as extract_err:
+                        print(f"DEBUG: Error extracting structure from template file: {extract_err}")
+                
+                # 4. If we have a structure now, set it on the template data
+                if structure:
+                    template_data['structure'] = structure
+                    print(f"DEBUG: Successfully loaded structure for template '{template_name}'")
+                else:
+                    print(f"⚠️ GALLERY EVENTS: No structure found for template, using empty structure")
+                    # Initialize with empty structure - can be edited in the structure editor
+                    template_data['structure'] = []
+            
+                # Trigger the edit action with the complete template data
+                self._on_edit_template(template=template_data)
+            else:
+                print(f"⚠️ GALLERY EVENTS: Could not find template '{template_name}'")
+        else:
+            print(f"⚠️ GALLERY EVENTS: Could not find template '{template_name}'")
 
     def _on_table_header_clicked(self, logicalIndex):
         """Handle click on a table header section to trigger sorting."""
