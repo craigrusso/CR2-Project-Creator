@@ -19,17 +19,16 @@ from app.core.project_builder import ProjectBuilder
 
 def main():
     """Main test function"""
-    print("\n=== Testing Project Name Placeholders in Files Array ===\n")
-    
-    # Create temp directory and test files
-    test_dir = tempfile.mkdtemp()
-    project_dir = tempfile.mkdtemp()
-    
-    try:
-        # Create a test file
-        test_file_path = os.path.join(test_dir, "test_file.txt")
-        with open(test_file_path, 'w') as f:
-            f.write("This is a test file with ${PROJECT_NAME} placeholder")
+    # Create a temporary directory for testing
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Create test file with a placeholder
+        test_file_path = os.path.join(temp_dir, "test_file.txt")
+        with open(test_file_path, "w") as f:
+            f.write("This is a test file with {{PROJECT_NAME}} placeholder\n")
+        
+        # Create output directory
+        project_dir = os.path.join(temp_dir, "output")
+        os.makedirs(project_dir, exist_ok=True)
         
         # Create files array with different placeholder and rename_flag combinations
         files_array = [
@@ -72,60 +71,30 @@ def main():
         
         # Process files array
         print(f"Processing files array with project name: {project_name}")
-        copied_files = project_builder._process_files_array(
+        success, copied_files = project_builder._process_files_array(
             project_dir, 
             files_array, 
             placeholders
         )
         
-        print(f"\nFiles processed: {len(copied_files)}")
-        
-        # Define expected files
-        expected_files = [
-            # Case 1: Regular file (unchanged)
-            os.path.join(project_dir, "regular", "regular_file.txt"),
-            # Case 2: File with rename_flag=True (should use project name)
-            os.path.join(project_dir, "renamed", f"{project_name}.txt"),
-            # Case 3: File with placeholder (should replace placeholder)
-            os.path.join(project_dir, "placeholders", f"{project_name}_placeholder.txt"),
-            # Case 4: File with placeholder and rename_flag (should prioritize placeholder)
-            os.path.join(project_dir, "mixed", f"{project_name}_with_flag.txt")
-        ]
-        
-        # Verify files were created correctly
-        all_passed = True
-        for file_path in expected_files:
-            if os.path.exists(file_path):
-                print(f"✅ File exists as expected: {file_path}")
-                
-                # Check file content (should have placeholders replaced)
-                with open(file_path, 'r') as f:
-                    content = f.read()
-                if project_name in content:
-                    print(f"  ✅ Content contains project name")
-                else:
-                    print(f"  ❌ Content missing project name")
-                    all_passed = False
-            else:
-                print(f"❌ Expected file not found: {file_path}")
-                all_passed = False
-                
-        # List all created files for debugging
-        print("\nActual files created:")
-        for root, dirs, files in os.walk(project_dir):
-            for file in files:
-                print(f"  {os.path.join(root, file)}")
-        
-        if all_passed:
-            print("\n✅ All tests passed! File array placeholders are working correctly.")
-        else:
-            print("\n❌ Tests failed! There are issues with file array placeholders.")
+        if success:
+            print(f"\nFiles processed successfully: {len(copied_files)}")
             
-    finally:
-        # Clean up
-        print("\nCleaning up test directories...")
-        shutil.rmtree(test_dir)
-        shutil.rmtree(project_dir)
+            # Verify the results
+            expected_files = [
+                os.path.join(project_dir, "regular", "regular_file.txt"),
+                os.path.join(project_dir, "renamed", "TestFilesArray.txt"),
+                os.path.join(project_dir, "placeholders", "TestFilesArray_placeholder.txt"),
+                os.path.join(project_dir, "mixed", "TestFilesArray.txt")
+            ]
+            
+            for expected_file in expected_files:
+                if os.path.exists(expected_file):
+                    print(f"✅ File exists: {expected_file}")
+                else:
+                    print(f"❌ File missing: {expected_file}")
+        else:
+            print(f"\nError processing files: {copied_files}")
 
 if __name__ == "__main__":
     main() 

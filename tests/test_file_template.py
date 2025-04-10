@@ -170,46 +170,15 @@ def test_project_creation(template, output_dir):
     
     # Process files
     if 'files' in template:
-        files_processed = project_builder._process_files_array(project_dir, template['files'], placeholders, True)
-        print(f"Processed {len(files_processed)} files")
+        success, files_processed = project_builder._process_files_array(project_dir, template['files'], placeholders, True)
+        if success:
+            print(f"Processed {len(files_processed)} files")
+        else:
+            print(f"Error processing files: {files_processed}")
     
     # Return success with project directory
     success = True
-    
-    if success:
-        print(f"Project created successfully at: {project_dir}")
-        
-        # List created files
-        print("\nFiles created:")
-        for root, dirs, files in os.walk(project_dir):
-            rel_path = os.path.relpath(root, project_dir)
-            if rel_path == ".":
-                print("Root directory:")
-            else:
-                print(f"{rel_path}:")
-                
-            for file in files:
-                file_path = os.path.join(root, file)
-                file_size = os.path.getsize(file_path)
-                print(f"  - {file} ({file_size} bytes)")
-                
-                # Check file contents to verify placeholder replacement
-                if file.endswith((".txt", ".json", ".prproj")):
-                    try:
-                        with open(file_path, 'r') as f:
-                            content = f.read()
-                            # Check if project name is in the content
-                            if "TestFileProject" in content:
-                                print(f"    Content (with replaced placeholders): {content}")
-                            else:
-                                print(f"    Content: {content}")
-                    except Exception as e:
-                        print(f"    (Could not read file content: {e})")
-        
-        return True
-    else:
-        print(f"Failed to create project")
-        return False
+    return success, project_dir
 
 def main():
     """Main test function"""

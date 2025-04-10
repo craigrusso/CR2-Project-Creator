@@ -35,6 +35,23 @@ except ImportError:
             print(f"WARNING: BinaryFileHandler not available, can't decode file to {output_path}")
             return False
 
+# Import the normalize_path_for_storage function for cross-platform compatibility
+try:
+    from app.utils.utils import normalize_path_for_storage, safe_path_join
+except ImportError:
+    # Fallback if not available
+    def normalize_path_for_storage(path):
+        """Normalize a path for storage with forward slashes"""
+        if not path:
+            return ""
+        norm_path = os.path.normpath(path)
+        return norm_path.replace('\\', '/')
+    
+    def safe_path_join(*paths):
+        """Join paths in a safe, cross-platform way"""
+        joined_path = os.path.join(*paths)
+        return os.path.normpath(joined_path)
+
 # Define PyQt version of progress window
 class BatchProgressWindowPyQt(QDialog):
     """PyQt version of the batch progress window"""
@@ -259,7 +276,7 @@ class ProjectBuilder:
         # Log parameters for debugging
         print(f"DEBUG: Creating project '{project_name}' in directory: '{output_dir}'")
         print(f"DEBUG: Using template: '{template_file}', structure: '{structure_name}'")
-        
+            
         # Validate project name
         if not project_name:
             return False, "No project name provided"
@@ -268,54 +285,145 @@ class ProjectBuilder:
         if not output_dir:
             return False, "No output directory provided"
             
-        # Use security-scoped bookmarks on macOS if available
+        # Check if we can use security bookmarks - requires macOS and objc modules
         use_bookmark = False
+        bookmarks_available = False
+        
+        # Only try to import security bookmarks if we're on macOS
         if platform.system() == "Darwin":
             try:
-                from app.utils.security_bookmarks import BookmarkAccessContext
-                use_bookmark = True
-            except ImportError:
-                print("WARNING: Could not import security_bookmarks module.")
-            
-        # Create project using security-scoped bookmark if on macOS
-        if use_bookmark:
-            try:
-                with BookmarkAccessContext(output_dir):
-                    return self._create_project_internal(
-                        project_name, output_dir, template_file, project_type,
-                        structure_name, create_backup, use_cached_files
-                    )
-            except Exception as e:
-                print(f"ERROR: Failed to access directory with security bookmark: {e}")
-                # Try without bookmark as fallback
-                print("Falling back to standard directory access...")
-                return self._create_project_internal(
-                    project_name, output_dir, template_file, project_type,
-                    structure_name, create_backup, use_cached_files
-                )
-        else:
-            # Standard project creation for non-macOS platforms
+                # Check if Foundation module is actually available (not just importable)
+                import importlib
+                foundation_spec = importlib.util.find_spec("Foundation")
+                objc_spec = importlib.util.find_spec("objc")
+                
+                if foundation_spec is not None and objc_spec is not None:
+                    # Now import the actual BookmarkAccessContext
+                    from app.utils.security_bookmarks import BookmarkAccessContext
+                    print("DEBUG: Security bookmarks are available.")
+                    bookmarks_available = True
+                else:
+                    print("WARNING: Foundation/objc modules not available. Security bookmarks disabled.")
+            except (ImportError, ModuleNotFoundError) as e:
+                print(f"WARNING: Could not import security_bookmarks module: {e}")
+        
+        # Skip security bookmarks if we can't access them
+        if not bookmarks_available:
+            print("INFO: Creating project without security bookmarks.")
             return self._create_project_internal(
                 project_name, output_dir, template_file, project_type,
                 structure_name, create_backup, use_cached_files
             )
             
-    def _create_project_internal(self, project_name, output_dir, template_file, project_type, 
-                             structure_name, create_backup, use_cached_files):
-        """Internal implementation of project creation."""
-        # Create output directory if it doesn't exist
+        # Try with security bookmarks since we have confirmed they're available
         try:
-            os.makedirs(output_dir, exist_ok=True)
+            # Skip security bookmark if output_dir is a dict or not a valid path
+            if not isinstance(output_dir, str) or not os.path.exists(os.path.dirname(output_dir)):
+                print(f"WARNING: Skipping security bookmark for invalid output directory: {output_dir}")
+                use_bookmark = False
+            else:
+                print(f"DEBUG: Using security bookmark for output directory: {output_dir}")
+                use_bookmark = True
+                with BookmarkAccessContext(output_dir):
+                    return self._create_project_internal(
+                        project_name, output_dir, template_file, project_type,
+                        structure_name, create_backup, use_cached_files
+                    )
         except Exception as e:
-            print(f"Error creating output directory: {e}")
-            return False, f"Failed to create output directory: {e}"
-            
-        # Create project directory path
-        project_dir = os.path.join(output_dir, project_name)
-        print(f"DEBUG: Project will be created at: {project_dir}")
+            print(f"ERROR: Failed to access directory with security bookmark: {e}")
+            print("Falling back to standard directory access...")
+            use_bookmark = False
         
-        # Check if project directory exists
-        if os.path.exists(project_dir):
+        # If we're not using a bookmark or fell back, use standard project creation
+        if not use_bookmark:
+            return self._create_project_internal(
+                project_name, output_dir, template_file, project_type,
+                structure_name, create_backup, use_cached_files
+            )
+            
+    def _create_project_internal(self, project_name, output_dir=None, template_file=None, project_type="Standard", 
+                        structure_name=None, create_backup=True, use_cached_files=True):
+        """Create a new project based on a template - internal implementation.
+        
+        Args:
+            project_name (str): Name of the project
+            output_dir (str, optional): Directory where the project should be created
+            template_file (str or dict, optional): Path to template file or template data dictionary
+            project_type (str, optional): Type of project (Standard, etc.)
+            structure_name (str, optional): Name of structure to use
+            create_backup (bool, optional): Whether to create a backup of the project directory if it exists
+            use_cached_files (bool, optional): Whether to use cached files when available
+            
+        Returns:
+            tuple: (success, result) where result is the project path or error message
+        """
+        print(f"DEBUG: Creating project '{project_name}' in directory: '{output_dir}'")
+        print(f"DEBUG: Using template: '{template_file}', structure: '{structure_name}'")
+        
+        # Validate project name
+        if not project_name:
+            return False, "Project name is required"
+        
+        # Input validation
+        if not output_dir:
+            return False, "Output directory is required"
+            
+        # Create the project directory
+        project_dir = os.path.join(output_dir, project_name)
+        try:
+            os.makedirs(project_dir, exist_ok=True)
+            print(f"Created project directory: {project_dir}")
+        except Exception as e:
+            return False, f"Failed to create project directory: {str(e)}"
+            
+        # Template handling
+        template_data = None
+        template_file_path = None
+        template_name = None
+        
+        # Handle different template_file input types
+        if template_file:
+            if isinstance(template_file, dict):
+                # Direct template data provided
+                template_data = template_file
+                template_name = template_data.get('name', 'Unknown')
+                template_file_path = template_data.get('file_path', None)
+                print(f"Using provided template dictionary: {template_name}")
+            elif isinstance(template_file, str) and os.path.exists(template_file):
+                # Template file path provided
+                template_file_path = template_file
+                # Load the template data from the file
+                try:
+                    with open(template_file, 'r') as f:
+                        template_data = json.load(f)
+                        template_name = template_data.get('name', os.path.basename(template_file))
+                        print(f"Loaded template from file: {template_file}")
+                except Exception as e:
+                    return False, f"Failed to load template file: {str(e)}"
+            else:
+                print(f"Warning: Template file not found or invalid: {template_file}")
+                # Will fall back to empty template
+        
+        # Set default template data if none provided
+        if not template_data:
+            template_data = {"name": "Empty", "structure": [], "type": project_type}
+            template_name = "Empty"
+            print("Using empty template")
+        
+        # Placeholders for variable replacement
+        placeholders = {
+            "PROJECT_NAME": project_name,
+            "PROJECT_TYPE": project_type,
+            "DATE": datetime.datetime.now().strftime("%Y-%m-%d"),
+            "TIME": datetime.datetime.now().strftime("%H:%M:%S"),
+            "YEAR": datetime.datetime.now().strftime("%Y")
+        }
+        
+        # Get structure data
+        structure_data = self._get_structure_data(template_data, structure_name)
+        
+        # Handle backup of existing directory if needed
+        if os.path.exists(project_dir) and os.listdir(project_dir):
             if create_backup:
                 # Create backup of existing directory
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -324,7 +432,9 @@ class ProjectBuilder:
                     print(f"Creating backup at {backup_dir}")
                     shutil.copytree(project_dir, backup_dir)
                     # Also try to copy hidden files which might be missed by copytree
-                    os.system(f'cp -r "{project_dir}/."* "{backup_dir}" 2>/dev/null || true')
+                    if platform.system() != "Windows":
+                        # Unix-like systems
+                        os.system(f'cp -r "{project_dir}/."* "{backup_dir}" 2>/dev/null || true')
                     print(f"Created backup at {backup_dir}")
                     
                     # Remove old directory completely instead of just emptying it
@@ -337,177 +447,145 @@ class ProjectBuilder:
                     
                 except Exception as e:
                     print(f"Failed to create backup or prepare project directory: {e}")
-                    return False, f"Failed to create backup: {e}"
+                    return False, f"Failed to create backup: {str(e)}"
             else:
-                # If we're not creating a backup, fail
-                return False, f"Project directory '{project_dir}' already exists"
-        else:
-            # Create project directory if it doesn't exist
-            try:
-                os.makedirs(project_dir, exist_ok=True)
-            except Exception as e:
-                print(f"Error creating project directory: {e}")
-                return False, f"Failed to create project directory: {e}"
-                
-        # Get template data
-        template_data = None
-        files_to_process = []
-        
-        # If template_file is a dict, use it directly
-        if isinstance(template_file, dict):
-            template_data = template_file
-            print(f"DEBUG: Direct template_data has structure: {template_data.get('structure', [])}")
-        elif template_file and os.path.isfile(template_file):
-            # Load template from file
-            try:
-                with open(template_file, 'r', encoding='utf-8') as f:
-                    template_data = json.load(f)
-            except Exception as e:
-                print(f"Error loading template file: {e}")
-                return False, f"Failed to load template file: {e}"
-                
-        # Get structure data
-        structure_data = self._get_structure_data(structure_name, template_data.get('name') if template_data else None)
+                # Simply empty the directory
+                print(f"Emptying existing project directory: {project_dir}")
+                for item in os.listdir(project_dir):
+                    item_path = os.path.join(project_dir, item)
+                    try:
+                        if os.path.isfile(item_path) or os.path.islink(item_path):
+                            os.unlink(item_path)
+                        elif os.path.isdir(item_path):
+                            shutil.rmtree(item_path)
+                    except Exception as e:
+                        print(f"Failed to remove item {item_path}: {e}")
+                        return False, f"Failed to empty project directory: {str(e)}"
         
         # Check for valid structure - crucial step to validate structure exists
         if not structure_data:
-            print(f"DEBUG: No valid structure found for '{structure_name}'")
+            print(f"DEBUG: No valid structure found for structure_name: '{structure_name}'")
             # Create the project directory but return a message that there's no structure
             try:
                 os.makedirs(project_dir, exist_ok=True)
             except Exception as e:
                 print(f"Error creating project directory: {e}")
-                return False, f"Failed to create project directory: {e}"
+                return False, f"Failed to create project directory: {str(e)}"
                 
             # Instead of failing, return success with no_structure flag
             return True, {"project_dir": project_dir, "no_structure": True}
-            
-        # Create placeholders for template processing
-        placeholders = {
-            "PROJECT_NAME": project_name,
-            "project_name": project_name.lower(),
-            "Project_Name": project_name.title(),
-            "ProjectName": self._camel_case(project_name),
-            "PROJECT_DIR": project_dir,
-            "PROJECT_TYPE": project_type,
-            # Additional placeholders can be added here
-        }
         
-        # Create folders based on structure
-        print(f"DEBUG: Creating folders with structure: {structure_data}")
-        created_folders_count = self._create_folders_from_structure(project_dir, structure_data)
-        print(f"DEBUG: Created {created_folders_count} folders from structure")
+        # Process the template
+        print(f"Processing template for project: {project_name}")
         
-        # Process files if available in template
-        if template_data and 'files' in template_data and template_data['files']:
-            files_array = template_data['files']
+        # Track created paths for reporting
+        created_paths = []
+        
+        # Process the template structure
+        print(f"Creating project structure with {len(structure_data)} top-level items")
+        try:
+            # Process each root item in the structure
+            self._process_template(project_dir, structure_data, placeholders, created_paths)
+            print(f"Created {len(created_paths)} paths in project structure")
             
-            # Apply structure flags to files if needed
-            if structure_data:
-                files_array = self._apply_structure_flags_to_files(structure_data, files_array)
+            # Process the files array if present in template
+            if template_data and 'files' in template_data:
+                print(f"Processing files array with {len(template_data['files'])} files")
                 
-            # Process files
-            files_result = self._process_files_array(
-                project_dir, 
-                files_array, 
-                placeholders,
-                use_cached_files,
-                template_data.get('name')
-            )
-            print(f"DEBUG: Processed {len(files_array)} files")
+                # Apply flags from structure to files if applicable
+                template_data['files'] = self._apply_structure_flags_to_files(
+                    structure_data, template_data['files']
+                )
+                
+                # Process files array - copy files with placeholders
+                copied_files = self._process_files_array(
+                    project_dir, 
+                    template_data['files'], 
+                    placeholders,
+                    use_cached_files=use_cached_files,
+                    template_name=template_name
+                )
+                print(f"Copied {len(copied_files)} files from files array")
+                
+                # Add to created paths for reporting
+                created_paths.extend(copied_files)
+                
+            # Return success with project directory
+            print(f"Project '{project_name}' created successfully at: {project_dir}")
             
-            if not files_result[0]:
-                # If file processing failed, return warning
-                return True, {"project_dir": project_dir, "warning": files_result[1]}
-        
-        # Return success and project directory
-        return True, {"project_dir": project_dir}
-        
-    def _get_structure_data(self, structure_name=None, template_name=None):
+            # Create readme file if it doesn't exist
+            readme_path = os.path.join(project_dir, "README.md")
+            if not os.path.exists(readme_path):
+                try:
+                    from app.utils.utils import create_readme_file
+                    readme_content = create_readme_file(project_name, template_name)
+                    with open(readme_path, 'w', encoding='utf-8') as f:
+                        f.write(readme_content)
+                    print(f"Created README.md file")
+                except Exception as e:
+                    print(f"Failed to create README.md: {e}")
+                    # Non-critical, continue without failing
+            
+            return True, project_dir
+            
+        except Exception as e:
+            print(f"Error creating project: {e}")
+            import traceback
+            traceback.print_exc()
+            return False, f"Error creating project: {str(e)}"
+    
+    def _get_structure_data(self, template_data=None, structure_name=None):
         """
-        Get structure data for creating project folders
+        Get the structure data to use for project creation.
         
         Args:
+            template_data (dict, optional): The template data dictionary
             structure_name (str, optional): Name of structure to use
-            template_name (str, optional): Name of template for finding matching structure
             
         Returns:
-            dict/list: The structure data if found, None otherwise
+            list or dict: Structure data
         """
-        print(f"DEBUG: get_structure called with structure_name='{structure_name}'")
+        print(f"🔍 _get_structure_data: structure_name={structure_name}")
         
-        # If a template name is provided but no structure name, try to construct the structure name
-        if template_name and not structure_name:
-            structure_name = f"Template_{template_name}"
-            print(f"DEBUG: Using template name to create structure name: {structure_name}")
-        
-        # Try different variations of the structure name
-        variations = []
+        # First try using structure directly from template_data
+        if template_data and 'structure' in template_data:
+            structure = template_data.get('structure')
+            print(f"Using structure from template data")
+            
+            # Check if we have a valid structure
+            if structure and (isinstance(structure, list) or isinstance(structure, dict)):
+                # Convert dict form to list form if needed for consistency
+                if isinstance(structure, dict) and 'folders' in structure:
+                    structure = structure['folders']
+                    
+                return structure
+            
+        # If we get here, try to find structure by name
         if structure_name:
-            variations.append(structure_name)
-            # Try with and without "Template_" prefix
-            if structure_name.startswith("Template_"):
-                variations.append(structure_name[9:])  # Remove "Template_"
-            else:
-                variations.append(f"Template_{structure_name}")
-                variations.append(f"Template {structure_name}")
-                
-        print(f"DEBUG: Trying structure names: {variations}")
+            print(f"Looking for structure with name: {structure_name}")
+            
+            # Try to get the structure data
+            if hasattr(self, 'template_manager'):
+                structure_data = self.template_manager.get_structure(structure_name)
+                if structure_data:
+                    return structure_data
         
-        # Process the structure
-        structure_data = None
+        # If no structure found, check if we have a fallback in template
+        template_name = template_data.get('name') if template_data else None
+        if template_name:
+            # Try to get a structure with a name based on the template
+            fallback_names = [
+                f"Template_{template_name}",
+                template_name
+            ]
+            
+            for fallback_name in fallback_names:
+                if hasattr(self, 'template_manager'):
+                    structure_data = self.template_manager.get_structure(fallback_name)
+                    if structure_data:
+                        return structure_data
         
-        # Check if we already have the template loaded with embedded structure
-        if hasattr(self, 'template_manager') and template_name:
-            try:
-                template_data = self.template_manager.get_template_by_name(template_name)
-                if template_data and 'structure' in template_data and template_data['structure']:
-                    print(f"DEBUG: Found structure embedded in template '{template_name}'")
-                    # Validate the embedded structure first
-                    if self._ensure_valid_structure(template_data['structure']):
-                        return template_data['structure']
-            except Exception as e:
-                print(f"ERROR: Failed to extract structure from template: {e}")
-        
-        # First check if we have custom structures directory
-        config_manager = None
-        if hasattr(self, 'template_manager') and hasattr(self.template_manager, 'config_manager'):
-            config_manager = self.template_manager.config_manager
-        else:
-            print("WARNING: ProjectBuilder cannot access ConfigManager via template_manager.")
-        
-        structures_dir = config_manager.get_structures_path() if config_manager else "~/.echelon/structures"
-        if os.path.exists(structures_dir):
-            for variation in variations:
-                structure_path = os.path.join(structures_dir, f"{variation}.json")
-                if os.path.exists(structure_path):
-                    print(f"DEBUG: Found custom structure on disk: {variation}")
-                    try:
-                        with open(structure_path, 'r', encoding='utf-8') as f:
-                            structure_data = json.load(f)
-                            
-                            # If structure is in 'directories' key, extract it
-                            if isinstance(structure_data, dict) and 'directories' in structure_data:
-                                structure_data = structure_data['directories']
-                            
-                            # Validate structure
-                            if self._ensure_valid_structure(structure_data):
-                                return structure_data
-                            else:
-                                print(f"DEBUG: Structure from file {variation} is not valid")
-                    except Exception as e:
-                        print(f"ERROR: Failed to load structure file {structure_path}: {e}")
-                        
-        # If we reach here, no structure was found or loaded successfully
-        # Check if template name was provided, try to get default structure
-        if not structure_data:
-            default_structure = self._get_default_structure()
-            if default_structure:
-                print(f"DEBUG: Using default structure")
-                return default_structure
-        
-        # No valid structure found
-        print(f"DEBUG: No valid structure found, skipping folder creation")
+        # If we get here, no structure was found
         return None
     
     def _ensure_valid_structure(self, structure_data):
@@ -1450,30 +1528,37 @@ class ProjectBuilder:
 
     def _replace_placeholders(self, text, placeholders):
         """
-        Replace placeholders in text with values
+        Replace placeholders in text with values from dictionary
         
         Args:
-            text: Text with placeholders
-            placeholders: Dictionary of placeholder values
+            text (str): Text to process
+            placeholders (dict): Dictionary of placeholders to replace
             
         Returns:
             str: Text with placeholders replaced
         """
-        if not text or not isinstance(text, str):
+        if not text or not placeholders:
             return text
             
         result = text
         
-        # Replace ${PLACEHOLDER} format
-        for key, value in placeholders.items():
-            placeholder = f"${{{key}}}"
-            result = result.replace(placeholder, value)
+        # First, handle ${NAME} format (standard format)
+        for placeholder, value in placeholders.items():
+            variable = "${" + placeholder + "}"
+            result = result.replace(variable, str(value))
             
-        # Replace $PLACEHOLDER format
-        for key, value in placeholders.items():
-            placeholder = f"${key}"
-            result = result.replace(placeholder, value)
+        # Second, handle {{NAME}} format (alternate format)
+        for placeholder, value in placeholders.items():
+            variable = "{{" + placeholder + "}}"
+            result = result.replace(variable, str(value))
             
+        # Third, handle $NAME format without braces (legacy format)
+        for placeholder, value in placeholders.items():
+            # Only replace if it's a standalone word with a non-alphanumeric character
+            # before or after (or start/end of string) to avoid replacing substrings
+            pattern = r'(\$)(' + re.escape(placeholder) + r')(\W|$)'
+            result = re.sub(pattern, lambda m: str(value) + m.group(3), result)
+        
         return result
         
     def _add_error(self, error_message):
@@ -1665,23 +1750,25 @@ class ProjectBuilder:
             template_name: Name of the template (used for cache lookup)
             
         Returns:
-            list: Paths of copied files
+            tuple: (success, result) where result is either the list of copied files or an error message
         """
         copied_files = []
-        # --- ADDED --- Access Cache Manager
+        error_messages = []
+        
+        # --- Access Cache Manager
         cache_manager = None
         if hasattr(self, 'template_manager') and hasattr(self.template_manager, 'file_cache_manager'):
              cache_manager = self.template_manager.file_cache_manager
         else:
             print("WARNING: ProjectBuilder cannot access FileCacheManager via template_manager.")
-        # --- END ADDED ---
 
         if not files_array:
-            return copied_files
+            return True, copied_files
 
         print(f"Processing {len(files_array)} files from files array for template: {template_name}")
+        print(f"Current platform: {platform.system()}")
 
-        for file_data in files_array:
+        for file_index, file_data in enumerate(files_array):
             source_path_used = "None" # Debugging
             source_path = None      # Reset for each file
             cached_path_attempted = None # Debugging
@@ -1696,21 +1783,21 @@ class ProjectBuilder:
                 rename_flag = file_data.get('rename_flag', False)
                 uses_project_name = file_data.get('uses_project_name', False)
                 file_type = file_data.get('file_type', 'other')
+                is_binary = file_data.get('is_binary', False)
 
                 if not file_name:
-                    print(f"WARNING: File data missing file_name: {file_data}")
+                    error_msg = f"WARNING: File data missing file_name in index {file_index}: {file_data}"
+                    print(error_msg)
+                    error_messages.append(error_msg)
                     continue
                 
                 original_filename_for_debug = file_name # Store before potential rename
-
-                # Print debug info for renaming
-                # print(f"🔍 RENAMING DEBUG: Processing file '{file_name}' with rename_flag={rename_flag}, uses_project_name={uses_project_name}")
 
                 # First check if the filename contains a placeholder
                 if "${PROJECT_NAME}" in file_name:
                     # Apply placeholder replacement directly
                     file_name = self._replace_placeholders(file_name, placeholders)
-                    # print(f"Applied placeholder to filename: {original_filename_for_debug} -> {file_name}")
+                    print(f"Applied placeholder to filename: {original_filename_for_debug} -> {file_name}")
                 # Apply placeholders to file name if either flag is set
                 elif rename_flag or uses_project_name:
                     project_name = placeholders.get("PROJECT_NAME", "Unknown")
@@ -1720,7 +1807,7 @@ class ProjectBuilder:
                         file_name = f"{project_name}{ext}"
                     else:
                         file_name = project_name
-                    # print(f"Renamed file: {original_filename_for_debug} -> {file_name}")
+                    print(f"Renamed file: {original_filename_for_debug} -> {file_name}")
 
                 # Apply placeholders to folder path
                 folder = self._replace_placeholders(folder, placeholders)
@@ -1728,11 +1815,13 @@ class ProjectBuilder:
                 # Create folder structure if it doesn't exist
                 folder_path = os.path.join(project_dir, folder)
                 os.makedirs(folder_path, exist_ok=True)
+                
+                print(f"Created folder path: {folder_path}")
 
                 # Determine destination path
                 dest_path = os.path.join(folder_path, file_name)
 
-                # --- MODIFIED --- Source Path Determination Logic
+                # --- IMPROVED SOURCE PATH DETERMINATION LOGIC ---
                 print(f"DEBUG: Determining source path for: {original_filename_for_debug} (output: {file_name})")
 
                 # 1. PRIORITY 1: Check cached_path directly from file_data
@@ -1778,11 +1867,21 @@ class ProjectBuilder:
                             cache_manager.cache_stats['misses'] += 1
                     else:
                         print(f"  ⚠️ Original path ({original_path}) does not exist.")
+                        
+                        # Check if path might be using wrong separators
+                        alt_path = original_path.replace('\\', '/') if '\\' in original_path else original_path.replace('/', '\\')
+                        if os.path.exists(alt_path):
+                            source_path = alt_path
+                            source_path_used = "Original (Alt Separator)"
+                            print(f"  ✅ Using ALTERNATIVE SEPARATOR path: {source_path}")
+                            if cache_manager and hasattr(cache_manager, 'cache_stats'): 
+                                cache_manager.cache_stats['misses'] += 1
+                
                 elif not source_path and not original_path:
                     print(f"  ℹ️ Original path was not provided in template data.")
                     
                 # 4. PRIORITY 4: Special handling for imported files
-                if not source_path and original_path and "Imported from:" in original_path and cached_path:
+                if not source_path and original_path and "Imported from:" in str(original_path) and cached_path:
                     # For imported files, always try the cached path as last resort
                     if os.path.exists(cached_path):
                         source_path = cached_path
@@ -1795,28 +1894,36 @@ class ProjectBuilder:
 
                 # Final check - Skip if no valid source path found
                 if not source_path:
-                    print(f"  ❌ ERROR: No valid source path found for file '{original_filename_for_debug}'.")
+                    error_msg = f"  ❌ ERROR: No valid source path found for file '{original_filename_for_debug}'."
+                    print(error_msg)
                     print(f"      Attempted Cache Path: {cached_path_attempted}")
-                    print(f"      Attempted Lookup Path: {cached_path}")
                     print(f"      Attempted Original Path: {original_path_attempted}")
+                    error_messages.append(error_msg)
                     continue
-
-                # --- END MODIFIED ---
 
                 # Copy the file
                 print(f"  ⚙️ Attempting copy: '{source_path}' ({source_path_used}) -> '{dest_path}'")
                 try:
+                    # Verify that the source file exists before copying
+                    if not os.path.exists(source_path):
+                        error_msg = f"  ❌ ERROR: Source file does not exist: {source_path}"
+                        print(error_msg)
+                        error_messages.append(error_msg)
+                        continue
+                    
+                    # Ensure destination directory exists (double check)
+                    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                    
+                    # Use shutil.copy2 for the actual file copy
                     shutil.copy2(source_path, dest_path)
                     copied_files.append(dest_path)
-                    print(f"  ✅ Copied file successfully.")
+                    print(f"  ✅ Copied file successfully: {dest_path}")
 
                     # Log successful renaming
                     if file_name != original_filename_for_debug:
                         print(f"  ℹ️ File renamed during copy: '{original_filename_for_debug}' -> '{file_name}'")
 
                     # Replace placeholders in text files only, not in binary files
-                    is_binary = file_data.get('is_binary', False)
-
                     if not is_binary and placeholders and self._might_contain_placeholders(source_path):
                         try:
                             with open(dest_path, 'r', encoding='utf-8', errors='replace') as f:
@@ -1828,30 +1935,39 @@ class ProjectBuilder:
                         except Exception as e:
                             print(f"  ⚠️ WARNING: Error replacing placeholders in {dest_path}: {str(e)}")
                 except Exception as e:
-                    # --- MODIFIED --- More specific copy error logging
-                    print(f"  ❌ ERROR: Failed to copy file using {source_path_used} path.")
+                    # More specific copy error logging
+                    error_msg = f"  ❌ ERROR: Failed to copy file using {source_path_used} path."
+                    print(error_msg)
                     print(f"      Source: {source_path}")
                     print(f"      Destination: {dest_path}")
-                    print(f"      Error Details: {str(e)}") # THIS IS WHERE USER'S ERROR MESSAGE IS NEEDED FOR CONTEXT
+                    print(f"      Error Details: {str(e)}")
+                    error_messages.append(f"{error_msg} - {str(e)}")
                     import traceback
-                    traceback.print_exc() # Keep traceback for detailed debugging if needed
-                    # --- END MODIFIED ---
+                    traceback.print_exc() # Keep traceback for detailed debugging
 
             except Exception as e:
-                print(f"ERROR processing file data block: {file_data}. Error: {str(e)}")
+                error_msg = f"ERROR processing file data block: {file_data}. Error: {str(e)}"
+                print(error_msg)
+                error_messages.append(error_msg)
                 import traceback
                 traceback.print_exc()
 
-        # --- ADDED --- Save cache stats after processing
+        # Save cache stats after processing
         if cache_manager:
             cache_manager._save_stats()
-        # --- END ADDED ---
-
-        return copied_files
+        
+        # Return success status with copied files or error message
+        if error_messages and not copied_files:
+            return False, f"Failed to copy files: {'; '.join(error_messages)}"
+        elif error_messages and copied_files:
+            return True, copied_files  # Partial success
+        else:
+            return True, copied_files  # Full success
         
     def _might_contain_placeholders(self, file_path):
         """
-        Check if a file might contain placeholders by reading the first few KB
+        Check if a file might contain placeholders by reading the first few KB.
+        Handles both ${PROJECT_NAME} and {{PROJECT_NAME}} formats.
         
         Args:
             file_path: Path to the file to check
@@ -1885,12 +2001,17 @@ class ProjectBuilder:
             # Convert to string with errors ignored
             text = data.decode('utf-8', errors='ignore')
             
-            # Check for common placeholder patterns
-            return '${' in text or '$PROJECT_NAME' in text or '$project_name' in text
+            # Check for common placeholder patterns - both ${NAME} and {{NAME}} formats
+            return ('${' in text or 
+                   '$PROJECT_NAME' in text or 
+                   '$project_name' in text or 
+                   '{{' in text or 
+                   '{{PROJECT_NAME}}' in text or 
+                   '{{project_name}}' in text)
         except Exception as e:
             print(f"Error checking for placeholders: {e}")
             return False
-            
+
     def _process_binary_file(self, source_path, dest_path, placeholders):
         """
         Process a binary file that might contain placeholder text
