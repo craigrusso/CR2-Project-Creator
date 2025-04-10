@@ -25,6 +25,7 @@ class TemplateFolderListItem(QFrame):
         self.setAcceptDrops(True)  # Enable drops
         self.setCursor(Qt.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setFocusPolicy(Qt.StrongFocus)  # Ensure list item can receive keyboard focus
         # Increase the fixed height to accommodate the larger icon
         self.setFixedHeight(44)
         
@@ -244,6 +245,13 @@ class TemplateFolderListItem(QFrame):
             self.doubleClicked.emit(self.folder_name)
             event.accept()
         
+    def mousePressEvent(self, event):
+        """Set focus to this item when clicked"""
+        if event.button() == Qt.LeftButton:
+            self.setFocus()
+            self.clicked.emit(self.folder_name)
+        super().mousePressEvent(event)
+
     def _finish_rename(self):
         """Finish inline renaming and apply the change"""
         try:
@@ -454,21 +462,87 @@ class TemplateFolderListItem(QFrame):
                     self.title.show()
         # Handle both Delete and Backspace (for Mac) for folder deletion when selected
         elif (event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace) and self.selected:
-            # Don't allow deleting default folders
-            if self.folder_name in ["General", "Development", "Business"]:
-                QMessageBox.warning(self, "Error", f"'{self.folder_name}' is a default folder and cannot be deleted.")
-                return
-            
-            # Delete folder without confirmation dialog
-            if self.app and hasattr(self.app, 'template_manager'):
-                success = self.app.template_manager.delete_folder(self.folder_name)
-                
-                if success:
-                    # Refresh the gallery
-                    parent = self.parent()
-                    if parent and hasattr(parent, 'populate_gallery'):
-                        parent.populate_gallery(force_refresh=True)
-                else:
-                    QMessageBox.warning(self, "Error", f"Failed to delete folder '{self.folder_name}'.")
+            print(f"[DEBUG] Folder List Item: Delete/Backspace key pressed for folder '{self.folder_name}'")
+            success = self._delete_folder()
+            # Consume the event
+            event.accept()
+            return
         
         super().keyPressEvent(event) 
+
+    def _delete_folder(self):
+        """Delete this folder"""
+        try:
+            # First check if this is a default folder
+            if self.folder_name in ["General", "Development", "Business"]:
+                QMessageBox.warning(self, "Error", f"'{self.folder_name}' is a default folder and cannot be deleted.")
+                return False
+            
+            # Find template_manager either from app or from parent gallery
+            template_manager = None
+            gallery = None
+            
+            # Try to get template manager from app first
+            if self.app and hasattr(self.app, 'template_manager'):
+                template_manager = self.app.template_manager
+                
+            # If no template manager from app, try to get from parent gallery
+            if template_manager is None:
+                # Find parent gallery
+                parent = self.parent()
+                while parent:
+                    if hasattr(parent, 'template_manager'):
+                        template_manager = parent.template_manager
+                        gallery = parent
+                        break
+                    parent = parent.parent()
+                
+            # Check if we found a template manager
+            if template_manager is None:
+                print(f"[ERROR] Could not find template_manager to delete folder '{self.folder_name}'")
+                QMessageBox.warning(self, "Error", f"Failed to delete folder '{self.folder_name}' - template manager not found.")
+                return False
+            
+            # Delete folder without confirmation dialog
+            print(f"[DEBUG] Deleting folder: '{self.folder_name}'")
+            success = template_manager.delete_folder(self.folder_name)
+            
+            if success:
+                print(f"[DEBUG] Successfully deleted folder: '{self.folder_name}'")
+                
+                # If we found the gallery, use it to update the UI
+                if gallery:
+                    # Clear selected folder if it's this folder
+                    if hasattr(gallery, 'selected_folder') and gallery.selected_folder == self.folder_name:
+                        gallery.selected_folder = None
+                    
+                    # Refresh the gallery
+                    if hasattr(gallery, 'populate_gallery'):
+                        gallery.populate_gallery(force_refresh=True)
+                else:
+                    # Try to find gallery if we didn't get it above
+                    parent = self.parent()
+                    while parent:
+                        if hasattr(parent, 'populate_gallery'):
+                            # This is likely the gallery
+                            if hasattr(parent, 'selected_folder'):
+                                parent.selected_folder = None
+                            parent.populate_gallery(force_refresh=True)
+                            break
+                        parent = parent.parent()
+                
+                # Show status message for success if available
+                if hasattr(self.app, 'show_status_message'):
+                    self.app.show_status_message(f"Folder '{self.folder_name}' deleted", "info")
+                
+                return True
+            else:
+                print(f"[ERROR] Failed to delete folder: '{self.folder_name}'")
+                QMessageBox.warning(self, "Error", f"Failed to delete folder '{self.folder_name}'.")
+                return False
+        except Exception as e:
+            print(f"[ERROR] Exception deleting folder '{self.folder_name}': {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.warning(self, "Error", f"Failed to delete folder '{self.folder_name}' due to an exception: {str(e)}")
+            return False 

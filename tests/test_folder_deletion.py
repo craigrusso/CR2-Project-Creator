@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2023-present Craig P. Russo and CR2 Creative
+
 import unittest
 import sys
 from unittest.mock import MagicMock, patch
@@ -13,6 +15,8 @@ if app is None:
 
 # Import the class under test
 from app.templates.gallery_events import GalleryEvents
+from app.templates.components.template_folder_card import TemplateFolderCard
+from app.templates.components.template_folder_list_item import TemplateFolderListItem
 
 class TestFolderDeletion(unittest.TestCase):
     """Test cases for folder deletion using the delete key."""
@@ -112,6 +116,94 @@ class TestFolderDeletion(unittest.TestCase):
         # Verify the event was handled
         self.assertTrue(result)
 
+    def test_gallery_delete_folder_with_delete_key(self):
+        """Test deleting a folder from the gallery with Delete key."""
+        # Create a delete key event
+        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier)
+        
+        # Test the keyPressEvent method directly
+        from app.templates.template_gallery_ui_pyqt import TemplateGallery
+        gallery = MagicMock(spec=TemplateGallery)
+        gallery.selected_folder = "TestFolder"
+        gallery.template_manager = self.template_manager
+        gallery.app = self.app
+        gallery.populate_gallery = MagicMock()
+        
+        # Call the method under test
+        TemplateGallery.keyPressEvent(gallery, event)
+        
+        # Verify the folder was deleted without confirmation
+        self.template_manager.delete_folder.assert_called_once_with("TestFolder")
+        
+        # Verify the gallery was refreshed
+        gallery.populate_gallery.assert_called_once()
+        
+        # Verify the selected folder was cleared
+        self.assertIsNone(gallery.selected_folder)
+        
+    def test_gallery_events_delete_folder_without_confirmation(self):
+        """Test deleting a folder through GalleryEvents without confirmation."""
+        # Call the method under test
+        GalleryEvents.on_delete_folder(self.gallery, "TestFolder")
+        
+        # Verify the folder was deleted without confirmation
+        self.template_manager.delete_folder.assert_called_once_with("TestFolder")
+        
+        # Verify the gallery was refreshed
+        self.gallery.populate_gallery.assert_called_once()
+        
+        # Verify the selected folder was cleared
+        self.assertIsNone(self.gallery.selected_folder)
+        
+        # Verify a status message was shown
+        self.app.show_status_message.assert_called_once()
+        
+    def test_folder_card_delete_with_delete_key(self):
+        """Test deleting a folder card with Delete key."""
+        # Create a mock folder card
+        folder_card = MagicMock(spec=TemplateFolderCard)
+        folder_card.folder_name = "TestFolder"
+        folder_card.app = self.app
+        folder_card.selected = True
+        folder_card._delete_folder = MagicMock()
+        
+        # Create a delete key event
+        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier)
+        
+        # Call the method under test
+        TemplateFolderCard.keyPressEvent(folder_card, event)
+        
+        # Verify _delete_folder was called
+        folder_card._delete_folder.assert_called_once()
+        
+    def test_folder_list_item_delete_with_delete_key(self):
+        """Test deleting a folder list item with Delete key."""
+        # Create a mock folder list item
+        folder_list_item = MagicMock(spec=TemplateFolderListItem)
+        folder_list_item.folder_name = "TestFolder"
+        folder_list_item.app = self.app
+        folder_list_item.selected = True
+        
+        # Create a parent with populate_gallery method
+        parent = MagicMock()
+        parent.populate_gallery = MagicMock()
+        parent.selected_folder = "TestFolder"
+        folder_list_item.parent.return_value = parent
+        
+        # Create a delete key event
+        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier)
+        
+        # Mock the QMessageBox
+        with patch('app.templates.components.template_folder_list_item.QMessageBox') as mock_message_box:
+            # Call the method under test
+            TemplateFolderListItem.keyPressEvent(folder_list_item, event)
+            
+            # Verify delete_folder was called
+            self.template_manager.delete_folder.assert_called_once_with("TestFolder")
+            
+            # Verify the parent's populate_gallery was called
+            parent.populate_gallery.assert_called_once()
+            
 if __name__ == '__main__':
     unittest.main()
     # Make sure to quit the app

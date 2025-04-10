@@ -1789,9 +1789,21 @@ class TemplateListItem(QFrame):
                 return
                 
             # Delete folder without confirmation dialog
-            self.template_manager.delete_folder(self.selected_folder)
-            self.selected_folder = None
-            self.populate_gallery()
+            success = self.template_manager.delete_folder(self.selected_folder)
+            
+            if success:
+                # Show status message for success
+                if hasattr(self, 'app') and hasattr(self.app, 'show_status_message'):
+                    self.app.show_status_message(f"Folder '{self.selected_folder}' deleted", "info")
+                    
+                # Clear selected folder and refresh gallery
+                folder_name = self.selected_folder
+                self.selected_folder = None
+                self.populate_gallery(force_refresh=True)
+                
+                # Consume the event
+                event.accept()
+                return
         else:
             super().keyPressEvent(event)
 

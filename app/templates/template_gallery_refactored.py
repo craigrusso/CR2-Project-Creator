@@ -876,6 +876,8 @@ class TemplateGallery(QWidget):
     
     def keyPressEvent(self, event):
         """Handle keyboard shortcuts"""
+        # Add debug print for key press events
+        print(f"[DEBUG] Gallery keyPressEvent: key={event.key()}, modifiers={event.modifiers()}")
         # Let the GalleryEvents handle all keyboard events including deletion
         GalleryEvents.key_press_event(self, event)
         super().keyPressEvent(event)

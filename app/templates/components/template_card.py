@@ -593,18 +593,32 @@ class TemplateCard(QFrame):
         """Handle key press events for template operations"""
         # Handle both Delete and Backspace (for Mac) for template deletion when selected
         if (event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace) and self.selected:
+            print(f"[DEBUG] Template Card keyPressEvent: Delete/Backspace detected for {self.template_name()}")
             # Find the parent gallery for multi-selection handling
             gallery = None
             parent = self.parent()
-            while parent:
+            print(f"[DEBUG] Template Card parent: {parent}")
+            parent_iteration = 0
+            while parent and parent_iteration < 10:  # Limit to prevent infinite loop
+                parent_iteration += 1
+                print(f"[DEBUG] Template Card searching parent level {parent_iteration}: {parent}, has multi_selected_templates: {hasattr(parent, 'multi_selected_templates')}")
                 if hasattr(parent, 'multi_selected_templates'):
                     gallery = parent
+                    print(f"[DEBUG] Template Card found gallery at parent level {parent_iteration}")
                     break
                 parent = parent.parent()
             
-            # Always use _delete_multi_selected which handles both single and multi-selections properly
             if gallery:
+                print(f"[DEBUG] Template Card found gallery, calling _delete_multi_selected")
                 self._delete_multi_selected(gallery)
+            else:
+                print(f"[DEBUG] Template Card ERROR: Could not find gallery in parent hierarchy")
+                # Try alternative approach - find app and trigger deletion through app
+                if hasattr(self, 'app') and self.app:
+                    print(f"[DEBUG] Template Card attempting deletion through app")
+                    if hasattr(self.app, 'template_gallery') and hasattr(self.app.template_gallery, '_on_delete_template'):
+                        print(f"[DEBUG] Template Card using app.template_gallery._on_delete_template")
+                        self.app.template_gallery._on_delete_template(self.template_name())
             
         super().keyPressEvent(event)
     

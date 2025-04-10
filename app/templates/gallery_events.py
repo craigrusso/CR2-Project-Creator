@@ -387,26 +387,27 @@ class GalleryEvents:
         if not hasattr(gallery, 'template_manager') or not gallery.template_manager:
             QMessageBox.warning(gallery, "Operation Failed", "Template manager is not available")
             return
-            
-        # Ask for confirmation
-        confirm = QMessageBox.question(
-            gallery, 
-            "Confirm Delete", 
-            f"Are you sure you want to delete folder '{folder_name}'?\n\nTemplates inside will be moved to the root folder.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
         
-        if confirm == QMessageBox.StandardButton.Yes:
-            # Delete the folder
-            success = gallery.template_manager.delete_folder(folder_name)
-            
-            if success:
-                # Update the UI (folder is gone)
-                gallery.populate_gallery()
-                # Notify user
-                QMessageBox.information(gallery, "Success", f"Folder '{folder_name}' has been deleted.")
-            else:
-                QMessageBox.warning(gallery, "Delete Failed", f"Failed to delete folder '{folder_name}'.")
+        # Don't allow deleting default folders
+        if folder_name in ["General", "Development", "Business"]:
+            QMessageBox.warning(gallery, "Error", f"'{folder_name}' is a default folder and cannot be deleted.")
+            return
+        
+        # Delete the folder without confirmation dialog
+        success = gallery.template_manager.delete_folder(folder_name)
+        
+        if success:
+            # Save folder name for message
+            folder_name = gallery.selected_folder
+            # Update the UI (folder is gone)
+            gallery.populate_gallery(force_refresh=True)
+            # Reset selection
+            gallery.selected_folder = None
+            # Notify user
+            if hasattr(gallery, 'app') and hasattr(gallery.app, 'show_status_message'):
+                gallery.app.show_status_message(f"Folder '{folder_name}' deleted", "info")
+        else:
+            QMessageBox.warning(gallery, "Delete Failed", f"Failed to delete folder '{folder_name}'.")
 
     @staticmethod
     def on_move_template_to_folder(gallery, template_names, target_folder=None):
@@ -1123,26 +1124,71 @@ class GalleryEvents:
         from PyQt5.QtCore import Qt
         
         try:
-            # Handle both Delete and Backspace (for Mac) keys for template deletion
+            # Handle both Delete and Backspace (for Mac) keys for folder deletion
             if event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
-                # Get the currently selected template or templates
-                selected_templates = []
-                
-                # Get multi-selected templates if available
-                if hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
-                    selected_templates = [t.get('name') for t in gallery.multi_selected_templates if t and t.get('name')]
-                # Get primary selected template if available and no multi-selection
-                elif hasattr(gallery, 'selected_template') and gallery.selected_template:
-                    template_name = gallery.selected_template.get('name')
-                    if template_name:
-                        selected_templates = [template_name]
+                # Check if a folder is selected
+                if hasattr(gallery, 'selected_folder') and gallery.selected_folder:
+                    print(f"[DEBUG] Delete/Backspace key pressed, folder selected: {gallery.selected_folder}")
+                    
+                    # Don't allow deleting default folders
+                    if gallery.selected_folder in ["General", "Development", "Business"]:
+                        from PyQt5.QtWidgets import QMessageBox
+                        QMessageBox.warning(gallery, "Error", 
+                            f"'{gallery.selected_folder}' is a default folder and cannot be deleted.")
+                        event.accept()
+                        return True
+                    
+                    # Delete the folder without confirmation dialog
+                    if hasattr(gallery, 'template_manager') and gallery.template_manager:
+                        success = gallery.template_manager.delete_folder(gallery.selected_folder)
                         
-                # Delete selected templates if any
-                if selected_templates:
-                    print(f"[DEBUG] Delete/Backspace key pressed, deleting templates: {selected_templates}")
-                    GalleryEvents.on_delete_template(gallery, selected_templates)
+                        if success:
+                            # Save folder name for message
+                            folder_name = gallery.selected_folder
+                            # Update the UI (folder is gone)
+                            gallery.populate_gallery(force_refresh=True)
+                            # Reset selection
+                            gallery.selected_folder = None
+                            # Notify user
+                            if hasattr(gallery, 'app') and hasattr(gallery.app, 'show_status_message'):
+                                gallery.app.show_status_message(f"Folder '{folder_name}' deleted", "info")
+                        else:
+                            from PyQt5.QtWidgets import QMessageBox
+                            QMessageBox.warning(gallery, "Delete Failed", 
+                                f"Failed to delete folder '{gallery.selected_folder}'.")
+                        
+                        event.accept()
+                        return True
+                
+                # Handle template deletion here 
+                if hasattr(gallery, 'selected_template') and gallery.selected_template:
+                    print(f"[DEBUG] Delete/Backspace key pressed, template selected")
+                    
+                    # Check if we're dealing with multi-selected templates
+                    has_multi = (hasattr(gallery, 'multi_selected_templates') and 
+                               gallery.multi_selected_templates and 
+                               len(gallery.multi_selected_templates) > 0)
+                    
+                    if has_multi:
+                        # Handle multi-template deletion
+                        print(f"[DEBUG] Gallery: Handling multi-template deletion via key press")
+                        GalleryEvents.on_delete_template(gallery)
+                    else:
+                        # Handle single template deletion
+                        template_name = None
+                        if isinstance(gallery.selected_template, dict):
+                            template_name = gallery.selected_template.get('name')
+                        else:
+                            template_name = gallery.selected_template
+                            
+                        if template_name:
+                            print(f"[DEBUG] Gallery: Handling template deletion via key press for: {template_name}")
+                            GalleryEvents.on_delete_template(gallery, template_name)
+                    
+                    event.accept()
+                    return True
             
-            # Important: Don't return True or False as this affects event propagation
+            # Important: Don't return any value as this affects event propagation
             # Let the event continue to be processed by parent handlers
             
         except Exception as e:
