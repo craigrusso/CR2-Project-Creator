@@ -71,6 +71,20 @@ class FolderOperations:
     # Alias for backwards compatibility
     add_folder = create_folder
     
+    def folder_exists(self, folder_name):
+        """Check if a folder exists by name
+        
+        Args:
+            folder_name (str): Name of the folder to check
+            
+        Returns:
+            bool: True if the folder exists, False otherwise
+        """
+        if not hasattr(self, 'folders') or not isinstance(self.folders, dict):
+            return False
+            
+        return folder_name in self.folders
+    
     def rename_folder(self, old_name, new_name):
         """Rename a template folder"""
         if old_name not in self.folders or new_name in self.folders:
@@ -193,8 +207,8 @@ class FolderOperations:
     
     def move_template_to_folder(self, template_name, folder_name):
         """Move template to a specific folder (removing from all others)"""
-        if not template_name or not folder_name:
-            print(f"[DEBUG] FolderOps: Invalid template or folder name: '{template_name}', '{folder_name}'")
+        if not template_name:
+            print(f"[DEBUG] FolderOps: Invalid template name: '{template_name}'")
             return False
         
         # Check if template exists
@@ -205,6 +219,23 @@ class FolderOperations:
         
         # Get the real template name from the template object to ensure consistency
         real_template_name = template.get('name', template_name)
+        
+        if folder_name is None:
+            # When folder_name is None, just remove the template from all folders
+            print(f"[DEBUG] FolderOps: Removing template '{real_template_name}' from all folders")
+            # Remove template from all folders
+            for other_folder in list(self.folders.keys()):
+                if template_name in self.folders[other_folder]:
+                    print(f"[DEBUG] FolderOps: Removing '{template_name}' from folder '{other_folder}'")
+                    self.folders[other_folder].remove(template_name)
+                if real_template_name != template_name and real_template_name in self.folders[other_folder]:
+                    print(f"[DEBUG] FolderOps: Removing '{real_template_name}' from folder '{other_folder}'")
+                    self.folders[other_folder].remove(real_template_name)
+            
+            # Save folders
+            print(f"[DEBUG] FolderOps: Saving folders after removing from all")
+            return self.save_folders()
+        
         print(f"[DEBUG] FolderOps: Moving template '{real_template_name}' to folder '{folder_name}'")
         
         # Create folder if it doesn't exist

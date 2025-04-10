@@ -130,6 +130,12 @@ class TemplateManagerCore(TemplateOperations):
              print(f"ERROR: Save Folders: Failed to save to {folders_path} (check utils.save_json_file logs)")
         return success # Return the boolean result
     
+    @property
+    def folder_manager(self):
+        """Return self as a folder manager (since we inherit from FolderOperations)"""
+        # We need to make the folder operations accessible via a folder_manager property
+        return self
+    
     def get_all_templates(self):
         """Returns all loaded templates from TemplateIO."""
         if self.template_io:
