@@ -48,6 +48,9 @@ class ProjectCreatorApp(QMainWindow):
     # Class variable to hold the instance
     _instance = None
     
+    # Class variable for app icon
+    _app_icon = None
+    
     @classmethod
     def get_instance(cls):
         """Get the singleton instance of the app"""
@@ -56,6 +59,26 @@ class ProjectCreatorApp(QMainWindow):
             print("Creating new ProjectCreatorApp instance")
             cls._instance = cls()
         return cls._instance
+    
+    @classmethod
+    def get_app_icon(cls):
+        """Get the application icon as a QIcon object
+        
+        Returns:
+            QIcon: The application icon, or None if it can't be loaded
+        """
+        if cls._app_icon is None:
+            # Load the icon if it hasn't been loaded before
+            icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
+                               "app", "assets", "icon.png")
+            if os.path.exists(icon_path):
+                cls._app_icon = QIcon(icon_path)
+                print(f"DEBUG: Loaded application icon from {icon_path}")
+            else:
+                print(f"WARNING: Application icon not found at {icon_path}")
+                cls._app_icon = QIcon()  # Empty icon to avoid None checks
+                
+        return cls._app_icon
     
     def __init__(self):
         """Initialize the application"""
@@ -306,11 +329,10 @@ class ProjectCreatorApp(QMainWindow):
                 self.structure_combo.setCurrentIndex(idx)
         
     def set_app_icon(self):
-        """Set the application icon"""
-        icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
-                               "app", "assets", "icon.png")
-        if os.path.exists(icon_path):
-            self.setWindowIcon(QIcon(icon_path))
+        """Set the application icon for this window"""
+        app_icon = self.get_app_icon()
+        if not app_icon.isNull():
+            self.setWindowIcon(app_icon)
             
     def center_window(self):
         """Center the window on the screen"""

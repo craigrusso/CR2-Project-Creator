@@ -14,6 +14,7 @@ from app.templates.template_manager_migration import TemplateManagerMigration
 from app.ui.tree_styling import apply_styling_to_all_tree_widgets
 # Import QSettings if not already imported (might be handled by PyQt5 import)
 from PyQt5.QtCore import QSettings 
+from PyQt5.QtGui import QIcon
 
 # This is the PyQt version of the application
 UI_FRAMEWORK = 'pyqt'
@@ -63,9 +64,23 @@ def main():
     if platform.system() == "Windows":
         try:
             import ctypes
+            
+            # Set explicit AppUserModelID for Windows taskbar
             myappid = 'cr2creative.echelon.0.95'
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
             print("DEBUG: Windows app ID set")
+            
+            # Additional Windows-specific icon handling
+            # This ensures all windows (including dialogs) use the same icon
+            import ctypes.wintypes
+            try:
+                icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app", "assets", "icon.png")
+                if os.path.exists(icon_path):
+                    print("DEBUG: Setting Windows-specific application icon")
+                    # Use the same icon for all windows
+                    app.setWindowIcon(QIcon(icon_path))
+            except Exception as e:
+                print(f"WARNING: Windows-specific icon setting failed: {e}")
         except Exception as e:
             print(f"WARNING: Could not set app ID: {e}")
 
@@ -83,6 +98,15 @@ def main():
     # Force application to use our custom palette regardless of system settings
     print("DEBUG: Applying custom palette")
     force_app_palette(app)
+    
+    # Set application icon
+    print("DEBUG: Setting application icon")
+    icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app", "assets", "icon.png")
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
+        print(f"DEBUG: Application icon set from {icon_path}")
+    else:
+        print(f"WARNING: Application icon not found at {icon_path}")
     
     # Apply comprehensive styles from the theme module
     print("DEBUG: Configuring global styles")
