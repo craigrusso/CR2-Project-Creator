@@ -1,0 +1,5 @@
+[33mcommit b694fef624781edc7f8f46ea6dcebbbcfcc6f754[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mfeature/ui-redesign[m[33m)[m
+Author: Craig Russo <craig@cr2creative.com>
+Date:   Thu Apr 10 16:08:04 2025 -0700
+
+    Fix dialog button styling for Windows light theme. Added consistent blue styling for OK/Yes buttons and gray styling for Cancel/No buttons in both QMessageBox and QInputDialog dialogs.

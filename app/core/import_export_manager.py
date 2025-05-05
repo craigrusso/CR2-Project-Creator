@@ -7,11 +7,12 @@ import shutil
 import zipfile
 import tempfile
 from datetime import datetime
-from PyQt5.QtWidgets import QFileDialog, QMessageBox, QDialog, QVBoxLayout, QLabel, QCheckBox, QDialogButtonBox
+from PyQt5.QtWidgets import QFileDialog, QMessageBox, QDialog, QVBoxLayout, QLabel, QCheckBox, QDialogButtonBox, QInputDialog
 from app.constants import APP_NAME # Import the APP_NAME constant
 import sys
 import re
 import time
+from app.ui.dialog_styling import StyledMessageBox, StyledInputDialog
 try:
     from app.utils.utils import normalize_path_for_storage
 except ImportError:
@@ -435,11 +436,12 @@ def import_package(app, import_settings=True, import_templates=True):
                         f"Failed to import settings: {str(e)}"
                     )
         
-        # Success message
-        QMessageBox.information(
+        # Success message - use our styled message box
+        StyledMessageBox.show_information(
             app,
             "Import Successful",
-            f"{import_type} imported successfully!\nPlease restart the application for changes to take effect."
+            f"{import_type} imported successfully!",
+            "Please restart the application for changes to take effect."
         )
         
         # Reload templates if template manager exists
@@ -756,15 +758,18 @@ def export_template(app, template_name, include_files=True):
 
 def import_template(app, file_path=None):
     """
-    Import a template from a package file.
+    Import a template from a package file or directory.
     
     Args:
         app: The main application instance
-        file_path: Path to the template package file (optional)
+        file_path: Optional path to zip file or directory to import
+    
+    Returns:
+        True if import was successful, False otherwise
     """
     if not hasattr(app, 'template_manager'):
         QMessageBox.warning(app, "Import Error", "Template manager not available.")
-        return
+        return False
     
     # Ask user for the import file if not provided
     if not file_path:
@@ -776,7 +781,7 @@ def import_template(app, file_path=None):
         )
     
     if not file_path:
-        return  # User canceled
+        return False  # User canceled
     
     # Store the source zip file path for later reference
     source_zip_path = os.path.abspath(file_path)
@@ -805,7 +810,7 @@ def import_template(app, file_path=None):
                 "Import Error",
                 f"Failed to extract template file: {str(e)}"
             )
-            return
+            return False
             
         # --- DEBUG LOGGING START ---
         print(f"[IMPORT_DEBUG] Contents of temp directory ({temp_dir}) after extraction:")
@@ -850,7 +855,7 @@ def import_template(app, file_path=None):
                 "Import Error",
                 "Invalid template file. Metadata not found."
             )
-            return
+            return False
         
         # Handle template package
         if is_template_package:
@@ -864,7 +869,7 @@ def import_template(app, file_path=None):
                     "Import Error",
                     f"Failed to read template metadata: {str(e)}"
                 )
-                return
+                return False
             
             # Get template data
             template_json_path = os.path.join(temp_dir, "template", "template.json")
@@ -874,7 +879,7 @@ def import_template(app, file_path=None):
                     "Import Error",
                     "Invalid template file. Template data not found."
                 )
-                return
+                return False
             
             # Load template data
             try:
@@ -886,31 +891,30 @@ def import_template(app, file_path=None):
                     "Import Error",
                     f"Failed to read template data: {str(e)}"
                 )
-                return
+                return False
             
             # Get template name and check if it already exists
             template_name = template_data.get("name", "Imported Template")
             if app.template_manager.get_template_by_name(template_name):
-                # Ask user if they want to overwrite
-                msgbox = QMessageBox(app)
-                msgbox.setWindowTitle("Template Exists")
-                msgbox.setText(f"A template named '{template_name}' already exists.")
-                msgbox.setInformativeText("Do you want to overwrite it with the imported template?")
-                msgbox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-                msgbox.setDefaultButton(QMessageBox.No)
+                # Ask user if they want to overwrite using our styled message box
+                result = StyledMessageBox.show_question(
+                    app,
+                    "Template Exists",
+                    f"A template named '{template_name}' already exists.",
+                    "Do you want to overwrite it with the imported template?"
+                )
                 
-                if msgbox.exec_() != QMessageBox.Yes:
-                    # Ask for a new name
-                    from PyQt5.QtWidgets import QInputDialog
-                    new_name, ok = QInputDialog.getText(
+                if result != QMessageBox.Yes:
+                    # Ask for a new name using our styled input dialog
+                    new_name, ok = StyledInputDialog.get_text(
                         app,
                         "Rename Template",
                         "Enter a new name for the imported template:",
-                        text=f"{template_name} (Imported)"
+                        f"{template_name} (Imported)"
                     )
                     
                     if not ok or not new_name:
-                        return  # User canceled
+                        return False  # User canceled
                     
                     template_name = new_name
                     template_data["name"] = template_name
@@ -1204,7 +1208,7 @@ def import_template(app, file_path=None):
                     "Import Error",
                     f"Failed to read export metadata: {str(e)}"
                 )
-                return
+                return False
             
             # Check if package includes templates
             if not metadata.get("includes_templates", False):
@@ -1213,7 +1217,7 @@ def import_template(app, file_path=None):
                     "Import Error",
                     "This package does not contain templates."
                 )
-                return
+                return False
             
             # Call the regular import package function with templates only
             import_package(app, import_settings=False, import_templates=True) 

@@ -16,6 +16,10 @@ from app.ui.tree_styling import apply_styling_to_all_tree_widgets
 from PyQt5.QtCore import QSettings 
 from PyQt5.QtGui import QIcon
 
+# Import the license manager for license checking
+from app.utils.security.license_manager import LicenseManager, TrialNagDialog
+from PyQt5.QtWidgets import QDialog
+
 # This is the PyQt version of the application
 UI_FRAMEWORK = 'pyqt'
 
@@ -121,6 +125,57 @@ def main():
         # Apply an additional attribute to help prevent macOS from overriding our theme
         app.setAttribute(Qt.AA_DontShowIconsInMenus, True)
     
+    # Check license status before proceeding
+    print("DEBUG: Checking license status")
+    license_manager = LicenseManager()
+    
+    # Determine if we can proceed based on license status
+    can_proceed = True
+    
+    if license_manager.is_licensed():
+        print("DEBUG: Application is licensed (initial check)")
+        can_proceed = True # Already licensed, proceed directly
+    else:
+        # Not licensed initially, check trial status
+        print("DEBUG: Checking trial status")
+        days_left = license_manager.get_trial_days_remaining()
+        print(f"DEBUG: Trial days remaining: {days_left}")
+        
+        can_proceed = False # Assume cannot proceed unless trial allows or activation occurs
+        if days_left > 0:
+            # Show trial nag dialog
+            trial_dialog = TrialNagDialog(None, license_manager, days_left)
+            dialog_result = trial_dialog.exec_()
+            
+            # Check status AFTER dialog closes
+            if dialog_result == QDialog.Accepted:
+                if license_manager.is_licensed(): # Check if activation occurred
+                     print("DEBUG: Trial dialog accepted, and now licensed (activation successful).")
+                     can_proceed = True
+                else: # No activation, but accepted means continue trial
+                     print("DEBUG: Trial dialog accepted, continuing trial.")
+                     can_proceed = True 
+            else: # Dialog was rejected (Cancel/Exit) or closed
+                print("DEBUG: User cancelled the trial dialog or exited.")
+                # can_proceed remains False
+        else:
+            # Trial expired, show the nag dialog with exit option only
+            trial_dialog = TrialNagDialog(None, license_manager, 0)
+            dialog_result = trial_dialog.exec_()
+
+            # Check status AFTER dialog closes
+            if dialog_result == QDialog.Accepted and license_manager.is_licensed():
+                 print("DEBUG: Trial expired dialog accepted, and now licensed (activation successful).")
+                 can_proceed = True
+            else: # Dialog was rejected (Exit) or closed
+                print("DEBUG: Trial expired and user did not activate.")
+                # can_proceed remains False
+
+    # Final decision based on the logic above
+    if not can_proceed:
+        print("DEBUG: Exiting application due to license/trial constraints")
+        return 0
+    
     # Create and show the main window
     print("DEBUG: Creating main application window")
     try:
@@ -128,6 +183,19 @@ def main():
         # Store the instance for future reference
         ProjectCreatorApp._instance = main_window
         print("DEBUG: Main window created successfully")
+        
+        # Add license management to the help menu
+        if hasattr(main_window, 'help_menu'):
+            from app.dialogs.license_management import LicenseManagementDialog
+            
+            # Create the license action
+            license_action = main_window.help_menu.addAction("License Management...")
+            license_action.triggered.connect(lambda: LicenseManagementDialog(main_window, license_manager).exec_())
+            
+            # Add a separator before the action
+            main_window.help_menu.insertSeparator(license_action)
+            
+            print("DEBUG: Added license management to help menu")
         
         print("DEBUG: Showing main window")
         main_window.show()

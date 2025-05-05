@@ -100,6 +100,110 @@ ACCENT_BUTTON_STYLE = f"""
     }}
 """
 
+# Style for dialog message box buttons
+MESSAGE_BOX_BUTTON_STYLE = f"""
+    /* Base style for all QMessageBox buttons */
+    QMessageBox QPushButton {{
+        min-width: 80px;
+        min-height: 22px;
+        border-radius: 3px;
+        padding: 5px 10px;
+    }}
+    
+    /* Style for "Yes" and "OK" buttons - blue accent color */
+    QMessageBox QPushButton[text="Yes"], 
+    QMessageBox QPushButton[text="OK"],
+    QMessageBox QPushButton[text="&Yes"] {{
+        background-color: {colors['accent']};
+        color: white;
+        border: none;
+    }}
+    
+    QMessageBox QPushButton[text="Yes"]:hover, 
+    QMessageBox QPushButton[text="OK"]:hover,
+    QMessageBox QPushButton[text="&Yes"]:hover {{
+        background-color: {colors['accent_hover']};
+    }}
+    
+    QMessageBox QPushButton[text="Yes"]:pressed, 
+    QMessageBox QPushButton[text="OK"]:pressed,
+    QMessageBox QPushButton[text="&Yes"]:pressed {{
+        background-color: {colors['highlight_darker']};
+    }}
+    
+    /* Style for "No" and cancel buttons - gray color */
+    QMessageBox QPushButton[text="No"],
+    QMessageBox QPushButton[text="Cancel"],
+    QMessageBox QPushButton[text="&No"] {{
+        background-color: {colors['card_bg']};
+        color: {colors['text']};
+        border: 1px solid {colors['border']};
+    }}
+    
+    QMessageBox QPushButton[text="No"]:hover,
+    QMessageBox QPushButton[text="Cancel"]:hover,
+    QMessageBox QPushButton[text="&No"]:hover {{
+        background-color: {colors['hover_bg']};
+        border: 1px solid {colors['accent']};
+    }}
+    
+    QMessageBox QPushButton[text="No"]:pressed,
+    QMessageBox QPushButton[text="Cancel"]:pressed,
+    QMessageBox QPushButton[text="&No"]:pressed {{
+        background-color: {colors['hover_bg']};
+        color: {colors['highlight_text']};
+    }}
+"""
+
+# Style for dialog buttons in QInputDialog and other standard dialogs
+DIALOG_BUTTON_STYLE = f"""
+    /* Base style for all dialog buttons */
+    QDialog QPushButton {{
+        min-width: 80px;
+        min-height: 22px;
+        border-radius: 3px;
+        padding: 5px 10px;
+    }}
+    
+    /* Style for "OK" button - blue accent color */
+    QDialog QPushButton[text="OK"],
+    QDialog QPushButton[text="&OK"] {{
+        background-color: {colors['accent']};
+        color: white;
+        border: none;
+    }}
+    
+    QDialog QPushButton[text="OK"]:hover,
+    QDialog QPushButton[text="&OK"]:hover {{
+        background-color: {colors['accent_hover']};
+    }}
+    
+    QDialog QPushButton[text="OK"]:pressed,
+    QDialog QPushButton[text="&OK"]:pressed {{
+        background-color: {colors['highlight_darker']};
+    }}
+    
+    /* Style for "Cancel" button - gray color */
+    QDialog QPushButton[text="Cancel"],
+    QDialog QPushButton[text="&Cancel"] {{
+        background-color: {colors['card_bg']};
+        color: {colors['text']};
+        border: 1px solid {colors['border']};
+    }}
+    
+    QDialog QPushButton[text="Cancel"]:hover,
+    QDialog QPushButton[text="&Cancel"]:hover {{
+        background-color: {colors['hover_bg']};
+        border: 1px solid {colors['accent']};
+    }}
+    
+    QDialog QPushButton[text="Cancel"]:pressed,
+    QDialog QPushButton[text="&Cancel"]:pressed {{
+        background-color: {colors['hover_bg']};
+        color: {colors['highlight_text']};
+    }}
+"""
+
 COMBOBOX_STYLE = f"""
     QComboBox {{
         background-color: {colors['card_bg']};

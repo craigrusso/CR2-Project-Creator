@@ -12,4 +12,14 @@ from app.utils.security.security_bookmarks import (
     create_bookmark as save_security_bookmarks,
     access_bookmark as load_security_bookmarks,
     with_bookmark_access
+)
+
+# Import the license manager components
+from app.utils.security.license_manager import (
+    LicenseManager,
+    LicenseActivationDialog,
+    TrialNagDialog,
+    LICENSE_TYPE_PERMANENT,
+    LICENSE_TYPE_ENTERPRISE,
+    LICENSE_TYPE_SUBSCRIPTION
 ) 

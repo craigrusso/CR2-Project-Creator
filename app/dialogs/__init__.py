@@ -18,11 +18,15 @@ from app.dialogs.dialog_windows_pyqt import (
     show_edit_template
 )
 
+# License management dialogs
+from app.dialogs.license_management import LicenseManagementDialog
+
 __all__ = [
     'preview_structure',
     'show_batch_results',
     'show_about',
     'show_tutorial',
     'show_preferences_dialog',
-    'show_edit_template'
+    'show_edit_template',
+    'LicenseManagementDialog'
 ]

@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import QWidget, QLabel, QLineEdit, QPushButton, QComboBox, 
 from PyQt5.QtCore import Qt, QEvent, QObject, QRect, QSize
 from PyQt5.QtGui import QPalette, QColor, QPainter, QBrush, QPen, QFont, QPixmap, QPainterPath
 import sys, time
-from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE, LINEEDIT_STYLE, LABEL_STYLE, LISTVIEW_POPUP_STYLE
+from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE, LINEEDIT_STYLE, LABEL_STYLE, LISTVIEW_POPUP_STYLE, MESSAGE_BOX_BUTTON_STYLE, DIALOG_BUTTON_STYLE
 import platform
 
 # Add the force_app_palette function
@@ -201,6 +201,12 @@ def configure_styles(app):
             color: {colors['text']};
             border-bottom: 1px solid {colors['border']};
         }}
+        
+        /* Apply dialog button styling to ensure consistent appearance in all themes */
+        {MESSAGE_BOX_BUTTON_STYLE}
+        
+        /* Apply styling to buttons in input dialogs and other standard dialogs */
+        {DIALOG_BUTTON_STYLE}
         
         QMenuBar::item {{
             background-color: {colors['card_bg']};

@@ -453,12 +453,12 @@ class ProjectCreatorApp(QMainWindow):
         view_menu.addAction(refresh_gallery_action)
         
         # Help menu
-        help_menu = menubar.addMenu("Help")
+        self.help_menu = menubar.addMenu("Help")
         
         # Tutorial action
         tutorial_action = QAction("Tutorial", self)
         tutorial_action.triggered.connect(lambda: show_tutorial(self))
-        help_menu.addAction(tutorial_action)
+        self.help_menu.addAction(tutorial_action)
         
         # About action - should be in app menu on macOS, but we'll add it here for completeness
         if platform.system() != "Darwin":  # Not macOS
@@ -466,12 +466,12 @@ class ProjectCreatorApp(QMainWindow):
         else:
             about_action = QAction("About Echelon", self)
         about_action.triggered.connect(lambda: show_about(self))
-        help_menu.addAction(about_action)
+        self.help_menu.addAction(about_action)
         
         # Check for Updates action
         updates_action = QAction("Check for Updates", self)
         updates_action.triggered.connect(self.check_for_updates)
-        help_menu.addAction(updates_action)
+        self.help_menu.addAction(updates_action)
     
     def filter_templates(self, search_text):
         """Filter templates based on search text"""
