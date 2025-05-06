@@ -8,11 +8,12 @@ QTableView subclass for displaying templates with spreadsheet-like column behavi
 import os
 from PyQt5.QtWidgets import (QTableView, QHeaderView, QAbstractItemView, 
                              QStyledItemDelegate, QStyleOptionViewItem, QStyle,
-                             QStyleOptionHeader, QApplication)
-from PyQt5.QtCore import Qt, QSettings, QModelIndex, QSize, QRect, QPoint, QSortFilterProxyModel, QByteArray, QMimeData, QItemSelectionModel
-from PyQt5.QtGui import QStandardItemModel, QStandardItem, QColor, QPalette, QIcon, QBrush, QPainter, QFontMetrics, QFont, QDrag, QPixmap
+                             QStyleOptionHeader, QApplication, QMenu, QAction, QMessageBox)
+from PyQt5.QtCore import Qt, QSettings, QModelIndex, QSize, QRect, QPoint, QSortFilterProxyModel, QByteArray, QMimeData, QItemSelectionModel, pyqtSignal, QTimer
+from PyQt5.QtGui import QStandardItemModel, QStandardItem, QColor, QPalette, QIcon, QBrush, QPainter, QFontMetrics, QFont, QDrag, QPixmap, QCursor
 
 from app.constants import get_resource_path
+# from app.utils.data_management import DataManager # Removed unused import
 try:
     from app.ui.color_scheme_pyqt import colors
     from app.templates.drag_helpers import setup_drag_mime_data, create_drag_pixmap
@@ -285,11 +286,11 @@ class TemplateTableView(QTableView):
     DEFAULT_MIN_COLUMN_WIDTH = 100
     COLUMN_HEADERS = ["Name", "Category", "Created", "Modified"] # Example columns
     # Define icon paths
-    DEFAULT_ICON_PATH = "ICONS/templates/template_structure_icon.svg"
+    DEFAULT_ICON_PATH = os.path.join("app", "assets", "icons", "templates", "template_structure_icon.svg")
     WARNING_ICON_PATH = "ICONS/alert-triangle.svg" # Path for the warning icon
     DEFAULT_ICON_SIZE = QSize(18, 18) # Define a default icon size
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, template_manager=None, app=None):
         super().__init__(parent)
         
         # Load icons during initialization
@@ -318,7 +319,7 @@ class TemplateTableView(QTableView):
     def _load_icons(self):
         """Load icons used in the table view."""
         try:
-            self.default_icon = QIcon(get_resource_path(self.DEFAULT_ICON_PATH))
+            self.default_icon = QIcon(self.DEFAULT_ICON_PATH)
             if self.default_icon.isNull():
                  print(f"WARNING: Failed to load default icon: {self.DEFAULT_ICON_PATH}")
                  self.default_icon = QIcon() # Use empty icon as fallback
@@ -627,6 +628,20 @@ class TemplateTableView(QTableView):
         
         # For other cases, use the standard handler
         super().mousePressEvent(event)
+
+    def get_icon_for_template(self, template_name):
+        """Return QIcon for the template, using default if specific one not found."""
+        # We might add template-specific icons later
+        # For now, always use the default SVG structure icon
+        
+        # Use get_resource_path to find the default icon correctly
+        resolved_icon_path = get_resource_path(self.DEFAULT_ICON_PATH)
+        
+        if os.path.exists(resolved_icon_path):
+            return QIcon(resolved_icon_path)
+        else:
+            print(f"WARN: Default template icon not found at {resolved_icon_path}")
+            return QIcon() # Return empty icon
 
 
 # Optional: Delegate for adding padding (can be removed if not needed)

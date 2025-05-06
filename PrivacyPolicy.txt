@@ -1,0 +1,90 @@
+# Privacy Policy Version: 1.0
+# Effective Date: October 26, 2023
+# Last Updated: October 26, 2023
+
+This Privacy Policy ("Policy") describes how CR2 Creative ("Company," "we," "our," or "us") collects, uses, and discloses information when you ("you," "your," or "User") access or use the Echelon application, our website located at www.cr2creative.com, and related services (collectively, the "Services").
+
+By accessing or using the Services, you agree to the terms of this Policy.
+
+**1. Scope and Applicability**
+This Policy applies to Personal Data collected through the Services. "Personal Data" means any information relating to an identified or identifiable individual.
+
+This Policy does not apply to third-party services, even if they are linked to or integrated with our Services (e.g., Stripe for payment processing). We encourage you to review the privacy policies of those third-party providers.
+
+**2. Information We Collect**
+We collect the following categories of Personal Data:
+
+*   Identity Data: First and last name
+*   Contact Data: Email address; company name (optional); phone number (future feature)
+*   Transaction Data: Purchase amount, items purchased, transaction dates
+*   Technical Data: Browser type, IP address, device information
+*   Usage Data: Information about how you use the Services
+*   Session Data: Cookies and other session-identifying technologies for authentication and functionality
+
+**3. How We Collect Information**
+We collect Personal Data through the following means:
+
+*   Direct interactions: when you fill out forms, make a purchase, or contact support
+*   Automated technologies: including cookies and similar tracking technologies
+*   Third-party integrations: such as Stripe, which provides payment processing
+
+**4. Use of Personal Data**
+We use Personal Data to:
+
+*   Provide, operate, and maintain the Services
+*   Process payments and deliver purchased products
+*   Respond to inquiries, feedback, and support requests
+*   Improve and personalize the Services
+*   Ensure the security and integrity of the Services
+*   Comply with legal obligations
+
+**5. Cookies and Tracking Technologies**
+We use cookies and similar technologies to:
+
+*   Authenticate and maintain your session
+*   Enhance the user experience
+*   Collect usage data for analytics and troubleshooting
+
+You may disable cookies in your browser settings; however, some features of the Services may not function properly as a result.
+
+**6. Disclosure of Personal Data**
+We do not sell or rent your Personal Data. We may disclose Personal Data to the following parties under the conditions described:
+
+*   Service Providers: Including payment processors (e.g., Stripe), hosting providers, and analytics tools
+*   Legal Authorities: If required to comply with applicable laws, regulations, legal processes, or governmental requests
+*   Business Transfers: In the event of a merger, acquisition, or asset sale
+
+All third parties are contractually obligated to protect your data in accordance with this Policy and applicable law.
+
+**7. Data Retention**
+We retain Personal Data only as long as necessary to fulfill the purposes for which it was collected, including to satisfy legal, accounting, or reporting requirements.
+
+You may request deletion of your Personal Data by contacting us via our support page. We will respond to valid requests within a reasonable timeframe.
+
+**8. Data Security**
+We implement appropriate technical and organizational safeguards to protect Personal Data against unauthorized access, loss, misuse, alteration, or disclosure. However, no method of transmission or storage is completely secure, and we cannot guarantee absolute security.
+
+**9. Your Rights and Choices**
+Depending on your jurisdiction (including California under the CCPA/CPRA), you may have rights to:
+
+*   Access the Personal Data we hold about you
+*   Correct inaccuracies in your Personal Data
+*   Request deletion of your Personal Data
+*   Object to or restrict certain processing activities
+
+To exercise your rights, please contact us via our support page.
+
+**10. Children's Privacy**
+The Services are not directed to individuals under the age of 13. We do not knowingly collect Personal Data from children. If we learn that we have collected data from a child under 13, we will delete it promptly.
+
+**11. International Transfers**
+If you are located outside of the United States, please note that your Personal Data may be processed and stored in the United States, where data protection laws may differ from those in your jurisdiction.
+
+**12. Changes to This Policy**
+We may revise this Policy from time to time. When we do, we will update the "Last Updated" date above and, if the changes are material, provide notice through the Services or by other means.
+
+**13. Contact Us**
+If you have any questions about this Policy or our privacy practices, please contact us via our support page.
+
+CR2 Creative
+© 2025 CR2 Creative. All rights reserved. 

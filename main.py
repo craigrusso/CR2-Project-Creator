@@ -6,19 +6,20 @@ import sys
 import os
 
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt, QCoreApplication
+from PyQt5.QtCore import Qt, QCoreApplication, QSettings, QTimer
 from app.core.app_module_pyqt import ProjectCreatorApp
 from app.config.app_config import APP_NAME, APP_VERSION, setup_dpi_awareness
 from app.ui.app_theme_pyqt import apply_dark_theme_to_template_section, force_app_palette, configure_styles
 from app.templates.template_manager_migration import TemplateManagerMigration
 from app.ui.tree_styling import apply_styling_to_all_tree_widgets
-# Import QSettings if not already imported (might be handled by PyQt5 import)
-from PyQt5.QtCore import QSettings 
 from PyQt5.QtGui import QIcon
 
 # Import the license manager for license checking
 from app.utils.security.license_manager import LicenseManager, TrialNagDialog
 from PyQt5.QtWidgets import QDialog
+
+# Import the EULA Dialog
+from app.dialogs.eula_dialog import EulaDialog
 
 # This is the PyQt version of the application
 UI_FRAMEWORK = 'pyqt'
@@ -99,6 +100,15 @@ def main():
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
     
+    # --- EULA Check ---
+    # Must happen after QApplication is created so dialogs can function
+    print("DEBUG: Checking EULA acceptance.")
+    if not EulaDialog.show_eula_if_needed():
+        print("DEBUG: EULA not accepted. Exiting application.")
+        return 1 # Exit cleanly if EULA declined
+    
+    print("DEBUG: EULA check passed.")
+    
     # Force application to use our custom palette regardless of system settings
     print("DEBUG: Applying custom palette")
     force_app_palette(app)
@@ -129,47 +139,80 @@ def main():
     print("DEBUG: Checking license status")
     license_manager = LicenseManager()
     
+    # --- Trial Logic Enhancement ---
+    # Check if a license was ever activated on this installation
+    settings = QSettings()
+    was_ever_licensed = settings.value("license/was_ever_licensed", False, type=bool)
+    print(f"DEBUG: Was license ever activated? {was_ever_licensed}")
+
     # Determine if we can proceed based on license status
-    can_proceed = True
-    
+    can_proceed = False # Default to false, must pass checks
+
     if license_manager.is_licensed():
         print("DEBUG: Application is licensed (initial check)")
-        can_proceed = True # Already licensed, proceed directly
+        can_proceed = True
+        # If licensed now, ensure the 'was_ever_licensed' flag is set
+        if not was_ever_licensed:
+            settings.setValue("license/was_ever_licensed", True)
+            print("DEBUG: Setting 'was_ever_licensed' flag to True.")
     else:
-        # Not licensed initially, check trial status
-        print("DEBUG: Checking trial status")
-        days_left = license_manager.get_trial_days_remaining()
-        print(f"DEBUG: Trial days remaining: {days_left}")
-        
-        can_proceed = False # Assume cannot proceed unless trial allows or activation occurs
-        if days_left > 0:
-            # Show trial nag dialog
-            trial_dialog = TrialNagDialog(None, license_manager, days_left)
+        # --- Check if trial should be bypassed ---
+        if was_ever_licensed:
+            print("DEBUG: License previously activated but now invalid/expired. Bypassing trial.")
+            # Force activation dialog - treat as if trial expired
+            trial_dialog = TrialNagDialog(None, license_manager, 0) # 0 days forces activation
             dialog_result = trial_dialog.exec_()
-            
-            # Check status AFTER dialog closes
-            if dialog_result == QDialog.Accepted:
-                if license_manager.is_licensed(): # Check if activation occurred
-                     print("DEBUG: Trial dialog accepted, and now licensed (activation successful).")
-                     can_proceed = True
-                else: # No activation, but accepted means continue trial
-                     print("DEBUG: Trial dialog accepted, continuing trial.")
-                     can_proceed = True 
-            else: # Dialog was rejected (Cancel/Exit) or closed
-                print("DEBUG: User cancelled the trial dialog or exited.")
-                # can_proceed remains False
-        else:
-            # Trial expired, show the nag dialog with exit option only
-            trial_dialog = TrialNagDialog(None, license_manager, 0)
-            dialog_result = trial_dialog.exec_()
-
-            # Check status AFTER dialog closes
             if dialog_result == QDialog.Accepted and license_manager.is_licensed():
-                 print("DEBUG: Trial expired dialog accepted, and now licensed (activation successful).")
-                 can_proceed = True
-            else: # Dialog was rejected (Exit) or closed
-                print("DEBUG: Trial expired and user did not activate.")
-                # can_proceed remains False
+                print("DEBUG: Re-activation successful after previous license expired/revoked.")
+                can_proceed = True
+                # Ensure flag is set (should be already, but belt-and-suspenders)
+                if not settings.value("license/was_ever_licensed", False, type=bool):
+                     settings.setValue("license/was_ever_licensed", True)
+            else:
+                print("DEBUG: Did not re-activate after previous license expired/revoked.")
+                can_proceed = False # Exit if activation fails/cancelled
+        else:
+            # --- Normal Trial Check (only if never licensed before) ---
+            print("DEBUG: Checking trial status (never licensed before).")
+            days_left = license_manager.get_trial_days_remaining()
+            print(f"DEBUG: Trial days remaining: {days_left}")
+
+            can_proceed = False # Assume cannot proceed unless trial allows or activation occurs
+            if days_left > 0:
+                # Show trial nag dialog
+                trial_dialog = TrialNagDialog(None, license_manager, days_left)
+                dialog_result = trial_dialog.exec_()
+
+                # Check status AFTER dialog closes
+                if dialog_result == QDialog.Accepted:
+                    if license_manager.is_licensed(): # Check if activation occurred
+                         print("DEBUG: Trial dialog accepted, and now licensed (activation successful).")
+                         can_proceed = True
+                         # Set the flag since activation was successful
+                         settings.setValue("license/was_ever_licensed", True)
+                         print("DEBUG: Setting 'was_ever_licensed' flag to True after trial activation.")
+                    else: # No activation, but accepted means continue trial
+                         print("DEBUG: Trial dialog accepted, continuing trial.")
+                         can_proceed = True
+                else: # Dialog was rejected (Cancel/Exit) or closed
+                    print("DEBUG: User cancelled the trial dialog or exited.")
+                    # can_proceed remains False
+            else:
+                # Trial expired (and never licensed before), show the nag dialog with exit option only
+                print("DEBUG: Trial expired (never licensed before).")
+                trial_dialog = TrialNagDialog(None, license_manager, 0)
+                dialog_result = trial_dialog.exec_()
+
+                # Check status AFTER dialog closes
+                if dialog_result == QDialog.Accepted and license_manager.is_licensed():
+                     print("DEBUG: Trial expired dialog accepted, and now licensed (activation successful).")
+                     can_proceed = True
+                     # Set the flag since activation was successful
+                     settings.setValue("license/was_ever_licensed", True)
+                     print("DEBUG: Setting 'was_ever_licensed' flag to True after expired trial activation.")
+                else: # Dialog was rejected (Exit) or closed
+                    print("DEBUG: Trial expired and user did not activate.")
+                    # can_proceed remains False
 
     # Final decision based on the logic above
     if not can_proceed:

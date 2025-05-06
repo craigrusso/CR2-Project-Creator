@@ -1,0 +1,53 @@
+# EULA Version: 1.0
+
+**END-USER LICENSE AGREEMENT (EULA) FOR ECHELON**
+
+IMPORTANT: PLEASE READ THIS END-USER LICENSE AGREEMENT ("EULA") CAREFULLY BEFORE INSTALLING OR USING THE ECHELON SOFTWARE ("SOFTWARE").
+
+BY INSTALLING, COPYING, OR OTHERWISE USING THE SOFTWARE, YOU AGREE TO BE BOUND BY THE TERMS OF THIS EULA. IF YOU DO NOT AGREE TO THE TERMS OF THIS EULA, DO NOT INSTALL OR USE THE SOFTWARE.
+
+This EULA is a legal agreement between you (either an individual or a single entity) and CR2 Creative ("Developer") for the Software, which includes computer software and may include associated media, printed materials, and "online" or electronic documentation.
+
+**1. GRANT OF LICENSE.**
+Developer grants you a limited, non-exclusive, non-transferable license to install and use one copy of the Software on a single computer for your personal or internal business purposes, subject to the terms and conditions of this EULA and any applicable license key or subscription term purchased.
+
+**2. RESTRICTIONS.**
+You may not:
+   a) Reverse engineer, decompile, or disassemble the Software, except and only to the extent that such activity is expressly permitted by applicable law notwithstanding this limitation.
+   b) Rent, lease, lend, sell, redistribute, or sublicense the Software.
+   c) Modify, or create derivative works based upon the Software in whole or in part.
+   d) Remove or alter any copyright or other proprietary notices on the Software.
+   e) Use the Software for any illegal purpose or in violation of any local, state, national, or international law.
+
+**3. INTELLECTUAL PROPERTY.**
+The Software is protected by copyright and other intellectual property laws and treaties. Developer owns the title, copyright, and other intellectual property rights in the Software. The Software is licensed, not sold. This EULA does not grant you any rights to trademarks or service marks of Developer.
+
+**4. SOURCE CODE.**
+While certain underlying components or libraries used by the Software may be licensed under open-source licenses (such as the MIT License), this EULA governs your use of the compiled, executable Software product itself. The Software as a distributed application is proprietary and is not licensed under an open-source license. You have no rights to the source code of the proprietary portions of the Software under this EULA.
+
+**5. DISCLAIMER OF WARRANTY.**
+THE SOFTWARE IS PROVIDED "AS IS," WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT, TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW. THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE SOFTWARE IS WITH YOU. SHOULD THE SOFTWARE PROVE DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING, REPAIR, OR CORRECTION. DEVELOPER DOES NOT WARRANT THAT THE SOFTWARE WILL MEET YOUR REQUIREMENTS OR THAT THE OPERATION OF THE SOFTWARE WILL BE UNINTERRUPTED OR ERROR-FREE.
+
+**6. LIMITATION OF LIABILITY.**
+IN NO EVENT SHALL DEVELOPER BE LIABLE FOR ANY SPECIAL, INCIDENTAL, INDIRECT, OR CONSEQUENTIAL DAMAGES WHATSOEVER (INCLUDING, WITHOUT LIMITATION, DAMAGES FOR LOSS OF BUSINESS PROFITS, BUSINESS INTERRUPTION, LOSS OF BUSINESS INFORMATION, LOSS OF DATA, PECUNIARY LOSS, OR ANY OTHER LOSS) ARISING OUT OF THE USE OF OR INABILITY TO USE THE SOFTWARE, EVEN IF DEVELOPER HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES, TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW. BECAUSE SOME STATES/JURISDICTIONS (INCLUDING CALIFORNIA) MAY NOT ALLOW THE EXCLUSION OR LIMITATION OF LIABILITY FOR CERTAIN TYPES OF DAMAGES, SOME OF THE ABOVE LIMITATIONS MAY NOT APPLY TO YOU. IN NO EVENT SHALL DEVELOPER'S TOTAL LIABILITY TO YOU FOR ALL DAMAGES EXCEED THE AMOUNT PAID BY YOU FOR THE SOFTWARE.
+
+**7. TERM AND TERMINATION.**
+This EULA is effective until terminated. Your rights under this EULA will terminate automatically without notice from Developer if you fail to comply with any term(s) of this EULA. Upon termination, you shall cease all use of the Software and destroy all copies, full or partial, of the Software. Sections 3, 4, 5, 6, 8, 9, 10, 11, and 12 shall survive termination.
+
+**8. NO REFUNDS.**
+All fees paid for the Software license are non-refundable.
+
+**9. GOVERNING LAW.**
+This EULA shall be governed by and construed in accordance with the laws of the State of California, USA, without regard to its conflict of law principles. You agree that any legal action or proceeding arising out of or relating to this EULA shall be brought exclusively in the federal or state courts located in Los Angeles County, California, and you hereby consent to the personal jurisdiction and venue therein.
+
+**10. PRIVACY.**
+Your use of the Software is subject to Developer's Privacy Policy, which describes how Developer collects, uses, and shares information. The current Privacy Policy can be viewed on the Developer's website at https://www.cr2creative.com/privacy-policy.html. Compliance with privacy regulations such as the California Consumer Privacy Act (CCPA) / California Privacy Rights Act (CPRA) is addressed in the Privacy Policy available on the website.
+
+**11. ENTIRE AGREEMENT.**
+This EULA constitutes the entire agreement between you and Developer relating to the Software and supersedes all prior or contemporaneous oral or written communications, proposals, and representations with respect to the Software or any other subject matter covered by this EULA.
+
+**12. CONTACT INFORMATION.**
+Should you have any questions concerning this EULA, or if you desire to contact Developer for any reason, please refer to the contact information provided with the Software or on the Developer's website.
+
+**13. ACKNOWLEDGEMENT.**
+YOU ACKNOWLEDGE THAT YOU HAVE READ THIS EULA, UNDERSTAND IT, AND AGREE TO BE BOUND BY ITS TERMS AND CONDITIONS. 

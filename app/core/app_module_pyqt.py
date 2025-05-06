@@ -38,6 +38,7 @@ from app.utils.utils import (load_recent_projects, save_recent_projects,
 from app.dialogs.template_creation_form import show_template_creation_form
 from app.templates.components.utils import get_system_font, SYSTEM_FONT
 from app.core.import_export_manager import import_template
+from app.dialogs.license_management import LicenseManagementDialog
 
 class ProjectCreatorApp(QMainWindow):
     """Main application class for CR2 Creative Pro using PyQt"""
@@ -460,18 +461,21 @@ class ProjectCreatorApp(QMainWindow):
         tutorial_action.triggered.connect(lambda: show_tutorial(self))
         self.help_menu.addAction(tutorial_action)
         
-        # About action - should be in app menu on macOS, but we'll add it here for completeness
-        if platform.system() != "Darwin":  # Not macOS
-            about_action = QAction("About", self)
-        else:
-            about_action = QAction("About Echelon", self)
-        about_action.triggered.connect(lambda: show_about(self))
+        # About action
+        about_action = QAction("About Echelon", self)
+        about_action.triggered.connect(self.show_about_dialog)
         self.help_menu.addAction(about_action)
         
         # Check for Updates action
         updates_action = QAction("Check for Updates", self)
         updates_action.triggered.connect(self.check_for_updates)
         self.help_menu.addAction(updates_action)
+        
+        # License action
+        license_action = QAction("License", self)
+        license_action.triggered.connect(self.show_license_dialog)
+        self.help_menu.addAction(license_action)
+        self.help_menu.insertSeparator(license_action)
     
     def filter_templates(self, search_text):
         """Filter templates based on search text"""
@@ -995,4 +999,17 @@ class ProjectCreatorApp(QMainWindow):
     
     def show_error(self, message):
         """Show an error message in the status bar"""
-        self.show_status_message(message, message_type="error", duration=10000) 
+        self.show_status_message(message, message_type="error", duration=10000)
+
+    def show_about_dialog(self):
+        """Shows the About dialog."""
+        show_about(self)
+
+    def show_license_dialog(self):
+        """Shows the License dialog."""
+        # Assuming LicenseManagementDialog is defined elsewhere
+        dialog = LicenseManagementDialog(self, self.template_manager.license_manager)
+        dialog.exec_()
+
+# Add a class variable to hold the single instance
+ProjectCreatorApp._instance = None 

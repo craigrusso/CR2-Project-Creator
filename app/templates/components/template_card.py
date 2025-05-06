@@ -97,10 +97,10 @@ class TemplateCard(QFrame):
         icon_size = 64 # Define icon size
         pixmap = None
 
-        # --- MODIFIED: Always use template_structure_icon.svg --- 
+        # --- MODIFIED: Always use template_structure_icon.svg ---
         icon_filename = "template_structure_icon.svg"
         icon_path = get_resource_path(os.path.join(
-            "ICONS", "templates", icon_filename))
+            "app", "assets", "icons", "templates", icon_filename)) # Corrected path
         print(f"DEBUG (Card Icon Path): {icon_path}")
         if os.path.exists(icon_path):
             icon = QIcon(icon_path)

@@ -326,133 +326,100 @@ class UIOperations:
             card.leaveEvent = lambda e: self._on_card_hover_leave(card)
         
         # Icon - use SVG icon if available, fallback to emoji
-        icon_path = get_resource_path(os.path.join(
-            "ICONS", "templates", "template_structure_icon.svg"))
-        print(f"DEBUG (Dialog Icon Path): {icon_path}") # Add debug print
-        
-        if os.path.exists(icon_path):
+        if item_type == "folder":
+            icon_path = get_resource_path(os.path.join(
+                "app", "assets", "icons", "folder_icon.svg"))
+        elif item_type == "file":
+            icon_path = get_resource_path(os.path.join(
+                "app", "assets", "icons", "file_icon.svg"))
+        else:  # Default or unknown
+            icon_path = get_resource_path(os.path.join(
+                "app", "assets", "icons", "templates", "template_structure_icon.svg"))
+
+        icon_widget = None # Placeholder for the icon widget (QLabel or QSvgWidget)
+
+        if icon_path and os.path.exists(icon_path):
             try:
-                from PyQt5.QtSvg import QSvgRenderer
-                
-                # Create a renderer for the SVG
-                with open(icon_path, 'r') as f:
-                    svg_content = f.read()
-                
-                renderer = QSvgRenderer(QByteArray(svg_content.encode()))
-                if renderer.isValid():
-                    # Create a pixmap to render to
-                    pixmap = QPixmap(40, 40)
-                    pixmap.fill(Qt.transparent)  # Make the background transparent
-                    
-                    # Paint the SVG on the pixmap
-                    painter = QPainter(pixmap)
-                    renderer.render(painter)
-                    painter.end()
-                    
-                    icon_label = QLabel(card)
-                    icon_label.setObjectName("icon_label")
-                    icon_label.setPixmap(pixmap)
-                    icon_label.setStyleSheet(f"background: transparent;")
-                    icon_label.setAlignment(Qt.AlignCenter)
-                    icon_label.setFixedSize(40, 40)
-                    
-                    # Layout for icon and text
-                    hbox = QHBoxLayout(card)
-                    hbox.setContentsMargins(10, 5, 10, 5)
-                    hbox.setSpacing(10)
-                    
-                    hbox.addWidget(icon_label)
-                    
-                    # Info section (will be added next)
-                    info_frame = QFrame(card)
-                    info_frame.setObjectName("info_frame")
-                    info_layout = QVBoxLayout(info_frame)
-                    info_layout.setContentsMargins(0, 0, 0, 0)
-                    info_layout.setSpacing(2)
+                from PyQt5.QtSvg import QSvgWidget
+                icon_widget = QSvgWidget(icon_path)
+                icon_widget.setFixedSize(24, 24) # Or desired size
+            except ImportError:
+                print("WARN: Could not import QSvgWidget. SVG icons may not display.")
+                # Fallback if QSvgWidget is not available or fails
+                icon = template.get("icon", "📂") # Fallback emoji
+                icon_widget = QLabel(icon)
+                # Set appropriate styling for QLabel fallback
 
-                    # Name
-                    name_label = QLabel(template.get("name", "Unnamed Template"))
-                    name_label.setObjectName("name_label")
-                    name_font = QFont(SYSTEM_FONT, 11)
-                    name_font.setBold(True)
-                    name_label.setFont(name_font)
-                    name_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
-                    name_label.setWordWrap(True)
-                    name_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-                    info_layout.addWidget(name_label)
-                    
-                    # Category
-                    category_label = QLabel(template.get("category", "Custom"))
-                    category_label.setObjectName("category_label")
-                    category_font = QFont(SYSTEM_FONT, 9)
-                    category_label.setFont(category_font)
-                    category_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
-                    category_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-                    info_layout.addWidget(category_label)
-                    
-                    # Description
-                    desc_label = QLabel(template.get("description", ""))
-                    desc_label.setObjectName("desc_label")
-                    desc_font = QFont(SYSTEM_FONT, 9)
-                    desc_label.setFont(desc_font)
-                    desc_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
-                    desc_label.setWordWrap(True)
-                    desc_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-                    info_layout.addWidget(desc_label, 1)
-
-                    # Add info frame to hbox layout
-                    hbox.addWidget(info_frame, 1)
-                    
-                    # Make card and all labels clickable
-                    if select_callback:
-                        # Connect press event for the card itself
-                        card.mousePressEvent = lambda e, tmpl=template: self._handle_card_click(e, tmpl, card, select_callback)
-                        
-                        # Use event filter for children to handle hover and clicks robustly
-                        for widget in [icon_label, name_label, category_label, desc_label, info_frame]:
-                            widget.installEventFilter(card)
-
-                    # Install event filter on the card itself for hover effects
-                    card.installEventFilter(card)
-                    card.setAttribute(Qt.WA_Hover)
-                else:
-                    # Fallback to emoji if renderer is not valid
-                    icon = template.get("icon", "📂")
-                    icon_label = QLabel(card, text=icon, font=("Segoe UI", 24),
-                                   bg=colors["card_bg"], fg=colors["text"])
-                    icon_label.pack(side=Qt.LeftToRight, padx=10, pady=10)
-                    
-                    # Make icon clickable too
-                    if select_callback:
-                        icon_label.mousePressEvent = lambda e: select_callback(template)
-                        icon_label.enterEvent = lambda e: self._on_card_hover_enter(card)
-                        icon_label.leaveEvent = lambda e: self._on_card_hover_leave(card)
-            except Exception as e:
-                print(f"ERROR: Failed to load SVG icon: {e}")
-                # Fallback to emoji if SVG loading fails
-                icon = template.get("icon", "📂")
-                icon_label = QLabel(card, text=icon, font=("Segoe UI", 24),
-                               bg=colors["card_bg"], fg=colors["text"])
-                icon_label.pack(side=Qt.LeftToRight, padx=10, pady=10)
-                
-                # Make icon clickable too
-                if select_callback:
-                    icon_label.mousePressEvent = lambda e: select_callback(template)
-                    icon_label.enterEvent = lambda e: self._on_card_hover_enter(card)
-                    icon_label.leaveEvent = lambda e: self._on_card_hover_leave(card)
         else:
-            # Fallback to emoji if file doesn't exist
-            icon = template.get("icon", "📂")
-            icon_label = QLabel(card, text=icon, font=("Segoe UI", 24),
-                               bg=colors["card_bg"], fg=colors["text"])
-            icon_label.pack(side=Qt.LeftToRight, padx=10, pady=10)
-            
-            # Make icon clickable too
-            if select_callback:
-                icon_label.mousePressEvent = lambda e: select_callback(template)
-                icon_label.enterEvent = lambda e: self._on_card_hover_enter(card)
-                icon_label.leaveEvent = lambda e: self._on_card_hover_leave(card)
+            print(f"WARN: Tree icon not found at {icon_path}")
+            # Fallback to emoji if icon file doesn't exist
+            icon = template.get("icon", "📂") # Fallback emoji
+            icon_widget = QLabel(icon)
+            # Set appropriate styling for QLabel fallback
+
+        # Add the created icon_widget to the layout or use it as needed
+        # Example: item.setIcon(0, QIcon(icon_path)) if using QTreeWidget item icons
+        # Or add icon_widget to a layout in your custom widget
+
+        # Info section (will be added next)
+        info_frame = QFrame(card)
+        info_frame.setObjectName("info_frame")
+        info_layout = QVBoxLayout(info_frame)
+        info_layout.setContentsMargins(0, 0, 0, 0)
+        info_layout.setSpacing(2)
+
+        # Name
+        name_label = QLabel(template.get("name", "Unnamed Template"))
+        name_label.setObjectName("name_label")
+        name_font = QFont(SYSTEM_FONT, 11)
+        name_font.setBold(True)
+        name_label.setFont(name_font)
+        name_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
+        name_label.setWordWrap(True)
+        name_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        info_layout.addWidget(name_label)
         
+        # Category
+        category_label = QLabel(template.get("category", "Custom"))
+        category_label.setObjectName("category_label")
+        category_font = QFont(SYSTEM_FONT, 9)
+        category_label.setFont(category_font)
+        category_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
+        category_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        info_layout.addWidget(category_label)
+        
+        # Description
+        desc_label = QLabel(template.get("description", ""))
+        desc_label.setObjectName("desc_label")
+        desc_font = QFont(SYSTEM_FONT, 9)
+        desc_label.setFont(desc_font)
+        desc_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
+        desc_label.setWordWrap(True)
+        desc_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        info_layout.addWidget(desc_label, 1)
+
+        # Add info frame to hbox layout
+        hbox = QHBoxLayout(card)
+        hbox.setContentsMargins(10, 5, 10, 5)
+        hbox.setSpacing(10)
+
+        hbox.addWidget(icon_widget)
+        
+        hbox.addWidget(info_frame, 1)
+        
+        # Make card and all labels clickable
+        if select_callback:
+            # Connect press event for the card itself
+            card.mousePressEvent = lambda e, tmpl=template: self._handle_card_click(e, tmpl, card, select_callback)
+            
+            # Use event filter for children to handle hover and clicks robustly
+            for widget in [icon_widget, name_label, category_label, desc_label, info_frame]:
+                widget.installEventFilter(card)
+
+        # Install event filter on the card itself for hover effects
+        card.installEventFilter(card)
+        card.setAttribute(Qt.WA_Hover)
+
         return card
         
     def eventFilter(self, watched, event):
@@ -974,7 +941,7 @@ def get_template_icon(template_type=None):
     """Get the QIcon for a given template type (placeholder)."""
     # Placeholder: Correct the path for the default icon
     icon_path = get_resource_path(os.path.join(
-        "ICONS", "templates", "template_structure_icon.svg")) # Corrected path
+        "app", "assets", "icons", "templates", "template_structure_icon.svg")) # Corrected path
     
     if os.path.exists(icon_path):
         return QIcon(icon_path)

@@ -10,28 +10,22 @@ import sys
 
 # Resource path helper
 def get_resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
-    # Check if running as a PyInstaller bundle
-    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    """ Get absolute path to resource, works for dev and for PyInstaller/py2app """
+    
+    # Determine the base path depending on whether the app is frozen
+    if getattr(sys, 'frozen', False):
         # Running frozen/packaged
-        # Assets are usually placed relative to sys._MEIPASS
-        # Assume assets are copied into the root or a specific dir like 'assets' by PyInstaller spec
-        base_path = sys._MEIPASS
+        if hasattr(sys, '_MEIPASS'):
+            # PyInstaller environment
+            base_path = sys._MEIPASS
+            print(f"DEBUG: Frozen Mode (PyInstaller) - Using base_path: {base_path}")
+        else:
+            # Assume py2app environment
+            # The executable is in Contents/MacOS, resources are in Contents/Resources
+            base_path = os.path.abspath(os.path.join(os.path.dirname(sys.executable), "..", "Resources"))
+            print(f"DEBUG: Frozen Mode (py2app) - Using base_path: {base_path}")
+            
         final_path = os.path.join(base_path, relative_path)
-
-        # Optional: Add checks here if your bundler places assets differently,
-        # e.g., inside an 'app' subdirectory within the bundle.
-        # Example:
-        # app_path = os.path.join(base_path, 'app', relative_path)
-        # if os.path.exists(app_path):
-        #     final_path = app_path
-        # else:
-        #    # Try root level if not in 'app'
-        #    root_path = os.path.join(base_path, relative_path)
-        #    if os.path.exists(root_path):
-        #        final_path = root_path
-
-        print(f"DEBUG: Frozen Mode - Using base_path: {base_path}")
 
     else:
         # Running from source (development mode)
@@ -53,7 +47,7 @@ def get_resource_path(relative_path):
 # App constants
 APP_NAME = "Echelon"
 APP_VERSION = "1.0"
-APP_BUILD_NUMBER = 250
+APP_BUILD_NUMBER = 255
 RECENT_PROJECTS_MAX = 5
 RECENT_TEMPLATES_MAX = 5
 

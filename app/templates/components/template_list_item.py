@@ -87,9 +87,15 @@ class TemplateListItem(QFrame):
         self.icon_label.setFixedSize(30, 30) # Keep fixed size for list view consistency
         self.icon_label.setStyleSheet("background-color: transparent;") # Ensure background is transparent
         
+        icon_label = QLabel()
+        icon_size = 24
+        pixmap = None
+
+        # Always use the template structure icon
+        icon_filename = "template_structure_icon.svg"
         icon_path = get_resource_path(os.path.join(
-            "ICONS", "templates", "template_structure_icon.svg"))
-            
+            "app", "assets", "icons", "templates", icon_filename)) # Corrected path
+        
         if os.path.exists(icon_path):
             icon = QIcon(icon_path)
             pixmap = icon.pixmap(QSize(24, 24)) # Use QSize, slightly smaller pixmap for padding within the 30x30 label
