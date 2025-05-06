@@ -8,13 +8,13 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QFileDialog, QMessageBox, QAction, QMenu, 
                            QStatusBar, QFrame, QSplitter, QScrollArea, QSizePolicy,
                            QApplication, QGroupBox, QListView, QTextEdit)
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex
-from PyQt5.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, QPixmap, QDesktopServices
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex, QPoint, QUrl, QMimeData, QSettings
+from PyQt5.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, QPixmap, QDesktopServices, QCursor, QDragEnterEvent, QDropEvent, QFontMetrics, QStandardItemModel, QStandardItem
 
 from app.core.app_config import APP_NAME, APP_VERSION, RECENT_TEMPLATES_MAX
 from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE, LISTVIEW_POPUP_STYLE, APP_COLORS
-from app.utils.utils import load_config, save_config, truncate_path
-from app.ui.ui_components_pyqt import ToolTip, CardFrame, SearchBox, TemplateFileCard, ScrollableFrame, UI_FONT
+from app.utils.utils import load_config, save_config, truncate_path, normalize_path_for_storage
+from app.ui.ui_components_pyqt import ToolTip, CardFrame, SearchBox, TemplateFileCard, ScrollableFrame, UI_FONT, UpdateNotificationBanner
 from app.templates.template_manager import TemplateManager
 from app.templates.template_manager_core import TemplateManagerCore
 from app.core.project_builder import ProjectBuilder
@@ -39,6 +39,10 @@ from app.dialogs.template_creation_form import show_template_creation_form
 from app.templates.components.utils import get_system_font, SYSTEM_FONT
 from app.core.import_export_manager import import_template
 from app.dialogs.license_management import LicenseManagementDialog
+from app.config.app_config import UPDATE_CHECK_INTERVAL_SECONDS
+from app.utils.update_checker import get_latest_version_info
+from packaging.version import parse as parse_version
+import time
 
 class ProjectCreatorApp(QMainWindow):
     """Main application class for CR2 Creative Pro using PyQt"""
@@ -136,6 +140,9 @@ class ProjectCreatorApp(QMainWindow):
         # Set up a timer to check for batch results, but don't start it yet
         self.batch_check_timer = QTimer(self)
         self.batch_check_timer.timeout.connect(self.check_batch_results)
+        
+        # Schedule initial update check
+        self._initial_update_check()
         
         # Show app (make visible)
         self.show()
@@ -313,6 +320,10 @@ class ProjectCreatorApp(QMainWindow):
         # Apply initial config
         self._update_ui_from_config()
         
+        # Add Update Notification Banner (initially hidden)
+        self.update_banner = UpdateNotificationBanner()
+        self.main_layout.insertWidget(0, self.update_banner) # Insert at the top
+        
     def _update_ui_from_config(self):
         """Update UI elements based on loaded configuration"""
         # Load last output directory if available
@@ -467,9 +478,12 @@ class ProjectCreatorApp(QMainWindow):
         self.help_menu.addAction(about_action)
         
         # Check for Updates action
-        updates_action = QAction("Check for Updates", self)
-        updates_action.triggered.connect(self.check_for_updates)
+        updates_action = QAction("Check for Updates...", self)
+        updates_action.triggered.connect(lambda: self.check_for_updates(force_check=True))
         self.help_menu.addAction(updates_action)
+        
+        # Separator
+        self.help_menu.addSeparator()
         
         # License action
         license_action = QAction("License", self)
@@ -718,7 +732,60 @@ class ProjectCreatorApp(QMainWindow):
         """
         self.status_bar.setStyleSheet(base_style)
     
-    def check_for_updates(self):
+    def _check_for_updates_logic(self, force_check=False):
+        """
+        Performs the actual update check against the API.
+        Returns True if an update is found and banner shown, False otherwise.
+        """
+        print("DEBUG: Running update check logic...")
+        settings = QSettings()
+        last_check_timestamp = settings.value("update_check/last_checked_timestamp", 0, type=float)
+        current_timestamp = time.time()
+
+        # Check if interval has passed or if check is forced
+        if not force_check and (current_timestamp - last_check_timestamp < UPDATE_CHECK_INTERVAL_SECONDS):
+            print(f"DEBUG: Update check skipped. Last checked {int((current_timestamp - last_check_timestamp)/60)} mins ago. Interval: {int(UPDATE_CHECK_INTERVAL_SECONDS/60)} mins.")
+            return False
+
+        print("DEBUG: Proceeding with API check for updates.")
+        config = load_config() # Reload config in case it changed
+        api_url = config.get("api_urls", {}).get("get_public_downloads")
+        current_app_version = APP_VERSION
+
+        if not api_url:
+            print("ERROR: Update check - API URL for downloads not found in config.")
+            return False
+
+        latest_version_str = get_latest_version_info(api_url)
+
+        # --- Update timestamp if check ran (API call attempted) ---
+        settings.setValue("update_check/last_checked_timestamp", current_timestamp)
+        print(f"DEBUG: Updated last update check timestamp to {current_timestamp}")
+        # ---------------------------------------------------------
+
+        if latest_version_str:
+            try:
+                if parse_version(latest_version_str) > parse_version(current_app_version):
+                    print(f"INFO: Update found! Current: {current_app_version}, Latest: {latest_version_str}")
+                    self.update_banner.show_message(latest_version_str)
+                    return True # Indicate update was found
+                else:
+                    print(f"DEBUG: Current version {current_app_version} is up-to-date or newer than latest found ({latest_version_str}).")
+            except Exception as e:
+                print(f"ERROR: Could not compare versions ('{latest_version_str}' vs '{current_app_version}'): {e}")
+        else:
+            # Handle None case (API error, network error, no matching platform version)
+            print("DEBUG: No latest version string received from update check (could be error or no update).")
+
+        return False # No update banner shown
+
+    def _initial_update_check(self):
+        """Runs the update check shortly after startup."""
+        print("DEBUG: Scheduling initial update check.")
+        # Delay check slightly to avoid blocking UI startup
+        QTimer.singleShot(5000, lambda: self._check_for_updates_logic(force_check=False)) # 5 seconds delay, ensure not forced
+
+    def check_for_updates(self, force_check=False):
         """Check for application updates"""
         # This would connect to a service to check for updates
         self.show_status_message("Checking for updates...", "info", 2000)

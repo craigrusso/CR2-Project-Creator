@@ -14,8 +14,11 @@ from PyQt5.QtWidgets import QMessageBox
 from app.ui.color_scheme_pyqt import colors
 UI_FRAMEWORK = 'pyqt'
 
-from app.constants import RECENT_PROJECTS_MAX
+from app.constants import RECENT_PROJECTS_MAX, RECENT_TEMPLATES_MAX
 from app.core import config_manager
+
+# Import defaults from app_config
+from app.config.app_config import DEFAULT_GET_PUBLIC_DOWNLOADS_URL
 
 def load_json_file(file_path, default=None):
     """Load data from a JSON file, returning default if file doesn't exist or has errors"""
@@ -89,16 +92,25 @@ def save_pickle_file(file_path, data):
         return False
 
 def load_config():
-    """Load application configuration from the settings directory."""
+    """Load the application configuration from a JSON file."""
+    # Use config_manager to get the correct path
     settings_dir = config_manager.get_settings_path()
-    config_file = os.path.join(settings_dir, "config.json")
+    config_path = os.path.join(settings_dir, "config.json")
     default_config = {
+        # --- Add default for the new setting --- 
+        "api_urls": {
+            "get_public_downloads": DEFAULT_GET_PUBLIC_DOWNLOADS_URL
+        },
+        # ---------------------------------------
+        "last_output_dir": "",
+        "last_structure": "Standard",
+        "theme": "dark", # default theme
         "last_directory": "",
         "template_file_path": "",
         "structure_template": "Default",
         "show_advanced_options": False
     }
-    return load_json_file(config_file, default_config)
+    return load_json_file(config_path, default_config)
 
 def save_config(config):
     """Save application configuration to the settings directory."""

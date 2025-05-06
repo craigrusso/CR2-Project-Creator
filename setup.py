@@ -64,6 +64,7 @@ OPTIONS = {
         'ctypes',
         'traceback',
         'requests.adapters', # Often needed by requests
+        'packaging' # Added for version comparison
     ], 
     'excludes': [ 
         # Keep aggressive excludes for large libraries

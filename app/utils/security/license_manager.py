@@ -17,8 +17,11 @@ import sys
 import importlib.resources # For accessing bundled data files
 from datetime import datetime, timedelta
 import socket # Added import
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QLineEdit, QFormLayout, QMessageBox, QProgressBar
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QLineEdit, QFormLayout, QMessageBox, QProgressBar, QHBoxLayout
 from PyQt5.QtCore import Qt, QSettings, QTimer
+
+# Import styling constants
+from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
 
 # Constants
 TRIAL_DAYS = 14
@@ -523,7 +526,12 @@ class LicenseActivationDialog(QDialog):
         # Buttons
         self.activate_button = QPushButton("Activate License")
         self.activate_button.clicked.connect(self.activate_license)
-        self.activate_button.setStyleSheet(f"background-color: {colors['accent']}; color: white; padding: 8px;")
+        self.activate_button.setStyleSheet(f"""
+            {ACCENT_BUTTON_STYLE}
+            QPushButton:hover {{
+                 background-color: {colors['accent_hover']};
+            }}
+        """)
         
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.clicked.connect(self.reject)
@@ -605,27 +613,50 @@ class TrialNagDialog(QDialog):
         layout.addWidget(message_label)
         
         # Buttons
+        button_layout = QHBoxLayout()
+        
+        # Activate Button (Always shown)
         self.activate_button = QPushButton("Activate License")
-        self.activate_button.clicked.connect(self.open_activation_dialog)
-        self.activate_button.setStyleSheet(f"background-color: {colors['accent']}; color: white; padding: 8px;")
+        # Add hover state to existing ACCENT_BUTTON_STYLE
+        self.activate_button.setStyleSheet(f"""
+            {ACCENT_BUTTON_STYLE}
+            QPushButton:hover {{
+                 background-color: {colors['accent_hover']}; 
+            }}
+        """)
+        self.activate_button.clicked.connect(self.open_activation_dialog) # Connect to activation dialog method
+        button_layout.addWidget(self.activate_button)
         
+        # Continue Trial Button (Conditional)
         if self.days_left > 0:
-            self.continue_button = QPushButton("Continue Trial")
-            self.continue_button.clicked.connect(self.accept)
+            self.continue_button = QPushButton(f"Continue Trial ({self.days_left} days left)")
+            # Add hover state to existing BUTTON_STYLE
+            self.continue_button.setStyleSheet(f"""
+                {BUTTON_STYLE}
+                QPushButton:hover {{
+                    background-color: {colors['hover_bg']};
+                    border: 1px solid {colors['accent']};
+                }}
+            """)
+            self.continue_button.clicked.connect(self.accept) # Accept just closes to continue trial
+            button_layout.insertWidget(0, self.continue_button) # Place it to the left
         else:
-            self.continue_button = QPushButton("Exit")
-            self.continue_button.clicked.connect(self.reject)
-        
-        buttons_layout = QVBoxLayout()
-        buttons_layout.addWidget(self.activate_button)
-        buttons_layout.addWidget(self.continue_button)
-        
-        layout.addLayout(buttons_layout)
+            # If trial expired, show an Exit button instead of Continue Trial
+            # We might not need an explicit Exit button if activate/close handles it.
+            # Let's adjust the activate button text instead.
+            self.activate_button.setText("Activate License")
+            # Add an informative label above the button
+            trial_expired_label = QLabel("Your trial has expired. Please activate to continue using Echelon.")
+            trial_expired_label.setStyleSheet("color: yellow;") # Make it noticeable
+            trial_expired_label.setWordWrap(True)
+            layout.insertWidget(layout.count() -1, trial_expired_label) # Insert before button layout
+
+        layout.addLayout(button_layout) # Add the button layout to the main layout
         
         self.setLayout(layout)
         
     def open_activation_dialog(self):
-        """Open the license activation dialog"""
+        """Opens the separate ActivationDialog."""
         dialog = LicenseActivationDialog(self, self.license_manager)
         result = dialog.exec_()
         

@@ -17,13 +17,15 @@ from PyQt5.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout,
                             QMessageBox, QInputDialog, QGridLayout, QTabWidget,
                             QApplication, QStyle, QMainWindow, QGroupBox,
                             QRadioButton, QComboBox, QProgressBar, QSplitter,
-                            QMenu, QAction)
+                            QMenu, QAction, QListView, QStyledItemDelegate,
+                            QStyleOptionViewItem, QAbstractItemView, QSpacerItem)
 from PyQt5.QtCore import Qt, QTimer, QPoint, QSize, pyqtSignal, QEvent, QUrl, QMimeData
-from PyQt5.QtGui import QFont, QCursor, QIcon, QColor, QPalette, QDragEnterEvent, QDropEvent, QPixmap, QPainter, QPen, QFontMetrics
+from PyQt5.QtGui import QFont, QCursor, QIcon, QColor, QPalette, QDragEnterEvent, QDropEvent, QPixmap, QPainter, QPen, QFontMetrics, QStandardItemModel, QStandardItem, QDesktopServices
 
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, LINEEDIT_STYLE, LABEL_STYLE
 from app.ui.tree_styling import apply_tree_styling, setup_tree_for_structure_editing
 from app.utils.utils import normalize_path_for_storage
+from app.constants import get_resource_path, APP_NAME, APP_VERSION
 
 # Constants for styling
 BLUE_HIGHLIGHT = "#3066BE"
@@ -1773,4 +1775,61 @@ class TemplateFolderCard(QFrame):
         if self.hover:
             self.setStyleSheet(hover_style)
         else:
-            self.setStyleSheet(base_style) 
+            self.setStyleSheet(base_style)
+
+# --- Update Notification Banner --- 
+class UpdateNotificationBanner(QFrame):
+    """A simple banner to notify the user about available updates."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("UpdateNotificationBanner")
+        self.setFixedHeight(40) # Fixed height for the banner
+        self.setStyleSheet(f"""
+            #UpdateNotificationBanner {{
+                background-color: {colors['highlight_bg']}; /* Use highlight_bg as accent_light isn't defined */
+                border-radius: 4px;
+                border: 1px solid {colors['accent']};
+            }}
+            QLabel {{
+                color: {colors['text']};
+                font-size: 13px;
+                padding-left: 10px;
+            }}
+        """)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 0, 10, 0)
+        layout.setSpacing(15)
+
+        self.icon_label = QLabel("✨") # Placeholder icon
+        layout.addWidget(self.icon_label)
+
+        self.message_label = QLabel("") # Message will be set dynamically
+        layout.addWidget(self.message_label, 1) # Stretch message label
+
+        self.download_button = QPushButton("Download Now")
+        self.download_button.setStyleSheet(ACCENT_BUTTON_STYLE) # Use existing accent style
+        self.download_button.setCursor(Qt.PointingHandCursor)
+        self.download_button.setFixedHeight(28)
+        self.download_button.clicked.connect(self._open_download_page)
+        layout.addWidget(self.download_button)
+
+        self.close_button = QPushButton("✕") # Close symbol
+        self.close_button.setFlat(True)
+        self.close_button.setFixedSize(24, 24)
+        self.close_button.setStyleSheet("QPushButton { border: none; font-size: 16px; color: #AAAAAA; } QPushButton:hover { color: #FFFFFF; }")
+        self.close_button.setCursor(Qt.PointingHandCursor)
+        self.close_button.clicked.connect(self.hide)
+        layout.addWidget(self.close_button)
+
+        self.hide() # Initially hidden
+
+    def show_message(self, version_string):
+        """Sets the message and shows the banner."""
+        self.message_label.setText(f"<b>Update Available:</b> Version {version_string} is ready to download.")
+        self.show()
+
+    def _open_download_page(self):
+        """Opens the download webpage in the default browser."""
+        url = QUrl("https://www.cr2creative.com/downloads.html")
+        QDesktopServices.openUrl(url) 

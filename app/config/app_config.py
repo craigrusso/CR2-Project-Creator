@@ -37,3 +37,16 @@ SAMPLE_TEMPLATES = [
     {"name": "Social Media Pack", "category": "Design", "icon": "📱", "description": "Templates for various platforms"},
     {"name": "Custom Empty", "category": "Custom", "icon": "📂", "description": "Start with a blank template"}
 ]
+
+# App constants
+APP_BUILD_NUMBER = 255 # Make sure this reflects the current build
+
+# --- API Endpoints --- 
+DEFAULT_GET_PUBLIC_DOWNLOADS_URL = "https://www.cr2creative.com/api/downloads/public" # Default URL
+
+# --- Default Paths ---
+DEFAULT_STRUCTURES_PATH = "Default Project Structures"
+DEFAULT_TEMPLATES_PATH = "Project Templates"
+
+# --- Update Check --- 
+UPDATE_CHECK_INTERVAL_SECONDS = 14 * 24 * 60 * 60 # Check every 14 days
