@@ -70,7 +70,9 @@ def get_latest_version_info(api_url):
         if latest_version:
             print(f"DEBUG: Latest available version found for {target_platform_api}: {latest_version_str}")
             # Return only the version string
-            return latest_version_str 
+            # return latest_version_str 
+            # Return the full dictionary instead
+            return latest_version
         else:
             print(f"DEBUG: No available versions found for platform {target_platform_api}.")
             return None

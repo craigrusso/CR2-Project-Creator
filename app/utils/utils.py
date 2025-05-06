@@ -97,11 +97,14 @@ def load_config():
     settings_dir = config_manager.get_settings_path()
     config_path = os.path.join(settings_dir, "config.json")
     default_config = {
-        # --- Add default for the new setting --- 
+        # --- Update the default URL here --- 
+        # --- API Endpoint Configuration ---
         "api_urls": {
-            "get_public_downloads": DEFAULT_GET_PUBLIC_DOWNLOADS_URL
+            # !!! IMPORTANT: Default set to TEST endpoint for development. !!!
+            # !!! MUST be changed to /prod/versions for PRODUCTION builds. !!!
+            "get_public_downloads": "https://zryss80ntj.execute-api.us-west-1.amazonaws.com/test/versions" # TEST Endpoint
         },
-        # ---------------------------------------
+        # --------------------------------------
         "last_output_dir": "",
         "last_structure": "Standard",
         "theme": "dark", # default theme

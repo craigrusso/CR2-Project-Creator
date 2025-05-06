@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QFileDialog, QMessageBox, QAction, QMenu, 
                            QStatusBar, QFrame, QSplitter, QScrollArea, QSizePolicy,
                            QApplication, QGroupBox, QListView, QTextEdit)
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex, QPoint, QUrl, QMimeData, QSettings
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex, QPoint, QUrl, QMimeData, QSettings, QObject, QThread
 from PyQt5.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, QPixmap, QDesktopServices, QCursor, QDragEnterEvent, QDropEvent, QFontMetrics, QStandardItemModel, QStandardItem
 
 from app.core.app_config import APP_NAME, APP_VERSION, RECENT_TEMPLATES_MAX
@@ -44,6 +44,62 @@ from app.utils.update_checker import get_latest_version_info
 from packaging.version import parse as parse_version
 import time
 
+# --- Worker for background update check ---
+class UpdateWorker(QObject):
+    """Worker thread for checking updates in the background."""
+    update_found = pyqtSignal(dict)       # Emits full version info dict if update found
+    check_complete = pyqtSignal(bool, str) # Emits (update_found_bool, error_message_str)
+    finished = pyqtSignal()             # Always emits when run completes
+
+    def __init__(self, app_instance, force_check=False):
+        super().__init__()
+        self.app_instance = app_instance
+        self.force_check = force_check
+        self._is_running = False
+
+    def run_check(self):
+        if self._is_running:
+            print("DEBUG: Update check already running.")
+            return
+            
+        self._is_running = True
+        print(f"DEBUG: Starting update check worker (force={self.force_check})")
+        update_info = None
+        error_msg_out = ""
+        update_found_flag = False
+        
+        try:
+            # Call the existing logic
+            update_info = self.app_instance._check_for_updates_logic(force_check=self.force_check)
+
+            if isinstance(update_info, dict):
+                # Update was found successfully
+                print(f"DEBUG: Update found by worker: {update_info.get('versionNumber')}")
+                self.update_found.emit(update_info) # Emit data first
+                update_found_flag = True
+            elif update_info is None:
+                # No update found or check skipped, no error
+                print("DEBUG: No update found or check skipped by worker.")
+                update_found_flag = False
+            # else: Optional handling if _check_for_updates_logic returns specific error codes/strings
+                
+        except Exception as e:
+            # An unexpected error occurred during the check logic call
+            error_msg = f"Error during update check worker: {e}"
+            print(f"ERROR: {error_msg}")
+            import traceback
+            traceback.print_exc()
+            error_msg_out = error_msg # Set error message for check_complete
+            update_found_flag = False
+            
+        finally:
+            # Emit completion status regardless of outcome
+            self.check_complete.emit(update_found_flag, error_msg_out)
+            self._is_running = False
+            self.finished.emit() # Signal thread can be cleaned up
+            print("DEBUG: Update check worker finished.")
+# ---------------------------------------
+
 class ProjectCreatorApp(QMainWindow):
     """Main application class for CR2 Creative Pro using PyQt"""
     
@@ -55,6 +111,10 @@ class ProjectCreatorApp(QMainWindow):
     
     # Class variable for app icon
     _app_icon = None
+    
+    # --- Add signal for manual check completion ---
+    manual_check_complete = pyqtSignal(bool, object) # bool: update_found, object: version_info or None
+    # ---------------------------------------------
     
     @classmethod
     def get_instance(cls):
@@ -473,23 +533,14 @@ class ProjectCreatorApp(QMainWindow):
         self.help_menu.addAction(tutorial_action)
         
         # About action
-        about_action = QAction("About Echelon", self)
-        about_action.triggered.connect(self.show_about_dialog)
-        self.help_menu.addAction(about_action)
+        self.about_action = self.help_menu.addAction("About Echelon")
+        self.about_action.triggered.connect(self.show_about_dialog)
         
-        # Check for Updates action
-        updates_action = QAction("Check for Updates...", self)
-        updates_action.triggered.connect(lambda: self.check_for_updates(force_check=True))
-        self.help_menu.addAction(updates_action)
-        
-        # Separator
-        self.help_menu.addSeparator()
-        
-        # License action
-        license_action = QAction("License", self)
-        license_action.triggered.connect(self.show_license_dialog)
-        self.help_menu.addAction(license_action)
-        self.help_menu.insertSeparator(license_action)
+        # Update Checker action
+        self.update_action = self.help_menu.addAction("Check for Updates...")
+        self.update_action.triggered.connect(lambda: self.check_for_updates(triggered_manually=True))
+        # Add separator before about
+        self.help_menu.insertSeparator(self.about_action)
     
     def filter_templates(self, search_text):
         """Filter templates based on search text"""
@@ -732,20 +783,67 @@ class ProjectCreatorApp(QMainWindow):
         """
         self.status_bar.setStyleSheet(base_style)
     
+    def handle_update_available(self, version_info):
+        """Displays a message box when an update is found."""
+        latest_version_str = version_info.get('versionNumber', 'Unknown')
+        download_url = version_info.get('downloadUrl', "https://www.cr2creative.com/downloads.html") # Fallback URL
+        release_notes = version_info.get('releaseNotes', 'No release notes available.')
+
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Update Available")
+        msg_box.setTextFormat(Qt.RichText) # Allow basic HTML like bold
+        msg_box.setText(f"<b>Version {latest_version_str} is available!</b><br><br>Would you like to go to the download page?")
+        # msg_box.setInformativeText(f"Release Notes:\n{release_notes}") # Optional: Add release notes if desired
+        msg_box.setIcon(QMessageBox.Information)
+        download_button = msg_box.addButton("Download", QMessageBox.AcceptRole)
+        later_button = msg_box.addButton("Later", QMessageBox.RejectRole)
+        msg_box.setDefaultButton(download_button)
+        
+        msg_box.exec_()
+
+        if msg_box.clickedButton() == download_button:
+            print(f"DEBUG: Opening download URL: {download_url}")
+            # Use the fallback for now as API URL format isn't confirmed usable
+            QDesktopServices.openUrl(QUrl("https://www.cr2creative.com/downloads.html")) 
+        else:
+            print("DEBUG: User chose 'Later' for update.")
+            
+    def handle_check_error(self, error_message):
+        """Handles errors during the update check (Called by handle_check_complete)."""
+        print(f"ERROR: Update check failed: {error_message}")
+        # Optionally show a status bar message, but avoid disruptive popups for background errors
+        self.show_status_message(f"Update check failed. Check logs.", "error", 5000) # Simpler message
+
+    def handle_check_complete(self, update_was_found, error_message, triggered_manually):
+        """Handles the completion of the update check worker."""
+        print(f"DEBUG: Handling check complete. Update Found: {update_was_found}, Error: '{error_message}', Manual: {triggered_manually}")
+        if error_message:
+            # An error occurred during the check
+            self.handle_check_error(error_message)
+        elif not update_was_found:
+            # No update was found and no error occurred
+            if triggered_manually:
+                # Show 'Up to Date' only if triggered manually
+                QMessageBox.information(self, "Up to Date", "You are using the latest version of Echelon.")
+            else:
+                # Log for automatic checks, but don't show popup
+                print("DEBUG: Automatic check completed, no update found.")
+        # If update_was_found is True, handle_update_available was already called by its dedicated signal.
+
     def _check_for_updates_logic(self, force_check=False):
         """
         Performs the actual update check against the API.
-        Returns True if an update is found and banner shown, False otherwise.
+        Returns the version info dictionary if an update is found, None otherwise.
+        Handles internal errors and logs them.
         """
         print("DEBUG: Running update check logic...")
         settings = QSettings()
         last_check_timestamp = settings.value("update_check/last_checked_timestamp", 0, type=float)
         current_timestamp = time.time()
 
-        # Check if interval has passed or if check is forced
         if not force_check and (current_timestamp - last_check_timestamp < UPDATE_CHECK_INTERVAL_SECONDS):
             print(f"DEBUG: Update check skipped. Last checked {int((current_timestamp - last_check_timestamp)/60)} mins ago. Interval: {int(UPDATE_CHECK_INTERVAL_SECONDS/60)} mins.")
-            return False
+            return None # Indicate check skipped/no update
 
         print("DEBUG: Proceeding with API check for updates.")
         config = load_config() # Reload config in case it changed
@@ -754,49 +852,92 @@ class ProjectCreatorApp(QMainWindow):
 
         if not api_url:
             print("ERROR: Update check - API URL for downloads not found in config.")
-            return False
+            # Update timestamp even on config error to avoid spamming logs
+            settings.setValue("update_check/last_checked_timestamp", current_timestamp)
+            return None # Indicate error/no update
 
-        latest_version_str = get_latest_version_info(api_url)
+        # --- Call the checker function --- 
+        latest_version_info = None # Store the full dict now
+        try:
+            latest_version_info = get_latest_version_info(api_url)
+            # --- Update timestamp ONLY after successful API attempt ---
+            settings.setValue("update_check/last_checked_timestamp", current_timestamp)
+            print(f"DEBUG: Updated last update check timestamp to {current_timestamp}")
+        except Exception as e:
+             # Catch potential errors within get_latest_version_info itself if it raises them
+             # (Though the current implementation catches internally and returns None)
+             print(f"ERROR: Exception during get_latest_version_info call: {e}")
+             # Optionally update timestamp here too, depending on desired retry logic
+             settings.setValue("update_check/last_checked_timestamp", current_timestamp) # Update to prevent immediate retry on persistent error
+             return None # Indicate error/no update
+        # --------------------------------
 
-        # --- Update timestamp if check ran (API call attempted) ---
-        settings.setValue("update_check/last_checked_timestamp", current_timestamp)
-        print(f"DEBUG: Updated last update check timestamp to {current_timestamp}")
-        # ---------------------------------------------------------
-
-        if latest_version_str:
+        if latest_version_info:
+            latest_version_str = latest_version_info.get("versionNumber")
+            if not latest_version_str:
+                 print("ERROR: Latest version info dict is missing 'versionNumber'.")
+                 return None # Treat as error/no update
+                 
             try:
                 if parse_version(latest_version_str) > parse_version(current_app_version):
                     print(f"INFO: Update found! Current: {current_app_version}, Latest: {latest_version_str}")
-                    self.update_banner.show_message(latest_version_str)
-                    return True # Indicate update was found
+                    return latest_version_info # Return the full dict
                 else:
                     print(f"DEBUG: Current version {current_app_version} is up-to-date or newer than latest found ({latest_version_str}).")
+                    return None # Indicate no update needed
             except Exception as e:
                 print(f"ERROR: Could not compare versions ('{latest_version_str}' vs '{current_app_version}'): {e}")
+                return None # Treat as error/no update
         else:
-            # Handle None case (API error, network error, no matching platform version)
-            print("DEBUG: No latest version string received from update check (could be error or no update).")
-
-        return False # No update banner shown
+            # Handle None case (API error, network error, no matching platform version, etc.)
+            print("DEBUG: No latest version info received from update check (could be error or no update).")
+            return None # Indicate no update found or error during fetch
 
     def _initial_update_check(self):
-        """Runs the update check shortly after startup."""
+        """Runs the update check shortly after startup in a background thread."""
         print("DEBUG: Scheduling initial update check.")
         # Delay check slightly to avoid blocking UI startup
-        QTimer.singleShot(5000, lambda: self._check_for_updates_logic(force_check=False)) # 5 seconds delay, ensure not forced
-
-    def check_for_updates(self, force_check=False):
-        """Check for application updates"""
-        # This would connect to a service to check for updates
-        self.show_status_message("Checking for updates...", "info", 2000)
+        # QTimer.singleShot(5000, lambda: self._check_for_updates_logic(force_check=False)) # Old timer logic
         
-        # Simulate checking for updates
-        QTimer.singleShot(2000, self.update_check_complete)
-    
-    def update_check_complete(self):
-        """Called when update check is complete"""
-        # For now, just show a message that we're up to date
-        self.show_status_message("Your application is up to date!", "success", 5000)
+        # Create worker and thread for initial check
+        self.initial_update_thread = QThread(self) # Keep a reference
+        self.initial_update_worker = UpdateWorker(self, force_check=False)
+        self.initial_update_worker.moveToThread(self.initial_update_thread)
+
+        # Connect signals
+        self.initial_update_worker.update_found.connect(self.handle_update_available)
+        self.initial_update_worker.check_complete.connect(lambda update_found, error_msg: self.handle_check_complete(update_found, error_msg, triggered_manually=False))
+        self.initial_update_thread.started.connect(self.initial_update_worker.run_check)
+        self.initial_update_worker.finished.connect(self.initial_update_thread.quit)
+        self.initial_update_worker.finished.connect(self.initial_update_worker.deleteLater)
+        self.initial_update_thread.finished.connect(self.initial_update_thread.deleteLater)
+
+        # Start after a short delay
+        QTimer.singleShot(5000, self.initial_update_thread.start)
+
+    def check_for_updates(self, triggered_manually=False):
+        """Check for application updates, typically triggered manually."""
+        if not triggered_manually:
+             print("DEBUG: check_for_updates called without manual trigger flag, ignoring.")
+             return # Avoid accidental calls
+             
+        self.show_status_message("Checking for updates...", "info", 3000) # Show brief status
+        
+        # Create worker and thread for manual check
+        # Store as instance variables to prevent garbage collection before finished
+        self.manual_update_thread = QThread(self) 
+        self.manual_update_worker = UpdateWorker(self, force_check=True)
+        self.manual_update_worker.moveToThread(self.manual_update_thread)
+
+        # Connect signals
+        self.manual_update_worker.update_found.connect(self.handle_update_available)
+        self.manual_update_worker.check_complete.connect(lambda update_found, error_msg: self.handle_check_complete(update_found, error_msg, triggered_manually=True))
+        self.manual_update_thread.started.connect(self.manual_update_worker.run_check)
+        self.manual_update_worker.finished.connect(self.manual_update_thread.quit)
+        self.manual_update_worker.finished.connect(self.manual_update_worker.deleteLater)
+        self.manual_update_thread.finished.connect(self.manual_update_thread.deleteLater)
+
+        self.manual_update_thread.start()
     
     def _update_structure_combo(self):
         """Update the structure dropdown with available structures
@@ -1071,12 +1212,6 @@ class ProjectCreatorApp(QMainWindow):
     def show_about_dialog(self):
         """Shows the About dialog."""
         show_about(self)
-
-    def show_license_dialog(self):
-        """Shows the License dialog."""
-        # Assuming LicenseManagementDialog is defined elsewhere
-        dialog = LicenseManagementDialog(self, self.template_manager.license_manager)
-        dialog.exec_()
 
 # Add a class variable to hold the single instance
 ProjectCreatorApp._instance = None 
