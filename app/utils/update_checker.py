@@ -52,8 +52,9 @@ def get_latest_version_info(api_url):
                 print(f"WARN: Skipping invalid version entry: {version_info}")
                 continue
                 
-            # Check platform match and availability
-            if version_info.get('platform') == target_platform_api and version_info.get('isAvailable') is True:
+            # Check platform match (case-insensitive) and availability
+            api_platform = version_info.get('platform')
+            if api_platform and api_platform.lower() == target_platform_api and version_info.get('isAvailable') is True:
                 current_entry_version_str = version_info.get('versionNumber')
                 if not current_entry_version_str:
                     print(f"WARN: Skipping entry with missing versionNumber: {version_info}")
