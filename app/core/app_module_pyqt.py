@@ -43,6 +43,7 @@ from app.config.app_config import UPDATE_CHECK_INTERVAL_SECONDS
 from app.utils.update_checker import get_latest_version_info
 from packaging.version import parse as parse_version
 import time
+from app.constants import APP_BUILD_NUMBER
 
 # --- Worker for background update check ---
 class UpdateWorker(QObject):
@@ -788,11 +789,15 @@ class ProjectCreatorApp(QMainWindow):
         latest_version_str = version_info.get('versionNumber', 'Unknown')
         download_url = version_info.get('downloadUrl', "https://www.cr2creative.com/downloads.html") # Fallback URL
         release_notes = version_info.get('releaseNotes', 'No release notes available.')
+        
+        # Show current version with build number for clarity
+        from app.constants import APP_VERSION, APP_BUILD_NUMBER
+        current_version_str = f"{APP_VERSION}.{APP_BUILD_NUMBER}"
 
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle("Update Available")
         msg_box.setTextFormat(Qt.RichText) # Allow basic HTML like bold
-        msg_box.setText(f"<b>Version {latest_version_str} is available!</b><br><br>Would you like to go to the download page?")
+        msg_box.setText(f"<b>Version {latest_version_str} is available!</b><br><br>You are currently using version {current_version_str}.<br><br>Would you like to go to the download page?")
         # msg_box.setInformativeText(f"Release Notes:\n{release_notes}") # Optional: Add release notes if desired
         msg_box.setIcon(QMessageBox.Information)
         download_button = msg_box.addButton("Download", QMessageBox.AcceptRole)
@@ -824,7 +829,9 @@ class ProjectCreatorApp(QMainWindow):
             # No update was found and no error occurred
             if triggered_manually:
                 # Show 'Up to Date' only if triggered manually
-                QMessageBox.information(self, "Up to Date", "You are using the latest version of Echelon.")
+                from app.constants import APP_VERSION, APP_BUILD_NUMBER
+                current_version_str = f"{APP_VERSION}.{APP_BUILD_NUMBER}"
+                QMessageBox.information(self, "Up to Date", f"You are using the latest version of Echelon ({current_version_str}).")
             else:
                 # Log for automatic checks, but don't show popup
                 print("DEBUG: Automatic check completed, no update found.")
@@ -848,7 +855,9 @@ class ProjectCreatorApp(QMainWindow):
         print("DEBUG: Proceeding with API check for updates.")
         config = load_config() # Reload config in case it changed
         api_url = config.get("api_urls", {}).get("get_public_downloads")
-        current_app_version = APP_VERSION
+        
+        # Include build number in version comparison
+        current_app_version = f"{APP_VERSION}.{APP_BUILD_NUMBER}"
 
         if not api_url:
             print("ERROR: Update check - API URL for downloads not found in config.")
@@ -857,7 +866,7 @@ class ProjectCreatorApp(QMainWindow):
             return None # Indicate error/no update
 
         # --- Call the checker function --- 
-        latest_version_info = None # Store the full dict now
+        latest_version_info = None
         try:
             latest_version_info = get_latest_version_info(api_url)
             # --- Update timestamp ONLY after successful API attempt ---
@@ -879,7 +888,15 @@ class ProjectCreatorApp(QMainWindow):
                  return None # Treat as error/no update
                  
             try:
-                if parse_version(latest_version_str) > parse_version(current_app_version):
+                print(f"DEBUG: Comparing versions - Current: {current_app_version}, Latest: {latest_version_str}")
+                
+                # Parse versions for comparison
+                current_parsed = parse_version(current_app_version)
+                latest_parsed = parse_version(latest_version_str)
+                
+                print(f"DEBUG: Parsed versions - Current: {current_parsed}, Latest: {latest_parsed}")
+                
+                if latest_parsed > current_parsed:
                     print(f"INFO: Update found! Current: {current_app_version}, Latest: {latest_version_str}")
                     return latest_version_info # Return the full dict
                 else:

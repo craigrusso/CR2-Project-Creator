@@ -24,7 +24,7 @@ from app.ui.color_scheme_pyqt import APP_COLORS, BUTTON_STYLE, ACCENT_BUTTON_STY
 colors = APP_COLORS
 
 # Import default categories constant
-from app.constants import DEFAULT_TEMPLATE_CATEGORIES
+from app.constants import DEFAULT_TEMPLATE_CATEGORIES, get_resource_path
 
 class StructureEditorTree(QTreeWidget):
     """Enhanced QTreeWidget for structure editing with improved styling"""
@@ -41,6 +41,10 @@ class StructureEditorTree(QTreeWidget):
         # Add placeholder text attribute
         self.placeholder_text = "Drop Files and Folders Here"
         self.placeholder_visible = True
+        
+        # Get branch indicator resources
+        branch_closed_path = get_resource_path('app/assets/css/branch-closed.svg')
+        branch_open_path = get_resource_path('app/assets/css/branch-open.svg')
         
         # Apply enhanced styling while ensuring branch indicators remain visible
         self.setStyleSheet(f"""
@@ -71,6 +75,21 @@ class StructureEditorTree(QTreeWidget):
             /* Style branch when selected for consistent color */
             QTreeWidget::branch:selected {{
                 background-color: {colors['highlight_bg']};
+            }}
+            
+            /* Style branch indicators to ensure they're visible */
+            QTreeWidget::branch:has-children:!has-siblings:closed,
+            QTreeWidget::branch:closed:has-children:has-siblings {{
+                image: url({branch_closed_path});
+                width: 15px;
+                height: 15px;
+            }}
+            
+            QTreeWidget::branch:open:has-children:!has-siblings,
+            QTreeWidget::branch:open:has-children:has-siblings {{
+                image: url({branch_open_path});
+                width: 15px;
+                height: 15px;
             }}
             
             QTreeWidget QLineEdit {{
@@ -905,6 +924,10 @@ class UIBuilder(QObject):
                 }}
             """)
         
+        # Get SVG icon paths for dropdown arrows
+        dropdown_arrow_path = get_resource_path('app/assets/css/dropdown_arrow.svg')
+        dropdown_arrow_up_path = get_resource_path('app/assets/css/dropdown_arrow_up.svg')
+        
         if self.template_category_field:
             self.template_category_field.setStyleSheet(f"""
                 QComboBox {{
@@ -926,12 +949,12 @@ class UIBuilder(QObject):
                     border-left: 1px solid {colors['border']};
                 }}
                 QComboBox::down-arrow {{
-                    image: url(app/assets/css/dropdown_arrow.svg);
+                    image: url({dropdown_arrow_path});
                     width: 16px;
                     height: 16px;
                 }}
                 QComboBox::down-arrow:on {{
-                    image: url(app/assets/css/dropdown_arrow_up.svg);
+                    image: url({dropdown_arrow_up_path});
                 }}
                 QComboBox QAbstractItemView {{
                     background-color: {colors['card_bg']};

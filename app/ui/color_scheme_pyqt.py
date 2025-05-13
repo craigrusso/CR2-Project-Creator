@@ -8,6 +8,9 @@ to ensure consistency across the application.
 """
 
 from PyQt5.QtGui import QColor
+import sys
+import os
+from app.constants import get_resource_path
 
 # Main application colors
 APP_COLORS = {
@@ -204,6 +207,11 @@ DIALOG_BUTTON_STYLE = f"""
     }}
 """
 
+# Get SVG icon paths using resource helper
+dropdown_arrow_path = get_resource_path('app/assets/css/dropdown_arrow.svg')
+dropdown_arrow_up_path = get_resource_path('app/assets/css/dropdown_arrow_up.svg')
+
+# Style for combobox
 COMBOBOX_STYLE = f"""
     QComboBox {{
         background-color: {colors['card_bg']};
@@ -245,7 +253,7 @@ COMBOBOX_STYLE = f"""
     
     /* Arrow styling */
     QComboBox::down-arrow {{
-        image: url(app/assets/css/dropdown_arrow.svg);
+        image: url({dropdown_arrow_path});
         width: 16px;
         height: 16px;
         border: none;
@@ -253,7 +261,7 @@ COMBOBOX_STYLE = f"""
     }}
     
     QComboBox::down-arrow:on {{
-        image: url(app/assets/css/dropdown_arrow_up.svg);
+        image: url({dropdown_arrow_up_path});
     }}
     
     /* Popup widget styling */

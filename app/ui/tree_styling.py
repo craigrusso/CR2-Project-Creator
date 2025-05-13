@@ -13,6 +13,7 @@ from PyQt5.QtCore import Qt, QSize
 
 # Import the application color scheme
 from app.ui.color_scheme_pyqt import APP_COLORS
+from app.constants import get_resource_path
 
 def apply_tree_styling(tree_widget):
     """
@@ -57,23 +58,10 @@ def apply_enhanced_tree_styling(tree_widget):
     """
     if not tree_widget or not isinstance(tree_widget, QTreeWidget):
         return
-        
-    # Determine correct paths to SVG assets for branch indicators
-    # First check if the app is running from a packaged executable
-    if getattr(sys, 'frozen', False):
-        # Running in a bundled application
-        base_path = os.path.dirname(sys.executable)
-    else:
-        # Running in a normal Python environment
-        base_path = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
     
-    # Check if the branch icons exist
-    branch_closed_path = os.path.join(base_path, "app", "assets", "css", "branch-closed.svg")
-    branch_open_path = os.path.join(base_path, "app", "assets", "css", "branch-open.svg")
-    
-    # Use relative paths for styling to ensure they work in both development and production
-    branch_closed_url = "app/assets/css/branch-closed.svg"
-    branch_open_url = "app/assets/css/branch-open.svg"
+    # Get absolute paths to branch indicator SVGs using the resource path helper
+    branch_closed_path = get_resource_path('app/assets/css/branch-closed.svg')
+    branch_open_path = get_resource_path('app/assets/css/branch-open.svg')
     
     # Apply custom stylesheet for consistent appearance
     # Use the application color scheme for consistency
@@ -116,14 +104,14 @@ def apply_enhanced_tree_styling(tree_widget):
         /* Style branch indicators to ensure they're visible */
         QTreeWidget::branch:has-children:!has-siblings:closed,
         QTreeWidget::branch:closed:has-children:has-siblings {{
-            image: url({branch_closed_url});
+            image: url({branch_closed_path});
             width: 15px;
             height: 15px;
         }}
         
         QTreeWidget::branch:open:has-children:!has-siblings,
         QTreeWidget::branch:open:has-children:has-siblings {{
-            image: url({branch_open_url});
+            image: url({branch_open_path});
             width: 15px;
             height: 15px;
         }}

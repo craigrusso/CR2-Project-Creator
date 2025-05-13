@@ -13,6 +13,7 @@ from app.templates.template_manager import TemplateManager
 from app.templates.components import get_system_font, SYSTEM_FONT
 from app.utils.template_validator import TemplateValidator
 from PyQt5.QtWidgets import QApplication
+from app.constants import get_resource_path
 
 class TemplateCreationForm(QDialog):
     """
@@ -142,34 +143,38 @@ class TemplateCreationForm(QDialog):
         # Project Type (formerly Category)
         self.type_combo = QComboBox()
         self.type_combo.setMinimumHeight(30)
-        self.type_combo.setStyleSheet("""
-            QComboBox {
+        
+        # Get the path to the down arrow icon
+        down_arrow_path = get_resource_path('app/assets/icons/down_arrow.png')
+        
+        self.type_combo.setStyleSheet(f"""
+            QComboBox {{
                 border: 1px solid #555;
                 border-radius: 4px;
                 padding: 5px;
                 background-color: #444;
                 color: white;
                 selection-background-color: #666;
-            }
-            QComboBox::drop-down {
+            }}
+            QComboBox::drop-down {{
                 subcontrol-origin: padding;
                 subcontrol-position: top right;
                 width: 20px;
                 border-left-width: 1px;
                 border-left-color: #555;
                 border-left-style: solid;
-            }
-            QComboBox::down-arrow {
-                image: url(app/assets/icons/down_arrow.png);
+            }}
+            QComboBox::down-arrow {{
+                image: url({down_arrow_path});
                 width: 14px;
                 height: 14px;
-            }
-            QComboBox QAbstractItemView {
+            }}
+            QComboBox QAbstractItemView {{
                 border: 1px solid #555;
                 selection-background-color: #666;
                 background-color: #444;
                 color: white;
-            }
+            }}
         """)
         
         # Add project types
