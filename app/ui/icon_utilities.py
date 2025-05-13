@@ -142,11 +142,7 @@ class IconProvider:
             if len(parts) > 1:
                 ext = '.' + parts[-1].split()[0]  # Get extension before any emoji
         
-        # Check if we have a pre-defined icon for this extension
-        if ext in self._extension_mappings:
-            return self._extension_mappings[ext]
-        
-        # Use system file icon provider as fallback
+        # First try to get the native system icon
         try:
             # For project name files, create a temporary extension for the icon provider
             if is_project_file:
@@ -157,9 +153,14 @@ class IconProvider:
                 
             system_icon = self._icon_provider.icon(file_info)
             if not system_icon.isNull():
+                # Successfully got the native icon from the system
                 return system_icon
         except Exception as e:
-            print(f"Error getting file icon: {e}")
+            print(f"Error getting native file icon: {e}")
+        
+        # If system icon failed, check our predefined icons based on extension
+        if ext in self._extension_mappings:
+            return self._extension_mappings[ext]
         
         # Last resort - use generic file icon
         return self.GENERIC_FILE_ICON
