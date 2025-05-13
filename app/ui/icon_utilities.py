@@ -8,6 +8,7 @@ Provides centralized icon handling with platform-specific icons for files and fo
 
 import os
 import platform
+import subprocess
 from PyQt5.QtWidgets import QApplication, QStyle, QFileIconProvider
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QFileInfo, QSize
@@ -42,6 +43,9 @@ class IconProvider:
         self._folder_icon = None
         self._folder_open_icon = None
         self._init_platform_specific_folder_icons()
+        
+        # Cache to avoid repeating expensive icon lookups
+        self._icon_cache = {}
     
     def _init_file_type_mappings(self):
         """Initialize file type mappings with distinct icons"""
@@ -53,6 +57,19 @@ class IconProvider:
         self.CODE_ICON = QApplication.style().standardIcon(QStyle.SP_FileDialogContentsView)
         self.ADOBE_ICON = QApplication.style().standardIcon(QStyle.SP_FileLinkIcon)
         self.GENERIC_FILE_ICON = QApplication.style().standardIcon(QStyle.SP_FileIcon)
+        
+        # Application specific files that need special handling
+        self.APP_SPECIFIC_EXTENSIONS = {
+            '.prproj', '.aep', '.aepx', '.psd', '.ai', '.indd',  # Adobe
+            '.docx', '.xlsx', '.pptx',  # Microsoft Office
+            '.fcpx', '.motion',  # Apple apps
+            '.blend',  # Blender
+            '.c4d',  # Cinema 4D
+            '.nk',  # Nuke
+            '.hip',  # Houdini
+            '.ma', '.mb',  # Maya
+            '.mov', '.mp4', '.mxf'  # Media files
+        }
         
         # Extension to icon mappings
         self._extension_mappings = {
@@ -82,7 +99,7 @@ class IconProvider:
             '.cpp': self.CODE_ICON, '.c': self.CODE_ICON, '.h': self.CODE_ICON, 
             '.java': self.CODE_ICON,
             
-            # Adobe project files
+            # Adobe project files - use generic Adobe icon as fallback
             '.prproj': self.ADOBE_ICON, '.aep': self.ADOBE_ICON, '.aepx': self.ADOBE_ICON, 
             '.psd': self.ADOBE_ICON, '.ai': self.ADOBE_ICON, '.indd': self.ADOBE_ICON
         }
@@ -121,6 +138,38 @@ class IconProvider:
         """Get platform-specific folder icon"""
         return self._folder_open_icon if is_open else self._folder_icon
     
+    def _create_temp_file_if_needed(self, ext):
+        """
+        Create a temporary file with the given extension if needed
+        
+        Args:
+            ext (str): The file extension
+            
+        Returns:
+            str: Path to the temporary file
+        """
+        import tempfile
+        
+        # Create a temporary file with the given extension
+        fd, temp_path = tempfile.mkstemp(suffix=ext)
+        os.close(fd)  # Close the file descriptor
+        
+        # On macOS, try to set file type/creator codes
+        if self._system == "Darwin" and ext in self.APP_SPECIFIC_EXTENSIONS:
+            try:
+                if ext == '.prproj':
+                    # Set file type for Premiere Pro project
+                    subprocess.run(['xattr', '-w', 'com.apple.FinderInfo', '50505250', temp_path], 
+                                  check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                elif ext in ['.aep', '.aepx']:
+                    # Set file type for After Effects project
+                    subprocess.run(['xattr', '-w', 'com.apple.FinderInfo', '41454020', temp_path], 
+                                  check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            except Exception as e:
+                print(f"Warning: Failed to set file type: {e}")
+                
+        return temp_path
+    
     def get_file_icon(self, filename):
         """
         Get the appropriate icon for a file based on its extension
@@ -131,6 +180,10 @@ class IconProvider:
         Returns:
             QIcon: Icon for the file type
         """
+        # Check cache first
+        if filename in self._icon_cache:
+            return self._icon_cache[filename]
+            
         # Extract file extension
         _, ext = os.path.splitext(filename.lower())
         
@@ -141,28 +194,66 @@ class IconProvider:
             parts = filename.split('.')
             if len(parts) > 1:
                 ext = '.' + parts[-1].split()[0]  # Get extension before any emoji
+                
+        # For application-specific files, try harder to get the correct icon
+        if ext in self.APP_SPECIFIC_EXTENSIONS:
+            try:
+                # Special handling for Adobe and other application files
+                temp_path = None
+                
+                if not os.path.exists(filename) or is_project_file:
+                    # Create a temporary file with the extension for icon lookup
+                    temp_path = self._create_temp_file_if_needed(ext)
+                    file_info = QFileInfo(temp_path)
+                else:
+                    # Use the actual file
+                    file_info = QFileInfo(filename)
+                
+                # Get icon from the file info provider
+                system_icon = self._icon_provider.icon(file_info)
+                
+                # Clean up temp file if we created one
+                if temp_path and os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except:
+                        pass
+                
+                if not system_icon.isNull():
+                    self._icon_cache[filename] = system_icon
+                    return system_icon
+                    
+            except Exception as e:
+                print(f"Error getting specialized file icon for {ext}: {e}")
         
-        # First try to get the native system icon
+        # Standard approach for regular files
         try:
-            # For project name files, create a temporary extension for the icon provider
             if is_project_file:
+                # For project name files, create a temporary extension
                 temp_file = f"temp{ext}"
                 file_info = QFileInfo(temp_file)
+            elif os.path.exists(filename):
+                # For real files, use the actual path
+                file_info = QFileInfo(filename)
             else:
+                # For non-existent files, just use filename
                 file_info = QFileInfo(filename)
                 
             system_icon = self._icon_provider.icon(file_info)
             if not system_icon.isNull():
-                # Successfully got the native icon from the system
+                self._icon_cache[filename] = system_icon
                 return system_icon
         except Exception as e:
             print(f"Error getting native file icon: {e}")
         
         # If system icon failed, check our predefined icons based on extension
         if ext in self._extension_mappings:
-            return self._extension_mappings[ext]
+            icon = self._extension_mappings[ext]
+            self._icon_cache[filename] = icon
+            return icon
         
         # Last resort - use generic file icon
+        self._icon_cache[filename] = self.GENERIC_FILE_ICON
         return self.GENERIC_FILE_ICON
 
 # Global convenience functions

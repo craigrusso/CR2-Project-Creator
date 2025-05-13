@@ -38,8 +38,8 @@ def apply_tree_styling(tree_widget):
     tree_widget.setRootIsDecorated(True)
     tree_widget.setItemsExpandable(True)
     
-    # Set icon size for better visibility
-    tree_widget.setIconSize(QSize(20, 20))
+    # Set icon size for better visibility - larger size to accommodate application icons
+    tree_widget.setIconSize(QSize(24, 24))
     
     # Override indentation to improve visual hierarchy
     tree_widget.setIndentation(24)
@@ -124,6 +124,15 @@ def apply_enhanced_tree_styling(tree_widget):
         QTreeWidget::item:has-children {{
             font-weight: bold;
         }}
+        
+        /* Ensure icons are displayed properly */
+        QTreeWidget::item:has-children:!selected {{
+            padding-left: 2px;
+        }}
+        
+        QTreeWidget::item:!has-children:!selected {{
+            padding-left: 2px;
+        }}
     """)
     
     # Update icons for all existing items after styling
@@ -189,7 +198,27 @@ def update_item_icon(item):
             item.setData(0, Qt.UserRole, "folder")
     else:
         # For files, get icon based on file extension
-        item.setIcon(0, get_file_icon(item.text(0)))
+        filename = item.text(0)
+        
+        # For files with the ${PROJECT_NAME} placeholder, modify to a real path if possible
+        # This helps QFileIconProvider get the correct icon
+        if '{PROJECT_NAME}' in filename:
+            # Extract the extension
+            if '.' in filename:
+                ext = filename.split('.')[-1]
+                # Replace placeholder with a simple name for better icon lookup
+                display_name = f"temp.{ext}"
+                
+                # Store the original project name placeholder for future reference
+                item.setData(0, Qt.UserRole + 1, filename)
+                
+                # Get icon using the display name
+                icon = get_file_icon(display_name)
+                item.setIcon(0, icon)
+        else:
+            # Regular file, get icon directly
+            icon = get_file_icon(filename)
+            item.setIcon(0, icon)
         
         # Store file type in data
         if not item_type:
@@ -245,6 +274,12 @@ def setup_tree_for_structure_editing(tree_widget):
     # Connect to expanded/collapsed signals to update folder icons
     tree_widget.itemExpanded.connect(lambda item: update_folder_icon_on_expand(item, True))
     tree_widget.itemCollapsed.connect(lambda item: update_folder_icon_on_expand(item, False))
+    
+    # Set icon mode to display icons at highest quality
+    tree_widget.setProperty("iconSize", QSize(24, 24))
+    
+    # Force icon visibility by enabling it explicitly
+    tree_widget.viewport().setAttribute(Qt.WA_AlwaysShowToolTips)
     
     print("DEBUG: Tree widget set up for structure editing with enhanced delegate")
     print("DEBUG: Applied enhanced tree styling with folder/file icons")
@@ -309,6 +344,9 @@ def apply_styling_to_all_tree_widgets(parent_widget=None):
             # Apply enhanced styling
             apply_enhanced_tree_styling(widget)
             
+            # Ensure icons are displayed at a reasonable size
+            widget.setIconSize(QSize(24, 24))
+            
             # Apply custom delegate if available
             if TreeItemDelegate:
                 delegate = TreeItemDelegate(widget)
@@ -329,6 +367,9 @@ def apply_styling_to_all_tree_widgets(parent_widget=None):
         for child in widget.findChildren(QTreeWidget):
             # Apply enhanced styling
             apply_enhanced_tree_styling(child)
+            
+            # Ensure icons are displayed at a reasonable size
+            child.setIconSize(QSize(24, 24))
             
             # Apply custom delegate if available
             if TreeItemDelegate:
