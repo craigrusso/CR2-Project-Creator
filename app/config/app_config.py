@@ -39,7 +39,7 @@ SAMPLE_TEMPLATES = [
 ]
 
 # App constants
-APP_BUILD_NUMBER = 255 # Make sure this reflects the current build
+APP_BUILD_NUMBER = 256 # Make sure this reflects the current build
 
 # --- API Endpoints --- 
 DEFAULT_GET_PUBLIC_DOWNLOADS_URL = "https://www.cr2creative.com/api/downloads/public" # Default URL

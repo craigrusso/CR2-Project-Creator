@@ -10,6 +10,7 @@ import sys
 import os
 from PyQt5.QtWidgets import QTreeWidget, QWidget, QAbstractItemView, QApplication, QTreeWidgetItem
 from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtGui import QIcon, QColor
 
 # Import the application color scheme
 from app.ui.color_scheme_pyqt import APP_COLORS
@@ -38,8 +39,8 @@ def apply_tree_styling(tree_widget):
     tree_widget.setRootIsDecorated(True)
     tree_widget.setItemsExpandable(True)
     
-    # Set icon size for better visibility - larger size to accommodate application icons
-    tree_widget.setIconSize(QSize(24, 24))
+    # Set icon size for better visibility - larger size for application icons
+    tree_widget.setIconSize(QSize(28, 28))  # Increased from 24x24 to 28x28
     
     # Override indentation to improve visual hierarchy
     tree_widget.setIndentation(24)
@@ -200,33 +201,84 @@ def update_item_icon(item):
         # For files, get icon based on file extension
         filename = item.text(0)
         
-        # For files with the ${PROJECT_NAME} placeholder, modify to a real path if possible
-        # This helps QFileIconProvider get the correct icon
-        if '{PROJECT_NAME}' in filename:
-            # Extract the extension
-            if '.' in filename:
-                ext = filename.split('.')[-1]
-                # Replace placeholder with a simple name for better icon lookup
-                display_name = f"temp.{ext}"
-                
-                # Store the original project name placeholder for future reference
-                item.setData(0, Qt.UserRole + 1, filename)
-                
-                # Get icon using the display name
-                icon = get_file_icon(display_name)
-                item.setIcon(0, icon)
-        else:
-            # Regular file, get icon directly
-            icon = get_file_icon(filename)
-            item.setIcon(0, icon)
+        # Get file extension for color coding
+        ext = ''
+        if '.' in filename:
+            ext = filename.split('.')[-1].lower()
         
-        # Store file type in data
-        if not item_type:
-            item.setData(0, Qt.UserRole, "file")
-    
-    # Process all children recursively
+        # Use the platform native icon system
+        icon = get_file_icon(filename)
+        item.setIcon(0, icon)
+        
+        # Apply appropriate colors based on extension
+        apply_color_by_extension(item, ext)
+            
+    # Update icons for children recursively
     for i in range(item.childCount()):
         update_item_icon(item.child(i))
+
+def apply_color_by_extension(item, ext):
+    """
+    Apply color coding to tree items based on file extension category
+    
+    Args:
+        item: The QTreeWidgetItem to colorize
+        ext: The file extension (without the dot)
+    """
+    from PyQt5.QtGui import QColor
+    
+    if not ext:
+        return
+        
+    ext = ext.lower()
+    
+    # Color mapping by extension type
+    color_mapping = {
+        # Video applications (blue/cyan range)
+        'prproj': QColor(0, 180, 255),  # Premiere Pro - Light blue
+        'aep': QColor(160, 120, 255),   # After Effects - Purple
+        'aepx': QColor(160, 120, 255),  # After Effects - Purple
+        'fcpx': QColor(45, 145, 235),   # Final Cut - Blue
+        'fcpxml': QColor(45, 145, 235), # Final Cut - Blue
+        'drp': QColor(240, 90, 40),     # DaVinci Resolve - Orange
+        'dra': QColor(240, 90, 40),     # DaVinci Resolve - Orange
+        'avp': QColor(0, 164, 227),     # Avid - Light blue
+        'avb': QColor(0, 164, 227),     # Avid - Light blue
+        
+        # Adobe applications
+        'psd': QColor(49, 168, 255),    # Photoshop - Blue
+        'ai': QColor(255, 128, 0),      # Illustrator - Orange
+        'indd': QColor(236, 0, 140),    # InDesign - Pink
+        
+        # 3D applications
+        'ma': QColor(120, 220, 120),    # Maya - Green
+        'mb': QColor(120, 220, 120),    # Maya - Green
+        'blend': QColor(242, 103, 34),  # Blender - Orange
+        'c4d': QColor(0, 132, 200),     # Cinema 4D - Blue
+        
+        # Audio applications
+        'ptx': QColor(180, 180, 0),     # Pro Tools - Yellow
+        'pts': QColor(180, 180, 0),     # Pro Tools - Yellow  
+        'logic': QColor(220, 100, 100), # Logic - Red
+        
+        # Media file formats
+        'mov': QColor(80, 180, 80),     # QuickTime - Green
+        'mp4': QColor(80, 200, 120),    # MP4 - Green-blue
+        'mxf': QColor(100, 230, 100),   # MXF - Bright green
+        'wav': QColor(230, 180, 80),    # WAV - Gold
+        'mp3': QColor(200, 160, 40),    # MP3 - Light gold
+        'aif': QColor(230, 160, 40),    # AIF - Gold
+        
+        # Document formats
+        'pdf': QColor(220, 60, 60),     # PDF - Red
+        'docx': QColor(40, 100, 180),   # Word - Blue
+        'xlsx': QColor(40, 140, 40),    # Excel - Green
+        'pptx': QColor(200, 80, 40),    # PowerPoint - Orange
+    }
+    
+    # Apply color if extension is in the mapping
+    if ext in color_mapping:
+        item.setForeground(0, color_mapping[ext])
 
 def setup_tree_for_structure_editing(tree_widget):
     """Configure a tree widget for structure editing with good user experience"""
@@ -276,10 +328,14 @@ def setup_tree_for_structure_editing(tree_widget):
     tree_widget.itemCollapsed.connect(lambda item: update_folder_icon_on_expand(item, False))
     
     # Set icon mode to display icons at highest quality
-    tree_widget.setProperty("iconSize", QSize(24, 24))
+    tree_widget.setProperty("iconSize", QSize(28, 28))
     
     # Force icon visibility by enabling it explicitly
     tree_widget.viewport().setAttribute(Qt.WA_AlwaysShowToolTips)
+    
+    # Explicitly update all icons in the tree to ensure proper display
+    # This is particularly important for structure editing where icons need to be visible
+    update_tree_item_icons(tree_widget)
     
     print("DEBUG: Tree widget set up for structure editing with enhanced delegate")
     print("DEBUG: Applied enhanced tree styling with folder/file icons")
@@ -345,7 +401,7 @@ def apply_styling_to_all_tree_widgets(parent_widget=None):
             apply_enhanced_tree_styling(widget)
             
             # Ensure icons are displayed at a reasonable size
-            widget.setIconSize(QSize(24, 24))
+            widget.setIconSize(QSize(28, 28))
             
             # Apply custom delegate if available
             if TreeItemDelegate:
@@ -369,7 +425,7 @@ def apply_styling_to_all_tree_widgets(parent_widget=None):
             apply_enhanced_tree_styling(child)
             
             # Ensure icons are displayed at a reasonable size
-            child.setIconSize(QSize(24, 24))
+            child.setIconSize(QSize(28, 28))
             
             # Apply custom delegate if available
             if TreeItemDelegate:
@@ -388,4 +444,55 @@ def apply_styling_to_all_tree_widgets(parent_widget=None):
             count += 1
     
     print(f"DEBUG: Applied styling to {count} tree widgets with platform-specific icons")
-    return count 
+    return count
+
+def refresh_all_tree_icons():
+    """Force refresh all tree widget icons to ensure they use the latest icons"""
+    from app.ui.icon_utilities import clear_icon_cache
+    
+    # First, explicitly clear the icon cache to force fresh icon retrieval
+    clear_icon_cache()
+    
+    # Get the application instance
+    app = QApplication.instance()
+    if not app:
+        return 0
+        
+    # Find all QTreeWidgets in the application
+    refresh_count = 0
+    for widget in app.allWidgets():
+        if isinstance(widget, QTreeWidget):
+            # Force icon refresh in this tree widget
+            for i in range(widget.topLevelItemCount()):
+                item = widget.topLevelItem(i)
+                _refresh_tree_item_icons(item)
+                refresh_count += 1
+                
+    return refresh_count
+
+def _refresh_tree_item_icons(item):
+    """Recursively refresh icons for a tree item and its children"""
+    if not item:
+        return
+        
+    # Get the item's file path if it has one
+    file_path = item.data(0, Qt.UserRole)
+    
+    # If the item has a file path, update its icon based on the path
+    if file_path:
+        from app.ui.icon_utilities import get_file_icon, get_folder_icon
+        
+        # Check if it's a directory or a file
+        is_dir = os.path.isdir(file_path) if os.path.exists(file_path) else False
+        
+        if is_dir:
+            # Use folder icon
+            item.setIcon(0, get_folder_icon(False))
+        else:
+            # Get a fresh icon based on file type
+            item.setIcon(0, get_file_icon(file_path))
+    
+    # Recursively refresh children's icons
+    for i in range(item.childCount()):
+        child = item.child(i)
+        _refresh_tree_item_icons(child) 

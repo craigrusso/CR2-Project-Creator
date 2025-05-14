@@ -17,6 +17,7 @@ import sys
 import importlib.resources # For accessing bundled data files
 from datetime import datetime, timedelta
 import socket # Added import
+import math # Added for time calculations
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QLineEdit, QFormLayout, QMessageBox, QProgressBar, QHBoxLayout
 from PyQt5.QtCore import Qt, QSettings, QTimer
 
@@ -24,7 +25,13 @@ from PyQt5.QtCore import Qt, QSettings, QTimer
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
 
 # Constants
-TRIAL_DAYS = 14
+# TRIAL_DAYS = 14 # Old constant
+# TRIAL_DURATION_MINUTES_FOR_TESTING = 3  # For testing purposes
+# TRIAL_DURATION_SECONDS = TRIAL_DURATION_MINUTES_FOR_TESTING * 60 # For 3-minute testing
+
+# Standard 14-day trial period in seconds
+TRIAL_DURATION_SECONDS = 14 * 24 * 60 * 60 
+
 PRODUCTION_URL = "https://ceeo86y6ze.execute-api.us-west-1.amazonaws.com/prod"  # Updated Prod URL
 TESTING_URL = "https://ceeo86y6ze.execute-api.us-west-1.amazonaws.com/test"  # Updated Test URL
 API_KEY_CONFIG_NAME = "config.json"
@@ -112,35 +119,120 @@ class LicenseManager:
             # First time running the app, start the trial
             trial_start = datetime.now().isoformat()
             self.settings.setValue("license/trial_start", trial_start)
+            # Also store the precise end time for the trial
+            trial_end_time = (datetime.now() + timedelta(seconds=TRIAL_DURATION_SECONDS)).isoformat()
+            self.settings.setValue("license/trial_end_time", trial_end_time)
+            print(f"DEBUG: Trial started. Start: {trial_start}, End: {trial_end_time}")
             return True
             
         # Calculate if trial is still active
+        # Use the stored trial_end_time for consistency
+        trial_end_iso = self.settings.value("license/trial_end_time", None)
+        if not trial_end_iso:
+            # Fallback if trial_end_time was somehow not set (e.g., older version)
+            # This will effectively reset the trial for this check, which is safer.
+            print("DEBUG: trial_end_time not found. Resetting trial period for this session.")
+            start_date_dt = datetime.now()
+            self.settings.setValue("license/trial_start", start_date_dt.isoformat())
+            trial_end_dt = start_date_dt + timedelta(seconds=TRIAL_DURATION_SECONDS)
+            self.settings.setValue("license/trial_end_time", trial_end_dt.isoformat())
+            return True
+
         try:
-            start_date = datetime.fromisoformat(trial_start)
-            end_date = start_date + timedelta(days=TRIAL_DAYS)
-            return datetime.now() <= end_date
-        except (ValueError, TypeError):
+            # start_date = datetime.fromisoformat(trial_start) # Original start, for reference
+            # end_date = start_date + timedelta(days=TRIAL_DAYS) # Old calculation
+            end_date = datetime.fromisoformat(trial_end_iso)
+            is_active = datetime.now() <= end_date
+            if not is_active:
+                print(f"DEBUG: Trial has expired. Current time: {datetime.now()}, End date: {end_date}")
+            return is_active
+        except (ValueError, TypeError) as e:
             # If there's any error parsing the date, reset the trial
-            trial_start = datetime.now().isoformat()
-            self.settings.setValue("license/trial_start", trial_start)
+            print(f"DEBUG: Error parsing trial dates ({e}). Resetting trial period.")
+            trial_start_dt = datetime.now()
+            trial_end_dt = trial_start_dt + timedelta(seconds=TRIAL_DURATION_SECONDS)
+            self.settings.setValue("license/trial_start", trial_start_dt.isoformat())
+            self.settings.setValue("license/trial_end_time", trial_end_dt.isoformat())
             return True
             
     def get_trial_days_remaining(self):
-        """Get the number of days remaining in the trial period"""
+        """Get the number of days remaining in the trial period.
+        For very short trial durations (like minutes for testing),
+        this will show 0 days for most of the period.
+        The actual expiration is handled by is_trial_active()."""
         if self.is_licensed():
             return 0
             
-        trial_start = self.settings.value("license/trial_start", None)
-        if not trial_start:
-            return TRIAL_DAYS
+        trial_start_iso = self.settings.value("license/trial_start", None)
+        trial_end_iso = self.settings.value("license/trial_end_time", None)
+
+        if not trial_start_iso or not trial_end_iso:
+            # If trial hasn't started or end time is missing, return full theoretical duration in days
+            # This is a rough estimate for display if full info isn't available
+            return TRIAL_DURATION_SECONDS // (24 * 60 * 60) if TRIAL_DURATION_SECONDS >= (24*60*60) else 0
             
         try:
-            start_date = datetime.fromisoformat(trial_start)
-            end_date = start_date + timedelta(days=TRIAL_DAYS)
-            days_left = (end_date - datetime.now()).days
+            # start_date = datetime.fromisoformat(trial_start_iso) # Original start
+            # end_date_calc = start_date + timedelta(days=TRIAL_DAYS) # Old calculation
+            end_date = datetime.fromisoformat(trial_end_iso)
+            
+            now = datetime.now()
+            if now >= end_date:
+                return 0
+                
+            time_left = end_date - now
+            # Calculate remaining days. For periods less than a day, this will be 0.
+            # If you want to show "1 day" for any remaining time less than 24hrs but >0,
+            # you could use: math.ceil(time_left.total_seconds() / (24 * 60 * 60))
+            # For simplicity and consistency with current .days behavior:
+            days_left = time_left.days 
             return max(0, days_left)
         except (ValueError, TypeError):
-            return TRIAL_DAYS
+            # Fallback on error, return full theoretical duration in days
+            return TRIAL_DURATION_SECONDS // (24 * 60 * 60) if TRIAL_DURATION_SECONDS >= (24*60*60) else 0
+            
+    def get_trial_time_remaining_parts(self):
+        """Get the remaining trial time in parts (days, hours, minutes)."""
+        if self.is_licensed():
+            return {'days': 0, 'hours': 0, 'minutes': 0}
+
+        trial_start_iso = self.settings.value("license/trial_start", None)
+        trial_end_iso = self.settings.value("license/trial_end_time", None)
+
+        if not trial_start_iso or not trial_end_iso:
+            # Trial hasn't formally started in settings, return full configured duration
+            # This assumes is_trial_active() would be called first to set these.
+            # If called before that, give the full potential.
+            total_days = math.floor(TRIAL_DURATION_SECONDS / (24 * 60 * 60))
+            remaining_seconds_for_hours = TRIAL_DURATION_SECONDS % (24 * 60 * 60)
+            total_hours = math.floor(remaining_seconds_for_hours / (60*60))
+            # For this initial full duration display, minutes are likely not needed / would be 0
+            return {'days': int(total_days), 'hours': int(total_hours), 'minutes': 0}
+
+        try:
+            end_date = datetime.fromisoformat(trial_end_iso)
+            now = datetime.now()
+
+            if now >= end_date:
+                return {'days': 0, 'hours': 0, 'minutes': 0}
+
+            time_left_delta = end_date - now
+            total_seconds_left = time_left_delta.total_seconds()
+
+            if total_seconds_left <= 0:
+                return {'days': 0, 'hours': 0, 'minutes': 0}
+
+            days = math.floor(total_seconds_left / (24 * 60 * 60))
+            remaining_seconds = total_seconds_left % (24 * 60 * 60)
+            hours = math.floor(remaining_seconds / (60 * 60))
+            remaining_seconds %= (60 * 60)
+            minutes = math.floor(remaining_seconds / 60)
+
+            return {'days': int(days), 'hours': int(hours), 'minutes': int(minutes)}
+
+        except (ValueError, TypeError):
+            # Error parsing dates, return 0 time left as a fallback
+            return {'days': 0, 'hours': 0, 'minutes': 0}
             
     def is_licensed(self):
         """Check if the application is licensed"""
@@ -586,10 +678,11 @@ class LicenseActivationDialog(QDialog):
 class TrialNagDialog(QDialog):
     """Dialog shown when trial period is active or expired"""
     
-    def __init__(self, parent=None, license_manager=None, days_left=0):
+    def __init__(self, parent=None, license_manager=None, time_parts=None): # Changed days_left to time_parts
         super().__init__(parent)
         self.license_manager = license_manager or LicenseManager()
-        self.days_left = days_left
+        # self.days_left = days_left # Old
+        self.time_parts = time_parts if time_parts is not None else {'days': 0, 'hours': 0, 'minutes': 0}
         self.setup_ui()
         
     def setup_ui(self):
@@ -600,12 +693,40 @@ class TrialNagDialog(QDialog):
         self.setMinimumWidth(600)  # Increased width to match activation dialog
         
         layout = QVBoxLayout()
+        layout.addStretch(1) # Add stretch at the top
         
         # Message
-        if self.days_left > 0:
-            message = f"You are using the trial version of Echelon.\n\nYou have {self.days_left} days remaining in your trial period."
+        days = self.time_parts.get('days', 0)
+        hours = self.time_parts.get('hours', 0)
+        minutes = self.time_parts.get('minutes', 0)
+
+        is_trial_time_left = days > 0 or hours > 0 or minutes > 0
+        
+        if is_trial_time_left:
+            time_str_parts = []
+            if days > 0:
+                time_str_parts.append(f"{days} day{'s' if days != 1 else ''}")
+            if hours > 0:
+                time_str_parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+            # Updated logic: Always add minutes to the list if they are non-zero.
+            if minutes > 0:
+                time_str_parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+
+            if not time_str_parts:
+                # This case should ideally be covered by is_trial_time_left being false
+                # or get_trial_time_remaining_parts returning non-zero if seconds are left.
+                # If somehow is_trial_time_left is true but all parts are 0 (e.g. <1 min and no seconds part),
+                # provide a fallback string.
+                time_display_str = "less than a minute"
+            elif len(time_str_parts) > 1:
+                time_display_str = ", ".join(time_str_parts[:-1]) + " and " + time_str_parts[-1]
+            else:
+                time_display_str = time_str_parts[0]
+            
+            # message = f"You are using the trial version of Echelon.\\n\\nYou have {time_display_str} remaining in your trial period." # Old message
+            message = f"You are using the trial version of Echelon.\nTime remaining: {time_display_str}."
         else:
-            message = "Your trial period has expired.\n\nPlease purchase a license to continue using Echelon."
+            message = "Your trial period has expired.\\n\\nPlease purchase a license to continue using Echelon."
             
         message_label = QLabel(message)
         message_label.setAlignment(Qt.AlignCenter)
@@ -628,8 +749,23 @@ class TrialNagDialog(QDialog):
         button_layout.addWidget(self.activate_button)
         
         # Continue Trial Button (Conditional)
-        if self.days_left > 0:
-            self.continue_button = QPushButton(f"Continue Trial ({self.days_left} days left)")
+        # if self.days_left > 0: # Old condition
+        if is_trial_time_left: # New condition
+            # self.continue_button = QPushButton(f"Continue Trial ({self.days_left} days left)") # Old text
+            # Construct button text similarly to the message
+            btn_time_str_parts = []
+            if days > 0:
+                btn_time_str_parts.append(f"{days}d")
+            if hours > 0:
+                btn_time_str_parts.append(f"{hours}h")
+            if days == 0 and minutes > 0 : # Only show minutes on button if no days
+                btn_time_str_parts.append(f"{minutes}m")
+            
+            btn_time_display_str = " ".join(btn_time_str_parts)
+            if not btn_time_display_str: # e.g. less than a minute if we don't show seconds
+                 btn_time_display_str = "<1m" # Or handle as expired if minutes is the finest granuality
+
+            self.continue_button = QPushButton(f"Continue Trial ({btn_time_display_str} left)")
             # Add hover state to existing BUTTON_STYLE
             self.continue_button.setStyleSheet(f"""
                 {BUTTON_STYLE}
@@ -649,9 +785,46 @@ class TrialNagDialog(QDialog):
             trial_expired_label = QLabel("Your trial has expired. Please activate to continue using Echelon.")
             trial_expired_label.setStyleSheet("color: yellow;") # Make it noticeable
             trial_expired_label.setWordWrap(True)
-            layout.insertWidget(layout.count() -1, trial_expired_label) # Insert before button layout
+            trial_expired_label.setAlignment(Qt.AlignCenter) # Center align this label too
+            
+            # The original insertWidget call places trial_expired_label before message_label if not handled carefully.
+            # Original logic: layout.insertWidget(layout.count() -1, trial_expired_label)
+            # Given message_label is already added, and button_layout is added last,
+            # to maintain trial_expired_label (yellow) visually before the main purchase message,
+            # we need to ensure correct insertion or ordering if we change how widgets are added.
+
+            # Let's re-evaluate the order of addition for clarity:
+            # The current effective order from previous analysis is [trial_expired_label, message_label, button_layout]
+            # The code is:
+            # 1. `layout.addWidget(message_label)` (This adds the "Please purchase..." message)
+            # 2. If expired: `trial_expired_label` is created.
+            # 3. `layout.insertWidget(layout.count() -1, trial_expired_label)` -> Inserts yellow label at index 0 if message_label is the only thing in layout.
+            #    This means `layout` becomes `[trial_expired_label, message_label]`. This matches screenshot.
+
+            # So, the insertion logic is fine for order. We've already added message_label.
+            # The `trial_expired_label` should appear before the `message_label` if that's desired.
+            # The screenshot implies yellow text (trial_expired_label) is first.
+            # The code `layout.insertWidget(layout.count() - 1, trial_expired_label)` when `layout` contains just `[message_label]` (count=1),
+            # means `insertWidget(0, trial_expired_label)`. So the yellow label becomes the first item. This is correct.
+
+            # We need to ensure the trial_expired_label is correctly placed in the layout IF it's created.
+            # The current structure adds message_label, then if expired, trial_expired_label is inserted at index 0.
+            # This means trial_expired_label will appear above message_label.
+            # No change needed to insertion logic itself, just ensuring trial_expired_label uses AlignCenter.
+            
+            # Original placement logic for trial_expired_label seems correct for the visual order in screenshot
+            # (yellow first, then standard message_label).
+            # The `insertWidget` call effectively places it before the `message_label` that was added earlier.
+            current_widget_count = layout.count()
+            if current_widget_count > 0:
+                # If message_label (or anything else) is already in layout, insert yellow label before the last one.
+                # If message_label is the only item, this inserts at index 0.
+                layout.insertWidget(current_widget_count -1, trial_expired_label)
+            else: # Should not happen if message_label is always added first
+                layout.addWidget(trial_expired_label)
 
         layout.addLayout(button_layout) # Add the button layout to the main layout
+        layout.addStretch(1) # Add stretch at the bottom
         
         self.setLayout(layout)
         

@@ -38,7 +38,7 @@ OPTIONS = {
         'CFBundleShortVersionString': APP_VERSION_STR,
         'CFBundleVersion': APP_BUILD_STR,
         'CFBundleIdentifier': BUNDLE_ID,
-        'LSMinimumSystemVersion': '10.15',
+        'LSMinimumSystemVersion': '11.0',
         'NSHumanReadableCopyright': 'Copyright © 2023-present Craig P. Russo and CR2 Creative. All rights reserved.',
         'NSPrincipalClass': 'NSApplication',
         'NSAppleScriptEnabled': False,
@@ -66,7 +66,7 @@ OPTIONS = {
         'requests.adapters', # Often needed by requests
         'packaging' # Added for version comparison
     ], 
-    'excludes': [ 
+    'excludes': [
         # Keep aggressive excludes for large libraries
         'tkinter',
         'unittest',
@@ -75,6 +75,7 @@ OPTIONS = {
         'matplotlib',
         'scipy',
         'pytest',
+        # 'PyQt5', # Reverted: Add PyQt5 to general excludes
         
         # Aggressively exclude specific PyQt5 modules NOT directly used in main.py or known dependencies
         'PyQt5.Qsci',
@@ -105,7 +106,7 @@ OPTIONS = {
         'PyQt5.QtQuickWidgets',
         'PyQt5.Qml',
     ],
-    'arch': 'universal2',
+    'arch': 'arm64',
     'optimize': 2,
     'strip': True,
     'site_packages': False,

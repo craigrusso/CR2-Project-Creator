@@ -11,7 +11,8 @@ from app.core.app_module_pyqt import ProjectCreatorApp
 from app.config.app_config import APP_NAME, APP_VERSION, setup_dpi_awareness
 from app.ui.app_theme_pyqt import apply_dark_theme_to_template_section, force_app_palette, configure_styles
 from app.templates.template_manager_migration import TemplateManagerMigration
-from app.ui.tree_styling import apply_styling_to_all_tree_widgets
+from app.ui.tree_styling import apply_styling_to_all_tree_widgets, refresh_all_tree_icons
+from app.ui.icon_utilities import clear_icon_cache
 from PyQt5.QtGui import QIcon
 
 # Import the license manager for license checking
@@ -64,6 +65,18 @@ def main():
     QCoreApplication.setOrganizationName("CR2 Creative")
     QCoreApplication.setOrganizationDomain("cr2creative.com")
     print("DEBUG: Application core info set")
+    
+    # --- QSettings Debug --- 
+    # Early check to see QSettings path and initial critical values
+    # Ensure QSettings is initialized here if not already implicitly by LicenseManager constructor for this test
+    # However, LicenseManager will create its own instance. This is for an early peek.
+    temp_settings_for_debug = QSettings("CR2 Creative", "Echelon")
+    print(f"DEBUG QSETTINGS: File path: {temp_settings_for_debug.fileName()}")
+    print(f"DEBUG QSETTINGS: Initial 'license/trial_start': {temp_settings_for_debug.value('license/trial_start', 'NOT FOUND')}")
+    print(f"DEBUG QSETTINGS: Initial 'license/trial_end_time': {temp_settings_for_debug.value('license/trial_end_time', 'NOT FOUND')}")
+    print(f"DEBUG QSETTINGS: Initial 'license/was_ever_licensed': {temp_settings_for_debug.value('license/was_ever_licensed', 'NOT FOUND')}")
+    del temp_settings_for_debug # Clean up temporary instance
+    # --- End QSettings Debug ---
     
     # Set app ID for Windows taskbar
     if platform.system() == "Windows":
@@ -141,7 +154,10 @@ def main():
     
     # --- Trial Logic Enhancement ---
     # Check if a license was ever activated on this installation
-    settings = QSettings()
+    settings = QSettings() # This is the QSettings instance used by main.py's logic
+    print(f"DEBUG MAIN.PY: Settings file in use by main logic: {settings.fileName()}")
+    was_ever_licensed_val = settings.value("license/was_ever_licensed", "NOT FOUND (using default False next)")
+    print(f"DEBUG MAIN.PY: Value read for 'license/was_ever_licensed' before bool conversion: {was_ever_licensed_val}")
     was_ever_licensed = settings.value("license/was_ever_licensed", False, type=bool)
     print(f"DEBUG: Was license ever activated? {was_ever_licensed}")
 
@@ -174,13 +190,15 @@ def main():
         else:
             # --- Normal Trial Check (only if never licensed before) ---
             print("DEBUG: Checking trial status (never licensed before).")
-            days_left = license_manager.get_trial_days_remaining()
-            print(f"DEBUG: Trial days remaining: {days_left}")
+            # Ensure trial start/end times are initialized in settings if this is the first run for the trial
+            # by calling is_trial_active() first. It will return True if trial is new or ongoing.
+            if license_manager.is_trial_active(): 
+                print("DEBUG: Trial is active (either new or ongoing).")
+                time_parts = license_manager.get_trial_time_remaining_parts()
+                print(f"DEBUG: Trial time remaining: {time_parts['days']}d, {time_parts['hours']}h, {time_parts['minutes']}m")
 
-            can_proceed = False # Assume cannot proceed unless trial allows or activation occurs
-            if days_left > 0:
                 # Show trial nag dialog
-                trial_dialog = TrialNagDialog(None, license_manager, days_left)
+                trial_dialog = TrialNagDialog(None, license_manager, time_parts=time_parts)
                 dialog_result = trial_dialog.exec_()
 
                 # Check status AFTER dialog closes
@@ -196,11 +214,12 @@ def main():
                          can_proceed = True
                 else: # Dialog was rejected (Cancel/Exit) or closed
                     print("DEBUG: User cancelled the trial dialog or exited.")
-                    # can_proceed remains False
-            else:
+                    can_proceed = False # Stays False
+            else: # is_trial_active() returned False, meaning trial has genuinely expired according to its own precise check
+                print("DEBUG: Trial has genuinely expired (is_trial_active is False).")
+                time_parts = {'days': 0, 'hours': 0, 'minutes': 0} # Ensure time_parts show zero
                 # Trial expired (and never licensed before), show the nag dialog with exit option only
-                print("DEBUG: Trial expired (never licensed before).")
-                trial_dialog = TrialNagDialog(None, license_manager, 0)
+                trial_dialog = TrialNagDialog(None, license_manager, time_parts=time_parts)
                 dialog_result = trial_dialog.exec_()
 
                 # Check status AFTER dialog closes
@@ -212,7 +231,7 @@ def main():
                      print("DEBUG: Setting 'was_ever_licensed' flag to True after expired trial activation.")
                 else: # Dialog was rejected (Exit) or closed
                     print("DEBUG: Trial expired and user did not activate.")
-                    # can_proceed remains False
+                    can_proceed = False # Stays False
 
     # Final decision based on the logic above
     if not can_proceed:
@@ -267,6 +286,18 @@ def main():
         print("DEBUG: Applying tree styling to all tree widgets")
         styled_count = apply_styling_to_all_tree_widgets(main_window)
         print(f"DEBUG: Tree styling applied to all tree widgets ({styled_count} widgets styled)")
+        
+        # Force a complete icon cache refresh to ensure we're using platform-native icons
+        print("DEBUG: Forcefully clearing and refreshing icon cache")
+        clear_icon_cache()
+        
+        # Force icon cache refresh and update all tree icons
+        print("DEBUG: Refreshing all tree icons with native platform icons")
+        refresh_count = refresh_all_tree_icons()
+        print(f"DEBUG: Refreshed icons for {refresh_count} tree widgets")
+        
+        # Schedule another refresh after a short delay to ensure everything is loaded
+        QTimer.singleShot(1000, lambda: refresh_all_tree_icons())
         
         # --- Connect state saving for TableView --- 
         def save_table_view_state():
