@@ -54,25 +54,6 @@ class GalleryFoldersSetup:
         gallery.folder_size_slider.setTickPosition(QSlider.TicksBelow)
         gallery.folder_size_slider.setTickInterval(50)
         gallery.folder_size_slider.valueChanged.connect(gallery._on_icon_scale_changed)
-        gallery.folder_size_slider.setStyleSheet("""
-            QSlider::groove:horizontal {
-                border: 1px solid #3C3C3C;
-                height: 8px;
-                background: #2A2A2A;
-                margin: 2px 0;
-                border-radius: 4px;
-            }
-            QSlider::handle:horizontal {
-                background: #909090;
-                border: 1px solid #5A5A5A;
-                width: 14px;
-                margin: -4px 0;
-                border-radius: 7px;
-            }
-            QSlider::handle:horizontal:hover {
-                background: #AAAAAA;
-            }
-        """)
         gallery.folders_header_layout.addWidget(gallery.folder_size_slider)
         
         # Add New Folder button to the right side

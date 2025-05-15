@@ -758,9 +758,13 @@ class TemplateGallery(QWidget):
             QMessageBox.warning(self, "Error", "Could not access application context.")
     
     def _on_icon_scale_changed(self, value):
-        GalleryEvents.on_icon_scale_changed(self, value)
+        """Handle icon scale slider changes"""
+        # This method is called when the icon scale slider changes.
+        # It updates the icon_scale attribute and then calls the
+        # GalleryEvents handler to update the UI.
+        self.icon_scale = value
+        self._update_folder_card_sizes(value) # Changed line
 
-    # View mode setters
     def _set_folder_view_mode(self, mode):
         GalleryFoldersSetup.set_folder_view_mode(self, mode)
     
