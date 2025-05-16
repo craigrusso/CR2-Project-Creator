@@ -251,12 +251,12 @@ class ProjectCreatorApp(QMainWindow):
         
         # Project settings header
         self.settings_header = QLabel("Project Settings")
-        self.settings_header.setStyleSheet("font-weight: bold; font-size: 14px;")
+        self.settings_header.setStyleSheet("font-weight: bold; font-size: 14px; border: none;")
         self.left_layout.addWidget(self.settings_header)
         
         # Batch project input area - integrated directly into the main UI
         self.batch_projects_header = QLabel("Enter Project Names")
-        self.batch_projects_header.setStyleSheet("font-weight: bold; font-size: 13px;")
+        self.batch_projects_header.setStyleSheet("font-weight: bold; font-size: 13px; border: none;")
         self.left_layout.addWidget(self.batch_projects_header)
         
         # Instructions for batch projects
@@ -306,6 +306,7 @@ class ProjectCreatorApp(QMainWindow):
         # Output directory
         self.output_dir_layout = QHBoxLayout()
         self.output_dir_label = QLabel("Output Directory:")
+        self.output_dir_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.output_dir_input = QLineEdit()
         self.output_dir_input.setPlaceholderText("Select output directory...")
         self.output_dir_input.setReadOnly(True)

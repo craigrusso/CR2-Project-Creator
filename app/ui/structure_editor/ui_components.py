@@ -528,7 +528,7 @@ class UIBuilder(QObject):
         form_layout = QFormLayout()
         form_layout.setRowWrapPolicy(QFormLayout.DontWrapRows)
         form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
-        form_layout.setLabelAlignment(Qt.AlignLeft)
+        form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
         form_layout.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
         form_layout.setHorizontalSpacing(10)
         form_layout.setVerticalSpacing(10)
@@ -565,7 +565,9 @@ class UIBuilder(QObject):
         else:
             print("DEBUG (UIBuilder): No template name found, leaving field empty")
         
-        form_layout.addRow(QLabel("Template Name:"), self.template_name_field)
+        name_label = QLabel("Template Name:")
+        name_label.setStyleSheet("border: none; padding: 5px 0px; background-color: transparent;")
+        form_layout.addRow(name_label, self.template_name_field)
 
         # --- Category Field ---
         self.template_category_field = QComboBox()
@@ -639,7 +641,9 @@ class UIBuilder(QObject):
         category_layout.addWidget(self.template_category_field, 1) # Allow dropdown to expand
         category_layout.addWidget(self.manage_categories_btn)
         category_layout.setSpacing(5) # Reduce spacing between combo and button
-        form_layout.addRow(QLabel("Category:"), category_layout)
+        category_label = QLabel("Category:")
+        category_label.setStyleSheet("border: none; padding: 5px 0px; background-color: transparent;")
+        form_layout.addRow(category_label, category_layout)
 
         # --- Description Field ---
         self.template_info_field = QTextEdit()
@@ -658,7 +662,9 @@ class UIBuilder(QObject):
                 border: 1px solid {colors['accent']};
             }}
         """)
-        form_layout.addRow(QLabel("Description:"), self.template_info_field)
+        description_label = QLabel("Description:")
+        description_label.setStyleSheet("border: none; padding: 5px 0px; background-color: transparent;")
+        form_layout.addRow(description_label, self.template_info_field)
 
         # Add the form layout to the top section
         top_section_layout.addLayout(form_layout, 1) # Allow form to take up space
@@ -674,11 +680,8 @@ class UIBuilder(QObject):
         # Structure header label
         structure_header = QLabel("Project Structure")
         structure_header.setFont(QFont(structure_header.font().family(), 12, QFont.Bold))
-        structure_header.setStyleSheet(f"color: {colors['text']}; padding-top: 10px; padding-bottom: 5px;")
+        structure_header.setStyleSheet(f"color: {colors['text']}; padding-top: 10px; padding-bottom: 5px; border: none; background-color: transparent;")
         structure_header_layout.addWidget(structure_header)
-        
-        # Add stretch to push search to right side
-        structure_header_layout.addStretch(1)
         
         # Create search layout for structure section
         search_structure_layout = QHBoxLayout()
@@ -687,12 +690,13 @@ class UIBuilder(QObject):
         
         # Add magnifying glass icon instead of "Search:" label
         magnifying_glass = QLabel("🔍")
-        magnifying_glass.setStyleSheet(f"color: {colors['text']}; font-size: 16px;")
+        magnifying_glass.setStyleSheet(f"color: {colors['text']}; font-size: 16px; border: none;")
         search_structure_layout.addWidget(magnifying_glass)
         
         # Create the search field
         self.search_field = QLineEdit()
-        self.search_field.setPlaceholderText("Filter structure...")
+        self.search_field.setPlaceholderText("Search for file or folder in structure...")
+        self.search_field.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.search_field.setStyleSheet(f"""
             QLineEdit {{
                 background-color: {colors['card_bg']};
@@ -700,40 +704,27 @@ class UIBuilder(QObject):
                 border: 1px solid {colors['border']};
                 border-radius: 3px;
                 padding: 5px;
-                min-width: 150px;
-                max-width: 200px;
+                min-width: 500px; /* Increased width */
             }}
             QLineEdit:focus {{
                 border: 1px solid {colors['accent']};
             }}
         """)
         self.search_field.textChanged.connect(self._filter_structure)
-        search_structure_layout.addWidget(self.search_field)
-        
-        # Clear button for search
-        clear_btn = QPushButton("×")
-        clear_btn.setToolTip("Clear search")
-        clear_btn.setFixedSize(30, 30)
-        clear_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: transparent;
-                color: {colors['text']};
-                border: none;
-                border-radius: 15px;
-                font-weight: bold;
-                font-size: 22px;
-            }}
-            QPushButton:hover {{
-                background-color: {colors['hover_bg']};
-                color: {colors['highlight_text']};
-            }}
-        """)
-        clear_btn.clicked.connect(self._clear_search)
-        search_structure_layout.addWidget(clear_btn)
+
+        # Add clear action to the search field
+        clear_action = self.search_field.addAction(QApplication.style().standardIcon(QStyle.SP_LineEditClearButton), QLineEdit.TrailingPosition)
+        clear_action.setToolTip("Clear search")
+        clear_action.triggered.connect(self._clear_search)
+        # Make the clear action visible only when there's text
+        self.search_field.textChanged.connect(lambda text: clear_action.setVisible(bool(text)))
+        clear_action.setVisible(False) # Initially hidden
+
+        search_structure_layout.addWidget(self.search_field) # REMOVED stretch factor from here
         
         # Add search layout to header layout
-        structure_header_layout.addLayout(search_structure_layout)
-        
+        structure_header_layout.addLayout(search_structure_layout, 1) # ADDED stretch factor here for the whole search layout
+
         # Add the header layout to the main structure layout
         structure_layout.addLayout(structure_header_layout)
         
