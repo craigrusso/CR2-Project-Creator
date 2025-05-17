@@ -1,0 +1,39 @@
+{
+    "name": "Music Production Project",
+    "category": "Audio Production",
+    "description": "A comprehensive folder structure for music production projects, suitable for tracking, mixing, and mastering in a DAW.",
+    "structure": [
+        {"01_Project_Files": []},
+        {"02_Audio_Recordings": [
+            {"Multitracks": []},
+            {"Vocals": []},
+            {"Instruments": []}
+        ]},
+        {"03_MIDI": [
+            {"Tracks": []},
+            {"Patterns": []}
+        ]},
+        {"04_Samples_Loops": [
+            {"Imported": []},
+            {"Resampled": []}
+        ]},
+        {"05_Bounces": [
+            {"Stems": []},
+            {"Mixdowns_WIP": []}
+        ]},
+        {"06_Masters": [
+            {"Final_Masters": []},
+            {"Release_Versions": []}
+        ]},
+        {"07_Presets": [
+            {"Synth_Presets": []},
+            {"Effect_Chains": []}
+        ]},
+        {"08_Documentation": [
+            "Lyrics.txt",
+            "Production_Notes.txt"
+        ]},
+        {"Project_Backups": []},
+        "README.md"
+    ]
+} 

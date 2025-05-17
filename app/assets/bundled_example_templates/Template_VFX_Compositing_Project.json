@@ -1,0 +1,35 @@
+{
+    "name": "VFX Compositing Project",
+    "category": "VFX & Motion Graphics",
+    "description": "A standard folder layout for visual effects (VFX) and compositing projects, typically using software like After Effects or Nuke.",
+    "structure": [
+        {"01_Project_Files_AE_Nuke": []},
+        {"02_Footage_Plates": [
+            {"Live_Action": []},
+            {"CGI_Renders_Source": []}
+        ]},
+        {"03_Assets": [
+            {"Image_Sequences": []},
+            {"Matte_Paintings": []},
+            {"Textures": []},
+            {"Models_If_Needed": []}
+        ]},
+        {"04_Audio_Reference": []},
+        {"05_Precomps_Elements": [
+            {"Shot_010": []},
+            {"Shot_020": []}
+        ]},
+        {"06_Renders_Exports": [
+            {"Final_Comps": []},
+            {"Review_Versions": []}
+        ]},
+        {"07_References_Storyboards": [
+            "Storyboard.pdf",
+            "Moodboard.png"
+        ]},
+        {"08_Scripts_Expressions": [
+            "helper_script.py"
+        ]},
+        "README.md"
+    ]
+} 

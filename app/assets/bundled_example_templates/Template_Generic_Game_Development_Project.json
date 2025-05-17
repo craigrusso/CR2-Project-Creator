@@ -1,0 +1,42 @@
+{
+    "name": "Generic Game Development Project",
+    "category": "Game Development",
+    "description": "A general folder structure for game development, adaptable for engines like Unity, Unreal, or Godot. Engine-specific folders (like 'Assets' for Unity or 'Content' for Unreal) should be top-level within the project.",
+    "structure": [
+        {"GameEngineRoot_Assets_Or_Content": [
+            {"Art": [
+                {"Models": []},
+                {"Textures": []},
+                {"Materials_Shaders": []},
+                {"Sprites_UI": []},
+                {"Animations": []}
+            ]},
+            {"Audio": [
+                {"Music": []},
+                {"SFX": []},
+                {"VoiceOver": []}
+            ]},
+            {"Code_Scripts": [
+                {"Core": []},
+                {"Gameplay": []},
+                {"Editor": []},
+                {"Shaders_Custom": []}
+            ]},
+            {"Design_Docs": [
+                "GDD.md",
+                "LevelDesignNotes.txt"
+            ]},
+            {"Levels_Scenes": []},
+            {"Prefabs_Blueprints": []},
+            {"ThirdParty": []}
+        ]},
+        {"Builds": [
+            {"Alpha": []},
+            {"Beta": []}
+        ]},
+        {"Project_Management": [
+            "Tasks.md"
+        ]},
+        "README.md"
+    ]
+} 

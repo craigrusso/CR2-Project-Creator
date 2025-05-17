@@ -4,6 +4,8 @@
 import platform
 import sys
 import os
+import shutil # Ensure shutil is imported
+import json
 
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt, QCoreApplication, QSettings, QTimer
@@ -22,8 +24,176 @@ from PyQt5.QtWidgets import QDialog
 # Import the EULA Dialog
 from app.dialogs.eula_dialog import EulaDialog
 
+# Import for deploying example templates
+from app.core.config_manager import get_templates_path, get_settings_path
+from app.utils.utils import load_json_file, save_json_file
+
 # This is the PyQt version of the application
 UI_FRAMEWORK = 'pyqt'
+
+def deploy_example_templates():
+    """
+    Copies bundled example templates to the user's template directory,
+    placing them inside an 'Examples' subdirectory.
+    """
+    print("DEBUG: Checking and deploying example templates into 'Examples' subdirectory...")
+    try:
+        base_user_templates_path = get_templates_path() # e.g., $HOME/Library/Application Support/Echelon/Templates
+        
+        # Define the "Examples" subdirectory
+        user_examples_subdirectory_path = os.path.join(base_user_templates_path, "Examples")
+
+        bundled_examples_dir_name = "bundled_example_templates"
+        
+        source_templates_base_dir = None # Initialize
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            possible_source_paths = [
+                os.path.join(sys._MEIPASS, "app", "assets", bundled_examples_dir_name),
+                os.path.join(sys._MEIPASS, "assets", bundled_examples_dir_name),
+                os.path.join(sys._MEIPASS, bundled_examples_dir_name)
+            ]
+            for path_attempt in possible_source_paths:
+                if os.path.isdir(path_attempt):
+                    source_templates_base_dir = path_attempt
+                    break
+            if source_templates_base_dir is None:
+                 print(f"WARNING: Bundled example templates source directory not found in PyInstaller bundle. Tried: {possible_source_paths}")
+                 return
+        else:
+            project_root = os.path.dirname(os.path.abspath(__file__))
+            source_templates_base_dir = os.path.join(project_root, "app", "assets", bundled_examples_dir_name)
+
+        if not os.path.isdir(source_templates_base_dir):
+            print(f"WARNING: Bundled example templates source directory not found at: {source_templates_base_dir}")
+            print(f"INFO: Current CWD: {os.getcwd()}")
+            print(f"INFO: sys.frozen: {getattr(sys, 'frozen', False)}")
+            if hasattr(sys, '_MEIPASS'):
+                print(f"INFO: sys._MEIPASS: {sys._MEIPASS}")
+                print(f"INFO: Contents of sys._MEIPASS: {os.listdir(sys._MEIPASS) if os.path.exists(sys._MEIPASS) else 'Not found or not listable'}")
+            print(f"INFO: Absolute path of __file__ (main.py): {os.path.abspath(__file__)}")
+            return
+
+        # Create the base user templates directory if it doesn't exist
+        if not os.path.exists(base_user_templates_path):
+            try:
+                os.makedirs(base_user_templates_path)
+                print(f"DEBUG: Created base user templates directory: {base_user_templates_path}")
+            except OSError as e:
+                print(f"ERROR: Could not create base user templates directory: {base_user_templates_path} - {e}")
+                return
+        
+        # Create the "Examples" subdirectory if it doesn't exist
+        if not os.path.exists(user_examples_subdirectory_path):
+            try:
+                os.makedirs(user_examples_subdirectory_path)
+                print(f"DEBUG: Created user examples subdirectory: {user_examples_subdirectory_path}")
+            except OSError as e:
+                print(f"ERROR: Could not create user examples subdirectory: {user_examples_subdirectory_path} - {e}")
+                return
+
+        example_template_files = [
+            "Template_Standard_Video_Project.json",
+            "Template_Music_Production_Project.json",
+            "Template_VFX_Compositing_Project.json",
+            "Template_Generic_Game_Development_Project.json",
+            "Template_Python_Web_Application.json",
+            "Template_Simple_Python_Script_Project.json"
+        ]
+
+        # This list will store the actual UI names of templates successfully deployed or found
+        deployed_example_template_ui_names = []
+
+        for template_file_name in example_template_files:
+            source_file_path = os.path.join(source_templates_base_dir, template_file_name)
+            destination_file_path = os.path.join(user_examples_subdirectory_path, template_file_name) 
+
+            if not os.path.exists(source_file_path):
+                print(f"WARNING: Source example template file not found: {source_file_path}")
+                continue
+
+            template_ui_name = None
+            try:
+                # Read the source template to get its UI name
+                with open(source_file_path, 'r', encoding='utf-8') as f_src:
+                    template_content = json.load(f_src)
+                    if isinstance(template_content, dict) and "name" in template_content:
+                        template_ui_name = template_content["name"]
+                    else:
+                        print(f"WARNING: Could not find 'name' key in {source_file_path}")
+            except Exception as e_read_name:
+                print(f"ERROR: Could not read UI name from source template {source_file_path}: {e_read_name}")
+            
+            # Flag to indicate if this template is considered successfully "present" at the destination
+            is_template_present_at_dest = False
+
+            if not os.path.exists(destination_file_path):
+                try:
+                    shutil.copy2(source_file_path, destination_file_path)
+                    print(f"INFO: Deployed example template: {template_file_name} to {destination_file_path}")
+                    is_template_present_at_dest = True
+                except Exception as e_copy:
+                    print(f"ERROR: Could not copy example template {template_file_name}: {e_copy}")
+            else:
+                print(f"DEBUG: Example template already exists in Examples subfolder, skipping copy: {template_file_name}")
+                is_template_present_at_dest = True # Already exists
+            
+            if is_template_present_at_dest and template_ui_name:
+                if template_ui_name not in deployed_example_template_ui_names: # Avoid duplicates if filenames somehow led to same UI name
+                    deployed_example_template_ui_names.append(template_ui_name)
+        
+        # Ensure "Examples" folder is registered in folders.json and contains the UI names
+        try:
+            settings_dir = get_settings_path()
+            folders_json_path = os.path.join(settings_dir, "folders.json")
+            
+            if not os.path.exists(settings_dir):
+                os.makedirs(settings_dir, exist_ok=True)
+                print(f"DEBUG: Created settings directory for folders.json: {settings_dir}")
+
+            folders_data = load_json_file(folders_json_path)
+
+            if folders_data is None: 
+                folders_data = {}    
+                print(f"DEBUG: Initialized folders_data for {folders_json_path} as new dict (file was missing/invalid).")
+            
+            if not isinstance(folders_data, dict): 
+                print(f"WARNING: Content of {folders_json_path} was not a dictionary. Resetting to empty dict.")
+                folders_data = {}
+
+            # Ensure "Examples" key exists and its value is a list
+            if "Examples" not in folders_data or not isinstance(folders_data["Examples"], list):
+                folders_data["Examples"] = []
+                print(f"INFO: Initialized/Reset 'Examples' entry in {folders_json_path} as a list.")
+
+            # Add UI names of deployed example templates to the list if not already present
+            made_changes_to_examples_list = False
+            for ui_name in deployed_example_template_ui_names:
+                if ui_name not in folders_data["Examples"]:
+                    folders_data["Examples"].append(ui_name)
+                    made_changes_to_examples_list = True
+            
+            if made_changes_to_examples_list:
+                print(f"INFO: Added UI names of deployed example templates to 'Examples' list in {folders_json_path}.")
+            else:
+                print(f"DEBUG: 'Examples' list in {folders_json_path} already contains all deployed example UI names, or no new names were added.")
+
+            # Save folders_data back to folders.json
+            if save_json_file(folders_json_path, folders_data):
+                print(f"INFO: Successfully ensured {folders_json_path} is updated for 'Examples' folder and its template names.")
+            else:
+                print(f"ERROR: Failed to save {folders_json_path} after 'Examples' folder processing (save_json_file returned false).")
+
+        except Exception as e_folders_json:
+            print(f"ERROR: Could not update {folders_json_path} for 'Examples' folder registration: {e_folders_json}")
+            import traceback
+            traceback.print_exc()
+
+        print("DEBUG: Example template deployment (into Examples subfolder) and folder registration check complete.")
+
+    except Exception as e:
+        print(f"ERROR: Failed to deploy example templates into Examples subfolder: {e}")
+        import traceback
+        traceback.print_exc()
 
 def get_user_home_directory():
     """Get the user's home directory in a cross-platform way"""
@@ -237,6 +407,10 @@ def main():
     if not can_proceed:
         print("DEBUG: Exiting application due to license/trial constraints")
         return 0
+    
+    # Deploy example templates if necessary
+    print("DEBUG: Deploying example templates if necessary")
+    deploy_example_templates()
     
     # Create and show the main window
     print("DEBUG: Creating main application window")
