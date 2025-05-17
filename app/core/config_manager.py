@@ -54,7 +54,6 @@ def get_default_data_root():
         xdg_data_home = os.getenv('XDG_DATA_HOME', os.path.join(os.path.expanduser("~"), ".local", "share"))
         default_path = os.path.join(xdg_data_home, app_name)
         
-    print(f"DEBUG: Determined default data root location for {system}: {default_path}")
     # Note: Directory creation is handled by the caller (get_user_data_root)
     return default_path
 
@@ -76,8 +75,6 @@ def get_user_data_root(force_reload=False):
         return _resolved_user_data_root
 
     settings = QSettings()
-    # Add debug print for the settings file path
-    print(f"DEBUG: QSettings file being checked for {SETTINGS_KEY_USER_DATA_ROOT}: {settings.fileName()}")
     user_path = settings.value(SETTINGS_KEY_USER_DATA_ROOT, None)
 
     if user_path and isinstance(user_path, str) and os.path.isdir(os.path.dirname(user_path)):
@@ -92,7 +89,6 @@ def get_user_data_root(force_reload=False):
              with open(test_file, "w") as f:
                  f.write("test")
              os.remove(test_file)
-             print(f"DEBUG: Using user-defined data root: {user_path}")
              _resolved_user_data_root = user_path
              return user_path
          except Exception as e:
@@ -159,11 +155,8 @@ def set_user_data_root(path):
         return False
 
     settings = QSettings()
-    # Add debug print here too for consistency when setting
-    print(f"DEBUG: Setting {SETTINGS_KEY_USER_DATA_ROOT} in QSettings file: {settings.fileName()}")
     settings.setValue(SETTINGS_KEY_USER_DATA_ROOT, path)
     settings.sync() # Ensure it's written immediately
-    print(f"DEBUG: Set user data root to: {path}")
     _resolved_user_data_root = path # Update cache
     # Ensure the new directory exists after setting
     os.makedirs(_resolved_user_data_root, exist_ok=True)

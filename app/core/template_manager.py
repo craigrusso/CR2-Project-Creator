@@ -16,8 +16,6 @@ class TemplateManager:
         if not force_refresh and hasattr(self, 'loaded_templates') and self.loaded_templates:
             return self.loaded_templates
             
-        print(f"[DEBUG] Template Manager: Loading templates{' (forced refresh)' if force_refresh else ''}")
-        
         templates = []
         template_names = set()  # Use a set to track unique template names
         
@@ -67,14 +65,12 @@ class TemplateManager:
                         
                         # Add to templates list
                         templates.append(template_data)
-                        print(f"[DEBUG] Template Manager: Loaded template: {template_name}")
                     except Exception as e:
                         print(f"[ERROR] Template Manager: Error loading template {filename}: {e}")
                         
         # Sort templates by name
         templates.sort(key=lambda t: t.get('name', '').lower())
         
-        print(f"[INFO] Template Manager: Loaded {len(templates)} templates")
         self.loaded_templates = templates
         return templates
         

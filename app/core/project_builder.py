@@ -132,12 +132,6 @@ class ProjectBuilder:
         # Define all placeholder formats we need to handle
         placeholder_dollar = "${PROJECT_NAME}"
         
-        # Debug logging
-        print(f"🔍 DOLLAR HANDLING DEBUG: Processing string: '{input_string}'")
-        print(f"🔍 DOLLAR HANDLING DEBUG: String length: {len(input_string)}")
-        print(f"🔍 DOLLAR HANDLING DEBUG: String as bytes: {input_string.encode('utf-8')}")
-        print(f"🔍 DOLLAR HANDLING DEBUG: Project name: '{project_name}'")
-        
         # Initialize result with input string
         result = input_string
         
@@ -147,7 +141,6 @@ class ProjectBuilder:
             # We need to be careful with this replacement to ensure no $ artifacts remain
             parts = input_string.split(placeholder_dollar)
             result = project_name.join(parts)
-            print(f"🔍 DOLLAR HANDLING DEBUG: Full placeholder replacement: '{result}'")
         
         # Case 2: Input starts with $ but doesn't contain the full placeholder
         # This likely means the display is showing $ but internally it's not matching correctly
@@ -163,24 +156,18 @@ class ProjectBuilder:
                     suffix_index = name_index + len("PROJECT_NAME")
                     suffix = remaining[suffix_index:] if suffix_index < len(remaining) else ""
                     result = f"{project_name}{suffix}"
-                    print(f"🔍 DOLLAR HANDLING DEBUG: Malformed placeholder handling: '{result}'")
-                    
             # If it's another kind of file that just happens to start with $
             elif "." in remaining:
                 # It has an extension - preserve the extension
                 parts = remaining.split(".")
                 ext = "." + ".".join(parts[1:])  # Handle multiple dots in filename
                 result = f"{project_name}{ext}"
-                print(f"🔍 DOLLAR HANDLING DEBUG: $ prefix with extension: '{result}'")
-                
             # Any other $ prefix case
             else:
                 # Just replace the $ with the project name
                 result = f"{project_name}{remaining}"
-                print(f"🔍 DOLLAR HANDLING DEBUG: Simple $ prefix handling: '{result}'")
-                
+        
         # Log the final result for debugging
-        print(f"🔍 DOLLAR HANDLING DEBUG: Final result: '{result}'")
         return result
     
     def _apply_structure_flags_to_files(self, structure_data, files_array):
@@ -197,8 +184,6 @@ class ProjectBuilder:
         if not structure_data or not files_array:
             return files_array
             
-        print(f"DEBUG: Applying structure flags to {len(files_array)} files")
-        
         # Create lookup dictionary for files by name
         files_by_name = {}
         for file_data in files_array:
@@ -227,17 +212,13 @@ class ProjectBuilder:
                         uses_project_name = item.get('uses_project_name', False)
                         
                         if rename_flag or uses_project_name:
-                            print(f"DEBUG: Found flag in structure for file '{file_name}': rename_flag={rename_flag}, uses_project_name={uses_project_name}")
-                            
                             # Apply flags to the file data
                             file_data = files_by_name[file_name]
                             if rename_flag and not file_data.get('rename_flag'):
                                 file_data['rename_flag'] = True
-                                print(f"DEBUG: Applied rename_flag to file: {file_name}")
                                 
                             if uses_project_name and not file_data.get('uses_project_name'):
                                 file_data['uses_project_name'] = True
-                                print(f"DEBUG: Applied uses_project_name to file: {file_name}")
                 
                 # Process children if this is a folder
                 if item.get('type') == 'folder' and 'children' in item:
@@ -274,8 +255,8 @@ class ProjectBuilder:
                    success is True if project was created, False otherwise
         """
         # Log parameters for debugging
-        print(f"DEBUG: Creating project '{project_name}' in directory: '{output_dir}'")
-        print(f"DEBUG: Using template: '{template_file}', structure: '{structure_name}'")
+        # print(f"DEBUG: Creating project '{project_name}' in directory: '{output_dir}'")
+        # print(f"DEBUG: Using template: '{template_file}', structure: '{structure_name}'")
             
         # Validate project name
         if not project_name:
@@ -300,7 +281,7 @@ class ProjectBuilder:
                 if foundation_spec is not None and objc_spec is not None:
                     # Now import the actual BookmarkAccessContext
                     from app.utils.security_bookmarks import BookmarkAccessContext
-                    print("DEBUG: Security bookmarks are available.")
+                    # print("DEBUG: Security bookmarks are available.")
                     bookmarks_available = True
                 else:
                     print("WARNING: Foundation/objc modules not available. Security bookmarks disabled.")
@@ -322,7 +303,7 @@ class ProjectBuilder:
                 print(f"WARNING: Skipping security bookmark for invalid output directory: {output_dir}")
                 use_bookmark = False
             else:
-                print(f"DEBUG: Using security bookmark for output directory: {output_dir}")
+                # print(f"DEBUG: Using security bookmark for output directory: {output_dir}")
                 use_bookmark = True
                 with BookmarkAccessContext(output_dir):
                     return self._create_project_internal(
@@ -357,8 +338,8 @@ class ProjectBuilder:
         Returns:
             tuple: (success, result) where result is the project path or error message
         """
-        print(f"DEBUG: Creating project '{project_name}' in directory: '{output_dir}'")
-        print(f"DEBUG: Using template: '{template_file}', structure: '{structure_name}'")
+        # print(f"DEBUG: Creating project '{project_name}' in directory: '{output_dir}'")
+        # print(f"DEBUG: Using template: '{template_file}', structure: '{structure_name}'")
         
         # Validate project name
         if not project_name:
@@ -372,7 +353,7 @@ class ProjectBuilder:
         project_dir = os.path.join(output_dir, project_name)
         try:
             os.makedirs(project_dir, exist_ok=True)
-            print(f"Created project directory: {project_dir}")
+            # print(f"Created project directory: {project_dir}")
         except Exception as e:
             return False, f"Failed to create project directory: {str(e)}"
             
@@ -388,7 +369,7 @@ class ProjectBuilder:
                 template_data = template_file
                 template_name = template_data.get('name', 'Unknown')
                 template_file_path = template_data.get('file_path', None)
-                print(f"Using provided template dictionary: {template_name}")
+                # print(f"Using provided template dictionary: {template_name}")
             elif isinstance(template_file, str) and os.path.exists(template_file):
                 # Template file path provided
                 template_file_path = template_file
@@ -397,7 +378,7 @@ class ProjectBuilder:
                     with open(template_file, 'r') as f:
                         template_data = json.load(f)
                         template_name = template_data.get('name', os.path.basename(template_file))
-                        print(f"Loaded template from file: {template_file}")
+                        # print(f"Loaded template from file: {template_file}")
                 except Exception as e:
                     return False, f"Failed to load template file: {str(e)}"
             else:
@@ -408,7 +389,7 @@ class ProjectBuilder:
         if not template_data:
             template_data = {"name": "Empty", "structure": [], "type": project_type}
             template_name = "Empty"
-            print("Using empty template")
+            # print("Using empty template")
         
         # Placeholders for variable replacement
         placeholders = {
@@ -429,28 +410,28 @@ class ProjectBuilder:
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
                 backup_dir = f"{project_dir}_backup_{timestamp}"
                 try:
-                    print(f"Creating backup at {backup_dir}")
+                    # print(f"Creating backup at {backup_dir}")
                     shutil.copytree(project_dir, backup_dir)
                     # Also try to copy hidden files which might be missed by copytree
                     if platform.system() != "Windows":
                         # Unix-like systems
                         os.system(f'cp -r "{project_dir}/."* "{backup_dir}" 2>/dev/null || true')
-                    print(f"Created backup at {backup_dir}")
+                    # print(f"Created backup at {backup_dir}")
                     
                     # Remove old directory completely instead of just emptying it
                     shutil.rmtree(project_dir)
-                    print(f"Removed old project directory: {project_dir}")
+                    # print(f"Removed old project directory: {project_dir}")
                     
                     # Create a fresh empty directory
                     os.makedirs(project_dir, exist_ok=True)
-                    print(f"Created fresh project directory: {project_dir}")
+                    # print(f"Created fresh project directory: {project_dir}")
                     
                 except Exception as e:
                     print(f"Failed to create backup or prepare project directory: {e}")
                     return False, f"Failed to create backup: {str(e)}"
             else:
                 # Simply empty the directory
-                print(f"Emptying existing project directory: {project_dir}")
+                # print(f"Emptying existing project directory: {project_dir}")
                 for item in os.listdir(project_dir):
                     item_path = os.path.join(project_dir, item)
                     try:
@@ -464,7 +445,7 @@ class ProjectBuilder:
         
         # Check for valid structure - crucial step to validate structure exists
         if not structure_data:
-            print(f"DEBUG: No valid structure found for structure_name: '{structure_name}'")
+            # print(f"DEBUG: No valid structure found for structure_name: '{structure_name}'")
             # Create the project directory but return a message that there's no structure
             try:
                 os.makedirs(project_dir, exist_ok=True)
@@ -476,21 +457,21 @@ class ProjectBuilder:
             return True, {"project_dir": project_dir, "no_structure": True}
         
         # Process the template
-        print(f"Processing template for project: {project_name}")
+        # print(f"Processing template for project: {project_name}")
         
         # Track created paths for reporting
         created_paths = []
         
         # Process the template structure
-        print(f"Creating project structure with {len(structure_data)} top-level items")
+        # print(f"Creating project structure with {len(structure_data)} top-level items")
         try:
             # Process each root item in the structure
             self._process_template(project_dir, structure_data, placeholders, created_paths)
-            print(f"Created {len(created_paths)} paths in project structure")
+            # print(f"Created {len(created_paths)} paths in project structure")
             
             # Process the files array if present in template
             if template_data and 'files' in template_data:
-                print(f"Processing files array with {len(template_data['files'])} files")
+                # print(f"Processing files array with {len(template_data['files'])} files")
                 
                 # Apply flags from structure to files if applicable
                 template_data['files'] = self._apply_structure_flags_to_files(
@@ -505,13 +486,13 @@ class ProjectBuilder:
                     use_cached_files=use_cached_files,
                     template_name=template_name
                 )
-                print(f"Copied {len(copied_files)} files from files array")
+                # print(f"Copied {len(copied_files)} files from files array")
                 
                 # Add to created paths for reporting
                 created_paths.extend(copied_files)
                 
             # Return success with project directory
-            print(f"Project '{project_name}' created successfully at: {project_dir}")
+            # print(f"Project '{project_name}' created successfully at: {project_dir}")
             
             # Create readme file if it doesn't exist
             readme_path = os.path.join(project_dir, "README.md")
@@ -521,7 +502,7 @@ class ProjectBuilder:
                     readme_content = create_readme_file(project_name, template_name)
                     with open(readme_path, 'w', encoding='utf-8') as f:
                         f.write(readme_content)
-                    print(f"Created README.md file")
+                    # print(f"Created README.md file")
                 except Exception as e:
                     print(f"Failed to create README.md: {e}")
                     # Non-critical, continue without failing
@@ -545,12 +526,12 @@ class ProjectBuilder:
         Returns:
             list or dict: Structure data
         """
-        print(f"🔍 _get_structure_data: structure_name={structure_name}")
+        # print(f"🔍 _get_structure_data: structure_name={structure_name}")
         
         # First try using structure directly from template_data
         if template_data and 'structure' in template_data:
             structure = template_data.get('structure')
-            print(f"Using structure from template data")
+            # print(f"Using structure from template data")
             
             # Check if we have a valid structure
             if structure and (isinstance(structure, list) or isinstance(structure, dict)):
@@ -562,7 +543,7 @@ class ProjectBuilder:
             
         # If we get here, try to find structure by name
         if structure_name:
-            print(f"Looking for structure with name: {structure_name}")
+            # print(f"Looking for structure with name: {structure_name}")
             
             # Try to get the structure data
             if hasattr(self, 'template_manager'):
@@ -599,22 +580,22 @@ class ProjectBuilder:
             bool: True if the structure is valid, False otherwise
         """
         if not structure_data:
-            print("DEBUG: Structure data is empty or None")
+            # print("DEBUG: Structure data is empty or None")
             return False
             
         # Check for dict format with folders key
         if isinstance(structure_data, dict):
             if 'folders' in structure_data and structure_data['folders']:
                 # Old format with folders key
-                print("DEBUG: Structure is valid (dict with folders key)")
+                # print("DEBUG: Structure is valid (dict with folders key)")
                 return True
             elif any(isinstance(value, dict) for value in structure_data.values()):
                 # Dict format with folder objects as values
-                print("DEBUG: Structure is valid (dict with folder objects)")
+                # print("DEBUG: Structure is valid (dict with folder objects)")
                 return True
             # Check for 'directories' key used in template editor
             elif 'directories' in structure_data and structure_data['directories']:
-                print("DEBUG: Structure is valid (dict with directories key)")
+                # print("DEBUG: Structure is valid (dict with directories key)")
                 return True
                 
         # Check for list format with folder items
@@ -638,10 +619,10 @@ class ProjectBuilder:
             )
             
             if has_folders or has_folder_dicts or template_ui_format:
-                print("DEBUG: Structure is valid (list with folder items)")
+                # print("DEBUG: Structure is valid (list with folder items)")
                 return True
                 
-        print("DEBUG: Structure is not valid")
+        # print("DEBUG: Structure is not valid")
         return False
     
     def _get_default_structure(self):
@@ -674,7 +655,7 @@ class ProjectBuilder:
         
         # Check if structure_data is None
         if not structure_data:
-            print(f"WARNING: Empty structure data")
+            # print(f"WARNING: Empty structure data")
             return created_paths
             
         # Handle dictionary-based structure format
@@ -684,11 +665,12 @@ class ProjectBuilder:
                 folders = structure_data['folders']
                 created_paths.extend(self._create_folders_recursive(base_path, folders))
             else:
-                print(f"WARNING: Dictionary structure data missing 'folders' key or not in expected format")
+                # print(f"WARNING: Dictionary structure data missing 'folders' key or not in expected format")
+                pass
         
         # Handle list-based structure format (like in the template structure)
         elif isinstance(structure_data, list):
-            print(f"DEBUG: Processing list-based structure with {len(structure_data)} items")
+            # print(f"DEBUG: Processing list-based structure with {len(structure_data)} items")
             
             # Process each item in the list
             for item in structure_data:
@@ -701,7 +683,7 @@ class ProjectBuilder:
                         try:
                             os.makedirs(folder_path, exist_ok=True)
                             created_paths.append(folder_path)
-                            print(f"Created folder: {folder_path}")
+                            # print(f"Created folder: {folder_path}")
                             
                             # Process children recursively if they exist
                             children = item.get('children', [])
@@ -714,7 +696,7 @@ class ProjectBuilder:
                                             try:
                                                 os.makedirs(child_path, exist_ok=True)
                                                 created_paths.append(child_path)
-                                                print(f"Created subfolder: {child_path}")
+                                                # print(f"Created subfolder: {child_path}")
                                                 
                                                 # Process grandchildren if they exist
                                                 grandchildren = child.get('children', [])
@@ -727,21 +709,22 @@ class ProjectBuilder:
                                                                 try:
                                                                     os.makedirs(grandchild_path, exist_ok=True)
                                                                     created_paths.append(grandchild_path)
-                                                                    print(f"Created grandchild folder: {grandchild_path}")
+                                                                    # print(f"Created grandchild folder: {grandchild_path}")
                                                                 except Exception as e:
                                                                     error_message = f"Failed to create grandchild folder {grandchild_path}: {str(e)}"
-                                                                    print(f"ERROR: {error_message}")
+                                                                    # print(f"ERROR: {error_message}")
                                                                     self._add_error(error_message)
                                             except Exception as e:
                                                 error_message = f"Failed to create subfolder {child_path}: {str(e)}"
-                                                print(f"ERROR: {error_message}")
+                                                # print(f"ERROR: {error_message}")
                                                 self._add_error(error_message)
                         except Exception as e:
                             error_message = f"Failed to create folder {folder_path}: {str(e)}"
-                            print(f"ERROR: {error_message}")
+                            # print(f"ERROR: {error_message}")
                             self._add_error(error_message)
         else:
-            print(f"WARNING: Invalid structure data type: {type(structure_data)}")
+            # print(f"WARNING: Invalid structure data type: {type(structure_data)}")
+            pass
             
         return created_paths
     
@@ -774,7 +757,7 @@ class ProjectBuilder:
                 # Create the folder
                 os.makedirs(folder_path, exist_ok=True)
                 created_paths.append(folder_path)
-                print(f"Created folder: {folder_path}")
+                # print(f"Created folder: {folder_path}")
                 
                 # Process subfolders recursively
                 if isinstance(sub_folders, dict):
@@ -783,7 +766,7 @@ class ProjectBuilder:
                     created_paths.extend(sub_created)
             except Exception as e:
                 error_message = f"Failed to create folder {folder_path}: {str(e)}"
-                print(f"ERROR: {error_message}")
+                # print(f"ERROR: {error_message}")
                 self._add_error(error_message)
                 
         return created_paths
@@ -826,16 +809,16 @@ class ProjectBuilder:
         
         # Check if structure data is valid - accept both dict and list formats
         if not structure_data:
-            print(f"WARNING: Empty structure data")
+            # print(f"WARNING: Empty structure data")
             return created_paths
         
         # For list-based structures, process using _process_template directly
         if isinstance(structure_data, list):
-            print(f"DEBUG: Processing list-based structure with {len(structure_data)} items")
+            # print(f"DEBUG: Processing list-based structure with {len(structure_data)} items")
             return self._process_template(output_path, structure_data, placeholders, created_paths, dry_run)
         
         # Handle dictionary-based structures
-        print(f"DEBUG: Processing dictionary-based structure")
+        # print(f"DEBUG: Processing dictionary-based structure")
         
         # Handle the root dictionary format - common in newer structures
         if 'root' in structure_data:
@@ -867,7 +850,7 @@ class ProjectBuilder:
         if structure_to_process:
             return self._process_template(output_path, structure_to_process, placeholders, created_paths, dry_run)
         else:
-            print("WARNING: Invalid or empty structure format")
+            # print("WARNING: Invalid or empty structure format")
             return created_paths
 
     def _process_item(self, parent_path, item, placeholders, created_paths, dry_run):
@@ -900,7 +883,7 @@ class ProjectBuilder:
                         self._process_item(parent_path, child, placeholders, created_paths, dry_run)
             else:
                 # Create the directory
-                print(f"DEBUG: Creating directory from custom structure: {item_path}")
+                # print(f"DEBUG: Creating directory from custom structure: {item_path}")
                 if not dry_run:
                     os.makedirs(item_path, exist_ok=True)
                 created_paths.append(item_path)
@@ -940,7 +923,7 @@ class ProjectBuilder:
             return created_paths
         
         # Log the structure details for debugging
-        print(f"DEBUG: Processing template structure of type {type(structure)} with {len(structure) if isinstance(structure, list) else 'unknown'} items")
+        # print(f"DEBUG: Processing template structure of type {type(structure)} with {len(structure) if isinstance(structure, list) else 'unknown'} items")
         
         # Normalize structure format to ensure consistent processing
         normalized_structure = self._normalize_structure_format(structure)
@@ -949,7 +932,7 @@ class ProjectBuilder:
         for item in normalized_structure:
             # All items should be dictionaries with 'type' and 'name' at this point
             if not isinstance(item, dict) or 'type' not in item or 'name' not in item:
-                print(f"WARNING: Skipping invalid item format after normalization: {item}")
+                # print(f"WARNING: Skipping invalid item format after normalization: {item}")
                 continue
             
             item_type = item.get('type')
@@ -962,10 +945,10 @@ class ProjectBuilder:
             
             # Final validation of name
             if not item_name or item_name == '[]' or item_name == 'name':
-                print(f"WARNING: Skipping item with empty/invalid name after normalization: {item}")
+                # print(f"WARNING: Skipping item with empty/invalid name after normalization: {item}")
                 continue
             
-            print(f"DEBUG: Processing item: {item_name} of type {item_type}")
+            # print(f"DEBUG: Processing item: {item_name} of type {item_type}")
             
             if item_type == 'folder':
                 # Skip root folders to avoid unnecessary nesting
@@ -978,7 +961,7 @@ class ProjectBuilder:
                     folder_path = os.path.join(output_path, item_name)
                     
                     # Create the directory
-                    print(f"DEBUG: Creating directory: {folder_path}")
+                    # print(f"DEBUG: Creating directory: {folder_path}")
                     if not dry_run:
                         os.makedirs(folder_path, exist_ok=True)
                     
@@ -996,11 +979,12 @@ class ProjectBuilder:
                     if file_path:
                         created_paths.append(file_path)
                 except Exception as e:
-                    print(f"ERROR: Failed to process file {item_name}: {e}")
+                    # print(f"ERROR: Failed to process file {item_name}: {e}")
                     import traceback
                     traceback.print_exc()
             else:
-                print(f"WARNING: Unknown item type: {item_type} for {item_name}")
+                # print(f"WARNING: Unknown item type: {item_type} for {item_name}")
+                pass
         
         return created_paths
     
@@ -1020,7 +1004,7 @@ class ProjectBuilder:
         
         # Already normalized format (list of dicts with type and name)
         if isinstance(structure, list):
-            print(f"DEBUG: Normalizing structure list with {len(structure)} items")
+            # print(f"DEBUG: Normalizing structure list with {len(structure)} items")
             for item in structure:
                 if isinstance(item, dict) and 'type' in item and 'name' in item:
                     # Already in normalized format, just copy it including any children
@@ -1051,9 +1035,9 @@ class ProjectBuilder:
                         'name': item
                     })
                 else:
-                    print(f"WARNING: Unsupported item format in structure: {item}")
+                    # print(f"WARNING: Unsupported item format in structure: {item}")
                     if isinstance(item, dict):
-                        print(f"Item keys: {list(item.keys())}")
+                        # print(f"Item keys: {list(item.keys())}")
                         # Try to interpret as folder or file based on available keys
                         if 'name' in item:
                             item_type = item.get('type', 'file')  # Default to file if type is missing
@@ -1073,7 +1057,7 @@ class ProjectBuilder:
         # Newer format with root array
         elif isinstance(structure, dict) and 'root' in structure and isinstance(structure['root'], list):
             # Process root items
-            print(f"DEBUG: Normalizing structure with 'root' key containing {len(structure['root'])} items")
+            # print(f"DEBUG: Normalizing structure with 'root' key containing {len(structure['root'])} items")
             for item in structure['root']:
                 if isinstance(item, dict) and 'type' in item and 'name' in item:
                     # Already in normalized format, just copy it including any children
@@ -1104,7 +1088,7 @@ class ProjectBuilder:
                         'name': item
                     })
                 else:
-                    print(f"WARNING: Unsupported item format in structure root: {item}")
+                    # print(f"WARNING: Unsupported item format in structure root: {item}")
                     if isinstance(item, dict) and 'name' in item:
                         item_type = item.get('type', 'file')  # Default to file if type is missing
                         normalized_item = {
@@ -1120,7 +1104,7 @@ class ProjectBuilder:
         
         # Old format: dictionary of {folder_name: [children]}
         elif isinstance(structure, dict):
-            print(f"DEBUG: Normalizing dictionary structure with {len(structure)} keys")
+            # print(f"DEBUG: Normalizing dictionary structure with {len(structure)} keys")
             for key, value in structure.items():
                 if key != 'root':  # Skip 'root' key to avoid duplication
                     folder_item = {
@@ -1137,7 +1121,7 @@ class ProjectBuilder:
                         
                     normalized.append(folder_item)
         
-        print(f"DEBUG: Normalized structure has {len(normalized)} items")
+        # print(f"DEBUG: Normalized structure has {len(normalized)} items")
         return normalized
         
     def _process_directory(self, output_path, contents, directory_name, placeholders, created_paths, dry_run=False):
@@ -1154,7 +1138,7 @@ class ProjectBuilder:
         """
         # Skip invalid directory names
         if not directory_name or directory_name == '[]' or directory_name == 'name':
-            print(f"WARNING: Skipping directory with invalid name: {directory_name}")
+            # print(f"WARNING: Skipping directory with invalid name: {directory_name}")
             return
         
         # Convert to string if it's not already
@@ -1169,7 +1153,7 @@ class ProjectBuilder:
         directory_path = os.path.join(output_path, directory_name)
         
         # Create the directory if it doesn't exist
-        print(f"DEBUG: Creating directory from custom structure: {directory_path}")
+        # print(f"DEBUG: Creating directory from custom structure: {directory_path}")
         if not dry_run:
             os.makedirs(directory_path, exist_ok=True)
         
@@ -1204,21 +1188,17 @@ class ProjectBuilder:
             # Get the original name from the name field
             item_name = item.get('name')
             
-            print(f"🔍 DEBUG FILE RENAMING: Processing file item {item_name}")
-            print(f"🔍 DEBUG FILE RENAMING: Full item data: {item}")
-            print(f"🔍 DEBUG FILE RENAMING: Placeholders: {placeholders}")
-            
             # Normalize name if it's an array
             if isinstance(item_name, list):
                 if item_name and item_name[0]:
                     item_name = str(item_name[0])
                 else:
-                    print(f"WARNING: Skipping file with empty name array: {item}")
+                    # print(f"WARNING: Skipping file with empty name array: {item}")
                     return None
                 
             # Skip files with empty or placeholder names
             if not item_name or item_name == '[]' or item_name == 'name':
-                print(f"WARNING: Skipping file with empty/invalid name: {item}")
+                # print(f"WARNING: Skipping file with empty/invalid name: {item}")
                 return None
             
             # Initialize output_name with item_name as a fallback
@@ -1229,13 +1209,10 @@ class ProjectBuilder:
             rename_flag = item.get('rename_flag', False)
             uses_project_name = item.get('uses_project_name', False)
             
-            print(f"DEBUG: Processing file '{item_name}' with rename_flag={rename_flag}, uses_project_name={uses_project_name}")
-            
             # First check if the filename contains a placeholder
             if "${PROJECT_NAME}" in item_name:
                 # Apply placeholder replacement directly
                 output_name = self._replace_placeholders(item_name, placeholders)
-                print(f"Applied placeholder to filename: {item_name} -> {output_name}")
             elif rename_flag or uses_project_name:
                 # Get the project name
                 project_name = placeholders.get("PROJECT_NAME", "Unknown")
@@ -1250,26 +1227,13 @@ class ProjectBuilder:
                     # No extension, use project name directly
                     output_name = project_name
                 
-                print(f"Renamed file: {item_name} -> {output_name}")
-            else:
-                # For files not using project name, apply normal placeholder replacement
-                print(f"DEBUG: Applying normal placeholder replacement to: '{item_name}'")
-                output_name = self._replace_placeholders(item_name, placeholders) if placeholders else item_name
-                print(f"DEBUG: After placeholder replacement: '{output_name}'")
-                
                 # Handle special case for ${PROJECT_NAME} in the name (legacy support)
                 if "${PROJECT_NAME}" in output_name:
                     project_name = placeholders.get("PROJECT_NAME", "Unknown")
                     output_name = output_name.replace("${PROJECT_NAME}", project_name)
-                    print(f"DEBUG: After legacy placeholder replacement: '{output_name}'")
             
             # Get output file path
             file_path = os.path.join(parent_output_path, output_name)
-            
-            # Print final paths
-            print(f"🔍 DEBUG FILE RENAMING: Original name: {item_name}")
-            print(f"🔍 DEBUG FILE RENAMING: Output name: {output_name}")
-            print(f"🔍 DEBUG FILE RENAMING: Full output path: {file_path}")
             
             # Handle string items
             source_path = None
@@ -1278,13 +1242,10 @@ class ProjectBuilder:
             # Check if we have path or cached_path for the file
             if 'original_path' in item:
                 source_path = item['original_path']
-                print(f"🔍 DEBUG FILE RENAMING: Using original_path: {source_path}")
             elif 'path' in item:
                 source_path = item['path']
-                print(f"🔍 DEBUG FILE RENAMING: Using path: {source_path}")
             elif 'cached_path' in item:
                 source_path = item['cached_path']
-                print(f"🔍 DEBUG FILE RENAMING: Using cached_path: {source_path}")
                 
             # Skip if we're in dry run mode
             if dry_run:
@@ -1292,7 +1253,7 @@ class ProjectBuilder:
                 
             # If the file already exists, verify overwrite
             if os.path.exists(file_path) and not self._verify_overwrite(file_path):
-                print(f"WARNING: Not overwriting existing file: {file_path}")
+                # print(f"WARNING: Not overwriting existing file: {file_path}")
                 return None
                 
             # Create parent directory if needed
@@ -1308,16 +1269,17 @@ class ProjectBuilder:
                     try:
                         # Use shutil.copy2 to copy file with metadata
                         shutil.copy2(source_path, file_path)
-                        print(f"Copied binary file to {file_path}")
+                        # print(f"Copied binary file to {file_path}")
                         
                         # Log the renaming operation for debugging
                         if output_name != item_name:
-                            print(f"✅ Successfully renamed binary file: {item_name} -> {output_name}")
+                            # print(f"✅ Successfully renamed binary file: {item_name} -> {output_name}")
+                            pass
                             
                         return file_path
                     except Exception as e:
                         error_message = f"Failed to copy binary file {source_path} to {file_path}: {str(e)}"
-                        print(f"ERROR: {error_message}")
+                        # print(f"ERROR: {error_message}")
                         self._add_error(error_message)
                         return None
                 else:
@@ -1337,29 +1299,31 @@ class ProjectBuilder:
                             
                         # Log the renaming operation for debugging
                         if output_name != item_name:
-                            print(f"✅ Successfully renamed text file: {item_name} -> {output_name}")
+                            # print(f"✅ Successfully renamed text file: {item_name} -> {output_name}")
+                            pass
                             
-                        print(f"Created file with placeholders: {file_path}")
+                        # print(f"Created file with placeholders: {file_path}")
                         return file_path
                     except UnicodeDecodeError:
                         # If Unicode decoding fails, treat as binary and copy directly
                         try:
                             shutil.copy2(source_path, file_path)
-                            print(f"Copied file (binary after Unicode decode error) to {file_path}")
+                            # print(f"Copied file (binary after Unicode decode error) to {file_path}")
                             
                             # Log the renaming operation for debugging
                             if output_name != item_name:
-                                print(f"✅ Successfully renamed file after Unicode decode error: {item_name} -> {output_name}")
+                                # print(f"✅ Successfully renamed file after Unicode decode error: {item_name} -> {output_name}")
+                                pass
                                 
                             return file_path
                         except Exception as e:
                             error_message = f"Failed to copy file {source_path} to {file_path}: {str(e)}"
-                            print(f"ERROR: {error_message}")
+                            # print(f"ERROR: {error_message}")
                             self._add_error(error_message)
                             return None
                     except Exception as e:
                         error_message = f"Failed to process file {source_path} to {file_path}: {str(e)}"
-                        print(f"ERROR: {error_message}")
+                        # print(f"ERROR: {error_message}")
                         self._add_error(error_message)
                         return None
             elif 'content' in item or content:
@@ -1377,13 +1341,14 @@ class ProjectBuilder:
                         
                     # Log the renaming operation for debugging
                     if output_name != item_name:
-                        print(f"✅ Successfully renamed file with direct content: {item_name} -> {output_name}")
+                        # print(f"✅ Successfully renamed file with direct content: {item_name} -> {output_name}")
+                        pass
                         
-                    print(f"Created file with content: {file_path}")
+                    # print(f"Created file with content: {file_path}")
                     return file_path
                 except Exception as e:
                     error_message = f"Failed to write content to {file_path}: {str(e)}"
-                    print(f"ERROR: {error_message}")
+                    # print(f"ERROR: {error_message}")
                     self._add_error(error_message)
                     return None
             else:
@@ -1394,13 +1359,14 @@ class ProjectBuilder:
                         
                     # Log the renaming operation for debugging
                     if output_name != item_name:
-                        print(f"✅ Successfully renamed empty file: {item_name} -> {output_name}")
+                        # print(f"✅ Successfully renamed empty file: {item_name} -> {output_name}")
+                        pass
                         
-                    print(f"Created empty file: {file_path}")
+                    # print(f"Created empty file: {file_path}")
                     return file_path
                 except Exception as e:
                     error_message = f"Failed to create empty file {file_path}: {str(e)}"
-                    print(f"ERROR: {error_message}")
+                    # print(f"ERROR: {error_message}")
                     self._add_error(error_message)
                     return None
         elif isinstance(item, str):
@@ -1421,17 +1387,18 @@ class ProjectBuilder:
                     
                 # Log the renaming operation for debugging
                 if output_name != item:
-                    print(f"✅ Successfully renamed empty file: {item} -> {output_name}")
+                    # print(f"✅ Successfully renamed empty file: {item} -> {output_name}")
+                    pass
                     
-                print(f"Created empty file: {file_path}")
+                # print(f"Created empty file: {file_path}")
                 return file_path
             except Exception as e:
                 error_message = f"Failed to create empty file {file_path}: {str(e)}"
-                print(f"ERROR: {error_message}")
+                # print(f"ERROR: {error_message}")
                 self._add_error(error_message)
                 return None
         else:
-            print(f"WARNING: Unrecognized file item format: {item}")
+            # print(f"WARNING: Unrecognized file item format: {item}")
             return None
     
     def start_batch_creation(self, project_names, output_dir, template_file=None, project_type="Standard", 
@@ -1474,33 +1441,34 @@ class ProjectBuilder:
         results = []
         
         # Progress indicator for CLI usage
-        print(f"Starting batch processing of {len(self.project_queue)} projects...")
+        # print(f"Starting batch processing of {len(self.project_queue)} projects...")
         
         # Process all projects in the queue
         for i, (name, output_dir, template_file, project_type, 
                use_version_control, create_backup, structure_name, selected_template) in enumerate(self.project_queue):
             
             # Log progress
-            print(f"Creating project {i+1}/{len(self.project_queue)}: {name}")
+            # print(f"Creating project {i+1}/{len(self.project_queue)}: {name}")
             
             # Add debug info about the template being used
             if template_file == "gallery_template":
-                print(f"Using gallery template with structure: {structure_name}")
-                print(f"Project name: {name}, Output dir: {output_dir}")
+                # print(f"Using gallery template with structure: {structure_name}")
+                # print(f"Project name: {name}, Output dir: {output_dir}")
                 
                 # Special handling for gallery template - use the actual template name
                 # instead of the generic "gallery_template" string
                 if selected_template and isinstance(selected_template, dict) and 'name' in selected_template:
                     actual_template_name = selected_template['name']
-                    print(f"Using actual template name '{actual_template_name}' instead of 'gallery_template'")
+                    # print(f"Using actual template name '{actual_template_name}' instead of 'gallery_template'")
                     template_file = actual_template_name
             else:
-                print(f"Using template file: {template_file}")
+                # print(f"Using template file: {template_file}")
                 if template_file and not os.path.exists(template_file):
-                    print(f"Warning: Template file does not exist: {template_file}")
+                    # print(f"Warning: Template file does not exist: {template_file}")
+                    pass
             
             # Create project
-            print(f"Creating project: {name} in {output_dir}")
+            # print(f"Creating project: {name} in {output_dir}")
 
             # Run the create_project method
             success, result = self.create_project(
@@ -1517,7 +1485,7 @@ class ProjectBuilder:
         self.is_building = False
         self.project_queue = []
         
-        print("Batch processing completed.")
+        # print("Batch processing completed.")
         
         # Call callback with results - this will happen in the main thread
         if callback:
@@ -1572,7 +1540,7 @@ class ProjectBuilder:
             self._errors = []
             
         self._errors.append(error_message)
-        print(f"ERROR: {error_message}")
+        # print(f"ERROR: {error_message}")
 
     def _verify_overwrite(self, file_path):
         """
@@ -1607,7 +1575,7 @@ class ProjectBuilder:
         # Validate input
         if not isinstance(project_names, list):
             error_msg = "Project names must be provided as a list"
-            print(f"ERROR: {error_msg}")
+            # print(f"ERROR: {error_msg}")
             return {
                 "error": error_msg,
                 "successful_count": 0,
@@ -1618,7 +1586,7 @@ class ProjectBuilder:
         # Ensure output directory is provided
         if not output_dir:
             error_msg = "Output directory must be provided for batch creation"
-            print(f"ERROR: {error_msg}")
+            # print(f"ERROR: {error_msg}")
             return {
                 "error": error_msg,
                 "successful_count": 0,
@@ -1633,7 +1601,8 @@ class ProjectBuilder:
                 from app.utils.security_bookmarks import BookmarkAccessContext
                 use_bookmark = True
             except ImportError:
-                print("WARNING: Could not import security_bookmarks module for batch operation.")
+                # print("WARNING: Could not import security_bookmarks module for batch operation.")
+                pass
         
         # Process batch using security-scoped bookmark if on macOS
         if use_bookmark:
@@ -1644,9 +1613,9 @@ class ProjectBuilder:
                         use_cached_files, template_data
                     )
             except Exception as e:
-                print(f"ERROR: Failed to access directory with security bookmark for batch: {e}")
+                # print(f"ERROR: Failed to access directory with security bookmark for batch: {e}")
                 # Try without bookmark as fallback
-                print("Falling back to standard directory access for batch...")
+                # print("Falling back to standard directory access for batch...")
                 return self._batch_create_projects_internal(
                     project_names, template_name, structure_name, output_dir,
                     use_cached_files, template_data
@@ -1665,7 +1634,7 @@ class ProjectBuilder:
             os.makedirs(output_dir, exist_ok=True)
         except Exception as e:
             error_msg = f"Failed to create output directory: {e}"
-            print(f"ERROR: {error_msg}")
+            # print(f"ERROR: {error_msg}")
             return {
                 "error": error_msg,
                 "successful_count": 0,
@@ -1687,7 +1656,7 @@ class ProjectBuilder:
         
         # Process each project name
         for project_name in project_names:
-            print(f"Creating project: {project_name} in {output_dir}")
+            # print(f"Creating project: {project_name} in {output_dir}")
             
             # Create project directory
             project_dir = os.path.join(output_dir, project_name)
@@ -1723,7 +1692,7 @@ class ProjectBuilder:
                     results["results"].append((project_name, False, result))
                     
             except Exception as e:
-                print(f"ERROR creating project {project_name}: {e}")
+                # print(f"ERROR creating project {project_name}: {e}")
                 import traceback
                 traceback.print_exc()
                 results["results"].append((project_name, False, str(e)))
@@ -1760,13 +1729,14 @@ class ProjectBuilder:
         if hasattr(self, 'template_manager') and hasattr(self.template_manager, 'file_cache_manager'):
              cache_manager = self.template_manager.file_cache_manager
         else:
-            print("WARNING: ProjectBuilder cannot access FileCacheManager via template_manager.")
+            # print("WARNING: ProjectBuilder cannot access FileCacheManager via template_manager.")
+            pass
 
         if not files_array:
             return True, copied_files
 
-        print(f"Processing {len(files_array)} files from files array for template: {template_name}")
-        print(f"Current platform: {platform.system()}")
+        # print(f"Processing {len(files_array)} files from files array for template: {template_name}")
+        # print(f"Current platform: {platform.system()}")
 
         for file_index, file_data in enumerate(files_array):
             source_path_used = "None" # Debugging
@@ -1787,7 +1757,7 @@ class ProjectBuilder:
 
                 if not file_name:
                     error_msg = f"WARNING: File data missing file_name in index {file_index}: {file_data}"
-                    print(error_msg)
+                    # print(error_msg)
                     error_messages.append(error_msg)
                     continue
                 
@@ -1797,7 +1767,7 @@ class ProjectBuilder:
                 if "${PROJECT_NAME}" in file_name:
                     # Apply placeholder replacement directly
                     file_name = self._replace_placeholders(file_name, placeholders)
-                    print(f"Applied placeholder to filename: {original_filename_for_debug} -> {file_name}")
+                    # print(f"Applied placeholder to filename: {original_filename_for_debug} -> {file_name}")
                 # Apply placeholders to file name if either flag is set
                 elif rename_flag or uses_project_name:
                     project_name = placeholders.get("PROJECT_NAME", "Unknown")
@@ -1807,7 +1777,7 @@ class ProjectBuilder:
                         file_name = f"{project_name}{ext}"
                     else:
                         file_name = project_name
-                    print(f"Renamed file: {original_filename_for_debug} -> {file_name}")
+                    # print(f"Renamed file: {original_filename_for_debug} -> {file_name}")
 
                 # Apply placeholders to folder path
                 folder = self._replace_placeholders(folder, placeholders)
@@ -1816,20 +1786,20 @@ class ProjectBuilder:
                 folder_path = os.path.join(project_dir, folder)
                 os.makedirs(folder_path, exist_ok=True)
                 
-                print(f"Created folder path: {folder_path}")
+                # print(f"Created folder path: {folder_path}")
 
                 # Determine destination path
                 dest_path = os.path.join(folder_path, file_name)
 
                 # --- IMPROVED SOURCE PATH DETERMINATION LOGIC ---
-                print(f"DEBUG: Determining source path for: {original_filename_for_debug} (output: {file_name})")
+                # print(f"DEBUG: Determining source path for: {original_filename_for_debug} (output: {file_name})")
 
                 # 1. PRIORITY 1: Check cached_path directly from file_data
                 if cached_path and os.path.exists(cached_path):
                     source_path = cached_path
                     source_path_used = "Direct Cache"
                     cached_path_attempted = cached_path
-                    print(f"  ✅ Using DIRECT CACHE file: {source_path}")
+                    # print(f"  ✅ Using DIRECT CACHE file: {source_path}")
                     if cache_manager and hasattr(cache_manager, 'cache_stats'): 
                         cache_manager.cache_stats['hits'] += 1
                 
@@ -1847,13 +1817,14 @@ class ProjectBuilder:
                         if lookup_cached_path and os.path.exists(lookup_cached_path):
                             source_path = lookup_cached_path
                             source_path_used = "Cache Lookup"
-                            print(f"  ✅ Using CACHE LOOKUP file: {source_path}")
+                            # print(f"  ✅ Using CACHE LOOKUP file: {source_path}")
                             if hasattr(cache_manager, 'cache_stats'): 
                                 cache_manager.cache_stats['hits'] += 1
                         elif lookup_cached_path:
-                            print(f"  ⚠️ Cache path found via lookup ({lookup_cached_path}) but file does not exist.")
+                            # print(f"  ⚠️ Cache path found via lookup ({lookup_cached_path}) but file does not exist.")
+                            pass
                     except Exception as cache_err:
-                        print(f"  ⚠️ Error looking up file in cache: {cache_err}")
+                        # print(f"  ⚠️ Error looking up file in cache: {cache_err}")
                         cached_path_attempted = f"Error: {cache_err}" # Store error for logging
 
                 # 3. PRIORITY 3: Fall back to original path
@@ -1862,23 +1833,25 @@ class ProjectBuilder:
                     if os.path.exists(original_path):
                         source_path = original_path
                         source_path_used = "Original"
-                        print(f"  ✅ Using ORIGINAL file: {source_path}")
+                        # print(f"  ✅ Using ORIGINAL file: {source_path}")
                         if cache_manager and hasattr(cache_manager, 'cache_stats'): 
                             cache_manager.cache_stats['misses'] += 1
                     else:
-                        print(f"  ⚠️ Original path ({original_path}) does not exist.")
+                        # print(f"  ⚠️ Original path ({original_path}) does not exist.")
+                        pass
                         
                         # Check if path might be using wrong separators
                         alt_path = original_path.replace('\\', '/') if '\\' in original_path else original_path.replace('/', '\\')
                         if os.path.exists(alt_path):
                             source_path = alt_path
                             source_path_used = "Original (Alt Separator)"
-                            print(f"  ✅ Using ALTERNATIVE SEPARATOR path: {source_path}")
+                            # print(f"  ✅ Using ALTERNATIVE SEPARATOR path: {source_path}")
                             if cache_manager and hasattr(cache_manager, 'cache_stats'): 
                                 cache_manager.cache_stats['misses'] += 1
                 
                 elif not source_path and not original_path:
-                    print(f"  ℹ️ Original path was not provided in template data.")
+                    # print(f"  ℹ️ Original path was not provided in template data.")
+                    pass
                     
                 # 4. PRIORITY 4: Special handling for imported files
                 if not source_path and original_path and "Imported from:" in str(original_path) and cached_path:
@@ -1886,28 +1859,29 @@ class ProjectBuilder:
                     if os.path.exists(cached_path):
                         source_path = cached_path
                         source_path_used = "Import Cache"
-                        print(f"  ✅ Using IMPORT CACHE file for imported file: {source_path}")
+                        # print(f"  ✅ Using IMPORT CACHE file for imported file: {source_path}")
                         if cache_manager and hasattr(cache_manager, 'cache_stats'): 
                             cache_manager.cache_stats['hits'] += 1
                     else:
-                        print(f"  ⚠️ Import cache path ({cached_path}) does not exist.")
+                        # print(f"  ⚠️ Import cache path ({cached_path}) does not exist.")
+                        pass
 
                 # Final check - Skip if no valid source path found
                 if not source_path:
                     error_msg = f"  ❌ ERROR: No valid source path found for file '{original_filename_for_debug}'."
-                    print(error_msg)
+                    # print(error_msg)
                     print(f"      Attempted Cache Path: {cached_path_attempted}")
                     print(f"      Attempted Original Path: {original_path_attempted}")
                     error_messages.append(error_msg)
                     continue
 
                 # Copy the file
-                print(f"  ⚙️ Attempting copy: '{source_path}' ({source_path_used}) -> '{dest_path}'")
+                # print(f"  ⚙️ Attempting copy: '{source_path}' ({source_path_used}) -> '{dest_path}'")
                 try:
                     # Verify that the source file exists before copying
                     if not os.path.exists(source_path):
                         error_msg = f"  ❌ ERROR: Source file does not exist: {source_path}"
-                        print(error_msg)
+                        # print(error_msg)
                         error_messages.append(error_msg)
                         continue
                     

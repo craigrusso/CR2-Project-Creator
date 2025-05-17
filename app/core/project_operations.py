@@ -51,56 +51,40 @@ def template_has_structure(template):
 
 def create_project(app, project_name, output_directory=None):
     """Create a new project with the given name"""
-    print("\n=== PROJECT CREATION DEBUG ===")
-    print(f"🔍 Creating project: '{project_name}'")
-    print(f"🔍 Selected template: {app.selected_template}")
-    print(f"🔍 Template file path: {app.template_file_path}")
-    print(f"🔍 Structure name: {app.structure_name if hasattr(app, 'structure_name') else 'None'}")
-    
     # Validate project name
     if not project_name:
         error_msg = "Please enter a project name"
         app.show_status_message(error_msg)
-        print(f"❌ Error: {error_msg}")
-        print("=== END PROJECT CREATION DEBUG ===\n")
         return False
         
     # Validate template selection
     if not app.selected_template:
         error_msg = "Please select a template"
         app.show_status_message(error_msg)
-        print(f"❌ Error: {error_msg}")
-        print("=== END PROJECT CREATION DEBUG ===\n")
         return False
     
     # Check if the template has a structure and prevent project creation if not
     if not template_has_structure(app.selected_template):
         error_msg = "This template has no folder structure defined. Projects require a folder structure to be created."
         app.show_status_message(error_msg, message_type="error")
-        print("❌ Project creation prevented due to missing structure")
-        print("=== END PROJECT CREATION DEBUG ===\n")
         return False
             
     # Get output directory from UI if not provided
     if not output_directory:
         output_directory = app.output_directory_input.text()
-        print(f"🔍 Using output directory from UI: {output_directory}")
     
     # Save output directory in config
     app.config.set('output_directory', output_directory)
     app.config.save()
-    print("✓ Saved output directory to config")
     
     # Create project directory
     project_path = os.path.join(output_directory, project_name)
     try:
         os.makedirs(project_path, exist_ok=True)
-        print(f"✓ Created project directory: {project_path}")
     except Exception as e:
         error_msg = f"Failed to create project directory: {str(e)}"
         app.show_status_message(error_msg)
-        print(f"❌ Error: {error_msg}")
-        print("=== END PROJECT CREATION DEBUG ===\n")
+        print(f"ERROR: {error_msg}")
         return False
     
     # Get structure name
@@ -109,32 +93,21 @@ def create_project(app, project_name, output_directory=None):
     else:
         structure_name = app.structure_var.get() if hasattr(app, 'structure_var') else "Default"
     
-    print(f"Structure name: {structure_name}")
-    
     # If the selected template has a structure_name, use that instead
     if isinstance(app.selected_template, dict) and 'structure_name' in app.selected_template:
         structure_name = app.selected_template['structure_name']
-        print(f"Using template's structure_name: {structure_name}")
     
     if structure_name == "Default":
         structure_name = None
     
     # Use the selected template
     template_path = app.selected_template.get('path') if isinstance(app.selected_template, dict) and 'path' in app.selected_template else None
-    print(f"Template path: {template_path}")
     
     # For compatibility, set template_file_path to the selected template's path
     app.template_file_path = template_path
     
-    # Add to recent templates if successful
     if template_path:
         add_to_recent_templates(app, template_path)
-    
-    print("\nCreating project with:")
-    print(f"- Project name: {project_name}")
-    print(f"- Output directory: {output_directory}")
-    print(f"- Template path: {template_path}")
-    print(f"- Structure name: {structure_name}")
     
     # Create the project using the selected output directory
     result, project_path_or_info = app.project_builder.create_project(
@@ -157,7 +130,6 @@ def create_project(app, project_name, output_directory=None):
         # Show success message
         success_message = f"Project '{project_name}' created successfully at\n{project_path}"
         QMessageBox.information(app, "Success", success_message)
-        print(f"✓ Success: {success_message}")
         
         # Add to recent projects
         add_to_recent_projects(app, project_name, project_path)
@@ -175,10 +147,9 @@ def create_project(app, project_name, output_directory=None):
         # Error case
         error_message = f"Failed to create project '{project_name}': {project_path_or_info}"
         QMessageBox.critical(app, "Error", error_message)
-        print(f"❌ Error: {error_message}")
+        print(f"ERROR: {error_message}")
         app.show_status_message(f"Error creating project: {project_path_or_info}", message_type="error")
     
-    print("=== END PROJECT CREATION DEBUG ===\n")
     return result
 
 
@@ -196,19 +167,12 @@ def handle_batch_create(app, project_names_text):
     # Parse project names (one per line)
     project_names = [name.strip() for name in project_names_text.split('\n') if name.strip()]
     
-    print("====== BATCH CREATE DEBUG INFO ======")
-    print(f"Project names: {project_names}")
-    print(f"Has app.template_file_path: {hasattr(app, 'template_file_path') and bool(app.template_file_path)}")
     has_selected_template = hasattr(app, 'selected_template') and bool(app.selected_template)
-    print(f"Has app.selected_template: {has_selected_template}")
     
     if has_selected_template:
-        print(f"  Value: {app.selected_template}")
-        print(f"  Template name: {app.selected_template.get('name')}")
+        pass
     
     has_template_gallery = hasattr(app, 'template_gallery') and bool(app.template_gallery)
-    print(f"Has template_gallery: {has_template_gallery}")
-    print("======================================")
     
     # Get the selected template
     template_name = None
@@ -221,16 +185,14 @@ def handle_batch_create(app, project_names_text):
             with open(template_path, 'r') as f:
                 template_data = json.load(f)
             template_name = template_data.get('name', os.path.basename(template_path))
-            print(f"Using template from file: {template_path}")
         except Exception as e:
-            print(f"Error loading template file: {e}")
+            print(f"ERROR loading template file: {e}")
             return {"error": f"Error loading template file: {e}"}
     
     elif hasattr(app, 'selected_template') and app.selected_template:
         # Using a template from the gallery
         template_data = app.selected_template
         template_name = template_data.get('name')
-        print(f"Using template from app.selected_template: {template_data}")
     
     elif hasattr(app, 'template_gallery') and app.template_gallery:
         # Try to get selected template from the gallery
@@ -239,17 +201,15 @@ def handle_batch_create(app, project_names_text):
             if template_info:
                 template_name = template_info.get('name')
                 template_data = template_info
-                print(f"Using template from gallery: {template_name}")
     
     if not template_name:
-        print("No template selected!")
+        print("ERROR: No template selected!")
         return {"error": "No template selected. Please select a template first."}
 
     # Check if the template has a structure
     if not template_has_structure(template_data):
         error_msg = "This template has no folder structure defined. Projects require a folder structure to be created."
         app.show_status_message(error_msg, message_type="error")
-        print("❌ Batch creation prevented due to missing structure")
         return {"error": "Template has no structure defined", "successful_count": 0, "total_count": len(project_names)}
     
     print(f"Using gallery template without file path: {template_name}")
@@ -269,10 +229,8 @@ def handle_batch_create(app, project_names_text):
     # If no output directory is available, always prompt the user to select one
     if not output_dir:
         # User needs to select an output directory
-        print("DEBUG: No output directory found, prompting user to select one")
         if hasattr(app, 'get_output_dir') and callable(app.get_output_dir):
             output_dir = app.get_output_dir()
-            print(f"DEBUG: Output directory from get_output_dir prompt: {output_dir}")
             
             # If user cancelled the selection, abort the operation
             if not output_dir:
@@ -285,9 +243,7 @@ def handle_batch_create(app, project_names_text):
             return {"error": error_msg, "successful_count": 0, "total_count": 0}
     
     # Create debug output
-    print(f"Using actual template name: {template_name}")
     structure_name = f"Template_{template_name}" if template_name else None
-    print(f"Starting batch creation. Template: {template_name}, Structure: {structure_name}, Output: {output_dir}")
     
     # Execute the batch creation 
     try:

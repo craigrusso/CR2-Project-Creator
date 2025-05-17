@@ -60,11 +60,9 @@ class UpdateWorker(QObject):
 
     def run_check(self):
         if self._is_running:
-            print("DEBUG: Update check already running.")
             return
             
         self._is_running = True
-        print(f"DEBUG: Starting update check worker (force={self.force_check})")
         update_info = None
         error_msg_out = ""
         update_found_flag = False
@@ -75,12 +73,10 @@ class UpdateWorker(QObject):
 
             if isinstance(update_info, dict):
                 # Update was found successfully
-                print(f"DEBUG: Update found by worker: {update_info.get('versionNumber')}")
                 self.update_found.emit(update_info) # Emit data first
                 update_found_flag = True
             elif update_info is None:
                 # No update found or check skipped, no error
-                print("DEBUG: No update found or check skipped by worker.")
                 update_found_flag = False
             # else: Optional handling if _check_for_updates_logic returns specific error codes/strings
                 
@@ -98,7 +94,7 @@ class UpdateWorker(QObject):
             self.check_complete.emit(update_found_flag, error_msg_out)
             self._is_running = False
             self.finished.emit() # Signal thread can be cleaned up
-            print("DEBUG: Update check worker finished.")
+
 # ---------------------------------------
 
 class ProjectCreatorApp(QMainWindow):
@@ -122,7 +118,6 @@ class ProjectCreatorApp(QMainWindow):
         """Get the singleton instance of the app"""
         # Return existing instance or create a new one if needed
         if cls._instance is None:
-            print("Creating new ProjectCreatorApp instance")
             cls._instance = cls()
         return cls._instance
     
@@ -139,7 +134,6 @@ class ProjectCreatorApp(QMainWindow):
                                "app", "assets", "icon.png")
             if os.path.exists(icon_path):
                 cls._app_icon = QIcon(icon_path)
-                print(f"DEBUG: Loaded application icon from {icon_path}")
             else:
                 print(f"WARNING: Application icon not found at {icon_path}")
                 cls._app_icon = QIcon()  # Empty icon to avoid None checks
@@ -154,7 +148,7 @@ class ProjectCreatorApp(QMainWindow):
         self._orig_cardframe_init = CardFrame.__init__
         
         def debug_cardframe_init(self, *args, **kwargs):
-            print(f"Creating CardFrame with ID: {id(self)}")
+            # print(f"Creating CardFrame with ID: {id(self)}") # DEBUG
             self._orig_cardframe_init(*args, **kwargs)
         
         # Temporarily uncomment this to debug CardFrame issues
@@ -609,7 +603,6 @@ class ProjectCreatorApp(QMainWindow):
                             try:
                                 if not os.path.exists(output_dir):
                                     os.makedirs(output_dir, exist_ok=True)
-                                    print(f"Created output directory: {output_dir}")
                             except Exception as e:
                                 print(f"Warning: Could not create output directory: {e}")
                     except ImportError:
@@ -618,7 +611,6 @@ class ProjectCreatorApp(QMainWindow):
                         try:
                             if not os.path.exists(output_dir):
                                 os.makedirs(output_dir, exist_ok=True)
-                                print(f"Created output directory: {output_dir}")
                         except Exception as e:
                             print(f"Warning: Could not create output directory: {e}")
                 else:
@@ -626,43 +618,27 @@ class ProjectCreatorApp(QMainWindow):
                     try:
                         if not os.path.exists(output_dir):
                             os.makedirs(output_dir, exist_ok=True)
-                            print(f"Created output directory: {output_dir}")
                     except Exception as e:
                         print(f"Warning: Could not create output directory: {e}")
                 
-                print(f"Using output directory from UI: {output_dir}")
                 return output_dir
         
         # If no explicit directory and fallbacks are disabled, return None
         if not use_fallbacks:
-            print("No output directory explicitly set, and fallbacks disabled")
             return None
             
         # If fallbacks enabled, try using last directory from config
         if hasattr(self, 'config') and 'last_output_dir' in self.config:
             output_dir = self.config['last_output_dir']
             if output_dir and os.path.exists(output_dir):
-                # Try to access with security-scoped bookmark on macOS
-                if platform.system() == "Darwin":
-                    try:
-                        from app.utils.security_bookmarks import access_bookmark
-                        # Just test if we can access it
-                        access_bookmark(output_dir)
-                    except (ImportError, Exception) as e:
-                        if isinstance(e, Exception):
-                            print(f"Warning: Could not access bookmark for {output_dir}: {e}")
-                
-                print(f"Using output directory from config: {output_dir}")
                 return output_dir
                 
         # Fall back to default paths if available
         if hasattr(self, 'default_output_path') and self.default_output_path:
-            print(f"Using default output path: {self.default_output_path}")
             return self.default_output_path
             
         # Last resort - use desktop
         desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
-        print(f"Fallback to desktop directory: {desktop_path}")
         return desktop_path
         
     def update_recent_menu(self):
@@ -808,11 +784,12 @@ class ProjectCreatorApp(QMainWindow):
         msg_box.exec_()
 
         if msg_box.clickedButton() == download_button:
-            print(f"DEBUG: Opening download URL: {download_url}")
+            # print(f"DEBUG: Opening download URL: {download_url}")
             # Use the fallback for now as API URL format isn't confirmed usable
             QDesktopServices.openUrl(QUrl("https://www.cr2creative.com/downloads.html")) 
         else:
-            print("DEBUG: User chose 'Later' for update.")
+            # print("DEBUG: User chose 'Later' for update.")
+            pass # User chose later
             
     def handle_check_error(self, error_message):
         """Handles errors during the update check (Called by handle_check_complete)."""
@@ -822,7 +799,7 @@ class ProjectCreatorApp(QMainWindow):
 
     def handle_check_complete(self, update_was_found, error_message, triggered_manually):
         """Handles the completion of the update check worker."""
-        print(f"DEBUG: Handling check complete. Update Found: {update_was_found}, Error: '{error_message}', Manual: {triggered_manually}")
+        # print(f"DEBUG: Handling check complete. Update Found: {update_was_found}, Error: '{error_message}', Manual: {triggered_manually}")
         if error_message:
             # An error occurred during the check
             self.handle_check_error(error_message)
@@ -835,7 +812,8 @@ class ProjectCreatorApp(QMainWindow):
                 QMessageBox.information(self, "Up to Date", f"You are using the latest version of Echelon ({current_version_str}).")
             else:
                 # Log for automatic checks, but don't show popup
-                print("DEBUG: Automatic check completed, no update found.")
+                # print("DEBUG: Automatic check completed, no update found.")
+                pass # No action needed for automatic check with no update
         # If update_was_found is True, handle_update_available was already called by its dedicated signal.
 
     def _check_for_updates_logic(self, force_check=False):
@@ -844,16 +822,16 @@ class ProjectCreatorApp(QMainWindow):
         Returns the version info dictionary if an update is found, None otherwise.
         Handles internal errors and logs them.
         """
-        print("DEBUG: Running update check logic...")
+        # print("DEBUG: Running update check logic...")
         settings = QSettings()
         last_check_timestamp = settings.value("update_check/last_checked_timestamp", 0, type=float)
         current_timestamp = time.time()
 
         if not force_check and (current_timestamp - last_check_timestamp < UPDATE_CHECK_INTERVAL_SECONDS):
-            print(f"DEBUG: Update check skipped. Last checked {int((current_timestamp - last_check_timestamp)/60)} mins ago. Interval: {int(UPDATE_CHECK_INTERVAL_SECONDS/60)} mins.")
+            # print(f"DEBUG: Update check skipped. Last checked {int((current_timestamp - last_check_timestamp)/60)} mins ago. Interval: {int(UPDATE_CHECK_INTERVAL_SECONDS/60)} mins.")
             return None # Indicate check skipped/no update
 
-        print("DEBUG: Proceeding with API check for updates.")
+        # print("DEBUG: Proceeding with API check for updates.")
         config = load_config() # Reload config in case it changed
         api_url = config.get("api_urls", {}).get("get_public_downloads")
         
@@ -872,7 +850,7 @@ class ProjectCreatorApp(QMainWindow):
             latest_version_info = get_latest_version_info(api_url)
             # --- Update timestamp ONLY after successful API attempt ---
             settings.setValue("update_check/last_checked_timestamp", current_timestamp)
-            print(f"DEBUG: Updated last update check timestamp to {current_timestamp}")
+            # print(f"DEBUG: Updated last update check timestamp to {current_timestamp}")
         except Exception as e:
              # Catch potential errors within get_latest_version_info itself if it raises them
              # (Though the current implementation catches internally and returns None)
@@ -889,31 +867,31 @@ class ProjectCreatorApp(QMainWindow):
                  return None # Treat as error/no update
                  
             try:
-                print(f"DEBUG: Comparing versions - Current: {current_app_version}, Latest: {latest_version_str}")
+                # print(f"DEBUG: Comparing versions - Current: {current_app_version}, Latest: {latest_version_str}")
                 
                 # Parse versions for comparison
                 current_parsed = parse_version(current_app_version)
                 latest_parsed = parse_version(latest_version_str)
                 
-                print(f"DEBUG: Parsed versions - Current: {current_parsed}, Latest: {latest_parsed}")
+                # print(f"DEBUG: Parsed versions - Current: {current_parsed}, Latest: {latest_parsed}")
                 
                 if latest_parsed > current_parsed:
-                    print(f"INFO: Update found! Current: {current_app_version}, Latest: {latest_version_str}")
+                    # print(f"INFO: Update found! Current: {current_app_version}, Latest: {latest_version_str}")
                     return latest_version_info # Return the full dict
                 else:
-                    print(f"DEBUG: Current version {current_app_version} is up-to-date or newer than latest found ({latest_version_str}).")
+                    # print(f"DEBUG: Current version {current_app_version} is up-to-date or newer than latest found ({latest_version_str}).")
                     return None # Indicate no update needed
             except Exception as e:
                 print(f"ERROR: Could not compare versions ('{latest_version_str}' vs '{current_app_version}'): {e}")
                 return None # Treat as error/no update
         else:
             # Handle None case (API error, network error, no matching platform version, etc.)
-            print("DEBUG: No latest version info received from update check (could be error or no update).")
+            # print("DEBUG: No latest version info received from update check (could be error or no update).")
             return None # Indicate no update found or error during fetch
 
     def _initial_update_check(self):
         """Runs the update check shortly after startup in a background thread."""
-        print("DEBUG: Scheduling initial update check.")
+        # print("DEBUG: Scheduling initial update check.")
         # Delay check slightly to avoid blocking UI startup
         # QTimer.singleShot(5000, lambda: self._check_for_updates_logic(force_check=False)) # Old timer logic
         
@@ -936,7 +914,7 @@ class ProjectCreatorApp(QMainWindow):
     def check_for_updates(self, triggered_manually=False):
         """Check for application updates, typically triggered manually."""
         if not triggered_manually:
-             print("DEBUG: check_for_updates called without manual trigger flag, ignoring.")
+             # print("DEBUG: check_for_updates called without manual trigger flag, ignoring.")
              return # Avoid accidental calls
              
         self.show_status_message("Checking for updates...", "info", 3000) # Show brief status

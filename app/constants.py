@@ -18,12 +18,10 @@ def get_resource_path(relative_path):
         if hasattr(sys, '_MEIPASS'):
             # PyInstaller environment
             base_path = sys._MEIPASS
-            print(f"DEBUG: Frozen Mode (PyInstaller) - Using base_path: {base_path}")
         else:
             # Assume py2app environment
             # The executable is in Contents/MacOS, resources are in Contents/Resources
             base_path = os.path.abspath(os.path.join(os.path.dirname(sys.executable), "..", "Resources"))
-            print(f"DEBUG: Frozen Mode (py2app) - Using base_path: {base_path}")
             
         final_path = os.path.join(base_path, relative_path)
 
@@ -33,10 +31,6 @@ def get_resource_path(relative_path):
         base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
         # Join the project root directly with the relative path provided
         final_path = os.path.join(base_path, relative_path)
-        print(f"DEBUG: Development Mode - Using base_path: {base_path}")
-
-    # Debug print for the determined path
-    print(f"DEBUG get_resource_path: relative='{relative_path}', final='{final_path}'")
 
     # Check if the final path exists, provide warning if not
     if not os.path.exists(final_path):

@@ -18,9 +18,6 @@ from app.ui.structure_editor_functions import show_enhanced_structure_editor
 
 def preview_structure(app, structure):
     """Show a preview of the project structure"""
-    print("PREVIEW_STRUCTURE FUNCTION CALLED WITH:")
-    print(json.dumps(structure, indent=2))
-    
     dialog = QDialog(app)
     dialog.setWindowTitle("Structure Preview")
     dialog.resize(500, 400)
@@ -160,7 +157,6 @@ def preview_structure(app, structure):
     
     # Helper function to add items recursively
     def add_items(parent_item, items):
-        print(f"Adding items to {parent_item.text(0)}: {items}")
         for item in items:
             if isinstance(item, dict):
                 # It's a directory (either with children or empty)
@@ -253,7 +249,7 @@ def preview_structure(app, structure):
 
 def edit_template_structure(parent, template, structure_tab):
     """Open enhanced structure editor for the template"""
-    print("DEBUG: edit_template_structure called")
+    # print("DEBUG: edit_template_structure called")
     
     # Extract the template name from the template
     template_name = template.get('name', '')
@@ -265,7 +261,7 @@ def edit_template_structure(parent, template, structure_tab):
     if not structure_name and template_name:
         structure_name = f"Template_{template_name}"
     
-    print(f"DEBUG: edit_template_structure - template_name={template_name}, structure_name={structure_name}")
+    # print(f"DEBUG: edit_template_structure - template_name={template_name}, structure_name={structure_name}")
     
     # Import needed modules
     from app.ui.structure_editor_functions import show_enhanced_structure_editor
@@ -301,23 +297,23 @@ def edit_template_structure(parent, template, structure_tab):
     # Create a callback function to update the template
     def structure_edited_callback(result):
         """Callback for when structure is updated in the editor"""
-        print(f"DEBUG: Structure editor callback received result: {result}")
+        # print(f"DEBUG: Structure editor callback received result: {result}")
         
         if not result:
-            print("DEBUG: Structure editor was cancelled")
+            # print("DEBUG: Structure editor was cancelled")
             return
         
         success, updated_structure, updated_structure_name = result
         
         if not success:
-            print("DEBUG: Structure edit was not successful")
+            # print("DEBUG: Structure edit was not successful")
             return
         
         # Update template with new structure
         template['structure'] = updated_structure
         template['structure_name'] = updated_structure_name
         
-        print(f"DEBUG: Updated template with new structure. Name: {updated_structure_name}")
+        # print(f"DEBUG: Updated template with new structure. Name: {updated_structure_name}")
         
         # Update the structure tree if available
         if tree and hasattr(template, '_root_item'):
@@ -327,7 +323,7 @@ def edit_template_structure(parent, template, structure_tab):
                 root_item.removeChild(root_item.child(i))
             # Add new items
             populate_structure_tree(root_item, updated_structure)
-            print("DEBUG: Updated structure tree view")
+            # print("DEBUG: Updated structure tree view")
     
     # Set focus_name_field if this is a new template
     focus_name_field = template_name == ''
@@ -344,7 +340,7 @@ def edit_template_structure(parent, template, structure_tab):
         callback=structure_edited_callback
     )
     
-    print("DEBUG: Structure editor opened successfully")
+    # print("DEBUG: Structure editor opened successfully")
 
 def populate_structure_tree(parent_item, structure_items):
     """Populate a QTreeWidget with structure items"""
