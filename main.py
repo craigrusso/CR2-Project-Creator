@@ -6,6 +6,7 @@ import sys
 import os
 import shutil # Ensure shutil is imported
 import json
+import logging
 
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import Qt, QCoreApplication, QSettings, QTimer
@@ -22,11 +23,17 @@ from app.utils.security.license_manager import LicenseManager, TrialNagDialog
 from PyQt5.QtWidgets import QDialog
 
 # Import the EULA Dialog
-from app.dialogs.eula_dialog import EulaDialog
+from app.dialogs.eula_dialog import EULADialog
 
 # Import for deploying example templates
 from app.core.config_manager import get_templates_path, get_settings_path
 from app.utils.utils import load_json_file, save_json_file
+
+# Import our new logging system
+from app.utils.logging_utils import (
+    initialize_logging, debug, info, warning, error, critical, 
+    exception, detect_and_set_environment, set_production_mode, set_log_level, enable_console_logging, enable_file_logging
+)
 
 # This is the PyQt version of the application
 UI_FRAMEWORK = 'pyqt'
@@ -56,14 +63,14 @@ def deploy_example_templates():
                     source_templates_base_dir = path_attempt
                     break
             if source_templates_base_dir is None:
-                 print(f"ERROR: Bundled example templates source directory not found in PyInstaller bundle. Tried: {possible_source_paths}")
+                 error(f"Bundled example templates source directory not found in PyInstaller bundle. Tried: {possible_source_paths}")
                  return
         else:
             project_root = os.path.dirname(os.path.abspath(__file__))
             source_templates_base_dir = os.path.join(project_root, "app", "assets", bundled_examples_dir_name)
 
         if not os.path.isdir(source_templates_base_dir):
-            print(f"WARNING: Bundled example templates source directory not found at: {source_templates_base_dir}")
+            debug(f"Bundled example templates source directory not found at: {source_templates_base_dir}")
             return
 
         # Create the base user templates directory if it doesn't exist
@@ -71,7 +78,7 @@ def deploy_example_templates():
             try:
                 os.makedirs(base_user_templates_path)
             except OSError as e:
-                print(f"ERROR: Could not create base user templates directory: {base_user_templates_path} - {e}")
+                error(f"Could not create base user templates directory: {base_user_templates_path} - {e}")
                 return
         
         # Create the "Examples" subdirectory if it doesn't exist
@@ -79,7 +86,7 @@ def deploy_example_templates():
             try:
                 os.makedirs(user_examples_subdirectory_path)
             except OSError as e:
-                print(f"ERROR: Could not create user examples subdirectory: {user_examples_subdirectory_path} - {e}")
+                error(f"Could not create user examples subdirectory: {user_examples_subdirectory_path} - {e}")
                 return
 
         example_template_files = [
@@ -99,7 +106,7 @@ def deploy_example_templates():
             destination_file_path = os.path.join(user_examples_subdirectory_path, template_file_name) 
 
             if not os.path.exists(source_file_path):
-                print(f"ERROR: Source example template file not found: {source_file_path}")
+                error(f"Source example template file not found: {source_file_path}")
                 continue
 
             template_ui_name = None
@@ -110,9 +117,10 @@ def deploy_example_templates():
                     if isinstance(template_content, dict) and "name" in template_content:
                         template_ui_name = template_content["name"]
                     else:
-                        print(f"WARNING: Could not find 'name' key in {source_file_path}. This template may not be correctly listed in the 'Examples' folder.")
+                        debug(f"Could not find 'name' key in {source_file_path}. This template may not be correctly listed in the 'Examples' folder.")
+                        pass
             except Exception as e_read_name:
-                print(f"ERROR: Could not read UI name from source template {source_file_path}: {e_read_name}")
+                error(f"Could not read UI name from source template {source_file_path}: {e_read_name}")
             
             # Flag to indicate if this template is considered successfully "present" at the destination
             is_template_present_at_dest = False
@@ -122,7 +130,7 @@ def deploy_example_templates():
                     shutil.copy2(source_file_path, destination_file_path)
                     is_template_present_at_dest = True
                 except Exception as e_copy:
-                    print(f"ERROR: Could not copy example template {template_file_name}: {e_copy}")
+                    error(f"Could not copy example template {template_file_name}: {e_copy}")
             else:
                 is_template_present_at_dest = True # Already exists
             
@@ -143,8 +151,8 @@ def deploy_example_templates():
             if folders_data is None: 
                 folders_data = {}    
 
-            if not isinstance(folders_data, dict): 
-                print(f"WARNING: Content of {folders_json_path} was not a dictionary. Resetting to empty dict.")
+            if not isinstance(folders_data, dict):
+                debug(f"Content of {folders_json_path} was not a dictionary. Resetting to empty dict.")
                 folders_data = {}
 
             # Ensure "Examples" key exists and its value is a list
@@ -159,23 +167,21 @@ def deploy_example_templates():
                     made_changes_to_examples_list = True
             
             if made_changes_to_examples_list:
-                pass
+                debug("Updated 'Examples' folder with new templates")
 
             # Save folders_data back to folders.json
             if save_json_file(folders_json_path, folders_data):
-                pass
+                debug(f"Successfully saved 'Examples' folder to {folders_json_path}")
             else:
-                print(f"ERROR: Failed to save {folders_json_path} after 'Examples' folder processing (save_json_file returned false).")
+                error(f"Failed to save {folders_json_path} after 'Examples' folder processing (save_json_file returned false).")
 
         except Exception as e_folders_json:
-            print(f"ERROR: Could not update {folders_json_path} for 'Examples' folder registration: {e_folders_json}")
-            import traceback
-            traceback.print_exc()
+            error(f"Could not update {folders_json_path} for 'Examples' folder registration: {e_folders_json}")
+            exception("Exception details:")
 
     except Exception as e:
-        print(f"ERROR: Failed to deploy example templates into Examples subfolder: {e}")
-        import traceback
-        traceback.print_exc()
+        error(f"Failed to deploy example templates into Examples subfolder: {e}")
+        exception("Exception details:")
 
 def get_user_home_directory():
     """Get the user's home directory in a cross-platform way"""
@@ -206,6 +212,35 @@ def get_user_home_directory():
 def main():
     """Main entry point for the Echelon application"""
     try:
+        # Initialize logging system
+        initialize_logging()
+        
+        # Load the user's saved logging preferences instead of forcing production mode
+        settings = QSettings()
+        if settings.contains('logging/level'):
+            # User has set preferences before, load them
+            # The set_log_level, enable_console_logging, and enable_file_logging functions
+            # will use the values saved in QSettings
+            
+            # Get the saved log level
+            level_name = settings.value('logging/level', 'INFO')
+            log_level = getattr(logging, level_name, logging.INFO)
+            set_log_level(log_level)
+            
+            # Get console and file logging settings
+            console_enabled = settings.value('logging/console_enabled', False, type=bool)
+            file_enabled = settings.value('logging/file_enabled', True, type=bool)
+            
+            # Apply settings
+            enable_console_logging(console_enabled)
+            enable_file_logging(file_enabled)
+            
+            info(f"Starting {APP_NAME} v{APP_VERSION} with user-configured logging settings")
+        else:
+            # First run or no user preferences, use production mode
+            set_production_mode()
+            info(f"Starting {APP_NAME} v{APP_VERSION} with production logging settings")
+        
         # Setup DPI awareness for Windows
         setup_dpi_awareness()
         
@@ -224,7 +259,8 @@ def main():
                 myappid = 'cr2creative.echelon.0.95'
                 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
             except Exception as e:
-                print(f"WARNING: Could not set app ID: {e}")
+                debug(f"Could not set app ID: {e}")
+                pass
 
         # Enable High DPI scaling
         QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
@@ -235,8 +271,11 @@ def main():
         app.setApplicationName(APP_NAME)
         app.setApplicationVersion(APP_VERSION)
         
+        # Setup has succeeded, show splash window
+        # splash_window.hide()  # Commented out as splash_window doesn't exist in this version
+        
         # --- EULA Check ---
-        if not EulaDialog.show_eula_if_needed():
+        if not EULADialog.show_eula_if_needed():
             return 1 # Exit cleanly if EULA declined
         
         # Force application to use our custom palette regardless of system settings
@@ -247,7 +286,8 @@ def main():
         if os.path.exists(icon_path):
             app.setWindowIcon(QIcon(icon_path))
         else:
-            print(f"WARNING: Application icon not found at {icon_path}")
+            debug(f"Application icon not found at {icon_path}")
+            pass
         
         # Apply comprehensive styles from the theme module
         configure_styles(app)
@@ -355,17 +395,15 @@ def main():
         try:
             TemplateManagerMigration.apply_migration(main_window)
         except Exception as e:
-            print(f"ERROR during template migration: {e}")
-            import traceback
-            traceback.print_exc()
+            error(f"Error during template migration: {e}")
+            exception("Template migration failure details:")
         
         # Apply dark theme to template section
         try:
             apply_dark_theme_to_template_section(main_window)
         except Exception as e:
-            print(f"ERROR applying theme: {e}")
-            import traceback
-            traceback.print_exc()
+            error(f"Error applying theme: {e}")
+            exception("Theme application failure details:")
         
         # Apply tree styling to all tree widgets
         styled_count = apply_styling_to_all_tree_widgets(main_window)
@@ -390,18 +428,18 @@ def main():
                 if hasattr(gallery, 'template_table_view') and gallery.template_table_view:
                     gallery.template_table_view.save_state()
             except AttributeError as ae:
-                print(f"WARNING: Could not find gallery or table view for state saving: {ae}")
+                debug(f"Could not find gallery or table view for state saving: {ae}")
+                pass
             except Exception as e:
-                print(f"ERROR saving table view state: {e}")
+                error(f"Error saving table view state: {e}")
 
         app.aboutToQuit.connect(save_table_view_state)
         # ------------------------------------------
         
         return app.exec_()
     except Exception as e:
-        print(f"CRITICAL ERROR during application startup: {e}")
-        import traceback
-        traceback.print_exc()
+        critical(f"CRITICAL ERROR during application startup: {e}")
+        exception("Application startup failure details:")
         return 1
 
 if __name__ == "__main__":

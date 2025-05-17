@@ -10,13 +10,19 @@ from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                            QPushButton, QGridLayout, QTabWidget, QWidget,
                            QLineEdit, QFileDialog, QMessageBox, QCheckBox,
                            QSpinBox, QGroupBox, QDialogButtonBox, QSpacerItem,
-                           QSizePolicy)
+                           QSizePolicy, QComboBox)
 from PyQt5.QtCore import QSettings
 
-from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, GROUPBOX_STYLE
+from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, GROUPBOX_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE
 from app.ui.styles.dialog_styles import LABEL_STYLE, LINEEDIT_STYLE, CHECKBOX_STYLE, SPINBOX_STYLE
 from app.utils.utils import open_folder
 from app.core import config_manager
+
+# Import the logging utilities
+from app.utils.logging_utils import (
+    get_logger, set_log_level, enable_console_logging, enable_file_logging,
+    LOG_LEVEL_DEBUG, LOG_LEVEL_INFO, LOG_LEVEL_WARNING, LOG_LEVEL_ERROR
+)
 
 def show_preferences_dialog(parent=None):
     dialog = QDialog(parent)
@@ -175,9 +181,9 @@ def show_preferences_dialog(parent=None):
         cache_prefs = CachePreferences()
         cache_prefs_available = True
     except ImportError:
+        # print("WARN: CachePreferences module not found.")
         cache_prefs = None
         cache_prefs_available = False
-        print("WARN: CachePreferences module not found.")
 
     # Enable file caching group
     caching_group = QGroupBox("File Caching Settings")
@@ -267,7 +273,7 @@ def show_preferences_dialog(parent=None):
         cache_stats = cache_manager_instance.get_cache_stats()
         stats_available = True # Only set True if all succeed
     except ImportError:
-        print("WARN: FileCacheManager module not found.")
+        # print("WARN: FileCacheManager module not found.")
         stats_available = False # Ensure stats_available is False
     except Exception as e_stat:
         print(f"ERROR initializing FileCacheManager or getting stats: {e_stat}")
@@ -434,36 +440,148 @@ def show_preferences_dialog(parent=None):
         }}
     """)
 
-    main_layout.addWidget(tabs)
+    # --- Add new Logging tab ---
+    logging_tab = QWidget()
+    logging_layout = QVBoxLayout(logging_tab)
 
-    # --- Dialog Buttons ---
-    button_box = QDialogButtonBox()
+    # Logging settings group
+    logging_group = QGroupBox("Logging Settings")
+    logging_group.setStyleSheet(GROUPBOX_STYLE)
+    logging_inner_layout = QVBoxLayout(logging_group)
 
-    # OK Button (Standard Accept Role)
-    ok_button = button_box.addButton(QDialogButtonBox.Ok) # Use standard OK button
-    ok_button.setStyleSheet(BUTTON_STYLE)
-
-    # Cancel Button (Standard Reject Role)
-    cancel_button = button_box.addButton(QDialogButtonBox.Cancel) # Use standard Cancel button
-    cancel_button.setStyleSheet(BUTTON_STYLE)
-
-    main_layout.addWidget(button_box)
+    # Log level selection
+    level_layout = QHBoxLayout()
+    level_label = QLabel("Log Level:")
+    level_label.setStyleSheet(LABEL_STYLE)
+    level_layout.addWidget(level_label)
+    
+    # Create a standard QComboBox
+    level_combo = QComboBox()
+    level_combo.setStyleSheet(COMBOBOX_STYLE)  # Use the global COMBOBOX_STYLE
+    
+    # Add items with both the text and user data
+    level_options = [
+        ("Debug", LOG_LEVEL_DEBUG),
+        ("Info", LOG_LEVEL_INFO),
+        ("Warning", LOG_LEVEL_WARNING),
+        ("Error", LOG_LEVEL_ERROR)
+    ]
+    
+    for text, data in level_options:
+        level_combo.addItem(text, data)  # Remove the added triangle symbol
+    
+    # Set current selected level based on settings
+    settings = QSettings()
+    current_level_name = settings.value('logging/level', 'INFO')
+    level_map = {
+        'DEBUG': 0,
+        'INFO': 1,
+        'WARNING': 2,
+        'ERROR': 3,
+    }
+    level_combo.setCurrentIndex(level_map.get(current_level_name, 1))  # Default to INFO
+    
+    level_layout.addWidget(level_combo)
+    level_layout.addStretch(1)
+    logging_inner_layout.addLayout(level_layout)
+    
+    # Console logging checkbox
+    console_check = QCheckBox("Enable console logging")
+    console_check.setStyleSheet(checkbox_direct_style)
+    console_check.setChecked(settings.value('logging/console_enabled', True, type=bool))
+    console_check.setToolTip("Show log messages in the console")
+    logging_inner_layout.addWidget(console_check)
+    
+    # File logging checkbox
+    file_check = QCheckBox("Enable file logging")
+    file_check.setStyleSheet(checkbox_direct_style)
+    file_check.setChecked(settings.value('logging/file_enabled', True, type=bool))
+    file_check.setToolTip("Save log messages to a file")
+    logging_inner_layout.addWidget(file_check)
+    
+    # Log file location and open button
+    log_file_layout = QHBoxLayout()
+    log_file_label = QLabel("Log File:")
+    log_file_label.setStyleSheet(LABEL_STYLE)
+    log_file_layout.addWidget(log_file_label)
+    
+    # Import the function to get log file path
+    from app.utils.logging_utils import get_log_file_path
+    log_file_path = get_log_file_path()
+    
+    log_file_field = QLineEdit()
+    log_file_field.setText(log_file_path)
+    log_file_field.setReadOnly(True)
+    log_file_field.setStyleSheet(LINEEDIT_STYLE)
+    log_file_layout.addWidget(log_file_field)
+    
+    log_file_open_btn = QPushButton("Open")
+    log_file_open_btn.setStyleSheet(BUTTON_STYLE)
+    def open_log_file():
+        log_dir = os.path.dirname(log_file_path)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir, exist_ok=True)
+        open_folder(log_dir)
+    log_file_open_btn.clicked.connect(open_log_file)
+    log_file_layout.addWidget(log_file_open_btn)
+    
+    logging_inner_layout.addLayout(log_file_layout)
+    
+    # Note about log settings
+    logging_note_label = QLabel("Note: Log level changes take effect immediately. Use higher levels (Warning, Error) in production for better performance.")
+    logging_note_label.setStyleSheet(f"color: {colors['secondary_text']}; font-style: italic;")
+    logging_note_label.setWordWrap(True)
+    logging_inner_layout.addWidget(logging_note_label)
+    
+    logging_layout.addWidget(logging_group)
+    logging_layout.addStretch(1)
+    
+    # Add the new logging tab
+    tabs.addTab(logging_tab, "Logging")
 
     # --- Save Preferences Logic --- 
     # (This function is called when OK is clicked)
     def save_preferences():
         # Save cache preferences (non-path related)
-        save_cache_preferences()
+        try:
+            save_cache_preferences()
+        except Exception as e:
+            print("DEBUG: Cache preferences save skipped (CachePreferences unavailable).")
 
-        # Data Root path is saved immediately on change via QSettings in browse_data_root
-
+        # Save logging preferences
+        try:
+            # Get the selected log level
+            level_index = level_combo.currentIndex()
+            level = level_combo.itemData(level_index)
+            set_log_level(level)
+            
+            # Save console and file logging settings
+            enable_console_logging(console_check.isChecked())
+            enable_file_logging(file_check.isChecked())
+        except Exception as e:
+            print(f"ERROR: Failed to save logging preferences: {e}")
+        
         print("DEBUG: Preferences saved (Cache settings saved, Data Root handled by QSettings).")
-        return True # Indicate success
+        dialog.accept()
 
-    # --- Connect Buttons --- 
-    # OK button: Save preferences, then accept (close) the dialog
-    button_box.accepted.connect(lambda: save_preferences() and dialog.accept())
-    # Cancel button: Reject (close) the dialog
+    # Add the tabs to the main layout
+    main_layout.addWidget(tabs)
+
+    # Add buttons at the bottom
+    button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    button_box.accepted.connect(save_preferences)
     button_box.rejected.connect(dialog.reject)
+    
+    # Style the buttons individually for proper styling
+    ok_button = button_box.button(QDialogButtonBox.Ok)
+    cancel_button = button_box.button(QDialogButtonBox.Cancel)
+    
+    # Apply the accent button style to OK button
+    ok_button.setStyleSheet(ACCENT_BUTTON_STYLE)
+    
+    # Apply regular button style to Cancel button
+    cancel_button.setStyleSheet(BUTTON_STYLE)
+    
+    main_layout.addWidget(button_box)
 
     dialog.exec_()
