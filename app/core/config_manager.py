@@ -34,7 +34,7 @@ def get_default_data_root():
     if not app_name:
         # Fallback if not set, though it should be by main.py
         app_name = "Echelon_Fallback"
-        print(f"WARN: QCoreApplication.applicationName() was not set. Using fallback: {app_name}")
+        # print(f"WARN: QCoreApplication.applicationName() was not set. Using fallback: {app_name}")
 
     if system == "Darwin":  # macOS
         # ~/Library/Application Support/APP_NAME
@@ -93,11 +93,11 @@ def get_user_data_root(force_reload=False):
              return user_path
          except Exception as e:
              default_path_for_error_msg = get_default_data_root() # Recalculate for message
-             print(f"WARN: User-defined path '{user_path}' exists but is not valid or writable ({e}). Falling back to default '{default_path_for_error_msg}'.")
+             # print(f"WARN: User-defined path '{user_path}' exists but is not valid or writable ({e}). Falling back to default '{default_path_for_error_msg}'.")
              # Fall through to default logic
     elif user_path:
         default_path_for_error_msg = get_default_data_root() # Recalculate for message
-        print(f"WARN: User-defined path '{user_path}' is invalid or parent doesn't exist. Falling back to default '{default_path_for_error_msg}'.")
+        # print(f"WARN: User-defined path '{user_path}' is invalid or parent doesn't exist. Falling back to default '{default_path_for_error_msg}'.")
         # Fall through to default logic
 
     # If no valid user path, use default
@@ -234,8 +234,8 @@ if __name__ == "__main__":
         QCoreApplication.setApplicationName(APP_NAME) 
     except ImportError:
         # Fallback if running standalone without full package structure
-        print("WARN: Could not import APP_NAME from app_config for testing. Using default.")
-        QCoreApplication.setApplicationName("EchelonTest")
+        # print("WARN: Could not import APP_NAME from app_config for testing. Using default.")
+        APP_NAME = "Echelon_Test"
 
     print("--- Testing Config Manager ---")
     settings = QSettings()

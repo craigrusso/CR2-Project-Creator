@@ -49,8 +49,8 @@ class FileOperationsHandler(QObject):
                 if not file_path:
                     return False, None
             
-            if self.debug:
-                print(f"FileOperationsHandler: Loading file from {file_path}")
+            # if self.debug:
+            #     print(f"FileOperationsHandler: Loading file from {file_path}")
             
             # Load the file
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -95,8 +95,8 @@ class FileOperationsHandler(QObject):
                 if not file_path:
                     return False
             
-            if self.debug:
-                print(f"FileOperationsHandler: Saving file to {file_path}")
+            # if self.debug:
+            #     print(f"FileOperationsHandler: Saving file to {file_path}")
             
             # Ensure directory exists
             os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)

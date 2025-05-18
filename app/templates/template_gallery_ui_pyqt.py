@@ -1408,7 +1408,7 @@ class TemplateListItem(QFrame):
         # Check if this is a rename operation
         original_name = template.get('original_name', None)
         if original_name and original_name != template_name:
-            print(f"DEBUG: This is a rename operation from '{original_name}' to '{template_name}'")
+            # print(f"DEBUG: This is a rename operation from '{original_name}' to '{template_name}'")
             template_data["original_name"] = original_name
         
         # Call save_template with the template data

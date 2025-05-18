@@ -12,6 +12,7 @@ import os
 import sys
 import json
 import time
+import platform # Added platform import
 from PyQt5.QtCore import Qt, QSize, QTimer, pyqtSignal
 from PyQt5.QtWidgets import (
     QDialog, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QHBoxLayout,
@@ -139,6 +140,20 @@ class EnhancedStructureEditor(QDialog):
                 print("DEBUG: Applied enhanced tree styling with branch indicators")
             except Exception as e:
                 print(f"WARNING: Could not apply enhanced tree styling: {e}")
+            
+            # Setup QShortcut for Delete key on the tree_widget
+            if self.tree_widget:
+                delete_shortcut = QShortcut(QKeySequence(Qt.Key_Delete), self.tree_widget)
+                delete_shortcut.activated.connect(self._schedule_delete_operation)
+                delete_shortcut.setContext(Qt.WidgetShortcut)
+                print("DEBUG: QShortcut for Delete key connected to _schedule_delete_operation")
+
+                # Add Backspace shortcut for macOS
+                if platform.system() == "Darwin":
+                    backspace_shortcut = QShortcut(QKeySequence(Qt.Key_Backspace), self.tree_widget)
+                    backspace_shortcut.activated.connect(self._schedule_delete_operation)
+                    backspace_shortcut.setContext(Qt.WidgetShortcut)
+                    print("DEBUG: QShortcut for Backspace key (macOS) connected to _schedule_delete_operation")
             
             # Connect tree widget signals
             if self.tree_widget:
@@ -778,47 +793,61 @@ class EnhancedStructureEditor(QDialog):
         """
         # Check if we have file operations
         have_file_ops = hasattr(self, 'file_operations') and self.file_operations
+
+        # First, let the original event handler try to process the event.
+        # This is important for allowing default Qt behaviors.
+        if hasattr(self.tree_widget, '_old_keyPressEvent') and self.tree_widget._old_keyPressEvent is not None:
+            self.tree_widget._old_keyPressEvent(event)
+        else:
+            # Fallback if _old_keyPressEvent isn't there
+            super(QTreeWidget, self.tree_widget).keyPressEvent(event)
+
+        # Custom key handling (if not already handled by base)
+        # Note: Qt.Key_Delete is now handled by QShortcut, so it's removed from here.
         
-        # Delete key for removing selected items
-        if event.key() == Qt.Key_Delete and have_file_ops:
-            print("DEBUG: Delete key pressed, calling delete_selected()")
-            self.file_operations.delete_selected()
-            event.accept()  # Mark as handled
-            return True  # Return True to indicate the event was handled
+        # Ctrl+A for select all (typically handled well by base, but can be explicit)
+        if event.key() == Qt.Key_A and event.modifiers() & Qt.ControlModifier: # Changed from elif to if
+            if hasattr(self, 'tree_widget') and self.tree_widget and not event.isAccepted():
+                self.tree_widget.selectAll()
+                event.accept()
         
-        # Ctrl+A for select all
-        if event.key() == Qt.Key_A and event.modifiers() & Qt.ControlModifier:
-            self.tree_widget.selectAll()
-            event.accept()  # Mark as handled
-            return True
-        
-        # Ctrl+C for copy (handled by file operations)
-        if event.key() == Qt.Key_C and event.modifiers() & Qt.ControlModifier and have_file_ops:
+        # Ctrl+C for copy (if not already handled)
+        elif event.key() == Qt.Key_C and event.modifiers() & Qt.ControlModifier and have_file_ops and not event.isAccepted():
             selected = self.tree_widget.selectedItems()
             if selected and hasattr(self.file_operations, '_copy_item'):
                 self.file_operations._copy_item(selected[0])
-                event.accept()  # Mark as handled
-                return True
+                event.accept()
             
-        # Ctrl+V for paste (handled by file operations)
-        if event.key() == Qt.Key_V and event.modifiers() & Qt.ControlModifier and have_file_ops:
+        # Ctrl+V for paste (if not already handled)
+        elif event.key() == Qt.Key_V and event.modifiers() & Qt.ControlModifier and have_file_ops and not event.isAccepted():
             selected = self.tree_widget.selectedItems()
             parent = selected[0] if selected else self.tree_widget.invisibleRootItem() 
             if hasattr(self.file_operations, '_paste_item'):
                 self.file_operations._paste_item(parent)
-                event.accept()  # Mark as handled
-                return True
+                event.accept()
         
-        # F2 for rename
-        if event.key() == Qt.Key_F2 and have_file_ops:
+        # F2 for rename (if not already handled)
+        elif event.key() == Qt.Key_F2 and have_file_ops and not event.isAccepted():
             selected = self.tree_widget.selectedItems()
             if selected and hasattr(self.file_operations, 'rename_item'):
                 self.file_operations.rename_item(selected[0])
-                event.accept()  # Mark as handled
-                return True
+                event.accept()
         
-        # Call original event handler
-        QTreeWidget.keyPressEvent(self.tree_widget, event) 
+        # The method must return a boolean. event.isAccepted() reflects if any handler
+        # (ours or the base's) accepted the event.
+        return event.isAccepted()
+
+    def _schedule_delete_operation(self):
+        """Schedules the delete operation to run after the current event processing."""
+        QTimer.singleShot(0, self._perform_delete_operation)
+
+    def _perform_delete_operation(self):
+        """Performs the actual deletion of selected items."""
+        if hasattr(self, 'file_operations') and self.file_operations:
+            print("DEBUG: Performing scheduled delete operation via file_operations.delete_selected()")
+            self.file_operations.delete_selected()
+        else:
+            print("DEBUG: Scheduled delete operation: file_operations not available.")
 
     def closeEvent(self, event):
         """

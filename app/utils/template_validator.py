@@ -27,33 +27,33 @@ class TemplateValidator:
                 - fixed_template (dict): The fixed template data
                 - messages (list): List of validation messages
         """
-        print("DEBUG: Starting template validation")
+        # print("DEBUG: Starting template validation")
         messages = []
         is_valid = True
         
         # Work with a copy of the template data
         template = template_data.copy() if template_data else {}
         
-        print(f"DEBUG: Initial template data: {template}")
+        # print(f"DEBUG: Initial template data: {template}")
         
         # Handle empty or missing name
         if not template.get("name"):
-            print("DEBUG: Template name is empty or missing, generating default name")
+            # print("DEBUG: Template name is empty or missing, generating default name")
             template["name"] = TemplateValidator.generate_default_name()
             messages.append(f"Generated default name: {template['name']}")
-            print(f"DEBUG: Generated name: {template['name']}")
+            # print(f"DEBUG: Generated name: {template['name']}")
         
         # Validate required fields
         required_fields = ["path", "type"]
         for field in required_fields:
             if field not in template:
-                print(f"DEBUG: Missing required field: {field}")
+                # print(f"DEBUG: Missing required field: {field}")
                 messages.append(f"Missing required field: {field}")
                 is_valid = False
         
         # Validate path is not empty
         if template.get("path", "").strip() == "":
-            print("DEBUG: Template path is empty")
+            # print("DEBUG: Template path is empty")
             messages.append("Template path cannot be empty")
             is_valid = False
         
@@ -70,7 +70,7 @@ class TemplateValidator:
             
         template["modified"] = datetime.now().isoformat()
         
-        print(f"DEBUG: Validation complete - is_valid={is_valid}, messages={messages}")
-        print(f"DEBUG: Final template data: {template}")
+        # print(f"DEBUG: Validation complete - is_valid={is_valid}, messages={messages}")
+        # print(f"DEBUG: Final template data: {template}")
         
         return is_valid, template, messages 

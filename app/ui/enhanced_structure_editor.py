@@ -97,7 +97,8 @@ class EnhancedStructureEditor(QDialog):
             # self.name_field.repaint()
             # QApplication.processEvents()
         else:
-            print("  WARN: name_field not found after _create_ui() in __init__")
+            # print("  WARN: name_field not found after _create_ui() in __init__")
+            pass # name_field might be intentionally absent for some sub-classes
             
         if hasattr(self, 'description_field') and self.description_field:
             self.description_field.setPlainText(self._template_description)
@@ -147,20 +148,23 @@ class EnhancedStructureEditor(QDialog):
             self.name_field = self.ui_builder.template_name_field
             print("DEBUG: Assigned self.name_field from ui_builder")
         else:
-            print("WARN: ui_builder missing template_name_field")
+            # print("WARN: ui_builder missing template_name_field")
+            self.name_field = None # Or some default QLineEdit
             
         if hasattr(self.ui_builder, 'template_category_field'):
             self.category_field = self.ui_builder.template_category_field
             print("DEBUG: Assigned self.category_field from ui_builder")
         else:
-             print("WARN: ui_builder missing template_category_field")
-             
+            # print("WARN: ui_builder missing template_category_field")
+            self.category_field = None # Or some default QComboBox
+            
         if hasattr(self.ui_builder, 'template_info_field'):
             self.description_field = self.ui_builder.template_info_field # Assuming this maps to description
             print("DEBUG: Assigned self.description_field from ui_builder.template_info_field")
         else:
-             print("WARN: ui_builder missing template_info_field")
-             
+            # print("WARN: ui_builder missing template_info_field")
+            self.description_field = None # Or some default QTextEdit
+            
         if hasattr(self.ui_builder, 'tree'):
             self.tree = self.ui_builder.tree
             print("DEBUG: Assigned self.tree from ui_builder")
@@ -169,7 +173,8 @@ class EnhancedStructureEditor(QDialog):
                  self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
                  self.tree.customContextMenuRequested.connect(self.show_context_menu)
         else:
-             print("WARN: ui_builder missing tree")
+            # print("WARN: ui_builder missing tree")
+            self.tree = None # Or some default QTreeWidget
         # ----------------------------------------------------------
         
         # Set the layout for the dialog
@@ -179,6 +184,10 @@ class EnhancedStructureEditor(QDialog):
     def set_template_name(self, name):
         """Set the template name"""
         print(f"DEBUG EnhancedStructureEditor.set_template_name called with: {name}")
+        if not hasattr(self, 'name_field') or self.name_field is None:
+            # print("  WARN: name_field not found in set_template_name")
+            return
+        self.name_field.setText(name)
         self._template_name = name
         if hasattr(self, 'name_field') and self.name_field:
             self.name_field.setText(name)
@@ -719,4 +728,74 @@ class EnhancedStructureEditor(QDialog):
             else:
                 print(f"DEBUG: showEvent - Name field already has correct text: '{current_text}'")
         else:
-            print("DEBUG: showEvent - Could not find name field or template name is empty") 
+            print("DEBUG: showEvent - Could not find name field or template name is empty")
+            
+    def keyPressEvent(self, event):
+        """Handle key press events for the dialog"""
+        from PyQt5.QtCore import Qt
+        from PyQt5.QtWidgets import QApplication, QLineEdit, QTextEdit, QComboBox
+        
+        # Handle Delete key press
+        if event.key() == Qt.Key_Delete:
+            print("DEBUG: Delete key pressed, calling delete_selected()")
+            self.delete_selected()
+            # Don't pass to parent class
+            event.accept()
+            return True
+            
+        # Handle Escape key
+        elif event.key() == Qt.Key_Escape:
+            print("DEBUG: Escape key pressed, rejecting dialog")
+            self.reject()  # Close dialog without saving
+            event.accept()
+            return
+            
+        # Handle Return/Enter key in special cases
+        elif event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            # Only handle Return key if the focus is not in a text field
+            focused_widget = QApplication.focusWidget()
+            if not isinstance(focused_widget, (QLineEdit, QTextEdit, QComboBox)):
+                print("DEBUG: Enter key pressed with no text field focused, accepting dialog")
+                self.accept()  # Save and close
+                event.accept()
+                return
+        
+        # Let parent class handle any other keys
+        print(f"DEBUG: Passing key {event.key()} to parent class")
+        super().keyPressEvent(event)
+    
+    def delete_selected(self):
+        """Delete the selected items from the tree"""
+        selected_items = self.tree.selectedItems()
+        if not selected_items:
+            return
+        
+        print(f"DEBUG: delete_selected - {len(selected_items)} items selected for deletion")
+        deleted_count = 0
+        
+        for item in selected_items[:]:  # Make a copy of the list to avoid modification issues
+            # Get parent
+            parent = item.parent()
+            
+            try:
+                if parent:
+                    # If item has a parent, remove it from the parent
+                    print(f"DEBUG: delete_selected - removing child item '{item.text(0)}' from parent '{parent.text(0)}'")
+                    parent.removeChild(item)
+                    deleted_count += 1
+                    print(f"DEBUG: delete_selected - child item removed successfully")
+                else:
+                    # If item is a top-level item, remove it from the tree
+                    print(f"DEBUG: delete_selected - removing top-level item '{item.text(0)}'")
+                    index = self.tree.indexOfTopLevelItem(item)
+                    if index >= 0:  # Make sure the item is actually found in the tree
+                        self.tree.takeTopLevelItem(index)
+                        deleted_count += 1
+                        print(f"DEBUG: delete_selected - top-level item removed successfully")
+            except Exception as e:
+                print(f"ERROR: Failed to delete item '{item.text(0)}': {e}")
+        
+        print(f"DEBUG: delete_selected - {deleted_count} items deleted successfully")
+        
+        # Return True to indicate success
+        return True 

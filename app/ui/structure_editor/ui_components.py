@@ -442,6 +442,10 @@ class StructureEditor(QDialog):
         # Build structure from tree
         structure = self._build_structure(self.root_item)
         
+        # Force icon refresh before saving to ensure all icons are properly displayed
+        if hasattr(self, 'drag_drop_handler') and self.drag_drop_handler:
+            self.drag_drop_handler.refresh_icons()
+            
         # Emit signal with name and structure
         self.structureChanged.emit(self.structure_name, structure)
         

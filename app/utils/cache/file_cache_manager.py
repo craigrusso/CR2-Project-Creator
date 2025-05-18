@@ -95,10 +95,9 @@ class FileCacheManager:
         template_cache_dir = os.path.join(self.cache_dir, template_name)
         if not os.path.exists(template_cache_dir):
             try:
-                os.makedirs(template_cache_dir, exist_ok=True)
-                print(f"DEBUG: FileCacheManager: Created template cache directory: {template_cache_dir}")
-            except Exception as e:
-                print(f"ERROR: FileCacheManager: Failed to create template cache directory: {e}")
+                os.makedirs(template_cache_dir)
+            except OSError as e:
+                print(f"ERROR: FileCacheManager: Could not create template cache directory: {e}")
                 return None
                 
         # Check if the file exists
@@ -113,7 +112,9 @@ class FileCacheManager:
             # This requires custom handling when extracting files later
             base, ext = os.path.splitext(filename)
             filename = f"${{PROJECT_NAME}}{ext}"
-            print(f"DEBUG: FileCacheManager: Using template variable for filename: {filename}")
+        if template_vars and 'filename' in template_vars:
+            # Use the filename from template_vars if provided
+            filename = template_vars['filename']
         
         # Determine target directory - use folder_path if provided, otherwise store directly in template directory
         if folder_path:
@@ -127,9 +128,8 @@ class FileCacheManager:
         # Create the directory structure
         try:
             os.makedirs(target_dir, exist_ok=True)
-            print(f"DEBUG: FileCacheManager: Created directory structure: {target_dir}")
-        except Exception as e:
-            print(f"ERROR: FileCacheManager: Failed to create directory structure: {e}")
+        except OSError as e:
+            print(f"ERROR: FileCacheManager: Could not create directory for caching: {e}")
             return None
             
         # Set the target path for the file
@@ -138,7 +138,7 @@ class FileCacheManager:
         # Copy the file to the cache
         try:
             shutil.copy2(file_path, cached_file_path)
-            print(f"DEBUG: FileCacheManager: Cached file to: {cached_file_path}")
+            # print(f"DEBUG: FileCacheManager: Cached file to: {cached_file_path}")
             
             # Track the file in cache statistics
             self._update_cache_stats(file_path, cached_file_path, template_name)

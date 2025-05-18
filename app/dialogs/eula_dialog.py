@@ -1,151 +1,180 @@
-# app/dialogs/eula_dialog.py
-import sys
+#!/usr/bin/env python3
+# Copyright (c) 2023-present Craig P. Russo and CR2 Creative
+
 import os
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QTextEdit, QPushButton, 
-                             QDialogButtonBox, QMessageBox, QApplication)
-from PyQt5.QtCore import Qt, QSettings
+import sys
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton, 
+                           QLabel, QTextEdit, QScrollArea, QWidget, QApplication)
+from PyQt5.QtCore import Qt, QCoreApplication, QSettings
 from PyQt5.QtGui import QFont
 
-from app.constants import get_resource_path, APP_NAME
+from app.constants import get_resource_path
+from app.utils.logging_utils import debug, info, warning, error
 
-class EulaDialog(QDialog):
+class EULADialog(QDialog):
     """
-    A dialog to display the End-User License Agreement (EULA) and require acceptance.
+    Dialog to display the End User License Agreement (EULA) to the user.
+    This is shown on first run or when the EULA is updated.
     """
-    def __init__(self, parent=None):
+    
+    def __init__(self, parent=None, title="License Agreement", app=None):
+        """Initialize the EULA dialog."""
         super().__init__(parent)
+        
+        self.app = app  # Store reference to main app
         self.eula_version_in_file = None
         self.accepted_version = None
-        self._load_settings()
-        self.eula_content = self._load_eula()
-
-        if not self.eula_content:
-            # Handle case where EULA file is missing or invalid
-            QMessageBox.critical(self, "Error", "Could not load the End-User License Agreement. Please reinstall the application.")
-            # Rejecting automatically closes the dialog, signaling failure
-            QTimer.singleShot(0, self.reject) 
+        
+        # Set up UI
+        self.setWindowTitle(title)
+        self.resize(800, 600)
+        self.setModal(True)
+        
+        # Load EULA settings
+        self.settings = QSettings()
+        self.load_eula_settings()
+        
+        # Load EULA content
+        eula_content = self.load_eula_content()
+        if not eula_content:
+            # Failed to load EULA
+            self.reject()
             return
-
-        self.setWindowTitle(f"{APP_NAME} - End-User License Agreement")
-        self.setMinimumSize(600, 500)
-
-        layout = QVBoxLayout(self)
-
-        # --- Text Area ---
-        self.text_edit = QTextEdit()
-        self.text_edit.setReadOnly(True)
-        self.text_edit.setPlainText(self.eula_content) 
-        # Slightly smaller font for readability of long text
-        font = QFont()
-        font.setPointSize(font.pointSize() - 1) 
-        self.text_edit.setFont(font)
-        layout.addWidget(self.text_edit)
-
-        # --- Buttons ---
-        self.button_box = QDialogButtonBox()
-        self.accept_button = self.button_box.addButton("Accept", QDialogButtonBox.AcceptRole)
-        self.decline_button = self.button_box.addButton("Decline", QDialogButtonBox.RejectRole)
         
-        # Initially disable Accept button until scrolled to bottom
-        self.accept_button.setEnabled(False) 
+        # Create UI components
+        self.create_ui_components(eula_content)
         
-        layout.addWidget(self.button_box)
-
-        # --- Connections ---
-        self.button_box.accepted.connect(self.accept_eula)
-        self.button_box.rejected.connect(self.reject) # Default reject behavior is fine
+        # Set up layout
+        self.setup_layout()
         
-        # Enable Accept button when scrolled to the bottom
-        self.text_edit.verticalScrollBar().valueChanged.connect(self.check_scroll_position)
+        # Center dialog on screen
+        screen_geometry = QApplication.desktop().screenGeometry()
+        x = (screen_geometry.width() - self.width()) // 2
+        y = (screen_geometry.height() - self.height()) // 2
+        self.move(x, y)
+
+    def load_eula_settings(self):
+        """Load EULA settings from QSettings."""
+        # Get current accepted EULA version
+        self.accepted_version = self.settings.value("eula/accepted_version", "")
         
-        # Check initial position in case content is short
-        self.check_scroll_position(self.text_edit.verticalScrollBar().value())
-
-    def _load_settings(self):
-        """Load accepted EULA version from settings."""
-        settings = QSettings()
-        self.accepted_version = settings.value("eula/accepted_version", None)
-
-    def _save_settings(self):
-        """Save the accepted EULA version to settings."""
+    def save_eula_acceptance(self):
+        """Save EULA acceptance to settings."""
         if self.eula_version_in_file:
-            settings = QSettings()
-            settings.setValue("eula/accepted_version", self.eula_version_in_file)
-            print(f"DEBUG: Saved accepted EULA version {self.eula_version_in_file} to settings.")
+            self.settings.setValue("eula/accepted_version", self.eula_version_in_file)
+            self.settings.sync()
+            debug(f"Saved accepted EULA version {self.eula_version_in_file} to settings.")
 
-    def _load_eula(self):
-        """Loads the EULA text from the file and extracts the version."""
-        eula_path_relative = "EULA.txt"
-        eula_path = get_resource_path(eula_path_relative)
-        
-        if not eula_path or not os.path.exists(eula_path):
-            print(f"ERROR: EULA file not found at expected path: {eula_path}")
+    def load_eula_content(self):
+        """Load EULA content from file."""
+        # Try to find EULA file
+        eula_path = get_resource_path("eula.txt")
+        if not os.path.exists(eula_path):
+            error(f"EULA file not found at expected path: {eula_path}")
             return None
         
         try:
-            with open(eula_path, 'r', encoding='utf-8') as f:
-                first_line = f.readline().strip()
-                # Look for version marker like "# EULA Version: 1.0"
-                if first_line.startswith("# EULA Version:"):
-                    self.eula_version_in_file = first_line.split(":", 1)[1].strip()
-                    print(f"DEBUG: Found EULA version in file: {self.eula_version_in_file}")
-                else:
-                     print(f"WARN: EULA file does not start with version marker. Using full file.")
-                     # If no version marker, treat the whole file as content
-                     f.seek(0) # Reset read pointer
+            with open(eula_path, 'r', encoding='utf-8') as file:
+                content = file.read()
                 
-                content = f.read()
+                # Check if content begins with version tag (e.g., "# Version: 1.0")
+                lines = content.splitlines()
+                if lines and lines[0].startswith("# Version:"):
+                    self.eula_version_in_file = lines[0].replace("# Version:", "").strip()
+                    debug(f"Found EULA version in file: {self.eula_version_in_file}")
+                else:
+                    warning("EULA file does not start with version marker. Using full file.")
+                    
                 return content
         except Exception as e:
-            print(f"ERROR: Failed to read EULA file at {eula_path}: {e}")
+            error(f"Failed to read EULA file at {eula_path}: {e}")
             return None
 
-    def needs_display(self):
-        """Check if the EULA needs to be displayed and accepted."""
-        if not self.eula_version_in_file:
-            # If EULA has no version, maybe always show? Or treat as error?
-            # For now, assume if file exists but no version, it needs acceptance once.
-            return self.accepted_version is None 
+    def create_ui_components(self, eula_content):
+        """Create UI components for the dialog."""
+        # Title label
+        self.title_label = QLabel("End User License Agreement (EULA)")
+        self.title_label.setStyleSheet("font-size: 16pt; font-weight: bold;")
+        self.title_label.setAlignment(Qt.AlignCenter)
         
-        # Display if no version accepted yet, or if file version is newer than accepted one
-        needs_accept = self.accepted_version is None or self.accepted_version != self.eula_version_in_file
-        if needs_accept:
-             print(f"DEBUG: EULA needs display. File Version: {self.eula_version_in_file}, Accepted Version: {self.accepted_version}")
-        else:
-             print(f"DEBUG: EULA already accepted for version {self.accepted_version}.")
-        return needs_accept
+        # EULA text area
+        self.eula_text = QTextEdit()
+        self.eula_text.setReadOnly(True)
+        self.eula_text.setPlainText(eula_content)
+        
+        # Buttons
+        self.accept_button = QPushButton("Accept")
+        self.accept_button.clicked.connect(self.on_accept)
+        self.accept_button.setMinimumWidth(120)
+        
+        self.decline_button = QPushButton("Decline")
+        self.decline_button.clicked.connect(self.reject)
+        self.decline_button.setMinimumWidth(120)
 
-    def accept_eula(self):
-        """Saves the accepted version and closes the dialog."""
-        self._save_settings()
-        self.accept() # Signal acceptance
+    def setup_layout(self):
+        """Set up the layout for the dialog."""
+        # Main layout
+        main_layout = QVBoxLayout(self)
+        main_layout.addWidget(self.title_label)
+        main_layout.addWidget(self.eula_text)
+        
+        # Button layout
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        button_layout.addWidget(self.accept_button)
+        button_layout.addWidget(self.decline_button)
+        
+        main_layout.addLayout(button_layout)
 
-    def check_scroll_position(self, value):
-        """Enables the Accept button only when scrolled to the bottom."""
-        scrollbar = self.text_edit.verticalScrollBar()
-        # Enable if scrollbar is at its maximum value (or if no scrollbar needed)
-        is_at_bottom = (scrollbar.maximum() == 0) or (value == scrollbar.maximum())
-        self.accept_button.setEnabled(is_at_bottom)
+    def needs_to_show(self):
+        """Check if EULA needs to be shown to the user."""
+        # Show if:
+        # 1. No previous acceptance record, or
+        # 2. EULA version in file is different from accepted version
+        if not self.accepted_version or (self.eula_version_in_file and self.eula_version_in_file != self.accepted_version):
+            debug(f"EULA needs display. File Version: {self.eula_version_in_file}, Accepted Version: {self.accepted_version}")
+            return True
+        
+        debug(f"EULA already accepted for version {self.accepted_version}.")
+        return False
+
+    def on_accept(self):
+        """Handle EULA acceptance."""
+        self.save_eula_acceptance()
+        self.accept()
 
     @staticmethod
-    def show_eula_if_needed(parent=None):
-        """Static method to create, check, and execute the dialog if necessary."""
-        dialog = EulaDialog(parent)
-        
-        # Check if EULA loading failed in __init__
-        if not dialog.eula_content:
-            print("ERROR: EULA Dialog initialization failed (missing EULA file?). Exiting.")
-            return False # Indicate failure to proceed
-
-        if dialog.needs_display():
-            print("DEBUG: Displaying EULA dialog.")
-            result = dialog.exec_()
-            if result == QDialog.Accepted:
-                print("DEBUG: EULA accepted by user.")
-                return True # User accepted
+    def show_and_verify(parent=None, title="License Agreement", app=None):
+        """
+        Show EULA dialog if needed and verify acceptance.
+        Returns True if EULA is accepted, False otherwise.
+        """
+        try:
+            dialog = EULADialog(parent, title, app)
+            if not dialog.eula_version_in_file:
+                error("EULA Dialog initialization failed (missing EULA file?). Exiting.")
+                return False
+            
+            if dialog.needs_to_show():
+                debug("Displaying EULA dialog.")
+                result = dialog.exec_()
+                if result == QDialog.Accepted:
+                    debug("EULA accepted by user.")
+                    return True
+                else:
+                    debug("EULA declined by user or dialog closed.")
+                    return False
             else:
-                print("DEBUG: EULA declined by user or dialog closed.")
-                return False # User declined or closed
-        else:
-            # EULA already accepted for the current version
-            return True # No need to show, proceed 
+                # EULA already accepted
+                return True
+        except Exception as e:
+            error(f"Error showing EULA dialog: {e}")
+            return False 
+            
+    @staticmethod
+    def show_eula_if_needed():
+        """
+        Backward compatibility wrapper for show_and_verify.
+        Used by the old main.py code.
+        """
+        return EULADialog.show_and_verify(None, "License Agreement", None) 

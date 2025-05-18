@@ -178,6 +178,9 @@ class DragDropHandler:
                     
             # Accept the drop action
             event.acceptProposedAction()
+            
+            # Force an icon refresh to ensure all icons are properly displayed
+            self.refresh_icons()
         except Exception as e:
             print(f"ERROR: Failed to process dropped URLs: {e}")
             import traceback
@@ -586,14 +589,24 @@ class DragDropHandler:
         if not self.tree:
             return
         
-        # Get root item
-        root = self.tree.invisibleRootItem()
-        
-        # Process all top-level items
-        for i in range(root.childCount()):
-            self._refresh_icons_recursive(root.child(i))
-        
-        print("DEBUG: Icons refreshed")
+        try:
+            # Use centralized icon refresh utility for consistent icon handling
+            from app.ui.icon_utilities import _refresh_widget_item_icons
+            
+            # Process all top-level items
+            root = self.tree.invisibleRootItem()
+            for i in range(root.childCount()):
+                _refresh_widget_item_icons(root.child(i))
+            
+            print("DEBUG: Icons refreshed using central icon utility")
+        except ImportError:
+            # Fallback to old method if import fails
+            # Process all top-level items
+            root = self.tree.invisibleRootItem()
+            for i in range(root.childCount()):
+                self._refresh_icons_recursive(root.child(i))
+            
+            print("DEBUG: Icons refreshed using fallback method")
     
     def _refresh_icons_recursive(self, item):
         """

@@ -475,22 +475,49 @@ def _refresh_tree_item_icons(item):
     if not item:
         return
         
-    # Get the item's file path if it has one
-    file_path = item.data(0, Qt.UserRole)
+    # Get the item's data if it has any
+    item_data = item.data(0, Qt.UserRole)
     
-    # If the item has a file path, update its icon based on the path
-    if file_path:
+    # If the item has data, update its icon based on the data type and content
+    if item_data:
         from app.ui.icon_utilities import get_file_icon, get_folder_icon
         
-        # Check if it's a directory or a file
-        is_dir = os.path.isdir(file_path) if os.path.exists(file_path) else False
-        
-        if is_dir:
-            # Use folder icon
-            item.setIcon(0, get_folder_icon(False))
+        # Handle different data types - dictionary is most common in the structure editor
+        if isinstance(item_data, dict):
+            item_type = item_data.get('type', '')
+            if item_type == 'folder':
+                # It's a folder item
+                item.setIcon(0, get_folder_icon(item.isExpanded()))
+            elif item_type == 'file':
+                # It's a file item
+                file_name = item_data.get('name', item.text(0))
+                item.setIcon(0, get_file_icon(file_name))
+        # Handle string path
+        elif isinstance(item_data, str):
+            # Check if it's a directory or a file if it exists
+            is_dir = os.path.isdir(item_data) if os.path.exists(item_data) else False
+            
+            if is_dir:
+                # Use folder icon
+                item.setIcon(0, get_folder_icon(item.isExpanded()))
+            else:
+                # Use file icon
+                item.setIcon(0, get_file_icon(item_data))
+        # Default handling for other data types
         else:
-            # Get a fresh icon based on file type
-            item.setIcon(0, get_file_icon(file_path))
+            # Use item text and children count to determine icon
+            is_folder = item.childCount() > 0
+            if is_folder:
+                item.setIcon(0, get_folder_icon(item.isExpanded()))
+            else:
+                item.setIcon(0, get_file_icon(item.text(0)))
+    else:
+        # No data - use item text and children count to determine icon
+        is_folder = item.childCount() > 0
+        if is_folder:
+            item.setIcon(0, get_folder_icon(item.isExpanded()))
+        else:
+            item.setIcon(0, get_file_icon(item.text(0)))
     
     # Recursively refresh children's icons
     for i in range(item.childCount()):

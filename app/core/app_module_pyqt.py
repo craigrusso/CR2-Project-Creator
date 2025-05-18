@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QLabel, QPushButton, QComboBox, QLineEdit, 
                            QFileDialog, QMessageBox, QAction, QMenu, 
                            QStatusBar, QFrame, QSplitter, QScrollArea, QSizePolicy,
-                           QApplication, QGroupBox, QListView, QTextEdit)
+                           QApplication, QGroupBox, QListView, QTextEdit, QLayout)
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex, QPoint, QUrl, QMimeData, QSettings, QObject, QThread
 from PyQt5.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, QPixmap, QDesktopServices, QCursor, QDragEnterEvent, QDropEvent, QFontMetrics, QStandardItemModel, QStandardItem
 
@@ -157,8 +157,8 @@ class ProjectCreatorApp(QMainWindow):
         # Set window properties
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
         
-        # Set window size and position
-        self.resize(1200, 800)
+        # Set window size and position - increased width to better match screenshot
+        self.resize(1300, 850)
         self.center_window()
         
         # Set up app icon
@@ -299,38 +299,73 @@ class ProjectCreatorApp(QMainWindow):
         
         # Output directory
         self.output_dir_layout = QHBoxLayout()
+        # Make sure components don't wrap to next line by setting some key properties
+        self.output_dir_layout.setSizeConstraint(QLayout.SetNoConstraint)
+        # Add margins to the output dir layout to create space on both sides
+        self.output_dir_layout.setContentsMargins(10, 0, 10, 0)  # Left, top, right, bottom
+        self.output_dir_layout.setSpacing(5)  # Space between elements
+        
         self.output_dir_label = QLabel("Output Directory:")
         self.output_dir_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        # Make label match app background and have no border
+        self.output_dir_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: {APP_COLORS['bg']};
+                border: none;
+                padding-left: 5px;
+            }}
+        """)
+        
         self.output_dir_input = QLineEdit()
         self.output_dir_input.setPlaceholderText("Select output directory...")
         self.output_dir_input.setReadOnly(True)
+        # Remove the minimum width setting so it doesn't force wrapping
+        # self.output_dir_input.setMinimumWidth(350)
+        # Keep border on path field but make its background match main bg and reduce height
+        self.output_dir_input.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {APP_COLORS['bg']};
+                color: {APP_COLORS['text']};
+                border: 1px solid {APP_COLORS['border']};
+                padding: 5px;
+                min-height: 22px;
+            }}
+        """)
+        
         self.output_dir_btn = QPushButton("Browse...")
         self.output_dir_btn.clicked.connect(self.get_output_dir)
-        # Custom style for the browse button - lighter grey with distinct hover state
-        self.output_dir_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #383838;  /* Lighter grey than default */
+        # Make sure the browse button doesn't get too large
+        self.output_dir_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        # Custom style for the browse button - match height with input field
+        self.output_dir_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #383838;
                 color: #CCCCCC;
-                border: 1px solid #3C3C3C;
+                border: 1px solid {APP_COLORS['border']};
                 padding: 5px 10px;
                 border-radius: 3px;
-            }
-            QPushButton:hover {
+                min-height: 22px;
+                margin-right: 5px;
+            }}
+            QPushButton:hover {{
                 background-color: #454545;
                 border: 1px solid #2C4F76;
                 color: white;
-            }
-            QPushButton:pressed {
+            }}
+            QPushButton:pressed {{
                 background-color: #2C4F76;
                 color: white;
-            }
+            }}
         """)
+        
+        # Create a layout that won't wrap components
+        self.output_dir_layout.setSpacing(5)
         self.output_dir_layout.addWidget(self.output_dir_label)
-        self.output_dir_layout.addWidget(self.output_dir_input)
+        self.output_dir_layout.addWidget(self.output_dir_input, 1)  # Add stretch factor to take more space
         self.output_dir_layout.addWidget(self.output_dir_btn)
         bottom_layout.addLayout(self.output_dir_layout)
         
-        # Add some spacing before the create button
+        # Remove the separator line - just add a small spacing
         bottom_layout.addSpacing(10)
         
         # Batch create project button
@@ -366,7 +401,7 @@ class ProjectCreatorApp(QMainWindow):
         self.right_panel.setMinimumWidth(450)  # Ensure right panel buttons remain visible
         
         # Initial sizes
-        self.main_splitter.setSizes([300, 700])  
+        self.main_splitter.setSizes([400, 900])  # Increased left panel width
         self.main_splitter.setHandleWidth(6)  # Standard handle width
         
         # Allow panels to be collapsed to their minimum size but not further

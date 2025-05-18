@@ -92,7 +92,7 @@ class LicenseManager:
                 print(f"ERROR: Field '{API_KEY_FIELD_NAME}' not found in {API_KEY_CONFIG_NAME}.")
                 return None
                 
-            print("DEBUG: API key loaded successfully.")
+            # print("DEBUG: API key loaded successfully.")
             return api_key
             
         except FileNotFoundError:
@@ -122,7 +122,7 @@ class LicenseManager:
             # Also store the precise end time for the trial
             trial_end_time = (datetime.now() + timedelta(seconds=TRIAL_DURATION_SECONDS)).isoformat()
             self.settings.setValue("license/trial_end_time", trial_end_time)
-            print(f"DEBUG: Trial started. Start: {trial_start}, End: {trial_end_time}")
+            # print(f"DEBUG: Trial started. Start: {trial_start}, End: {trial_end_time}")
             return True
             
         # Calculate if trial is still active
@@ -131,7 +131,7 @@ class LicenseManager:
         if not trial_end_iso:
             # Fallback if trial_end_time was somehow not set (e.g., older version)
             # This will effectively reset the trial for this check, which is safer.
-            print("DEBUG: trial_end_time not found. Resetting trial period for this session.")
+            # print("DEBUG: trial_end_time not found. Resetting trial period for this session.")
             start_date_dt = datetime.now()
             self.settings.setValue("license/trial_start", start_date_dt.isoformat())
             trial_end_dt = start_date_dt + timedelta(seconds=TRIAL_DURATION_SECONDS)
@@ -144,11 +144,12 @@ class LicenseManager:
             end_date = datetime.fromisoformat(trial_end_iso)
             is_active = datetime.now() <= end_date
             if not is_active:
-                print(f"DEBUG: Trial has expired. Current time: {datetime.now()}, End date: {end_date}")
+                # print(f"DEBUG: Trial has expired. Current time: {datetime.now()}, End date: {end_date}")
+                return False
             return is_active
         except (ValueError, TypeError) as e:
             # If there's any error parsing the date, reset the trial
-            print(f"DEBUG: Error parsing trial dates ({e}). Resetting trial period.")
+            # print(f"DEBUG: Error parsing trial dates ({e}). Resetting trial period.")
             trial_start_dt = datetime.now()
             trial_end_dt = trial_start_dt + timedelta(seconds=TRIAL_DURATION_SECONDS)
             self.settings.setValue("license/trial_start", trial_start_dt.isoformat())
@@ -287,7 +288,7 @@ class LicenseManager:
                 # Activation successful (either new or already registered)
                 try:
                     data = response.json()
-                    print(f"DEBUG [activate_license]: Successful response data = {data}")
+                    # print(f"DEBUG [activate_license]: Successful response data = {data}")
                     
                     # Store license information regardless of new/existing
                     self.settings.setValue("license/key", license_key)
@@ -306,9 +307,10 @@ class LicenseManager:
                     activation_id = data.get("activationId")
                     if activation_id:
                         self.settings.setValue("license/activation_id", activation_id)
-                        print(f"DEBUG: Stored activation ID: {activation_id}")
+                        # print(f"DEBUG: Stored activation ID: {activation_id}")
                     else:
-                        print("WARNING: activationId not found in successful activation response.")
+                        # print("WARNING: activationId not found in successful activation response.")
+                        pass
                     # --- End Added ---
 
                     # Update names/company if provided in response (might not be)
@@ -321,7 +323,7 @@ class LicenseManager:
 
                 except json.JSONDecodeError as e:
                     # Handle case where 200 OK but response is not valid JSON
-                    print(f"ERROR: Activation request successful (200 OK) but failed to parse JSON response: {e}. Response text: {response.text}")
+                    # print(f"ERROR: Activation request successful (200 OK) but failed to parse JSON response: {e}. Response text: {response.text}")
                     # Still treat as success for licensing, but maybe show a generic message?
                     self.settings.setValue("license/is_valid", True) # Assume valid based on 200 OK
                     self.settings.setValue("license/key", license_key)
@@ -329,7 +331,7 @@ class LicenseManager:
                     return True, "License confirmed, but response details were unclear."
                 except Exception as e:
                     # Catch other errors during processing of successful response
-                    print(f"ERROR: Unexpected error processing successful (200 OK) activation response: {str(e)}")
+                    # print(f"ERROR: Unexpected error processing successful (200 OK) activation response: {str(e)}")
                     import traceback
                     traceback.print_exc()
                     # Fallback: treat as success based on 200 OK
@@ -339,7 +341,7 @@ class LicenseManager:
                     return True, "License confirmed, but encountered an internal processing error."
             else:
                 # Handle non-200 status codes (failures)
-                print(f"ERROR: Activation request failed with status {response.status_code}. Response text: {response.text}")
+                # print(f"ERROR: Activation request failed with status {response.status_code}. Response text: {response.text}")
                 try:
                     error_message = response.json().get("message", f"Activation failed (Status: {response.status_code})")
                 except json.JSONDecodeError:
@@ -347,10 +349,10 @@ class LicenseManager:
                 return False, error_message
 
         except requests.RequestException as e:
-            print(f"ERROR: Activation connection error: {str(e)}") # Enhanced logging prefix
+            # print(f"ERROR: Activation connection error: {str(e)}") # Enhanced logging prefix
             return False, f"Connection error: {str(e)}"
         except Exception as e:
-            print(f"ERROR: Unexpected error during activation request: {str(e)}") # Changed message slightly
+            # print(f"ERROR: Unexpected error during activation request: {str(e)}") # Changed message slightly
             import traceback
             traceback.print_exc()
             return False, f"Error: {str(e)}"
@@ -368,7 +370,8 @@ class LicenseManager:
             
         # --- Added: Check for activation_id, though backend might not require it yet --- 
         if not activation_id:
-            print("WARNING: No activation ID found locally. Sending deactivation without it. Backend might require this in the future.")
+            # print("WARNING: No activation ID found locally. Sending deactivation without it. Backend might require this in the future.")
+            pass
         # --- End Added ---
 
         try:
@@ -392,7 +395,7 @@ class LicenseManager:
             
             # Check response status before trying to parse JSON
             if response.status_code != 200:
-                print(f"ERROR: Deactivation request failed with status {response.status_code}. Response text: {response.text}")
+                # print(f"ERROR: Deactivation request failed with status {response.status_code}. Response text: {response.text}")
                 try:
                     error_message = response.json().get("message", f"Deactivation failed (Status: {response.status_code})")
                 except json.JSONDecodeError:
@@ -427,16 +430,16 @@ class LicenseManager:
                 return is_explicit_success, message or "License deactivated successfully"
             else:
                  # Log failure details even if status was 200 but status field wasn't "success" and message didn't say 'not found'
-                print(f"ERROR: Deactivation successful status code (200) but failed status/message in body. Response: {data}")
+                # print(f"ERROR: Deactivation successful status code (200) but failed status/message in body. Response: {data}")
                 return False, message or "License deactivation failed"
         except requests.RequestException as e:
-            print(f"ERROR: Deactivation connection error: {str(e)}") # Enhanced logging prefix
+            # print(f"ERROR: Deactivation connection error: {str(e)}") # Enhanced logging prefix
             return False, f"Connection error: {str(e)}"
         except json.JSONDecodeError as e:
-             print(f"ERROR: Failed to parse deactivation response JSON: {e}. Response text: {response.text if 'response' in locals() else 'N/A'}") # Log raw text on JSON error
+             # print(f"ERROR: Failed to parse deactivation response JSON: {e}. Response text: {response.text if 'response' in locals() else 'N/A'}") # Log raw text on JSON error
              return False, "Error parsing server response."
         except Exception as e:
-            print(f"ERROR: Unexpected error during deactivation: {str(e)}") # Enhanced logging prefix
+            # print(f"ERROR: Unexpected error during deactivation: {str(e)}") # Enhanced logging prefix
             import traceback
             traceback.print_exc()
             return False, f"Error: {str(e)}"
@@ -445,7 +448,7 @@ class LicenseManager:
         """Validate the license with the license server using only the license key."""
         # If no API key was loaded during init, fail validation
         if not self.api_key:
-            print("ERROR: Cannot validate license - API key is missing.")
+            # print("ERROR: Cannot validate license - API key is missing.")
             return False
             
         # If no key provided, try to get it from settings
@@ -453,7 +456,7 @@ class LicenseManager:
             license_key = self.settings.value("license/key", "")
             
         if not license_key:
-            print("DEBUG: validate_license - No license key found.")
+            # print("DEBUG: validate_license - No license key found.")
             return False
             
         try:
@@ -467,31 +470,32 @@ class LicenseManager:
                 'x-api-key': self.api_key  # Add the API key header
             }
 
-            print(f"DEBUG: Headers being sent: {headers}")
+            # print(f"DEBUG: Headers being sent: {headers}")
 
-            print(f"DEBUG: Validating license key at {url} with payload: {payload}")
+            # print(f"DEBUG: Validating license key at {url} with payload: {payload}")
             # Note: Do not print headers in production logs if they contain sensitive info
             # print(f"DEBUG: Headers: {headers}") 
             response = requests.post(url, json=payload, headers=headers)
             
             # Log details for specific auth errors
             if response.status_code == 401 or response.status_code == 403:
-                 print(f"ERROR: License validation authentication failed (Status: {response.status_code}). Check API Key. Response text: {response.text}")
+                 # print(f"ERROR: License validation authentication failed (Status: {response.status_code}). Check API Key. Response text: {response.text}")
                  self.settings.setValue("license/is_valid", False)
                  return False
                  
             # Check for other non-200 status codes before raising exception or parsing JSON
             if response.status_code != 200:
-                print(f"ERROR: License validation request failed with status {response.status_code}. Response text: {response.text}")
+                # print(f"ERROR: License validation request failed with status {response.status_code}. Response text: {response.text}")
                 # Attempt to raise specific HTTPError, but log first
                 try:
                     response.raise_for_status() 
                 except requests.exceptions.HTTPError as http_err:
-                    print(f"DEBUG: HTTPError raised: {http_err}") # Log the specific HTTPError
+                    # print(f"DEBUG: HTTPError raised: {http_err}") # Log the specific HTTPError
+                    pass
                 
                 # Fallback to cached status after logging non-200 response
                 cached_status = self.settings.value("license/is_valid", False, type=bool)
-                print(f"DEBUG: Falling back to cached license status after non-200 response: {cached_status}")
+                # print(f"DEBUG: Falling back to cached license status after non-200 response: {cached_status}")
                 return cached_status
 
             # If status is 200, proceed to parse JSON
@@ -519,17 +523,17 @@ class LicenseManager:
         except requests.exceptions.RequestException as e:
             # ... existing logging ...
             cached_status = self.settings.value("license/is_valid", False, type=bool)
-            print(f"DEBUG: Falling back to cached license status: {cached_status}")
+            # print(f"DEBUG: Falling back to cached license status: {cached_status}")
             return cached_status
         except json.JSONDecodeError as e:
             # Log raw text on JSON error
-            print(f"ERROR: Failed to parse validation response JSON: {e}. Status Code: {response.status_code if 'response' in locals() else 'N/A'}. Response text: {response.text if 'response' in locals() else 'N/A'}") 
+            # print(f"ERROR: Failed to parse validation response JSON: {e}. Status Code: {response.status_code if 'response' in locals() else 'N/A'}. Response text: {response.text if 'response' in locals() else 'N/A'}") 
             self.settings.setValue("license/is_valid", False)
             return False
         except Exception as e:
             # ... existing logging ...
             cached_status = self.settings.value("license/is_valid", False, type=bool)
-            print(f"DEBUG: Falling back to cached license status due to unexpected error: {cached_status}")
+            # print(f"DEBUG: Falling back to cached license status due to unexpected error: {cached_status}")
             return cached_status
             
     def get_license_info(self):

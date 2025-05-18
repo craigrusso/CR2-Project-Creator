@@ -10,6 +10,8 @@ import os
 import time
 import json
 from typing import Dict, List, Tuple, Set, Optional, Any, Union
+import shutil
+from pathlib import Path
 
 from PyQt5.QtWidgets import (
     QMessageBox, QDialog, QVBoxLayout, QHBoxLayout, QPushButton, 
@@ -21,6 +23,7 @@ from PyQt5.QtGui import QIcon, QFont
 
 from app.ui.color_scheme_pyqt import colors
 from app.utils.file_cache_manager import FileCacheManager
+from app.utils.logging_utils import debug, info, warning, error
 
 
 class TemplateCacheManager(QObject):
@@ -52,7 +55,7 @@ class TemplateCacheManager(QObject):
             if hasattr(template_manager, 'paths') and 'cache_dir' in template_manager.paths:
                 cache_dir = template_manager.paths['cache_dir']
                 self.file_cache_manager = FileCacheManager(cache_dir)
-                print(f"[DEBUG] Created FileCacheManager with cache_dir: {cache_dir}")
+                debug(f"Created FileCacheManager with cache_dir: {cache_dir}")
         
         # Stats tracking
         self.stats = {
@@ -76,7 +79,7 @@ class TemplateCacheManager(QObject):
                 - dict: Details about missing files
         """
         if not self.file_cache_manager:
-            print(f"[ERROR] No FileCacheManager available")
+            error("No FileCacheManager available")
             return False, {"error": "No cache manager available"}
             
         # Get all cached files for this template
@@ -116,7 +119,7 @@ class TemplateCacheManager(QObject):
         result = {}
         
         if not self.file_cache_manager or not self.template_io:
-            print(f"[ERROR] Required managers not available")
+            error("Required managers not available")
             return result
             
         # Reset stats
@@ -162,7 +165,7 @@ class TemplateCacheManager(QObject):
                 - dict: Stats about the recaching operation
         """
         if not self.file_cache_manager:
-            print(f"[ERROR] No FileCacheManager available")
+            error("No FileCacheManager available")
             return False, {"error": "No cache manager available"}
             
         # Get the template data
@@ -171,7 +174,7 @@ class TemplateCacheManager(QObject):
             template_data = self.template_io.get_template(template_name)
         
         if not template_data:
-            print(f"[ERROR] Template '{template_name}' not found")
+            error(f"Template '{template_name}' not found")
             return False, {"error": f"Template '{template_name}' not found"}
             
         # Clear the existing cache
@@ -228,7 +231,7 @@ class TemplateCacheManager(QObject):
                 - dict: Stats about the recaching operation
         """
         if not self.file_cache_manager or not self.template_io:
-            print(f"[ERROR] Required managers not available")
+            error("Required managers not available")
             return False, {"error": "Required managers not available"}
             
         # Get all templates

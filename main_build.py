@@ -74,18 +74,18 @@ def get_user_home_directory():
 
 def main():
     """Main entry point for the Echelon application"""
-    print("DEBUG: Starting application initialization")
+    # print("DEBUG: Starting application initialization")
     
     # Setup DPI awareness for Windows
     setup_dpi_awareness()
-    print("DEBUG: DPI awareness configured")
+    # print("DEBUG: DPI awareness configured")
     
     # For macOS, set the application name before creating QApplication
     # This affects what appears in the menu bar
     QCoreApplication.setApplicationName(APP_NAME)
     QCoreApplication.setOrganizationName("CR2 Creative")
     QCoreApplication.setOrganizationDomain("cr2creative.com")
-    print("DEBUG: Application core info set")
+    # print("DEBUG: Application core info set")
     
     # Set app ID for Windows taskbar
     if platform.system() == "Windows":
@@ -93,32 +93,32 @@ def main():
             import ctypes
             myappid = 'cr2creative.echelon.0.95'
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-            print("DEBUG: Windows app ID set")
+            # print("DEBUG: Windows app ID set")
         except Exception as e:
             print(f"WARNING: Could not set app ID: {e}")
 
     # Enable High DPI scaling
-    print("DEBUG: Configuring high DPI settings")
+    # print("DEBUG: Configuring high DPI settings")
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     
     # Initialize the PyQt application
-    print("DEBUG: Creating QApplication instance")
+    # print("DEBUG: Creating QApplication instance")
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
     
     # Force application to use our custom palette regardless of system settings
-    print("DEBUG: Applying custom palette")
+    # print("DEBUG: Applying custom palette")
     force_app_palette(app)
     
     # Apply comprehensive styles from the theme module
-    print("DEBUG: Configuring global styles")
+    # print("DEBUG: Configuring global styles")
     configure_styles(app)
     
     # On macOS, ensure we use our custom styling while maintaining native menu bar
     if platform.system() == "Darwin":  # macOS
-        print("DEBUG: Configuring macOS-specific settings")
+        # print("DEBUG: Configuring macOS-specific settings")
         # Use native menu bar for better macOS integration
         app.setAttribute(Qt.AA_DontUseNativeMenuBar, False)
         
@@ -126,40 +126,40 @@ def main():
         app.setAttribute(Qt.AA_DontShowIconsInMenus, True)
     
     # Create and show the main window
-    print("DEBUG: Creating main application window")
+    # print("DEBUG: Creating main application window")
     try:
         main_window = ProjectCreatorApp()
         # Store the instance for future reference
         ProjectCreatorApp._instance = main_window
-        print("DEBUG: Main window created successfully")
+        # print("DEBUG: Main window created successfully")
         
-        print("DEBUG: Showing main window")
+        # print("DEBUG: Showing main window")
         main_window.show()
         
         # Apply template migration if needed
-        print("DEBUG: Applying template migration")
+        # print("DEBUG: Applying template migration")
         try:
             TemplateManagerMigration.apply_migration(main_window)
-            print("DEBUG: Template migration completed")
+            # print("DEBUG: Template migration completed")
         except Exception as e:
             print(f"ERROR during template migration: {e}")
             import traceback
             traceback.print_exc()
         
         # Apply dark theme to template section
-        print("DEBUG: Applying dark theme to template section")
+        # print("DEBUG: Applying dark theme to template section")
         try:
             apply_dark_theme_to_template_section(main_window)
-            print("DEBUG: Theme applied to template section")
+            # print("DEBUG: Theme applied to template section")
         except Exception as e:
             print(f"ERROR applying theme: {e}")
             import traceback
             traceback.print_exc()
         
         # Apply tree styling to all tree widgets
-        print("DEBUG: Applying tree styling to all tree widgets")
+        # print("DEBUG: Applying tree styling to all tree widgets")
         styled_count = apply_styling_to_all_tree_widgets(main_window)
-        print(f"DEBUG: Tree styling applied to all tree widgets ({styled_count} widgets styled)")
+        # print(f"DEBUG: Tree styling applied to all tree widgets ({styled_count} widgets styled)")
         
         # --- Connect state saving for TableView --- 
         def save_table_view_state():
@@ -170,20 +170,22 @@ def main():
                 # Example path: main_window -> central_widget -> template_gallery -> template_table_view
                 gallery = main_window.template_gallery # Assuming gallery is directly accessible
                 if hasattr(gallery, 'template_table_view') and gallery.template_table_view:
-                    print("DEBUG: Saving TemplateTableView state on exit...")
+                    # print("DEBUG: Saving TemplateTableView state on exit...")
                     gallery.template_table_view.save_state()
                 else:
-                    print("DEBUG: TemplateTableView not found, skipping state save.")
+                    # print("DEBUG: TemplateTableView not found, skipping state save.")
+                    pass
             except AttributeError as ae:
-                print(f"DEBUG: Could not find gallery or table view for state saving: {ae}")
+                # print(f"DEBUG: Could not find gallery or table view for state saving: {ae}")
+                pass
             except Exception as e:
                 print(f"ERROR saving table view state: {e}")
 
         app.aboutToQuit.connect(save_table_view_state)
-        print("DEBUG: Connected aboutToQuit signal for saving TableView state.")
+        # print("DEBUG: Connected aboutToQuit signal for saving TableView state.")
         # ------------------------------------------
         
-        print("DEBUG: Starting application main loop")
+        # print("DEBUG: Starting application main loop")
         return app.exec_()
     except Exception as e:
         print(f"CRITICAL ERROR during application startup: {e}")

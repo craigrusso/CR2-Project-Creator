@@ -40,9 +40,9 @@ def save_json_file(file_path, data):
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         
-        with open(file_path, 'w') as f:
+        with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=4)
-        print(f"DEBUG: Saved {os.path.basename(file_path)} to {file_path}")
+        # print(f"DEBUG: Saved {os.path.basename(file_path)} to {file_path}")
         return True
     except Exception as e:
         print(f"CRITICAL ERROR: Failed to save JSON file {file_path}")
@@ -184,10 +184,10 @@ def open_folder(path):
                     subprocess.run(['open', path], check=True)
             except ImportError:
                 # Fall back to regular folder access
-                print("WARNING: Could not import security_bookmarks module. Falling back to standard access.")
+                # print("WARNING: Could not import security_bookmarks module. Falling back to standard access.")
                 subprocess.run(['open', path], check=True)
             except Exception as e:
-                print(f"WARNING: Failed to use bookmark for {path}: {e}")
+                # print(f"WARNING: Failed to use bookmark for {path}: {e}")
                 # Try regular access as fallback
                 subprocess.run(['open', path], check=True)
         else:
@@ -213,10 +213,10 @@ def open_in_explorer(path):
                     subprocess.run(['open', '-R', path], check=True)
             except ImportError:
                 # Fall back to regular folder access
-                print("WARNING: Could not import security_bookmarks module. Falling back to standard access.")
+                # print("WARNING: Could not import security_bookmarks module. Falling back to standard access.")
                 subprocess.run(['open', '-R', path], check=True)
             except Exception as e:
-                print(f"WARNING: Failed to use bookmark for {path}: {e}")
+                # print(f"WARNING: Failed to use bookmark for {path}: {e}")
                 # Try regular access as fallback
                 subprocess.run(['open', '-R', path], check=True)
         else:

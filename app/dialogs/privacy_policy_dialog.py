@@ -82,8 +82,9 @@ class PrivacyPolicyDialog(QDialog):
                     self.policy_version_in_file = first_line.split(":", 1)[1].strip()
                     print(f"DEBUG: Found Privacy Policy version in file: {self.policy_version_in_file}")
                 else:
-                    print(f"WARN: Privacy Policy file does not start with version marker. Using full file.")
-                    f.seek(0)
+                    # print(f"WARN: Privacy Policy file does not start with version marker. Using full file.")
+                    # If no version marker, treat the whole file as content
+                    f.seek(0) # Reset read pointer
                 
                 content = f.read()
                 return content

@@ -11,11 +11,14 @@ import platform
 import subprocess
 import tempfile
 import ctypes
-from PyQt5.QtWidgets import QApplication, QStyle, QFileIconProvider
+from PyQt5.QtWidgets import QApplication, QStyle, QFileIconProvider, QTreeWidget
 from PyQt5.QtGui import QIcon, QPixmap, QImage
-from PyQt5.QtCore import QFileInfo, QSize
+from PyQt5.QtCore import QFileInfo, QSize, Qt
 from app.constants import get_resource_path
 from app.ui.color_scheme_pyqt import APP_COLORS
+
+# Import our logging utilities
+from app.utils.logging_utils import debug, info, warning, error
 
 # Platform detection
 PLATFORM = platform.system()  # 'Darwin', 'Windows', 'Linux'
@@ -29,9 +32,9 @@ if PLATFORM == "Darwin":
         # Only attempt on macOS - silently fail on other platforms
         import rubicon.objc
         USE_NATIVE_PLATFORM_ICONS = True
-        print("DEBUG: Native macOS icon support available")
+        debug("Native macOS icon support available")
     except ImportError:
-        print("DEBUG: rubicon.objc not available, falling back to Qt icons on macOS")
+        warning("rubicon.objc not available, falling back to Qt icons on macOS")
 
 # Windows specific imports
 elif PLATFORM == "Windows":
@@ -43,9 +46,9 @@ elif PLATFORM == "Windows":
         import win32ui
         import win32gui
         USE_NATIVE_PLATFORM_ICONS = True
-        print("DEBUG: Native Windows icon support available")
+        debug("Native Windows icon support available")
     except ImportError:
-        print("DEBUG: win32com not available, falling back to Qt icons on Windows")
+        warning("win32com not available, falling back to Qt icons on Windows")
 
 class IconProvider:
     """Centralized icon provider for the application"""
@@ -94,9 +97,9 @@ class IconProvider:
                 
                 # Also initialize UTI-related classes for better file type handling
                 self._UTTypeRef = ObjCClass('UTType') if hasattr(rubicon.objc, 'PyObjCClass') else None
-                print("DEBUG: macOS NSWorkspace initialized for icon retrieval")
+                debug("macOS NSWorkspace initialized for icon retrieval")
             except Exception as e:
-                print(f"DEBUG: Could not initialize macOS NSWorkspace: {e}")
+                warning(f"Could not initialize macOS NSWorkspace: {e}")
                 self._workspace = None
                 self._UTTypeRef = None
         else:
@@ -107,9 +110,9 @@ class IconProvider:
         if self._system == "Windows" and USE_NATIVE_PLATFORM_ICONS:
             try:
                 self._shell = win32com.client.Dispatch("Shell.Application")
-                print("DEBUG: Windows Shell Application initialized for icon retrieval")
+                debug("Windows Shell Application initialized for icon retrieval")
             except Exception as e:
-                print(f"DEBUG: Could not initialize Windows Shell: {e}")
+                warning(f"Could not initialize Windows Shell: {e}")
                 self._shell = None
         else:
             self._shell = None
@@ -241,16 +244,18 @@ class IconProvider:
         platform_folder_path = get_resource_path(f'app/assets/icons/platform/folder_{system_name}.png')
         if os.path.exists(platform_folder_path):
             self._folder_icon = QIcon(platform_folder_path)
-            print(f"DEBUG: Using platform-specific folder icon: {platform_folder_path}")
+            debug(f"Using platform-specific folder icon: {platform_folder_path}")
         else:
-            print(f"DEBUG: Using system standard folder icon (no custom icon found at {platform_folder_path})")
+            warning(f"Resource path does not exist: {platform_folder_path}")
+            debug(f"Using system standard folder icon (no custom icon found at {platform_folder_path})")
             
         platform_folder_open_path = get_resource_path(f'app/assets/icons/platform/folder_open_{system_name}.png')
         if os.path.exists(platform_folder_open_path):
             self._folder_open_icon = QIcon(platform_folder_open_path)
-            print(f"DEBUG: Using platform-specific open folder icon: {platform_folder_open_path}")
+            debug(f"Using platform-specific open folder icon: {platform_folder_open_path}")
         else:
-            print(f"DEBUG: Using system standard open folder icon (no custom icon found)")
+            warning(f"Resource path does not exist: {platform_folder_open_path}")
+            debug("Using system standard open folder icon (no custom icon found)")
     
     def get_folder_icon(self, is_open=False):
         """Get platform-specific folder icon"""
@@ -322,7 +327,7 @@ class IconProvider:
                 # For other application-specific extensions, we could add similar handling
                 
             except Exception as e:
-                print(f"Warning: Failed to set file type: {e}")
+                warning(f"Failed to set file type: {e}")
                 
         # Windows file association tagging would go here if needed
                 
@@ -398,7 +403,7 @@ class IconProvider:
                 
                 # If we found the application path, try to get its icon
                 if app_path and os.path.exists(app_path):
-                    print(f"DEBUG: Using icon from application: {app_path}")
+                    debug(f"Using icon from application: {app_path}")
                     app_path_ns = NSString.stringWithString_(app_path)
                     ns_image = self._workspace.iconForFile_(app_path_ns)
                     if ns_image:
@@ -412,7 +417,7 @@ class IconProvider:
                 
             return None
         except Exception as e:
-            print(f"Error getting native macOS icon: {e}")
+            warning(f"Error getting native macOS icon: {e}")
             return None
     
     def _nsimage_to_qicon(self, ns_image):
@@ -431,23 +436,23 @@ class IconProvider:
                     length = tiff_data.length
                     actual_tiff_bytes = ctypes.string_at(c_bytes_ptr, length)
                     
-                    print(f"DEBUG: Extracted {length} bytes from TIFF NSData via ctypes.")
+                    debug(f"Extracted {length} bytes from TIFF NSData via ctypes.")
                     load_success = qimage.loadFromData(actual_tiff_bytes, "TIFF")
                     
                     if load_success:
-                        print("DEBUG: Successfully loaded TIFF data into QImage via ctypes bytes.")
+                        debug("Successfully loaded TIFF data into QImage via ctypes bytes.")
                     else:
-                        print("DEBUG: Failed to load TIFF data (from ctypes bytes) into QImage.")
+                        debug("Failed to load TIFF data (from ctypes bytes) into QImage.")
                         if qimage.isNull():
-                            print("DEBUG: QImage is null after attempting to load TIFF ctypes bytes.")
+                            debug("QImage is null after attempting to load TIFF ctypes bytes.")
                 except Exception as e_tiff_ctypes:
-                    print(f"DEBUG: Error converting TIFF NSData to bytes via ctypes or loading into QImage: {e_tiff_ctypes}")
+                    warning(f"Error converting TIFF NSData to bytes via ctypes or loading into QImage: {e_tiff_ctypes}")
                     load_success = False
             else:
-                print("DEBUG: ns_image.TIFFRepresentation was None.")
+                debug("ns_image.TIFFRepresentation was None.")
 
             if not load_success or qimage.isNull():
-                print(f"DEBUG: Primary QImage loading (TIFF via ctypes) failed or QImage is Null. IsNull: {qimage.isNull()}. Falling back to PNG representation.")
+                debug(f"Primary QImage loading (TIFF via ctypes) failed or QImage is Null. IsNull: {qimage.isNull()}. Falling back to PNG representation.")
                 # Fallback Attempt 1: Use PNG representation with ctypes (similar to previous attempt but now as fallback)
                 # This path was previously failing, so it's a long shot here.
                 bitmap_rep = ObjCClass('NSBitmapImageRep').imageRepWithData_(ns_image.TIFFRepresentation) # Attempt to make a rep from TIFF first
@@ -464,12 +469,12 @@ class IconProvider:
                         for rep_candidate in all_reps:
                             if rep_candidate.isKindOfClass(ObjCClass('NSBitmapImageRep')):
                                 bitmap_rep = rep_candidate
-                                print("DEBUG: Found an existing NSBitmapImageRep in ns_image.representations.")
+                                debug("Found an existing NSBitmapImageRep in ns_image.representations.")
                                 break
                         if not bitmap_rep:
                             # If no direct NSBitmapImageRep, try to create one from the first representation's data (if any)
                             # This is highly speculative
-                            print("DEBUG: No direct NSBitmapImageRep found, attempting to create from first representation's data (speculative).")
+                            debug("No direct NSBitmapImageRep found, attempting to create from first representation's data (speculative).")
                             # This part is risky as the first rep might not be suitable.
                             # For now, let's stick to the more direct PNG approach if TIFF fails completely.
                             pass # placeholder for more complex rep handling
@@ -484,29 +489,29 @@ class IconProvider:
                             length_png = png_data_fallback.length
                             actual_png_bytes_fallback = ctypes.string_at(c_bytes_ptr_png, length_png)
                             
-                            print(f"DEBUG (Fallback): Extracted {length_png} bytes from PNG NSData via ctypes.")
+                            debug(f"DEBUG (Fallback): Extracted {length_png} bytes from PNG NSData via ctypes.")
                             # Create a new QImage instance for this fallback attempt
                             qimage_fallback_png = QImage()
                             load_success = qimage_fallback_png.loadFromData(actual_png_bytes_fallback, "PNG")
                             if load_success:
-                                print("DEBUG (Fallback): Successfully loaded PNG data into QImage via ctypes bytes.")
+                                debug("DEBUG (Fallback): Successfully loaded PNG data into QImage via ctypes bytes.")
                                 qimage = qimage_fallback_png # Use this image
                             else:
-                                print("DEBUG (Fallback): Failed to load PNG data (from ctypes bytes) into QImage.")
+                                debug("DEBUG (Fallback): Failed to load PNG data (from ctypes bytes) into QImage.")
                                 if qimage_fallback_png.isNull():
-                                    print("DEBUG (Fallback): QImage for PNG is null after attempting to load ctypes bytes.")
+                                    debug("DEBUG (Fallback): QImage for PNG is null after attempting to load ctypes bytes.")
                         except Exception as e_png_ctypes:
-                            print(f"DEBUG (Fallback): Error converting PNG NSData to bytes via ctypes or loading: {e_png_ctypes}")
+                            warning(f"DEBUG (Fallback): Error converting PNG NSData to bytes via ctypes or loading: {e_png_ctypes}")
                             load_success = False # Ensure load_success reflects this path's failure
                     else:
-                        print("DEBUG (Fallback): png_data_fallback from NSBitmapImageRep was None.")
+                        debug("DEBUG (Fallback): png_data_fallback from NSBitmapImageRep was None.")
                 else:
-                    print("DEBUG (Fallback): Could not obtain NSBitmapImageRep for PNG fallback.")
+                    debug("DEBUG (Fallback): Could not obtain NSBitmapImageRep for PNG fallback.")
 
 
             # If all primary and ctypes-based fallbacks fail, resort to writing temp file (PNG)
             if not load_success or qimage.isNull():
-                print(f"DEBUG: All direct/ctypes QImage loading failed. IsNull: {qimage.isNull()}. Resorting to temp file (PNG).")
+                debug(f"DEBUG: All direct/ctypes QImage loading failed. IsNull: {qimage.isNull()}. Resorting to temp file (PNG).")
                 
                 # Ensure we have a bitmap_rep to get PNG data for the file
                 # This logic is a bit redundant with the above PNG fallback but ensures we try for the file
@@ -523,39 +528,39 @@ class IconProvider:
                                 break
                 
                 if not final_bitmap_rep:
-                    print("DEBUG (Temp File): Could not obtain any NSBitmapImageRep to generate PNG for temp file.")
+                    debug("DEBUG (Temp File): Could not obtain any NSBitmapImageRep to generate PNG for temp file.")
                     return None
 
                 properties = at({})
                 png_data_for_file = final_bitmap_rep.representationUsingType_properties_(3, properties) # NSPNGFileType
 
                 if not png_data_for_file:
-                    print("DEBUG (Temp File): Failed to get PNG data from final_bitmap_rep for temp file.")
+                    debug("DEBUG (Temp File): Failed to get PNG data from final_bitmap_rep for temp file.")
                     return None
 
                 icon_path = get_resource_path(f'app/assets/icons/platform/temp_icon_{self._system.lower()}.png')
                 try:
                     os.makedirs(os.path.dirname(icon_path), exist_ok=True)
                 except Exception as e_mkdir:
-                    print(f"DEBUG: Failed to create directory for temp icon {os.path.dirname(icon_path)}: {e_mkdir}")
+                    warning(f"DEBUG: Failed to create directory for temp icon {os.path.dirname(icon_path)}: {e_mkdir}")
                     return None
                 
                 write_success = png_data_for_file.writeToFile_atomically_(icon_path, True)
                 if not write_success:
-                    print(f"DEBUG (Temp File): Failed to write PNG data to {icon_path}")
+                    warning(f"DEBUG (Temp File): Failed to write PNG data to {icon_path}")
                     return None
                 
                 temp_qimage = QImage(icon_path)
                 if temp_qimage.isNull():
-                    print(f"DEBUG (Temp File): QImage loaded from {icon_path} is Null")
+                    warning(f"DEBUG (Temp File): QImage loaded from {icon_path} is Null")
                     try:
                         if os.path.exists(icon_path): os.remove(icon_path)
-                    except Exception as e_remove: print(f"DEBUG: Error removing temp icon file {icon_path} on QImage null: {e_remove}")
+                    except Exception as e_remove: warning(f"DEBUG: Error removing temp icon file {icon_path} on QImage null: {e_remove}")
                     return None
                 
                 qimage = temp_qimage # Use the image loaded from file
                 load_success = True # Mark as success for the next stage
-                print(f"DEBUG (Temp File): Successfully loaded QImage from temp file: {icon_path}. Has Alpha: {qimage.hasAlphaChannel()}")
+                debug(f"DEBUG (Temp File): Successfully loaded QImage from temp file: {icon_path}. Has Alpha: {qimage.hasAlphaChannel()}")
 
             # Determine if the qimage came from a successfully loaded temporary file for later cleanup
             path_to_clean_after_pixmap = None
@@ -563,24 +568,24 @@ class IconProvider:
                 path_to_clean_after_pixmap = icon_path
 
             if not load_success or qimage.isNull():
-                 print("DEBUG: All attempts to load image data failed or resulted in Null QImage.")
+                 debug("DEBUG: All attempts to load image data failed or resulted in Null QImage.")
                  # If failure implies a temp file was made but not used or failed, clean it here too
                  if path_to_clean_after_pixmap and os.path.exists(path_to_clean_after_pixmap):
                      try: 
                          os.remove(path_to_clean_after_pixmap)
-                         print(f"DEBUG: Cleaned up {path_to_clean_after_pixmap} due to load failure before QPixmap.")
+                         debug(f"DEBUG: Cleaned up {path_to_clean_after_pixmap} due to load failure before QPixmap.")
                      except Exception: pass                 
                  return None
 
             # If QImage loaded successfully, ensure it's in a format that preserves alpha for QPixmap
             if qimage.hasAlphaChannel():
-                print("DEBUG: Original QImage has alpha channel. Converting to ARGB32_Premultiplied for QPixmap.")
+                debug("DEBUG: Original QImage has alpha channel. Converting to ARGB32_Premultiplied for QPixmap.")
                 converted_qimage = qimage.convertToFormat(QImage.Format_ARGB32_Premultiplied)
                 if not converted_qimage.isNull():
                     qimage = converted_qimage # Use the converted image
-                    print("DEBUG: Successfully converted QImage to ARGB32_Premultiplied.")
+                    debug("DEBUG: Successfully converted QImage to ARGB32_Premultiplied.")
                 else:
-                    print("DEBUG: convertToFormat to ARGB32_Premultiplied resulted in a null QImage. Using original.")
+                    debug("DEBUG: convertToFormat to ARGB32_Premultiplied resulted in a null QImage. Using original.")
             
             qpixmap = QPixmap.fromImage(qimage)
             
@@ -588,31 +593,31 @@ class IconProvider:
             if path_to_clean_after_pixmap and os.path.exists(path_to_clean_after_pixmap):
                 try:
                     os.remove(path_to_clean_after_pixmap)
-                    print(f"DEBUG: Cleaned up temp icon file {path_to_clean_after_pixmap} after QPixmap creation.")
+                    debug(f"DEBUG: Cleaned up temp icon file {path_to_clean_after_pixmap} after QPixmap creation.")
                 except Exception as e_remove_final:
-                    print(f"DEBUG: Error removing temp icon file {path_to_clean_after_pixmap} after QPixmap creation: {e_remove_final}")
+                    warning(f"DEBUG: Error removing temp icon file {path_to_clean_after_pixmap} after QPixmap creation: {e_remove_final}")
 
             if qpixmap.isNull():
-                print("DEBUG: QPixmap created from final QImage is Null")
+                debug("DEBUG: QPixmap created from final QImage is Null")
                 return None
             
             # Check if QPixmap itself reports having an alpha channel
             if qpixmap.hasAlphaChannel(): 
-                print(f"DEBUG: QPixmap created successfully. Has Alpha Channel: True. Depth: {qpixmap.depth()}")
+                debug(f"DEBUG: QPixmap created successfully. Has Alpha Channel: True. Depth: {qpixmap.depth()}")
             else:
-                print(f"DEBUG: QPixmap created successfully. Has Alpha Channel: False. Depth: {qpixmap.depth()}. This might lead to white BGs.")
+                debug(f"DEBUG: QPixmap created successfully. Has Alpha Channel: False. Depth: {qpixmap.depth()}. This might lead to white BGs.")
             
             icon = QIcon(qpixmap)
             if icon.isNull():
-                print("DEBUG: QIcon created from final QPixmap is Null")
+                debug("DEBUG: QIcon created from final QPixmap is Null")
                 return None
             
-            print("DEBUG: Successfully created QIcon from NSImage data.")
+            debug("DEBUG: Successfully created QIcon from NSImage data.")
             return icon
                 
         except Exception as e:
             import traceback
-            print(f"CRITICAL Error converting NSImage to QIcon: {e}\\n{traceback.format_exc()}")
+            warning(f"CRITICAL Error converting NSImage to QIcon: {e}\\n{traceback.format_exc()}")
             return None
             
     def _get_windows_native_icon(self, filepath):
@@ -654,7 +659,7 @@ class IconProvider:
                             
                     return icon
                 except Exception as e:
-                    print(f"Error getting Windows icon: {e}")
+                    warning(f"Error getting Windows icon: {e}")
                     
             # Clean up temp file if created
             if temp_file and os.path.exists(temp_file):
@@ -665,7 +670,7 @@ class IconProvider:
                     
             return None
         except Exception as e:
-            print(f"Error getting native Windows icon: {e}")
+            warning(f"Error getting native Windows icon: {e}")
             
             # Clean up temp file if created and still exists
             if 'temp_file' in locals() and temp_file and os.path.exists(temp_file):
@@ -748,7 +753,7 @@ class IconProvider:
                     return system_icon
                     
         except Exception as e:
-            print(f"Error getting file icon: {e}")
+            warning(f"Error getting file icon: {e}")
         finally:
             # Clean up temp file in the finally block to ensure it happens
             if temp_file and os.path.exists(temp_file):
@@ -777,28 +782,61 @@ def get_file_icon(filename):
     return IconProvider().get_file_icon(filename)
 
 def clear_icon_cache():
-    """Clear the icon cache and force a refresh of all icons"""
+    """Clear the icon cache to force reloading of all icons"""
     provider = IconProvider()
+    provider._icon_cache.clear()
+    debug("Icon cache cleared")
     
-    # Clear the existing cache
-    if hasattr(provider, '_icon_cache'):
-        provider._icon_cache = {}
-        print("DEBUG: Icon cache cleared")
+    # Force immediate refresh of all tree widgets in the application
+    app = QApplication.instance()
+    if app:
+        for widget in app.allWidgets():
+            if isinstance(widget, QTreeWidget):
+                # Update all visible tree items
+                for i in range(widget.topLevelItemCount()):
+                    _refresh_widget_item_icons(widget.topLevelItem(i))
     
-    # Force re-initialization of file type mappings
-    provider._init_file_type_mappings()
+    return True
+
+def _refresh_widget_item_icons(item):
+    """Helper function to recursively refresh icons for tree widget items"""
+    if not item:
+        return
+        
+    # Force icon update based on item data or text
+    item_data = item.data(0, Qt.UserRole)
+    item_name = item.text(0)
     
-    # Force platform-specific re-initialization
-    provider._init_platform_specific()
-    
-    # Clear temporary icon files that might be left behind
-    try:
-        platform_name = platform.system().lower()
-        temp_icon_path = get_resource_path(f'app/assets/icons/platform/temp_icon_{platform_name}.png')
-        if os.path.exists(temp_icon_path):
-            os.remove(temp_icon_path)
-            print(f"DEBUG: Removed temporary icon file: {temp_icon_path}")
-    except Exception as e:
-        print(f"DEBUG: Error cleaning up temp icon: {e}")
-    
-    return True 
+    # First try to identify by explicit data type
+    if isinstance(item_data, dict) and 'type' in item_data:
+        # Use the explicit type information
+        item_type = item_data.get('type')
+        
+        if item_type == 'folder':
+            # It's a folder - use appropriate folder icon based on expanded state
+            is_expanded = item.isExpanded()
+            item.setIcon(0, get_folder_icon(is_expanded))
+        else:
+            # It's a file - use appropriate file icon
+            filename = item_data.get('name', item_name)
+            item.setIcon(0, get_file_icon(filename))
+    else:
+        # Fallback to heuristic identification
+        if item.childCount() > 0:
+            # Has children, likely a folder
+            is_expanded = item.isExpanded()
+            item.setIcon(0, get_folder_icon(is_expanded))
+        else:
+            # No children, likely a file
+            # Check if the item has a file extension
+            if '.' in item_name and not item_name.endswith('/'):
+                # Has extension, definitely a file
+                item.setIcon(0, get_file_icon(item_name))
+            else:
+                # No extension, but no children either
+                # Default to folder icon since it's ambiguous
+                item.setIcon(0, get_folder_icon(False))
+            
+    # Recursively refresh children's icons
+    for i in range(item.childCount()):
+        _refresh_widget_item_icons(item.child(i)) 

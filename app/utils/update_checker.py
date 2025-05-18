@@ -31,7 +31,7 @@ def get_latest_version_info(api_url):
         print(f"ERROR: Update check - Unsupported platform: {current_platform_system}")
         return None
 
-    print(f"DEBUG: Checking for updates at {api_url} for platform '{target_platform_api}'")
+    # print(f"DEBUG: Checking for updates at {api_url} for platform '{target_platform_api}'")
 
     try:
         response = requests.get(api_url, timeout=10) # 10 second timeout
@@ -49,7 +49,7 @@ def get_latest_version_info(api_url):
         for version_info in versions_data:
             # Check required fields are present
             if not all(k in version_info for k in ('platform', 'versionNumber', 'isAvailable')):
-                print(f"WARN: Skipping invalid version entry: {version_info}")
+                # print(f"WARN: Skipping invalid version entry: {version_info}")
                 continue
                 
             # Check platform match (case-insensitive) and availability
@@ -57,7 +57,7 @@ def get_latest_version_info(api_url):
             if api_platform and api_platform.lower() == target_platform_api and version_info.get('isAvailable') is True:
                 current_entry_version_str = version_info.get('versionNumber')
                 if not current_entry_version_str:
-                    print(f"WARN: Skipping entry with missing versionNumber: {version_info}")
+                    # print(f"WARN: Skipping entry with missing versionNumber: {version_info}")
                     continue
                     
                 try:
@@ -66,16 +66,17 @@ def get_latest_version_info(api_url):
                         latest_version_str = current_entry_version_str
                         latest_version = version_info # Store the whole dict
                 except Exception as e:
-                     print(f"WARN: Could not parse version '{current_entry_version_str}': {e}")
+                     # print(f"WARN: Could not parse version '{current_entry_version_str}': {e}")
+                     pass
 
         if latest_version:
-            print(f"DEBUG: Latest available version found for {target_platform_api}: {latest_version_str}")
+            # print(f"DEBUG: Latest available version found for {target_platform_api}: {latest_version_str}")
             # Return only the version string
             # return latest_version_str 
             # Return the full dictionary instead
             return latest_version
         else:
-            print(f"DEBUG: No available versions found for platform {target_platform_api}.")
+            # print(f"DEBUG: No available versions found for platform {target_platform_api}.")
             return None
 
     except requests.exceptions.Timeout:
