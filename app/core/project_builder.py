@@ -1771,13 +1771,46 @@ class ProjectBuilder:
                 # Apply placeholders to file name if either flag is set
                 elif rename_flag or uses_project_name:
                     project_name = placeholders.get("PROJECT_NAME", "Unknown")
+                    
+                    # Get the original file name components
                     name_parts = os.path.splitext(file_name)
                     if len(name_parts) == 2:
                         base_name, ext = name_parts
-                        file_name = f"{project_name}{ext}"
                     else:
-                        file_name = project_name
-                    # print(f"Renamed file: {original_filename_for_debug} -> {file_name}")
+                        base_name, ext = file_name, ""
+                    
+                    # Check for project_name_mode in file_data
+                    name_mode = file_data.get('project_name_mode', 'replace')
+                    
+                    # Get custom separator if available
+                    separator = file_data.get('custom_separator', '.')
+                    
+                    # Apply naming pattern based on mode
+                    if name_mode == 'prepend':
+                        file_name = f"{project_name}{separator}{base_name}{ext}"
+                    elif name_mode == 'append':
+                        file_name = f"{base_name}{separator}{project_name}{ext}"
+                    elif name_mode == 'pattern':
+                        # Use custom pattern if available
+                        pattern = file_data.get('custom_pattern', '$project$ext')
+                        
+                        # Replace placeholders in the pattern
+                        pattern_map = {
+                            '$project': project_name,
+                            '$base': base_name,
+                            '$ext': ext,
+                            '$sep': separator
+                        }
+                        
+                        # Apply pattern substitutions
+                        for key, value in pattern_map.items():
+                            pattern = pattern.replace(key, value)
+                        
+                        file_name = pattern
+                    else:  # Default to 'replace' mode for backward compatibility
+                        file_name = f"{project_name}{ext}"
+                    
+                    # print(f"Renamed file: {original_filename_for_debug} -> {file_name} (mode: {name_mode})")
 
                 # Apply placeholders to folder path
                 folder = self._replace_placeholders(folder, placeholders)

@@ -808,28 +808,41 @@ class FileOperations:
             if is_file:
                 menu.addSeparator()
                 
-                # Determine whether to show "Use Project Name" or "Use Original Name"
+                # Create a submenu for project name options
+                project_name_menu = menu.addMenu("Project Name Options")
+                
+                # Determine current state
+                name_mode = item_data.get('project_name_mode', 'none')
                 uses_project_name = item_data.get('uses_project_name', False)
                 
-                if uses_project_name:
-                    # Show "Use Original Name" option
-                    use_name_action = QAction("Use Original Name", menu)
-                else:
-                    # Show "Use Project Name" option
-                    use_name_action = QAction("Use Project Name", menu)
-                    
-                use_name_action.setEnabled(True)
+                # Create project name actions
+                replace_name_action = project_name_menu.addAction("Replace with Project Name")
+                prepend_name_action = project_name_menu.addAction("Prepend Project Name")
+                append_name_action = project_name_menu.addAction("Append Project Name")
+                pattern_action = project_name_menu.addAction("Use Custom Pattern...")
+                separator_action = project_name_menu.addAction("Use Custom Separator...")
+                project_name_menu.addSeparator()
+                reset_name_action = project_name_menu.addAction("Reset to Original Name")
                 
-                # Connect to toggle method
-                if self.editor and hasattr(self.editor, '_toggle_project_name_for_file'):
-                    use_name_action.triggered.connect(lambda: self.editor._toggle_project_name_for_file(item))
-                    print("DEBUG: create_context_menu - connected toggle action to editor method")
-                else:
-                    # Fallback to local method
-                    use_name_action.triggered.connect(lambda: self._toggle_project_name_for_file(item))
-                    print("DEBUG: create_context_menu - connected toggle action to local method")
+                # Set checkable and check the current mode
+                replace_name_action.setCheckable(True)
+                prepend_name_action.setCheckable(True)
+                append_name_action.setCheckable(True)
                 
-                menu.addAction(use_name_action)
+                replace_name_action.setChecked(name_mode == 'replace' or (uses_project_name and name_mode == 'none'))
+                prepend_name_action.setChecked(name_mode == 'prepend')
+                append_name_action.setChecked(name_mode == 'append')
+                
+                # Enable/disable reset based on whether a project name option is active
+                reset_name_action.setEnabled(uses_project_name or name_mode != 'none')
+                
+                # Connect actions
+                replace_name_action.triggered.connect(lambda: self._use_project_name_for_file(item, mode='replace'))
+                prepend_name_action.triggered.connect(lambda: self._use_project_name_for_file(item, mode='prepend'))
+                append_name_action.triggered.connect(lambda: self._use_project_name_for_file(item, mode='append'))
+                pattern_action.triggered.connect(lambda: self._configure_naming_pattern(item))
+                separator_action.triggered.connect(lambda: self._configure_custom_separator(item))
+                reset_name_action.triggered.connect(lambda: self._reset_file_name(item))
         
         return menu
     
@@ -976,15 +989,34 @@ class FileOperations:
         
         # Get item data
         item_data = item.data(0, Qt.UserRole)
-        # Determine whether to show "Use Project Name" or "Use Original Name"
+        
+        # Create a submenu for project name options
+        project_name_menu = menu.addMenu("Project Name Options")
+        
+        # Determine current state
+        name_mode = item_data.get('project_name_mode', 'none')
         uses_project_name = item_data.get('uses_project_name', False)
         
-        if uses_project_name:
-            # Show "Use Original Name" option
-            use_name_action = menu.addAction(QIcon.fromTheme("insert-text"), "Use Original Name")
-        else:
-            # Show "Use Project Name" option
-            use_name_action = menu.addAction(QIcon.fromTheme("insert-text"), "Use Project Name")
+        # Create project name actions
+        replace_name_action = project_name_menu.addAction("Replace with Project Name")
+        prepend_name_action = project_name_menu.addAction("Prepend Project Name")
+        append_name_action = project_name_menu.addAction("Append Project Name")
+        pattern_action = project_name_menu.addAction("Use Custom Pattern...")
+        separator_action = project_name_menu.addAction("Use Custom Separator...")
+        project_name_menu.addSeparator()
+        reset_name_action = project_name_menu.addAction("Reset to Original Name")
+        
+        # Set checkable and check the current mode
+        replace_name_action.setCheckable(True)
+        prepend_name_action.setCheckable(True)
+        append_name_action.setCheckable(True)
+        
+        replace_name_action.setChecked(name_mode == 'replace' or (uses_project_name and name_mode == 'none'))
+        prepend_name_action.setChecked(name_mode == 'prepend')
+        append_name_action.setChecked(name_mode == 'append')
+        
+        # Enable/disable reset based on whether a project name option is active
+        reset_name_action.setEnabled(uses_project_name or name_mode != 'none')
         
         menu.addSeparator()
         delete_action = menu.addAction(QIcon.fromTheme("edit-delete"), "Delete")
@@ -999,39 +1031,51 @@ class FileOperations:
         # Handle actions
         if action == rename_action:
             self.rename_item(item)
-        elif action == use_name_action:
-            self._toggle_project_name_for_file(item)
+        elif action == replace_name_action:
+            self._use_project_name_for_file(item, mode='replace')
+        elif action == prepend_name_action:
+            self._use_project_name_for_file(item, mode='prepend')
+        elif action == append_name_action:
+            self._use_project_name_for_file(item, mode='append')
+        elif action == pattern_action:
+            self._configure_naming_pattern(item)
+        elif action == reset_name_action:
+            self._reset_file_name(item)
+        elif action == separator_action:
+            self._configure_custom_separator(item)
         elif action == delete_action:
             self.delete_selected()
             
-    def _use_project_name_for_file(self, item):
+    def _use_project_name_for_file(self, item, mode='replace'):
         """
-        Set a file to use the project name as its name
+        Set a file to use the project name as part of its name
         
         Args:
             item: The file item to update
+            mode: How to use the project name: 'replace', 'prepend', 'append', or 'pattern'
+        
+        Returns:
+            bool: True if successful, False otherwise
         """
         if not item:
             print("DEBUG: FileOperations._use_project_name_for_file - no item provided")
-            return
-            
+            return False
+        
         # Get current file data and name
         item_data = item.data(0, Qt.UserRole)
         if not isinstance(item_data, dict) or item_data.get('type') != 'file':
             print(f"DEBUG: FileOperations._use_project_name_for_file - item is not a file: {item.text(0)}")
-            return
-            
+            return False
+        
         current_name = item.text(0)
         
-        # Check if we're toggling - if we already have uses_project_name set to True
-        if item_data.get('uses_project_name') == True and 'original_name' in item_data:
-            # Toggle back to original name
-            return self._toggle_project_name_for_file(item)
-            
         # Store original name if we don't already have it
         if 'original_name' not in item_data:
             item_data['original_name'] = current_name
-            
+        
+        # Use original name as the base to work with
+        original_name = item_data.get('original_name', current_name)
+        
         # Use ${PROJECT_NAME} as the placeholder that will be replaced during project creation
         placeholder = "${PROJECT_NAME}"
         
@@ -1056,13 +1100,44 @@ class FileOperations:
         
         # Get the file extension
         extension = ""
-        name_parts = current_name.split('.')
+        name_without_extension = original_name
+        name_parts = original_name.split('.')
         if len(name_parts) > 1:
             extension = f".{name_parts[-1]}"
+            name_without_extension = original_name[:-len(extension)]
+        
+        # Get custom separator if configured
+        separator = item_data.get('custom_separator', '.')
+        
+        # Create new display name based on the selected mode
+        display_placeholder_name = ""
+        if mode == 'replace':
+            display_placeholder_name = f"{placeholder}{extension}"
+        elif mode == 'prepend':
+            display_placeholder_name = f"{placeholder}{separator}{name_without_extension}{extension}"
+        elif mode == 'append':
+            display_placeholder_name = f"{name_without_extension}{separator}{placeholder}{extension}"
+        elif mode == 'pattern':
+            # Use custom pattern
+            pattern = item_data.get('custom_pattern', '$project$ext')
             
-        # Create new display name with template name for visual feedback
-        display_placeholder_name = f"{placeholder}{extension}"
-        print(f"DEBUG: FileOperations._use_project_name_for_file - displaying placeholder: '{display_placeholder_name}' (original: '{current_name}')")
+            # Replace placeholders in the pattern
+            pattern_map = {
+                '$project': placeholder,
+                '$base': name_without_extension,
+                '$ext': extension,
+                '$sep': separator
+            }
+            
+            for key, value in pattern_map.items():
+                pattern = pattern.replace(key, value)
+            
+            display_placeholder_name = pattern
+        else:
+            print(f"DEBUG: FileOperations._use_project_name_for_file - unknown mode: {mode}")
+            return False
+        
+        print(f"DEBUG: FileOperations._use_project_name_for_file - displaying placeholder: '{display_placeholder_name}' (original: '{original_name}', mode: {mode})")
         
         # Update the display text (for visual feedback only)
         item.setText(0, display_placeholder_name)
@@ -1070,6 +1145,7 @@ class FileOperations:
         # Update the data - keep the original name but set the flags
         # IMPORTANT: Do not change the 'name' field, only add the flags
         item_data['uses_project_name'] = True
+        item_data['project_name_mode'] = mode
         item_data['rename_flag'] = True  # Set rename_flag to true when uses_project_name is true
         item_data['original_extension'] = extension
         
@@ -1084,10 +1160,98 @@ class FileOperations:
         # Also use a different color to make it clear
         item.setForeground(0, QBrush(QColor("#4A9BFF")))
         
-        print(f"DEBUG: FileOperations._use_project_name_for_file - file marked to use project name: {current_name}")
+        print(f"DEBUG: FileOperations._use_project_name_for_file - file marked to use project name: {original_name}, mode: {mode}")
         
         return True
+
+    def _reset_file_name(self, item):
+        """
+        Reset file name to the original value
         
+        Args:
+            item: The file item to update
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not item:
+            return False
+        
+        # Get current file data
+        item_data = item.data(0, Qt.UserRole)
+        if not isinstance(item_data, dict) or item_data.get('type') != 'file':
+            return False
+        
+        # Get original name
+        original_name = item_data.get('original_name')
+        if not original_name:
+            print("ERROR: Original name not found, cannot reset")
+            return False
+        
+        # Update display to show original name
+        item.setText(0, original_name)
+        
+        # Update data - turn off the flags but keep original_name for future use
+        item_data['uses_project_name'] = False
+        item_data['project_name_mode'] = 'none'
+        item_data['rename_flag'] = False
+        
+        # Restore normal styling
+        font = item.font(0)
+        font.setItalic(False)
+        item.setFont(0, font)
+        item.setForeground(0, QBrush(QColor("#000000")))
+        
+        print(f"DEBUG: Reset file back to original name: {original_name}")
+        
+        # Update the data
+        item.setData(0, Qt.UserRole, item_data)
+        
+        return True
+
+    def _configure_custom_separator(self, item):
+        """
+        Configure a custom separator for project name operations
+        
+        Args:
+            item: The file item to update
+            
+        Returns:
+            bool: True if a separator was set, False otherwise
+        """
+        if not item:
+            return False
+        
+        # Get current file data
+        item_data = item.data(0, Qt.UserRole)
+        if not isinstance(item_data, dict) or item_data.get('type') != 'file':
+            return False
+        
+        # Get current separator
+        current_separator = item_data.get('custom_separator', '.')
+        
+        # Show input dialog to get the separator
+        separator, ok = QInputDialog.getText(
+            self.tree, 
+            "Custom Separator",
+            "Enter a custom separator to use between project name and filename:",
+            text=current_separator
+        )
+        
+        if not ok or not separator:
+            return False
+        
+        # Store the separator
+        item_data['custom_separator'] = separator
+        item.setData(0, Qt.UserRole, item_data)
+        
+        # If already using project name, update the display
+        if item_data.get('uses_project_name', False):
+            mode = item_data.get('project_name_mode', 'replace')
+            self._use_project_name_for_file(item, mode=mode)
+        
+        return True
+
     def _toggle_project_name_for_file(self, item):
         """
         Toggle between using project name and original name for a file
@@ -1095,46 +1259,25 @@ class FileOperations:
         Args:
             item: The file item to update
         """
+        # This function is kept for compatibility with existing code
+        # It will simply toggle between the current mode and reset
         if not item:
             return False
-            
+        
         # Get current file data
         item_data = item.data(0, Qt.UserRole)
         if not isinstance(item_data, dict) or item_data.get('type') != 'file':
             return False
-            
+        
         # Get current state
         uses_project_name = item_data.get('uses_project_name', False)
         
         if uses_project_name:
-            # Currently using project name, switch back to original name display
-            original_name = item_data.get('original_name', item.text(0))
-            if not original_name:
-                print("ERROR: Original name not found, cannot toggle")
-                return False
-                
-            # Update display to show original name
-            item.setText(0, original_name)
-            
-            # Update data - turn off the flags but keep original_name for future use
-            item_data['uses_project_name'] = False
-            item_data['rename_flag'] = False  # Also set rename_flag to false
-            
-            # Restore normal styling
-            font = item.font(0)
-            font.setItalic(False)
-            item.setFont(0, font)
-            item.setForeground(0, QBrush(QColor("#000000")))
-            
-            print(f"DEBUG: Toggled file back to original name display: {original_name}")
+            # Currently using project name, reset to original name
+            return self._reset_file_name(item)
         else:
-            # Not using project name, switch to using project name
-            return self._use_project_name_for_file(item)
-            
-        # Update the data
-        item.setData(0, Qt.UserRole, item_data)
-        
-        return True
+            # Currently using original name, use project name with replace mode (original behavior)
+            return self._use_project_name_for_file(item, mode='replace')
 
     def _get_relative_path(self, item):
         """
@@ -1187,6 +1330,59 @@ class FileOperations:
                 'error': '#FF5555',             # Red error
                 'success': '#55AA55'            # Green success
             }
+
+    def _configure_naming_pattern(self, item):
+        """
+        Configure a custom naming pattern for project name operations
+        
+        Args:
+            item: The file item to update
+            
+        Returns:
+            bool: True if a pattern was set, False otherwise
+        """
+        if not item:
+            return False
+        
+        # Get current file data
+        item_data = item.data(0, Qt.UserRole)
+        if not isinstance(item_data, dict) or item_data.get('type') != 'file':
+            return False
+        
+        # Get current pattern or default
+        current_pattern = item_data.get('custom_pattern', '$project$ext')
+        
+        # Pattern description
+        pattern_desc = """
+Available placeholders:
+$project - Project name
+$base - Original filename without extension
+$ext - File extension (with dot)
+$sep - Custom separator
+
+Example: $project_$base$ext
+"""
+        
+        # Show input dialog to get the pattern
+        pattern, ok = QInputDialog.getText(
+            self.tree, 
+            "Custom Naming Pattern",
+            f"Enter a custom pattern for filename:{pattern_desc}",
+            text=current_pattern
+        )
+        
+        if not ok or not pattern:
+            return False
+        
+        # Store the pattern
+        item_data['custom_pattern'] = pattern
+        item_data['project_name_mode'] = 'pattern'
+        item.setData(0, Qt.UserRole, item_data)
+        
+        # Update the display
+        self._use_project_name_for_file(item, mode='pattern')
+        
+        return True
 
 class FileDetailsDialog(QDialog):
     """Dialog for entering file details"""
