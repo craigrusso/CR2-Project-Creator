@@ -37,10 +37,13 @@ except ImportError:
 # class TemplateTableModel(QStandardItemModel):
 #     pass
 
-# --- Custom Delegate for Icon + Name ---
 # Define a custom role for the warning flag
 WarningRole = Qt.UserRole + 1
+# Define custom roles for filtering
+IsFolderRole = Qt.UserRole + 2
+ParentPathRole = Qt.UserRole + 3
 
+# --- Custom Delegate for Icon + Name ---
 class IconNameDelegate(QStyledItemDelegate):
     """ Delegate to draw icon or warning character and text in the Name column. """
     def __init__(self, icon_size=QSize(18, 18), padding=4, parent=None):
@@ -248,23 +251,61 @@ class SortableHeaderView(QHeaderView):
 
 # --- Proxy Model for Sorting ---
 class TemplateSortFilterProxyModel(QSortFilterProxyModel):
-    """ Custom proxy model to handle sorting based on specific data roles. """
+    """ Custom proxy model to handle sorting based on specific data roles and filtering. """
     COLUMN_HEADERS = ["Name", "Category", "Created", "Modified"] # Keep headers consistent
 
-    def lessThan(self, left, right):
-        """ Compare items based on column type. """
-        col = left.column()
-        left_data = self.sourceModel().data(left, Qt.EditRole) # Prefer EditRole for sorting
-        right_data = self.sourceModel().data(right, Qt.EditRole)
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._current_filter_folder_path = None # None means root view (show folders and unfoldered templates)
+        self._sort_in_progress = False # Flag to track when sorting is happening
+
+    def set_current_filter_folder(self, folder_path):
+        """Set the path of the folder to filter by. None for root."""
+        self._current_filter_folder_path = folder_path
+        self.invalidateFilter()
+
+    def sort(self, column, order=Qt.AscendingOrder):
+        """Override sort to ensure filtering is maintained during sorting."""
+        # Maintain a local reference to the current filter settings before sorting
+        current_filter_path = self._current_filter_folder_path
         
-        # Fallback to DisplayRole if EditRole is None (e.g., for Name, Category)
-        if left_data is None:
-            left_data = self.sourceModel().data(left, Qt.DisplayRole)
-        if right_data is None:
-            right_data = self.sourceModel().data(right, Qt.DisplayRole)
-            
-        # Handle None values (e.g., put them at the end)
-        if left_data is None and right_data is None: return False
+        # First apply the filter strictly before sorting
+        self.invalidateFilter()
+        
+        # Set flag to track sorting is in progress
+        self._sort_in_progress = True
+        
+        # Perform the sort on the correctly filtered data
+        super().sort(column, order)
+        
+        # Reset the flag and ensure filtering is applied again after sorting
+        self._sort_in_progress = False
+        
+        # Ensure we restore the exact same filter state
+        self._current_filter_folder_path = current_filter_path
+        
+        # Re-apply filtering with a small delay to ensure sorting is completed
+        QTimer.singleShot(10, self.invalidateFilter)
+
+    def lessThan(self, left, right):
+        """Custom sorting implementation that prioritizes folders and handles different data types."""
+        # Get the source model
+        source_model = self.sourceModel()
+        
+        # Get the data from the source model for each index
+        left_is_folder = source_model.data(left, IsFolderRole)
+        right_is_folder = source_model.data(right, IsFolderRole)
+        
+        # Always put folders first (regardless of sort order)
+        if left_is_folder and not right_is_folder:
+            return True  # Folder comes before normal item
+        if not left_is_folder and right_is_folder:
+            return False # Normal item comes after folder
+        
+        # If both are folders or both are normal items, sort by the column data
+        left_data = source_model.data(left)
+        right_data = source_model.data(right)
+        
         if left_data is None: return False # None is considered greater than valid data
         if right_data is None: return True # Valid data is considered less than None
         
@@ -274,6 +315,42 @@ class TemplateSortFilterProxyModel(QSortFilterProxyModel):
         except (ValueError, TypeError):
             # Fallback to string comparison for non-numeric types
             return str(left_data).lower() < str(right_data).lower()
+
+    def filterAcceptsRow(self, source_row, source_parent_index):
+        """ Determines whether a row should be included in the filtered view. """
+        source_model = self.sourceModel()
+        # Get the index for the first column (Name column) of the source row
+        source_index = source_model.index(source_row, 0, source_parent_index)
+
+        if not source_index.isValid():
+            return False
+
+        is_folder = source_model.data(source_index, IsFolderRole)
+        parent_path = source_model.data(source_index, ParentPathRole)
+
+        # Debugging output to help locate issues
+        if self._sort_in_progress:
+            item_name = source_model.data(source_index, Qt.DisplayRole)
+            parent_str = str(parent_path) if parent_path else "ROOT"
+            print(f"[FILTER DEBUG] During sort - checking item '{item_name}', parent: {parent_str}, is_folder: {is_folder}")
+
+        # Never show folders in the list view - they belong in the folders section only
+        if is_folder:
+            return False
+
+        # Strict filtering based on current folder path context
+        if self._current_filter_folder_path is None: 
+            # Root view - ONLY show templates with no specific parent (at root level)
+            if parent_path == "ROOT" or parent_path is None:
+                return True
+            # Explicit reject for any template with a parent folder (in a subfolder)
+            return False
+        else: 
+            # Specific folder view - ONLY show templates belonging directly to this folder
+            if parent_path == self._current_filter_folder_path:
+                return True
+            # Explicit reject for any other template
+            return False
 
 # ------------------------------
 
@@ -444,52 +521,83 @@ class TemplateTableView(QTableView):
         # Example: Assumes template dicts have keys matching COLUMN_HEADERS (case-insensitive)
         col_map = {header.lower(): i for i, header in enumerate(self.COLUMN_HEADERS)}
 
-        for template in templates_data:
+        for template_or_folder_data in templates_data:
             row_items = [QStandardItem() for _ in self.COLUMN_HEADERS] # Create items for all columns
             
-            name = template.get('name', 'Unknown') # Ensure name exists
+            name = template_or_folder_data.get('name', 'Unknown') # Ensure name exists
             name_item = QStandardItem(name)
+            # Store name data for display and editing (if applicable)
+            name_item.setData(name, Qt.DisplayRole)
+            name_item.setData(name, Qt.EditRole)
+            
+            is_folder_item = template_or_folder_data.get('is_folder', False)
+            parent_folder_path = template_or_folder_data.get('parent_folder', None) # None implies root for templates
+
+            name_item.setData(is_folder_item, IsFolderRole)
+            name_item.setData(parent_folder_path, ParentPathRole)
+            
             row_items[col_map.get('name', 0)] = name_item
             
-            # --- Set Icon based on structure presence --- Corrected Logic ---
-            has_structure = bool(template.get('structure'))
-            if not has_structure:
-                # name_item.setIcon(self.warning_icon) # Don't set icon, delegate handles warning char
-                name_item.setData(True, WarningRole) # Set the warning flag
-                name_item.setToolTip("This template has no folder structure defined.")
+            if is_folder_item:
+                # Folder specific setup
+                name_item.setIcon(QApplication.style().standardIcon(QStyle.SP_DirIcon)) # Standard folder icon
+                name_item.setData(False, WarningRole) # Folders don't have warning state like templates
+                name_item.setToolTip(f"Folder: {name}")
+                # Folders typically don't have category, created, modified in this context
+                # You might want to set empty strings or specific placeholders if columns must be filled
+                for header, col_idx in col_map.items():
+                    if header != 'name' and row_items[col_idx].text() == "": # Only if not already set
+                        # Set placeholder or leave empty for folders for non-name columns
+                        # For now, let's ensure they are QStandardItem instances
+                        if not isinstance(row_items[col_idx], QStandardItem):
+                            row_items[col_idx] = QStandardItem("")
+                        # Optionally, set empty display/edit roles if needed for consistency
+                        row_items[col_idx].setData("", Qt.DisplayRole)
+                        row_items[col_idx].setData("", Qt.EditRole)
             else:
-                name_item.setIcon(self.default_icon) # Explicitly set default icon here
-                name_item.setData(False, WarningRole) # Explicitly clear warning flag
-                name_item.setToolTip(f"Template: {name}") 
-            # ---------------------------------------------------------------
-            
-            # --- Set Data for Other Columns ---
-            # Iterate through expected columns and set data if available in template
-            for header, col_index in col_map.items():
-                if header == 'name': # Already handled
-                    continue 
-                    
-                raw_value = template.get(header)
-                item = QStandardItem() # Create item for this column
-
-                if raw_value is not None:
-                    if header in ['created', 'modified']:
-                        try:
-                            # Store raw timestamp for sorting
-                            timestamp = float(raw_value)
-                            item.setData(timestamp, Qt.EditRole) 
-                            # Store formatted string for display
-                            display_str = self._format_timestamp(timestamp)
-                            item.setData(display_str, Qt.DisplayRole)
-                        except (ValueError, TypeError):
-                            item.setData(str(raw_value), Qt.DisplayRole) # Fallback to string
-                            item.setData(str(raw_value), Qt.EditRole)
-                    else:
-                        # For other columns (like Category), store as string
-                        item.setData(str(raw_value), Qt.DisplayRole)
-                        item.setData(str(raw_value), Qt.EditRole)
+                # Template specific setup (existing logic)
+                # --- Set Icon based on structure presence --- Corrected Logic ---
+                has_structure = bool(template_or_folder_data.get('structure'))
+                if not has_structure:
+                    name_item.setData(True, WarningRole) # Set the warning flag
+                    name_item.setToolTip("This template has no folder structure defined.")
+                else:
+                    name_item.setIcon(self.default_icon) # Explicitly set default icon here
+                    name_item.setData(False, WarningRole) # Explicitly clear warning flag
+                    name_item.setToolTip(f"Template: {name}") 
+                # ---------------------------------------------------------------
+                
+                # --- Set Data for Other Columns (for templates) ---
+                for header, col_index in col_map.items():
+                    if header == 'name': # Already handled
+                        continue 
                         
-                row_items[col_index] = item # Assign the configured item to the row
+                    raw_value = template_or_folder_data.get(header)
+                    # Ensure item for this column exists, if not already the name_item itself
+                    if col_index < len(row_items) and isinstance(row_items[col_index], QStandardItem):
+                        item = row_items[col_index]
+                    else:
+                        item = QStandardItem()
+                        if col_index < len(row_items): 
+                           row_items[col_index] = item
+                        else: # Should not happen if row_items initialized correctly
+                           print(f"Warning: Column index {col_index} out of bounds for {name}")
+                           continue
+
+                    if raw_value is not None:
+                        if header in ['created', 'modified']:
+                            try:
+                                timestamp = float(raw_value)
+                                item.setData(timestamp, Qt.EditRole) 
+                                display_str = self._format_timestamp(timestamp)
+                                item.setData(display_str, Qt.DisplayRole)
+                            except (ValueError, TypeError):
+                                item.setData(str(raw_value), Qt.DisplayRole) 
+                                item.setData(str(raw_value), Qt.EditRole)
+                        else:
+                            item.setData(str(raw_value), Qt.DisplayRole)
+                            item.setData(str(raw_value), Qt.EditRole)
+                    # If raw_value is None, item remains empty (default QStandardItem)
             
             source_model.appendRow(row_items) # Append to source model directly
             
