@@ -463,14 +463,13 @@ class GalleryTemplatesSetup:
         gallery.templates_section = QWidget()
         gallery.templates_section.setStyleSheet("background: transparent;")
         gallery.templates_section_layout = QVBoxLayout(gallery.templates_section)
-        gallery.templates_section_layout.setContentsMargins(15, 0, 15, 15)  # Add padding on sides for consistent layout
-        gallery.templates_section_layout.setSpacing(5)
-        
-        # Configure size policy to allow expansion to fill available space
-        gallery.templates_section.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        
-        # Templates header with view controls
+        gallery.templates_section_layout.setContentsMargins(10, 0, 10, 10)
+
+        # Call helper to setup templates header
         GalleryTemplatesSetup.setup_templates_header(gallery)
+        
+        # Add the templates header to the section layout
+        gallery.templates_section_layout.addWidget(gallery.templates_header) # Ensure the header container is added
         
         # Add a small margin between header and content
         spacer = QWidget()
@@ -478,98 +477,80 @@ class GalleryTemplatesSetup:
         spacer.setStyleSheet("background: transparent;")
         gallery.templates_section_layout.addWidget(spacer)
         
-        # Scrollable area for templates GRID view
+        # Scrollable container for templates (Grid and List/Table View)
         gallery.templates_scroll = QScrollArea()
         gallery.templates_scroll.setWidgetResizable(True)
         gallery.templates_scroll.setFrameShape(QFrame.NoFrame)
-        gallery.templates_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        gallery.templates_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        gallery.templates_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff) # No horizontal scroll for grid
         gallery.templates_scroll.setStyleSheet("background: transparent; border: none;")
         gallery.templates_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
-        # Container for templates GRID view
         gallery.templates_container = QWidget()
         gallery.templates_container.setStyleSheet("background: transparent;")
         gallery.templates_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         
-        # Use a grid layout for flexible positioning in GRID view
         gallery.templates_grid = QGridLayout(gallery.templates_container)
         gallery.templates_grid.setContentsMargins(0, 0, 0, 0)
-        gallery.templates_grid.setHorizontalSpacing(6)
-        gallery.templates_grid.setVerticalSpacing(12)
+        gallery.templates_grid.setSpacing(15)
         gallery.templates_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         
-        # Set the templates container as the widget for the scroll area
-        gallery.templates_scroll.setWidget(gallery.templates_container)
-        
-        # Add the scroll area to the templates section layout
-        gallery.templates_section_layout.addWidget(gallery.templates_scroll)
-        
-        # Container widget for LIST view (holds the TemplateTableView)
-        # Using a QWidget container allows us to manage visibility easily
+        # Create template_list_container with its own layout to hold the table view
         gallery.templates_list_container = QWidget()
-        gallery.templates_list_container.setObjectName("TemplateListContainer")
-        list_container_layout = QVBoxLayout(gallery.templates_list_container)
-        list_container_layout.setContentsMargins(0, 0, 0, 0)
-        list_container_layout.setSpacing(0)
+        gallery.templates_list_container.setStyleSheet("background: transparent;")
+        list_layout = QVBoxLayout(gallery.templates_list_container)
+        list_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Initialize the Table View instance (but don't populate yet)
-        gallery.template_table_view = TemplateTableView(gallery.templates_list_container)
-        list_container_layout.addWidget(gallery.template_table_view)
+        # Create and add the table view to the list container
+        gallery.template_table_view = TemplateTableView(gallery.app, gallery)
+        gallery.template_table_view.setObjectName("templateTableView")
+        list_layout.addWidget(gallery.template_table_view)
+        gallery.template_table_view.hide()  # Initially hidden, grid view is default
         
-        # Set size policy for the list container
-        gallery.templates_list_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        # Add both views to the section
+        gallery.templates_scroll.setWidget(gallery.templates_container)
+        gallery.templates_section_layout.addWidget(gallery.templates_scroll)
         gallery.templates_section_layout.addWidget(gallery.templates_list_container)
+        gallery.templates_list_container.hide()  # Initially hidden
         
-        # Initially hide the list container (default to grid view)
-        gallery.templates_list_container.setVisible(False)
-        
-        # Keep a reference to the old name for compatibility if needed elsewhere, 
-        # but ensure it points to the new container for visibility toggling
-        gallery.templates_list_widget = gallery.templates_list_container 
+        # Create cards container for grid view
+        gallery.template_cards_scroll_area = gallery.templates_scroll
 
     @staticmethod
     def setup_templates_header(gallery):
-        """Set up the templates header with view controls"""
-        # Templates header with view controls
-        gallery.templates_header_container = QWidget()
-        # Apply a subtle background to the header that spans the full width
-        gallery.templates_header_container.setStyleSheet(f"""
-            background-color: {colors['card_bg']};
-            border: none;
-        """)
-        gallery.templates_header_container.setFixedHeight(50)  # Slightly taller for better proportions
-        gallery.templates_header_layout = QHBoxLayout(gallery.templates_header_container)
-        gallery.templates_header_layout.setContentsMargins(15, 10, 15, 10)  # Increase padding for better spacing
-        gallery.templates_header_layout.setSpacing(10)
-        
-        # Template title - should stretch
-        gallery.templates_header = QLabel("Templates")
-        gallery.templates_header.setFont(QFont(get_system_font(), 14, QFont.Bold))
-        gallery.templates_header.setStyleSheet(f"color: {colors['text']}; padding: 5px 0; background-color: transparent; margin-right: 15px;")
-        gallery.templates_header.setAlignment(Qt.AlignLeft)
-        # Ensure the label can take necessary space but doesn't force expansion unnecessarily
-        gallery.templates_header.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Fixed) 
-        gallery.templates_header_layout.addWidget(gallery.templates_header) # Remove stretch factor
+        """Setup the header for the templates section"""
+        SYSTEM_FONT = get_system_font()
 
-        # Add stretch to push subsequent elements (buttons) to the right
-        gallery.templates_header_layout.addStretch(1)
-        
-        # Add template button - fixed size, right aligned
-        gallery.add_button = QPushButton("Add Template")
-        gallery.add_button.setStyleSheet(ACCENT_BUTTON_STYLE)
-        gallery.add_button.clicked.connect(gallery._on_add_template)
-        gallery.add_button.setFixedSize(120, 30)
-        gallery.templates_header_layout.addWidget(gallery.add_button)
-        
-        # Template view toggle buttons - fixed size, right aligned
+        gallery.templates_header = QWidget()
+        gallery.templates_header.setStyleSheet(f"""
+            background-color: {colors['card_bg']};
+            border: none; 
+        """)
+        gallery.templates_header_layout = QHBoxLayout(gallery.templates_header)
+        gallery.templates_header_layout.setContentsMargins(15, 10, 15, 10)
+        gallery.templates_header_layout.setSpacing(10)
+
+        gallery.templates_label = QLabel("Templates")
+        gallery.templates_label.setFont(QFont(SYSTEM_FONT, 14, QFont.Bold))
+        gallery.templates_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold; background: transparent;")
+        gallery.templates_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        gallery.templates_header_layout.addWidget(gallery.templates_label, 1)
+
+        gallery.templates_header_layout.addStretch(1) # Push buttons to the right
+
+        # Add Template button
+        gallery.add_template_button = QPushButton("Add Template")
+        gallery.add_template_button.setStyleSheet(ACCENT_BUTTON_STYLE)
+        gallery.add_template_button.clicked.connect(gallery._on_add_template)
+        gallery.add_template_button.setFixedSize(120, 30)
+        gallery.templates_header_layout.addWidget(gallery.add_template_button)
+
+        # Template view toggle buttons
         gallery.template_view_controls = QWidget()
         gallery.template_view_controls.setFixedHeight(30)
         gallery.template_view_controls_layout = QHBoxLayout(gallery.template_view_controls)
         gallery.template_view_controls_layout.setContentsMargins(0, 0, 0, 0)
         gallery.template_view_controls_layout.setSpacing(0)
-        
-        # Grid view button
+
         gallery.template_grid_view_btn = QToolButton()
         gallery.template_grid_view_btn.setCheckable(True)
         gallery.template_grid_view_btn.setToolTip("Grid View")
@@ -577,7 +558,6 @@ class GalleryTemplatesSetup:
         gallery.template_grid_view_btn.setChecked(gallery.view_mode == "grid")
         gallery.template_grid_view_btn.clicked.connect(lambda: gallery._set_template_view_mode("grid"))
         gallery.template_grid_view_btn.setFixedSize(65, 24)
-        
         gallery.template_grid_view_btn.setStyleSheet("""
             QToolButton {
                 background-color: #2A2A2A;
@@ -600,8 +580,7 @@ class GalleryTemplatesSetup:
                 border-color: #585858;
             }
         """)
-        
-        # List view button
+
         gallery.template_list_view_btn = QToolButton()
         gallery.template_list_view_btn.setCheckable(True)
         gallery.template_list_view_btn.setToolTip("List View")
@@ -609,7 +588,6 @@ class GalleryTemplatesSetup:
         gallery.template_list_view_btn.setChecked(gallery.view_mode == "list")
         gallery.template_list_view_btn.clicked.connect(lambda: gallery._set_template_view_mode("list"))
         gallery.template_list_view_btn.setFixedSize(65, 24)
-        
         gallery.template_list_view_btn.setStyleSheet("""
             QToolButton {
                 background-color: #2A2A2A;
@@ -633,21 +611,14 @@ class GalleryTemplatesSetup:
                 border-color: #585858;
             }
         """)
-        
-        # Create button group to manage toggle buttons
+
         gallery.template_view_toggle_group = QButtonGroup(gallery)
         gallery.template_view_toggle_group.addButton(gallery.template_grid_view_btn)
         gallery.template_view_toggle_group.addButton(gallery.template_list_view_btn)
-        
-        # Add buttons to layout
+
         gallery.template_view_controls_layout.addWidget(gallery.template_grid_view_btn)
         gallery.template_view_controls_layout.addWidget(gallery.template_list_view_btn)
-        
-        # Add the view controls widget to the header layout
         gallery.templates_header_layout.addWidget(gallery.template_view_controls)
-        
-        # Add header container to section layout
-        gallery.templates_section_layout.addWidget(gallery.templates_header_container)
 
     @staticmethod
     def populate_templates_list(gallery, templates_to_show):
@@ -656,19 +627,14 @@ class GalleryTemplatesSetup:
         
         try:
             # Ensure the table view instance exists
-            if not hasattr(gallery, 'template_table_view'):
+            if not hasattr(gallery, 'template_table_view') or gallery.template_table_view is None:
                 print("[ERROR] TemplateTableView instance not found during population.")
-                # Attempt to recover - This might indicate an initialization order issue
-                if hasattr(gallery, 'templates_list_container'):
-                     gallery.template_table_view = TemplateTableView(gallery.templates_list_container)
-                     # Add it back to the layout if it wasn't there
-                     layout = gallery.templates_list_container.layout()
-                     if layout and layout.count() == 0: 
-                          layout.addWidget(gallery.template_table_view)
-                else:
-                    # Cannot recover, critical error
-                     print("[CRITICAL] List container not found. Cannot create TableView.")
-                     return # Abort population
+                return # Cannot proceed without table view
+                
+            # Ensure table view is visible in the proper container
+            if hasattr(gallery, 'templates_list_container'):
+                gallery.templates_list_container.setVisible(True)
+                gallery.template_table_view.setVisible(True)
 
             # Get templates to show
             # Handle None or empty list
@@ -681,19 +647,13 @@ class GalleryTemplatesSetup:
             print(f"[DEBUG] List View (TableView): Preparing {len(templates_data)} templates")
 
             # --- Sorting Logic ---
-            # The QTableView doesn't automatically sort based on these attributes.
-            # Sorting needs to be handled either by:
-            # 1. Sorting `templates_data` *before* passing to `populate_data`.
-            # 2. Using a QSortFilterProxyModel (more complex, better for large data/dynamic sorting).
-            # For now, we'll pre-sort the list based on gallery's state.
-            
+            # Sort based on gallery's state
             current_sort_field = getattr(gallery, 'current_sort_field', 'name')
             current_sort_order = getattr(gallery, 'current_sort_order', 'asc')
             
             print(f"[DEBUG] List View (TableView): Sorting by {current_sort_field} ({current_sort_order})")
             
             # Sort templates using the existing helper function
-            # Ensure the helper function handles dictionaries correctly
             try:
                  sorted_templates = sort_templates(templates_data, current_sort_field, current_sort_order)
                  print(f"[DEBUG] List View (TableView): Sorted {len(sorted_templates)} templates")
@@ -705,24 +665,11 @@ class GalleryTemplatesSetup:
             # --- Populate Table View ---
             print(f"[DEBUG] Populating TemplateTableView with {len(sorted_templates)} items.")
             gallery.template_table_view.populate_data(sorted_templates)
-
-            # --- Signal Connections (Connect ONCE, likely during gallery init) ---
-            # Connect signals from the table view to gallery handlers.
-            # Avoid reconnecting every time populate is called.
-            # Example (place this in gallery's __init__ or setup method):
-            # gallery.template_table_view.clicked.connect(gallery._on_table_item_clicked)
-            # gallery.template_table_view.doubleClicked.connect(gallery._on_table_item_double_clicked)
-            # gallery.template_table_view.customContextMenuRequested.connect(gallery._on_table_context_menu)
-            # gallery.template_table_view.horizontalHeader().sectionClicked.connect(gallery._on_table_header_clicked) # For sorting
-
-            # --- Update Selection State ---
-            # The selection state needs to be applied to the QTableView's selection model
-            # This should likely happen in update_template_selection_state
-            
             print(f"[DEBUG] List View (TableView): Population complete.")
             
         except Exception as e:
             print(f"[ERROR] Error populating templates list (TableView): {e}")
+            import traceback
             traceback.print_exc()
 
     @staticmethod
@@ -811,64 +758,106 @@ class GalleryTemplatesSetup:
 
     @staticmethod
     def set_template_view_mode(gallery, mode):
-        """Set the template view mode between grid and list (table)."""
+        """Set the template view mode (grid or list)"""
+        # Debug information
         print(f"DEBUG: Setting template view mode to: {mode}")
         
-        if mode != gallery.view_mode:
+        # Ensure gallery and its UI components are initialized
+        has_scroll_area = hasattr(gallery, 'template_cards_scroll_area') and gallery.template_cards_scroll_area is not None
+        has_table_view = hasattr(gallery, 'template_table_view') and gallery.template_table_view is not None
+        has_list_container = hasattr(gallery, 'templates_list_container') and gallery.templates_list_container is not None
+        
+        if not has_scroll_area or not has_table_view or not has_list_container:
+            # Log which components are missing
+            print(f"[ERROR] Gallery UI not fully initialized. Cannot set view mode. Missing components:")
+            if not has_scroll_area:
+                print("- template_cards_scroll_area is missing")
+            if not has_table_view:
+                print("- template_table_view is missing")
+            if not has_list_container:
+                print("- templates_list_container is missing")
+            return
+
+        if mode == "grid":
+            # Show grid view, hide list view
+            gallery.template_cards_scroll_area.setVisible(True)
+            gallery.templates_list_container.setVisible(False)
+            gallery.view_mode = "grid"
+            
+            # Update button states if they exist
+            if hasattr(gallery, 'template_grid_view_btn'):
+                gallery.template_grid_view_btn.setChecked(True)
+            if hasattr(gallery, 'template_list_view_btn'):
+                gallery.template_list_view_btn.setChecked(False)
+            
+            if hasattr(gallery, 'current_folder') and gallery.current_folder and hasattr(gallery, 'folder_nav'):
+                gallery.folder_nav.setVisible(True)
+
+        elif mode == "list":
+            # Show list view, hide grid view
+            gallery.template_cards_scroll_area.setVisible(False)
+            gallery.templates_list_container.setVisible(True)
+            gallery.view_mode = "list"
+            
             # Update button states
-            gallery.template_grid_view_btn.setChecked(mode == "grid")
-            gallery.template_list_view_btn.setChecked(mode == "list")
+            if hasattr(gallery, 'template_grid_view_btn'):
+                gallery.template_grid_view_btn.setChecked(False)
+            if hasattr(gallery, 'template_list_view_btn'):
+                gallery.template_list_view_btn.setChecked(True)
+
+            if hasattr(gallery, 'current_folder') and gallery.current_folder and hasattr(gallery, 'folder_nav'):
+                gallery.folder_nav.setVisible(True)
+                
+            # Populate the list view with templates
+            current_templates_to_display = []
+            if hasattr(gallery, 'current_folder') and gallery.current_folder:
+                current_templates_to_display = GalleryTemplatesSetup.get_templates_in_folder(gallery, gallery.current_folder)
+            elif hasattr(gallery, 'app') and hasattr(gallery.app, 'template_manager'):
+                all_tmpls = gallery.app.template_manager.get_all_templates()
+                
+                templates_in_folders = set()
+                folders_data = gallery.app.template_manager.get_folders()
+                
+                if isinstance(folders_data, dict):
+                    for folder_data_val in folders_data.values():
+                        if isinstance(folder_data_val, dict) and 'templates' in folder_data_val:
+                            templates_in_folders.update(folder_data_val['templates'])
+                        elif isinstance(folder_data_val, list):
+                            templates_in_folders.update(folder_data_val)
+
+                if isinstance(all_tmpls, (list, dict)):
+                    tmpls_iterable = all_tmpls.values() if isinstance(all_tmpls, dict) else all_tmpls
+                    for tmpl in tmpls_iterable:
+                        if isinstance(tmpl, dict) and tmpl.get('name') not in templates_in_folders:
+                            current_category = getattr(gallery, 'current_category', "All")
+                            passes_category = (current_category == "All" or 
+                                              tmpl.get("category") == current_category)
+                            
+                            passes_search = True
+                            current_search = getattr(gallery, 'current_search', None)
+                            if current_search:
+                                search_term = current_search.lower()
+                                name_match = search_term in tmpl.get('name', '').lower()
+                                desc_match = search_term in tmpl.get('description', '').lower()
+                                cat_match = search_term in tmpl.get('category', '').lower()
+                                passes_search = name_match or desc_match or cat_match
+                                
+                            if passes_category and passes_search:
+                                current_templates_to_display.append(tmpl)
             
-            # Store the new mode
-            gallery.view_mode = mode
-            
-            # Show the appropriate view
-            if mode == "grid":
-                # Show grid view, hide list view
-                gallery.templates_scroll.setVisible(True)
-                # Use the list container for visibility toggle
-                if hasattr(gallery, 'templates_list_container'):
-                    gallery.templates_list_container.setVisible(False)
-                else: # Fallback if refactoring missed something
-                     gallery.templates_list_widget.setVisible(False) 
-                
-                print(f"DEBUG: Switched to Grid View")
-                # Force refresh if the grid is empty (or needs update)
-                # Consider if populate_gallery is always needed or only if empty
-                gallery.populate_gallery() # Assuming this populates the grid view
-                
-            else: # mode == "list"
-                # Show list view (table), hide grid view
-                gallery.templates_scroll.setVisible(False)
-                if hasattr(gallery, 'templates_list_container'):
-                    gallery.templates_list_container.setVisible(True)
-                else: # Fallback
-                    gallery.templates_list_widget.setVisible(True)
-
-                print(f"DEBUG: Switched to List (Table) View")
-
-                # Populate the list view (table view)
-                # Get current templates (e.g., based on selected folder)
-                templates_to_show = {}
-                current_folder = getattr(gallery, 'current_folder', None)
-                if current_folder:
-                    templates_to_show = GalleryTemplatesSetup.get_templates_in_folder(gallery, current_folder)
-                else:
-                    # Show all templates if no folder selected (adapt as needed)
-                     templates_to_show = getattr(gallery.template_manager, 'templates', {})
-                
-                # Populate the table view
-                GalleryTemplatesSetup.populate_templates_list(gallery, templates_to_show)
-                
-                # Ensure selection state is updated after population
-                GalleryTemplatesSetup.update_template_selection_state(gallery)
-
-            # Persist the view mode setting if desired (e.g., using QSettings)
-            # settings = QSettings()
-            # settings.setValue("templateGallery/viewMode", mode)
+            # Populate the list view
+            GalleryTemplatesSetup.populate_templates_list(gallery, current_templates_to_display)
             
         else:
-             print(f"DEBUG: Template view mode already set to {mode}")
+            print(f"[WARNING] Unknown view mode: {mode}")
+
+        # After changing visibility, update the selection state
+        GalleryTemplatesSetup.update_template_selection_state(gallery)
+        
+        # Debug visibility information
+        print(f"[DEBUG] View mode set to '{mode}'.")
+        print(f"[DEBUG] Grid visible: {gallery.template_cards_scroll_area.isVisible()}")
+        print(f"[DEBUG] List visible: {gallery.templates_list_container.isVisible()}")
 
     @staticmethod
     def update_template_selection_state(gallery):
