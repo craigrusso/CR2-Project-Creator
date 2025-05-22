@@ -823,8 +823,18 @@ class TemplateGallery(QWidget):
         """Handle keyboard shortcuts"""
         # Add debug print for key press events
         print(f"[DEBUG] Gallery keyPressEvent: key={event.key()}, modifiers={event.modifiers()}")
-        # Let the GalleryEvents handle all keyboard events including deletion
-        GalleryEvents.key_press_event(self, event)
+        
+        # Let the GalleryEvents handle all keyboard events including deletion.
+        # GalleryEvents.key_press_event should return True if it handled the event (e.g., accepted it).
+        if GalleryEvents.key_press_event(self, event):
+            # If GalleryEvents handled the event (returned True and accepted it),
+            # we might not need to do anything further or call super().
+            # The event.accept() within key_press_event should prevent propagation to parent widgets.
+            # For clarity, explicitly return here if handled.
+            return 
+        
+        # If the event was not handled by GalleryEvents (returned False or None),
+        # or if it didn't accept the event, allow default processing by the base class.
         super().keyPressEvent(event)
     
     def mousePressEvent(self, event):

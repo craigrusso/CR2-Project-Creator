@@ -569,175 +569,113 @@ class GalleryEvents:
             print(f"🔍 LISTENER: Template editor was cancelled or failed")
     
     @staticmethod
-    def on_delete_template(gallery, template_name=None):
-        """Delete the selected template"""
-        from PyQt5.QtWidgets import QMessageBox
-        from PyQt5.QtCore import QTimer
-        
-        # Handle list of template names - fix for multi-select delete
-        if isinstance(template_name, list):
-            # Process list of template names
-            if template_name:
-                # Confirm deletion with dialog
-                if len(template_name) == 1:
-                    message = f"Are you sure you want to delete template '{template_name[0]}'?"
-                else:
-                    message = f"Are you sure you want to delete these {len(template_name)} templates?"
-                    
-                confirm = QMessageBox.question(
-                    gallery,
-                    "Confirm Delete",
-                    message,
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No
-                )
-                
-                if confirm == QMessageBox.Yes:
-                    template_manager = gallery.app.template_manager
-                    
-                    # Delete all templates in the list
-                    success_count = 0
-                    template_names = [] # Keep track of all deleted templates
-                    
-                    for name in template_name:
-                        if template_manager.delete_template(name):
-                            success_count += 1
-                            template_names.append(name)
-                    
-                    # Reset selection
-                    gallery.selected_template = None
-                    
-                    # Clear multi-selection if applicable
-                    if hasattr(gallery, 'multi_selected_templates'):
-                        gallery.multi_selected_templates.clear()
-                        
-                    # Force reload of template data
-                    if hasattr(template_manager, 'load_templates'):
-                        template_manager.load_templates()
-                    if hasattr(template_manager, 'load_folders'):
-                        template_manager.load_folders()
-                        
-                    # Refresh the gallery
-                    QTimer.singleShot(100, lambda: gallery.populate_gallery(force_refresh=True))
-                    
-                    # Show status message
-                    if hasattr(gallery.app, 'show_status_message'):
-                        if len(template_names) == 1:
-                            gallery.app.show_status_message(f"Deleted template '{template_names[0]}'", "success")
-                        else:
-                            gallery.app.show_status_message(f"Deleted {len(template_names)} templates", "success")
-                
-                return
-        
-        # Single template deletion (original behavior)
-        # Get the template name - either directly passed or from the selected template
-        if template_name is None and gallery.selected_template:
-            if isinstance(gallery.selected_template, dict):
-                template_name = gallery.selected_template.get('name')
-            else:
-                template_name = gallery.selected_template
-        
-        if not template_name:
-            print(f"[DEBUG] Gallery: No template name provided for deletion")
+    def on_delete_template(gallery):
+        """Delete the selected template(s) identified by the gallery's selection_manager."""
+        if not hasattr(gallery, 'selection_manager') or not gallery.selection_manager:
+            print("[ERROR] GalleryEvents.on_delete_template: gallery has no selection_manager!")
+            QMessageBox.warning(gallery, "Error", "Selection manager not available.")
             return
-        
-        # Check if we have a valid template manager
-        if not hasattr(gallery.app, 'template_manager') or not hasattr(gallery.app.template_manager, 'delete_template'):
-            print(f"[DEBUG] Gallery: Template manager not available")
+
+        template_manager = gallery.template_manager
+        if not template_manager:
+            QMessageBox.warning(gallery, "Error", "Template manager not available.")
             return
+
+        templates_to_delete_objs = []
+        template_display_names = []
+
+        multi_selected = gallery.selection_manager.multi_selected_templates
+        primary_selected = gallery.selection_manager.selected_template
+
+        if multi_selected: 
+            templates_to_delete_objs.extend(list(multi_selected)) 
+        elif primary_selected:
+            templates_to_delete_objs.append(primary_selected)
         
-        # Get the actual template object to make sure we're using the correct name
-        template_manager = gallery.app.template_manager
-        template = template_manager.get_template_by_name(template_name)
+        if not templates_to_delete_objs:
+            # This case should ideally be caught by key_press_event before calling this
+            # or if called from somewhere else (e.g. context menu) that also checks selection.
+            print(f"[DEBUG] GalleryEvents.on_delete_template: No templates identified for deletion by selection_manager.")
+            # QMessageBox.information(gallery, "No Template Selected", "No template selected to delete.") # Consider if this is needed or if caller handles
+            return
+
+        for t_obj in templates_to_delete_objs:
+            if isinstance(t_obj, dict) and 'name' in t_obj:
+                template_display_names.append(t_obj['name'])
+            # Add handling for other types if necessary, though selection_manager should store dicts
+
+        if not template_display_names: # Should not happen if templates_to_delete_objs had items
+            print(f"[WARNING] GalleryEvents.on_delete_template: Could not extract names from selected template objects.")
+            return
+
+        # --- CONFIRMATION DIALOG ---
+        count = len(template_display_names)
+        item_text = "template" if count == 1 else "templates"
+        message = f"Are you sure you want to delete the selected {count} {item_text}?\n\n"
+        message += "\n".join(f"- {name}" for name in template_display_names)
         
-        if not template:
-            # Extra debugging for Template-# cases
-            if isinstance(template_name, str) and template_name.startswith("Template-"):
-                print(f"[DEBUG] Gallery: Attempting to find real template for '{template_name}'")
-                # Try to find by looking through all templates
-                for t in template_manager.templates + template_manager.template_directories:
-                    if t.get('name') == template_name or t.get('display_name') == template_name:
-                        template = t
-                        break
-        
-        if template:
-            real_template_name = template.get('name')
-            print(f"[DEBUG] Gallery: Found template '{real_template_name}' for deletion")
-        else:
-            real_template_name = template_name
-            print(f"[DEBUG] Gallery: Could not find template object for '{template_name}'")
-        
-        # Confirm deletion with dialog
-        confirm = QMessageBox.question(
-            gallery,
-            "Confirm Delete",
-            f"Are you sure you want to delete template '{real_template_name}'?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
-        
-        if confirm == QMessageBox.Yes:
-            # Delete the template
-            print(f"[DEBUG] Gallery: Calling delete_template for '{real_template_name}'")
+        # Ensure QMessageBox is imported if not at the top of the file
+        # from PyQt5.QtWidgets import QMessageBox 
+        reply = QMessageBox.question(gallery, "Confirm Template Deletion", message, 
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.No:
+            print(f"[DEBUG] Gallery: Deletion of {count} template(s) cancelled by user.")
+            return
+        # --- END CONFIRMATION DIALOG ---
+
+        actually_deleted_names = []
+        errors = []
+
+        for template_obj_to_delete in templates_to_delete_objs:
+            name_to_delete = None
+            if isinstance(template_obj_to_delete, dict):
+                name_to_delete = template_obj_to_delete.get('name')
+            # elif isinstance(template_obj_to_delete, str): # Unlikely with current selection_manager
+            #     name_to_delete = template_obj_to_delete
             
+            if not name_to_delete:
+                errors.append("An item in the selection could not be identified by name for deletion.")
+                print(f"[WARNING] Could not get name for template object: {template_obj_to_delete}")
+                continue
+
             try:
-                # Check that we're calling the right method with the right parameters
-                if not hasattr(template_manager, 'delete_template'):
-                    print(f"[ERROR] Gallery: template_manager does not have delete_template method")
-                    QMessageBox.warning(gallery, "Error", f"Cannot delete template - template manager missing required method.")
-                    return
-                
-                # Call the delete method, safely catching any exceptions
-                success = template_manager.delete_template(real_template_name)
-                
-                print(f"[DEBUG] Gallery: delete_template returned: {success}")
-                
+                print(f"[DEBUG] Gallery: Attempting to delete template '{name_to_delete}' via template_manager")
+                success = template_manager.delete_template(name_to_delete)
                 if success:
-                    print(f"[DEBUG] Gallery: Successfully deleted template '{real_template_name}'")
-                    # If we used a different name than provided, also try to delete that
-                    if real_template_name != template_name:
-                        print(f"[DEBUG] Gallery: Also attempting to delete '{template_name}'")
-                        template_manager.delete_template(template_name)
-                    
-                    # Reset selection
-                    gallery.selected_template = None
-                    
-                    # Clear multi-selection if applicable
-                    if hasattr(gallery, 'multi_selected_templates'):
-                        gallery.multi_selected_templates.clear()
-                    
-                    # Force reload of template data
-                    if hasattr(template_manager, 'load_templates'):
-                        print(f"[DEBUG] Gallery: Reloading templates after deletion")
-                        template_manager.load_templates()
-                    if hasattr(template_manager, 'load_folders'):
-                        print(f"[DEBUG] Gallery: Reloading folders after deletion")
-                        template_manager.load_folders()
-                    
-                    # Show success message if possible
-                    if hasattr(gallery.app, 'show_status_message'):
-                        gallery.app.show_status_message(f"Deleted template '{real_template_name}'", "success")
-                    
-                    # Refresh the gallery with a short delay to ensure the UI updates
-                    print(f"[DEBUG] Gallery: Refreshing gallery display after deletion")
-                    QTimer.singleShot(100, lambda: gallery.populate_gallery(force_refresh=True))
+                    print(f"[DEBUG] Gallery: Successfully deleted template '{name_to_delete}' via template_manager.")
+                    actually_deleted_names.append(name_to_delete)
                 else:
-                    print(f"[DEBUG] Gallery: Failed to delete template '{real_template_name}'")
-                    QMessageBox.warning(gallery, "Error", f"Failed to delete template '{real_template_name}'.")
-                    
-                    # Try deletion with original name as fallback
-                    if real_template_name != template_name:
-                        print(f"[DEBUG] Gallery: Trying fallback deletion with '{template_name}'")
-                        success = template_manager.delete_template(template_name)
-                        if success:
-                            print(f"[DEBUG] Gallery: Fallback deletion succeeded")
-                            gallery.selected_template = None
-                            gallery.populate_gallery(force_refresh=True)
+                    print(f"[WARNING] Gallery: template_manager.delete_template reported failure for '{name_to_delete}'.")
+                    errors.append(f"Could not delete '{name_to_delete}'.") # template_manager should log specifics
             except Exception as e:
-                print(f"[ERROR] Gallery: Exception during template deletion: {e}")
-                import traceback
-                traceback.print_exc()
-                QMessageBox.warning(gallery, "Error", f"Error deleting template: {str(e)}")
+                print(f"[ERROR] Gallery: Exception during deletion of '{name_to_delete}': {e}")
+                # import traceback # Already imported in key_press_event, consider if needed here
+                # traceback.print_exc()
+                errors.append(f"Error deleting '{name_to_delete}': {e}")
+
+        if actually_deleted_names:
+            # Important: Clear selection in the manager *before* repopulating gallery.
+            # Repopulating might auto-select something, which would be based on old selection state if not cleared.
+            gallery.selection_manager.clear_selection(emit_signal=False) # Don't emit signal yet
+            
+            gallery.populate_gallery(force_refresh=True) 
+            # populate_gallery reloads data and rebuilds UI. If it causes new auto-selection,
+            # selection_manager will emit its selection_changed signal then.
+
+            if hasattr(gallery.app, 'show_status_message'):
+                gallery.app.show_status_message(f"Deleted {len(actually_deleted_names)} template(s): {', '.join(actually_deleted_names)}.", "success", duration=5000)
+        
+        if errors:
+            # Ensure QMessageBox is imported
+            # from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(gallery, "Deletion Errors", "Some templates could not be deleted:\n\n" + "\n".join(errors))
+
+        # Ensure overall UI consistency after operations
+        if hasattr(gallery, '_update_selection_ui'):
+            gallery._update_selection_ui() # This should be triggered by selection_manager.selection_changed
+        if hasattr(gallery, '_update_button_state'):
+            gallery._update_button_state()
     
     @staticmethod
     def on_manage_templates(gallery):
@@ -1074,74 +1012,74 @@ class GalleryEvents:
         from PyQt5.QtCore import Qt
         
         try:
-            # Handle both Delete and Backspace (for Mac) keys for folder deletion
             if event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
-                # Check if a folder is selected
+                # Priority 1: Folder deletion if a folder is selected
                 if hasattr(gallery, 'selected_folder') and gallery.selected_folder:
                     print(f"[DEBUG] Delete/Backspace key pressed, folder selected: {gallery.selected_folder}")
                     
-                    # Don't allow deleting default folders
-                    if gallery.selected_folder in ["General", "Development", "Business"]:
+                    if gallery.selected_folder in getattr(gallery.template_manager, 'DEFAULT_FOLDERS', ["General", "Development", "Business"]):
                         from PyQt5.QtWidgets import QMessageBox
                         QMessageBox.warning(gallery, "Error", 
                             f"'{gallery.selected_folder}' is a default folder and cannot be deleted.")
                         event.accept()
                         return True
                     
-                    # Delete the folder without confirmation dialog
+                    # Add confirmation for folder deletion
+                    reply = QMessageBox.question(gallery, "Confirm Folder Deletion",
+                                                 f"Are you sure you want to delete the folder '{gallery.selected_folder}' and all its templates?",
+                                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                    if reply == QMessageBox.No:
+                        event.accept() # Still accept event to prevent further processing
+                        return True
+
                     if hasattr(gallery, 'template_manager') and gallery.template_manager:
-                        success = gallery.template_manager.delete_folder(gallery.selected_folder)
+                        folder_name_to_delete = gallery.selected_folder # Save before it's reset
+                        success = gallery.template_manager.delete_folder(folder_name_to_delete)
                         
                         if success:
-                            # Save folder name for message
-                            folder_name = gallery.selected_folder
-                            # Update the UI (folder is gone)
                             gallery.populate_gallery(force_refresh=True)
-                            # Reset selection
-                            gallery.selected_folder = None
-                            # Notify user
+                            gallery.selected_folder = None 
                             if hasattr(gallery, 'app') and hasattr(gallery.app, 'show_status_message'):
-                                gallery.app.show_status_message(f"Folder '{folder_name}' deleted", "info")
+                                gallery.app.show_status_message(f"Folder '{folder_name_to_delete}' deleted", "info")
                         else:
                             from PyQt5.QtWidgets import QMessageBox
                             QMessageBox.warning(gallery, "Delete Failed", 
-                                f"Failed to delete folder '{gallery.selected_folder}'.")
+                                f"Failed to delete folder '{folder_name_to_delete}'.")
                         
                         event.accept()
                         return True
+                    else: # Should not happen if gallery.selected_folder was set
+                        event.accept()
+                        return True
+
+                # Priority 2: Template Deletion using SelectionManager
+                templates_to_potentially_delete = []
+                if hasattr(gallery, 'selection_manager') and gallery.selection_manager:
+                    multi_selected = gallery.selection_manager.multi_selected_templates
+                    primary_selected = gallery.selection_manager.selected_template
+
+                    if multi_selected:
+                        templates_to_potentially_delete.extend(multi_selected)
+                    elif primary_selected:
+                        templates_to_potentially_delete.append(primary_selected)
                 
-                # Handle template deletion here 
-                if hasattr(gallery, 'selected_template') and gallery.selected_template:
-                    print(f"[DEBUG] Delete/Backspace key pressed, template selected")
-                    
-                    # Check if we're dealing with multi-selected templates
-                    has_multi = (hasattr(gallery, 'multi_selected_templates') and 
-                               gallery.multi_selected_templates and 
-                               len(gallery.multi_selected_templates) > 0)
-                    
-                    if has_multi:
-                        # Handle multi-template deletion
-                        print(f"[DEBUG] Gallery: Handling multi-template deletion via key press")
-                        GalleryEvents.on_delete_template(gallery)
-                    else:
-                        # Handle single template deletion
-                        template_name = None
-                        if isinstance(gallery.selected_template, dict):
-                            template_name = gallery.selected_template.get('name')
-                        else:
-                            template_name = gallery.selected_template
-                            
-                        if template_name:
-                            print(f"[DEBUG] Gallery: Handling template deletion via key press for: {template_name}")
-                            GalleryEvents.on_delete_template(gallery, template_name)
-                    
+                if templates_to_potentially_delete:
+                    print(f"[DEBUG] Delete/Backspace key pressed, {len(templates_to_potentially_delete)} template(s) identified by SelectionManager.")
+                    # on_delete_template will handle confirmation and actual deletion
+                    # It uses selection_manager internally, so just calling it is fine.
+                    GalleryEvents.on_delete_template(gallery) 
                     event.accept()
                     return True
-            
-            # Important: Don't return any value as this affects event propagation
-            # Let the event continue to be processed by parent handlers
-            
+                else:
+                    print(f"[DEBUG] Delete/Backspace key pressed, but no templates selected via SelectionManager.")
+                    # Optional: If you want to prevent further processing even if nothing was deleted.
+                    # event.accept() 
+                    pass # Let event propagate if no templates/folders were clearly selected for deletion
+
         except Exception as e:
-            print(f"[ERROR] Error handling key press event: {e}")
+            print(f"[ERROR] Error handling key press event in GalleryEvents: {e}")
             import traceback
-            traceback.print_exc() 
+            traceback.print_exc()
+        
+        # If not handled by this function, return False so event can propagate
+        return False 
