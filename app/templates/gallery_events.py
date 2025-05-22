@@ -75,125 +75,58 @@ class GalleryEvents:
         gallery.populate_gallery()
     
     @staticmethod
-    def on_template_select(gallery, template):
+    def on_template_select(gallery, template_data, clear_multi=True):
         """Handle template selection"""
-        # Debug output
-        template_name = template.get('name', 'Unknown')
-        print(f"\n=== TEMPLATE SELECTION DEBUG ===")
-        print(f"🔍 LISTENER: Template selection event for '{template_name}'")
-        
-        # Check if this is the same template as already selected
-        if hasattr(gallery, 'selected_template') and gallery.selected_template == template:
-            # If clicking the same template again, make sure its highlighted state is correct
-            print(f"🔍 LISTENER: Same template already selected, ensuring highlight is correct")
-            
-            # Update card styling for this template to ensure it's highlighted
-            if hasattr(gallery, 'template_cards') and gallery.template_cards:
-                for card in gallery.template_cards:
-                    if hasattr(card, 'template') and hasattr(card, 'set_selected'):
-                        if card.template == template:
-                            card.set_selected(True)
-                            print(f"🔍 LISTENER: Re-applied highlight to selected template '{template_name}'")
-                        else:
-                            # Ensure other items are not selected
-                            card.set_selected(False)
-            
-            # Ensure app-level selection is synchronized even for same template
-            if hasattr(gallery, 'app'):
-                gallery.app.selected_template = template
-                print(f"🔍 LISTENER: Re-synchronized app-level selected template to '{template_name}'")
-                
-                # Also ensure template_file_path is set
-                if isinstance(template, dict):
-                    if 'path' in template:
-                        gallery.app.template_file_path = template['path']
-                        print(f"🔍 LISTENER: Re-synchronized app-level template file path to '{template['path']}'")
-                    else:
-                        # Try to get the path from the template manager
-                        if hasattr(gallery.app, 'template_manager'):
-                            template_info = gallery.app.template_manager.get_template_by_name(template.get('name', ''))
-                            if template_info and 'path' in template_info:
-                                gallery.app.template_file_path = template_info['path']
-                                print(f"🔍 LISTENER: Re-synchronized app-level template file path from template manager")
-                            else:
-                                print("❌ LISTENER: Could not find template path in template manager")
+        template_name = template_data.get('name', 'Unknown') if isinstance(template_data, dict) else 'Unknown'
+        print(f"\n=== TEMPLATE SELECTION EVENT (GalleryEvents for '{template_name}') ===")
+
+        if not hasattr(gallery, 'selection_manager'):
+            print("[ERROR] GalleryEvents.on_template_select: gallery has no selection_manager!")
             return
+
+        # If this template is already the primary selection and no multi-selection exists,
+        # there's likely no state change needed from this event alone.
+        # The selection manager handles emitting signals even if data is same, if requested.
+        # if gallery.selection_manager.is_selected(template_data) and not gallery.selection_manager.multi_selected_templates:
+        #     print(f"🔍 GALLERY EVENTS: Template '{template_name}' already primary selection, no multi-select. No change.")
+        #     # Ensure UI is consistent; selection_manager.set_primary_selection will emit if needed.
+        #     gallery.selection_manager.set_primary_selection(template_data, emit_signal=True)
+        #     return
+
+        # When a template is selected (e.g., by a single click, not part of multi-select gesture):
+        # 1. It becomes the primary selection.
+        # 2. Any existing multi-selection should be cleared unless clear_multi=False
+        if clear_multi:
+            gallery.selection_manager.clear_selection(emit_signal=False)  # Clear selections, don't signal yet
+            gallery.selection_manager.set_primary_selection(template_data, emit_signal=True)  # Set primary with signal
+        else:
+            # For multi-selection (ctrl/cmd+click or shift+click)
+            # Set primary but don't clear existing multi-selection
+            gallery.selection_manager.set_primary_selection(template_data, emit_signal=True, clear_multi=False)
+
+        # The old logic for updating app.template_file_path should ideally move
+        # to be a subscriber of selection_manager.selection_changed, or be handled
+        # within set_primary_selection if it's a core part of that action.
+        # For now, keep it here if gallery_widget._handle_selection_manager_update doesn't do it.
+        # This is duplicated in selection_manager.set_primary_selection, needs cleanup.
+        if hasattr(gallery, 'app') and gallery.app and isinstance(template_data, dict):
+            template_path = template_data.get('path')
+            if not template_path and hasattr(gallery.app, 'template_manager'): # Try to get from manager
+                manager_template_info = gallery.app.template_manager.get_template_by_name(template_name)
+                if manager_template_info:
+                    template_path = manager_template_info.get('path')
             
-        # Set the selected template in gallery state
-        gallery.selected_template = template
-        print(f"🔍 LISTENER: Updated gallery selected template to '{template_name}'")
-        
-        # Also ensure it's set in the app object if available
-        if hasattr(gallery, 'app'):
-            gallery.app.selected_template = template
-            print(f"🔍 LISTENER: Updated app-level selected template to '{template_name}'")
-            
-            # Also update template_file_path if available
-            template_path = None
-            
-            # Method 1: Try to get path directly from template
-            if isinstance(template, dict) and 'path' in template:
-                template_path = template['path']
-                print(f"✓ LISTENER: Found template path in template object: '{template_path}'")
-            
-            # Method 2: Try to get path from template manager
-            if not template_path and hasattr(gallery.app, 'template_manager'):
-                template_info = gallery.app.template_manager.get_template_by_name(template.get('name', ''))
-                if template_info and 'path' in template_info:
-                    template_path = template_info['path']
-                    print(f"✓ LISTENER: Found template path in template manager: '{template_path}'")
-                else:
-                    print("❌ LISTENER: Could not find template path in template manager")
-                    
-                    # Method 3: Try to find the template file in the templates directory
-                    if hasattr(gallery.app.template_manager, 'paths'):
-                        templates_dir = gallery.app.template_manager.paths.get('templates_dir')
-                        if templates_dir:
-                            # Try different filename variations
-                            template_name = template.get('name', '')
-                            normalized_name = template_name.replace(" ", "_")
-                            possible_paths = [
-                                os.path.join(templates_dir, f"{template_name}.json"),
-                                os.path.join(templates_dir, f"{normalized_name}.json"),
-                                os.path.join(templates_dir, f"Template_{normalized_name}.json")
-                            ]
-                            
-                            for path in possible_paths:
-                                if os.path.exists(path):
-                                    template_path = path
-                                    print(f"✓ LISTENER: Found template path in templates directory: '{template_path}'")
-                                    break
-            
-            # Update app's template_file_path if we found a path
             if template_path:
                 gallery.app.template_file_path = template_path
-                print(f"✓ LISTENER: Updated app-level template file path to '{template_path}'")
+                print(f"✓ GALLERY EVENTS: Updated app.template_file_path to '{template_path}'")
             else:
-                print("❌ LISTENER: Could not find template path")
-        
-        gallery.selected_folder = None  # Reset folder selection
-        print(f"🔍 LISTENER: Template selection set to '{template_name}'")
-        
-        # Update card styling for all cards - proper highlighting
-        if hasattr(gallery, 'template_cards') and gallery.template_cards:
-            card_count = len(gallery.template_cards)
-            print(f"🔍 LISTENER: Updating styling for {card_count} template cards")
-            
-            for card in gallery.template_cards:
-                if hasattr(card, 'template') and hasattr(card, 'set_selected'):
-                    # Highlight only the currently selected template
-                    is_selected = (card.template == template)
-                    card.set_selected(is_selected)
-                    if is_selected:
-                        print(f"🔍 LISTENER: Setting {card.template_name()} selection state to TRUE")
-                    else:
-                        print(f"🔍 LISTENER: Setting {card.template_name()} selection state to FALSE")
-        
-        # Emit template selected event if using PyQt
-        if hasattr(gallery, 'template_selected'):
-            gallery.template_selected.emit(template)
-            
-        print("=== END TEMPLATE SELECTION DEBUG ===\n")
+                print("❌ GALLERY EVENTS: Could not determine template path for app.template_file_path")
+
+        # The gallery.template_selected.emit(template_data) is now handled by
+        # gallery_widget._handle_selection_manager_update when it receives the signal.
+
+        print(f"🔍 GALLERY EVENTS: Selection set to '{template_name}' via manager. UI update will follow signal.")
+        print("=== END TEMPLATE SELECTION EVENT (GalleryEvents) ===\n")
     
     @staticmethod
     def on_folder_select(gallery, folder_name):
@@ -637,85 +570,57 @@ class GalleryEvents:
     
     @staticmethod
     def on_delete_template(gallery, template_name=None):
-        """Handle delete template action (from button, context menu, or keyboard)"""
-        print(f"[DEBUG] Gallery: Delete request for template '{template_name}'")
+        """Delete the selected template"""
+        from PyQt5.QtWidgets import QMessageBox
+        from PyQt5.QtCore import QTimer
         
-        # Check if we're dealing with multi-selected templates
-        has_multi = (hasattr(gallery, 'multi_selected_templates') and 
-                    gallery.multi_selected_templates and 
-                    len(gallery.multi_selected_templates) > 0)
-        
-        # Check if we need to handle multi-selection deletion
-        if has_multi:
-            # Create a list to hold all templates to delete
-            templates_to_delete_set = set()
-            templates_to_delete = []
-            
-            # Always include the primary selected template first
-            if hasattr(gallery, 'selected_template') and gallery.selected_template:
-                primary_name = gallery.selected_template.get('name', 'Unknown')
-                templates_to_delete.append(gallery.selected_template)
-                templates_to_delete_set.add(id(gallery.selected_template))
-                print(f"[DEBUG] Gallery: Including primary selected template '{primary_name}' in multi-delete")
-            
-            # Add all multi-selected templates
-            for template in gallery.multi_selected_templates:
-                template_id = id(template)
-                if template_id not in templates_to_delete_set:
-                    templates_to_delete.append(template)
-                    templates_to_delete_set.add(template_id)
-                    print(f"[DEBUG] Gallery: Adding multi-selected template '{template.get('name', 'Unknown')}' to delete operation")
-            
-            # Process all templates
-            template_names = []
-            for template in templates_to_delete:
-                if isinstance(template, dict):
-                    name = template.get('name', 'Unknown')
+        # Handle list of template names - fix for multi-select delete
+        if isinstance(template_name, list):
+            # Process list of template names
+            if template_name:
+                # Confirm deletion with dialog
+                if len(template_name) == 1:
+                    message = f"Are you sure you want to delete template '{template_name[0]}'?"
                 else:
-                    name = str(template)
+                    message = f"Are you sure you want to delete these {len(template_name)} templates?"
+                    
+                confirm = QMessageBox.question(
+                    gallery,
+                    "Confirm Delete",
+                    message,
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
                 
-                if name and name not in template_names:
-                    template_names.append(name)
-            
-            # Create confirmation message
-            if len(template_names) == 1:
-                message = f"Are you sure you want to delete template '{template_names[0]}'?"
-            else:
-                message = f"Are you sure you want to delete these {len(template_names)} templates?"
-            
-            # Show single confirmation for all templates
-            confirm = QMessageBox.question(
-                gallery,
-                "Confirm Delete",
-                message,
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            
-            if confirm == QMessageBox.Yes:
-                # Delete all templates
-                if hasattr(gallery.app, 'template_manager'):
+                if confirm == QMessageBox.Yes:
                     template_manager = gallery.app.template_manager
-                    for name in template_names:
-                        print(f"[DEBUG] Gallery: Deleting template '{name}' in multi-delete")
-                        template_manager.delete_template(name)
+                    
+                    # Delete all templates in the list
+                    success_count = 0
+                    template_names = [] # Keep track of all deleted templates
+                    
+                    for name in template_name:
+                        if template_manager.delete_template(name):
+                            success_count += 1
+                            template_names.append(name)
                     
                     # Reset selection
                     gallery.selected_template = None
                     
-                    # Clear multi-selection
-                    gallery.multi_selected_templates.clear()
-                    
+                    # Clear multi-selection if applicable
+                    if hasattr(gallery, 'multi_selected_templates'):
+                        gallery.multi_selected_templates.clear()
+                        
                     # Force reload of template data
                     if hasattr(template_manager, 'load_templates'):
                         template_manager.load_templates()
                     if hasattr(template_manager, 'load_folders'):
                         template_manager.load_folders()
-                    
+                        
                     # Refresh the gallery
-                    gallery.populate_gallery(force_refresh=True)
+                    QTimer.singleShot(100, lambda: gallery.populate_gallery(force_refresh=True))
                     
-                    # Show success message
+                    # Show status message
                     if hasattr(gallery.app, 'show_status_message'):
                         if len(template_names) == 1:
                             gallery.app.show_status_message(f"Deleted template '{template_names[0]}'", "success")
@@ -747,7 +652,7 @@ class GalleryEvents:
         
         if not template:
             # Extra debugging for Template-# cases
-            if template_name.startswith("Template-"):
+            if isinstance(template_name, str) and template_name.startswith("Template-"):
                 print(f"[DEBUG] Gallery: Attempting to find real template for '{template_name}'")
                 # Try to find by looking through all templates
                 for t in template_manager.templates + template_manager.template_directories:
@@ -1081,7 +986,7 @@ class GalleryEvents:
     
     @staticmethod
     def on_rename_template(gallery, template_name):
-        """Handle renaming a template"""
+        """Handle template rename requests"""
         print(f"🔍 LISTENER: Rename requested for '{template_name}'")
         
         if not template_name or not hasattr(gallery, 'template_manager'):
@@ -1106,6 +1011,7 @@ class GalleryEvents:
                 if success:
                     QMessageBox.information(gallery, "Success", f"Template '{template_name}' renamed to '{new_name}'.")
                     gallery.populate_gallery(force_refresh=True)
+                    gallery.select_template(new_name) # Select the renamed template
                 else:
                     QMessageBox.warning(gallery, "Error", f"Failed to rename template '{template_name}'.")
             else:
@@ -1114,13 +1020,57 @@ class GalleryEvents:
             QMessageBox.critical(gallery, "Error", f"Error renaming template: {str(e)}")
 
     @staticmethod
+    def mouse_press_event(gallery, event):
+        """Handle mouse press events in the template gallery area for blank space clicks."""
+        if event.button() != Qt.LeftButton:
+            event.ignore()
+            return False
+
+        modifiers = QApplication.keyboardModifiers()
+        is_modifier_active = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.ShiftModifier))
+
+        widget_at_pos = gallery.childAt(event.pos())
+        is_card_click = False
+        current_widget = widget_at_pos
+        while current_widget and current_widget != gallery:
+            template_cards_exist = hasattr(gallery, 'template_cards') and gallery.template_cards
+            folder_cards_exist = hasattr(gallery, 'folder_cards') and gallery.folder_cards
+            if (template_cards_exist and current_widget in gallery.template_cards) or \
+               (folder_cards_exist and current_widget in gallery.folder_cards):
+                is_card_click = True
+                break
+            parent = current_widget.parent()
+            if parent == current_widget: break
+            current_widget = parent
+
+        if is_card_click or is_modifier_active:
+            event.ignore()
+            return False
+
+        # If we reach here, it's a simple left-click on a blank area without modifiers.
+        # Use the selection manager to clear selections.
+        if hasattr(gallery, 'selection_manager'):
+            # Check if there was any selection to clear to avoid redundant signals/updates
+            current_primary = gallery.selection_manager.selected_template
+            current_multi = gallery.selection_manager.multi_selected_templates
+            if current_primary or current_multi:
+                gallery.selection_manager.clear_selection(emit_signal=True) # This will trigger UI update via signal
+                # print(f"🔍 GALLERY EVENTS (Mouse Press): Cleared all selections via manager.")
+                event.accept()
+                return True
+            else:
+                # No selection to clear, event not really handled in a way that changes state
+                event.ignore()
+                return False
+        else:
+            # Fallback or error if no selection_manager - should not happen in normal operation
+            print("[ERROR] GalleryEvents.mouse_press_event: gallery has no selection_manager!")
+            event.ignore()
+            return False
+
+    @staticmethod
     def key_press_event(gallery, event):
-        """Handle keyboard events in the gallery
-        
-        Args:
-            gallery: The gallery instance
-            event: The key event
-        """
+        """Handle key press events in the gallery"""
         from PyQt5.QtCore import Qt
         
         try:

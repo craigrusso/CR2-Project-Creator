@@ -218,6 +218,33 @@ class TemplateListItem(QFrame):
                         break
                     parent = parent.parent()
             
+            # Before showing context menu, ensure this item is selected if it's not already part of selection
+            is_in_multi_selection = False
+            if gallery and hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
+                try:
+                    is_in_multi_selection = self.template in gallery.multi_selected_templates
+                except Exception as e:
+                    print(f"Error checking multi-selection: {e}")
+                    pass
+            
+            # If not already in multi-selection, select it (preserving existing multi-selection)
+            if gallery and not is_in_multi_selection:
+                # Check if we have modifiers pressed (ctrl/cmd)
+                modifiers = QApplication.keyboardModifiers()
+                is_modifier_pressed = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.ShiftModifier))
+                
+                # If no modifiers, set this as primary but preserve multi-selection
+                if not is_modifier_pressed:
+                    # Don't clear multi-selection when right-clicking
+                    if hasattr(gallery, 'selection_manager'):
+                        gallery.selection_manager.set_primary_selection(self.template, emit_signal=True, clear_multi=False)
+                    elif hasattr(gallery, 'selected_template'):
+                        gallery.selected_template = self.template
+                        
+                    # Update our visual state
+                    self.setSelected(True)
+                    self._update_styling()
+            
             # Check if we're in a multi-selection state
             has_multi = (gallery and hasattr(gallery, 'multi_selected_templates') and 
                         gallery.multi_selected_templates and 

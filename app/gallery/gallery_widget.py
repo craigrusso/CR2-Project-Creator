@@ -1801,7 +1801,11 @@ class TemplateGallery(QWidget):
         print("[DEBUG] Duplicate shortcut activated.")
         
         selected_template = self.get_primary_selected_template() # Use helper to get primary selection
-        multi_select_count = len(self.multi_selected_templates)
+        
+        # Get multi-selected count from selection_manager
+        multi_select_count = 0
+        if hasattr(self, 'selection_manager'):
+            multi_select_count = len(self.selection_manager.multi_selected_templates)
 
         if selected_template and multi_select_count <= 1:
              template_name = selected_template.get('name')
@@ -1820,11 +1824,19 @@ class TemplateGallery(QWidget):
                  self.app.show_status_message("Select a template to duplicate.", "info", 2000)
                  
     def get_primary_selected_template(self):
-         if self.selected_template:
+         """Get the primary selected template, using selection_manager if available"""
+         # First try using selection_manager
+         if hasattr(self, 'selection_manager'):
+             return self.selection_manager.selected_template
+             
+         # Fall back to legacy methods if selection_manager is not available
+         if hasattr(self, 'selected_template') and self.selected_template:
              return self.selected_template
-         if len(self.multi_selected_templates) == 1:
+             
+         if hasattr(self, 'multi_selected_templates') and len(self.multi_selected_templates) == 1:
              return self.multi_selected_templates[0]
-         return None 
+             
+         return None
     # --- End Shortcut Setup and Handling ---
 
     # ... (Keep remaining class methods like __init__, populate_gallery, clear_gallery, event handlers, context menus etc.) ...

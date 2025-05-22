@@ -685,6 +685,22 @@ class TemplateTableView(QTableView):
             print("[WARNING] startDrag: No template names found for selected rows.")
             return
 
+        # Save the current selection state before dragging
+        primary_template = None
+        multi_selected_templates = []
+        gallery = self.parent()
+        while gallery is not None:
+            if hasattr(gallery, 'selection_manager') and hasattr(gallery, 'template_manager'):
+                break
+            gallery = gallery.parent()
+            
+        if gallery and hasattr(gallery, 'selection_manager'):
+            print(f"[DEBUG] Table drag: Found gallery with selection_manager")
+            # Store selection state before drag
+            primary_template = gallery.selection_manager.selected_template
+            multi_selected_templates = list(gallery.selection_manager.multi_selected_templates)
+            print(f"[DEBUG] Table drag: Saved selection state - Primary: {primary_template.get('name') if primary_template else 'None'}, Multi count: {len(multi_selected_templates)}")
+
         drag = QDrag(self)
         mime_data = QMimeData()
         
@@ -720,8 +736,32 @@ class TemplateTableView(QTableView):
         
         print(f"[DEBUG] Starting drag for {item_count} templates")
         
+        # Block selection change signals during drag to prevent clearing selection
+        selection_model = self.selectionModel()
+        if selection_model:
+            selection_model.blockSignals(True)
+            
         # Execute the drag
-        drag.exec_(supportedActions, Qt.MoveAction)
+        result = drag.exec_(supportedActions, Qt.CopyAction)  # Use CopyAction to prevent clearing selection
+        
+        # Unblock selection signals
+        if selection_model:
+            selection_model.blockSignals(False)
+            
+        # Restore selection state if it was cleared during drag
+        if gallery and hasattr(gallery, 'selection_manager'):
+            current_primary = gallery.selection_manager.selected_template
+            current_multi = gallery.selection_manager.multi_selected_templates
+            
+            if (not current_primary and primary_template) or (not current_multi and multi_selected_templates):
+                print(f"[DEBUG] Table drag: Restoring selection state after drag")
+                # Only restore if selection was actually cleared
+                gallery.selection_manager.set_selection_state(primary_template, multi_selected_templates)
+                
+        # Finish the drag operation
+        print(f"[DEBUG] Table drag completed with result: {result}")
+        
+        return result
 
     def mousePressEvent(self, event):
         # Get the index at the click position

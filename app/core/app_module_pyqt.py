@@ -23,7 +23,7 @@ from app.dialogs.dialog_windows_pyqt import (preview_structure, show_about,
                                 show_batch_results)
 from app.templates.template_utils import (get_template_file, clear_template_file, clear_structure_template,
                        rename_current_template, rename_template_file)
-from app.templates.template_gallery_ui_pyqt import create_template_gallery
+from app.gallery.gallery_widget import TemplateGallery
 from app.ui.app_theme_pyqt import apply_dark_theme_to_template_gallery
 from app.core.structures_pyqt import (create_custom_structure, edit_structure, update_structure_dropdown,
                      manage_structures, _update_structure_combo, _preview_structure, _edit_structure)
@@ -386,7 +386,7 @@ class ProjectCreatorApp(QMainWindow):
         self.right_layout.setContentsMargins(0, 0, 0, 0)
         
         # Create template gallery
-        self.template_gallery = create_template_gallery(self)
+        self.template_gallery = TemplateGallery(app=self)
         self.right_layout.addWidget(self.template_gallery)
         
         # Apply theme to template gallery

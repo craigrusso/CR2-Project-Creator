@@ -23,14 +23,30 @@ from app.templates.templates import (
     rename_template_file
 )
 
-# Import refactored gallery components - THESE ARE THE CURRENT IMPLEMENTATIONS
-from app.templates.refactored_template_gallery import (
-    create_template_gallery,
-    select_template_from_gallery
-)
-
 # Migration helper for upgrade path
 from app.templates.template_manager_migration import TemplateManagerMigration
 
 # Use refactored template card
 from app.templates.components import TemplateCard
+
+# from app.templates.template_copier_pyqt import TemplateCopier # Commented out
+# from app.templates.template_importer_pyqt import TemplateImporter # Commented out
+
+__all__ = [
+    "TemplateManager",
+    "TemplateManagerCore",
+    "TemplateOperations",
+    "StructureOperations",
+    "FolderOperations",
+    "UIOperations",
+    "populate_template_gallery",
+    "get_template_file",
+    "clear_template_file",
+    "clear_structure_template",
+    "rename_current_template",
+    "rename_template_file",
+    "TemplateManagerMigration",
+    "TemplateCard",
+    # "TemplateCopier", # Commented out
+    # "TemplateImporter", # Commented out
+]

@@ -26,8 +26,7 @@ import traceback # Import the traceback module
 
 from app.ui.color_scheme_pyqt import colors, ACCENT_BUTTON_STYLE
 from app.templates.components.utils import get_system_font
-from app.templates.components.template_card import TemplateCard
-from app.templates.components.template_list_item import TemplateListItem
+from app.ui.gallery.components.template_card import TemplateCard
 from app.templates.gallery_events import GalleryEvents
 from app.constants import get_resource_path
 from app.ui.views.template_table_view import TemplateTableView # Import the new TableView
@@ -685,15 +684,21 @@ class GalleryTemplatesSetup:
     @staticmethod
     def populate_templates_grid(gallery, templates_to_show):
         """Populate templates in grid view"""
-        gallery.template_cards = []
-        
-        # Grid layout parameters
+        # Clear existing cards from the grid
+        for i in reversed(range(gallery.templates_grid.count())):
+            widget = gallery.templates_grid.itemAt(i).widget()
+            if widget:
+                widget.setParent(None)
+                widget.deleteLater()
+        gallery.template_cards.clear()
+
         col = 0
         row = 0
-        
-        # Calculate max columns based on container width
         container_width = gallery.templates_container.width()
-        template_width = 150  # Template card width + spacing
+        
+        # Default card width (can be adjusted based on scale)
+        # Use gallery.icon_size if available, otherwise default to 150
+        template_width = getattr(gallery, 'icon_size', 150) + 20  # Add spacing
         min_cols = 2  # Minimum number of columns
         
         # Default to 4 columns if container width is not yet available
@@ -705,43 +710,73 @@ class GalleryTemplatesSetup:
         
         # Debug output to help diagnose issues
         print(f"[DEBUG] Gallery: Populating templates grid with {len(templates_to_show)} templates")
-        print(f"[DEBUG] Gallery: Template keys: {list(templates_to_show.keys())}")
         
-        # Sort templates by name for consistent display
-        sorted_templates = []
-        for name, data in templates_to_show.items():
-            sorted_templates.append((name, data))
-        sorted_templates.sort(key=lambda x: x[0].lower())  # Sort by name case-insensitive
-        
-        for name, data in sorted_templates:
-            # Make sure we're passing the template data dictionary with the correct name
-            if isinstance(data, dict):
-                # Ensure the template data has the correct name
-                template_data = dict(data)  # Create a copy to avoid modifying the original
-                template_data['name'] = name  # Ensure name is set correctly
-                # Also verify we're not using Template-# as the name
-                if name.startswith("Template-") and 'name' in data and not data['name'].startswith("Template-"):
-                    template_data['name'] = data['name']  # Use the real name from the data
+        # Handle templates_to_show being either a list of dicts or a dictionary
+        if isinstance(templates_to_show, list):
+            # It's already a list of template data dictionaries
+            sorted_templates = sorted(templates_to_show, key=lambda x: x.get('name', '').lower())
+            
+            for template_data in sorted_templates:
+                if not isinstance(template_data, dict) or 'name' not in template_data:
+                    print(f"[WARNING] Invalid template data format: {template_data}")
+                    continue
+                    
+                print(f"[DEBUG] Gallery: Creating template card for '{template_data.get('name')}'")
+                print(f"DEBUG (Card): Populating card with data: {template_data}")
+                template_card = TemplateCard(gallery, template=template_data, app=gallery.app)
                 
-                print(f"[DEBUG] Gallery: Creating template card for '{template_data['name']}'")
-            else:
-                # If data is not a dictionary, create one with the name
-                template_data = {"name": name, "category": "Custom", "description": ""}
-                print(f"[DEBUG] Gallery: Creating template card from name only '{name}'")
+                # Connect all signals using the common helper
+                GalleryTemplatesSetup.connect_template_signals(gallery, template_card, template_data)
+                
+                gallery.templates_grid.addWidget(template_card, row, col)
+                gallery.template_cards.append(template_card)
+                
+                col += 1
+                if col >= max_cols:
+                    col = 0
+                    row += 1
+                    
+        elif isinstance(templates_to_show, dict):
+            # It's a dictionary mapping names to template data
+            print(f"[DEBUG] Gallery: Template keys: {list(templates_to_show.keys())}")
             
-            print(f"DEBUG (Card): Populating card with data: {template_data}")
-            template_card = TemplateCard(gallery, template=template_data, app=gallery.app)
+            # Sort templates by name for consistent display
+            sorted_templates = []
+            for name, data in templates_to_show.items():
+                sorted_templates.append((name, data))
+            sorted_templates.sort(key=lambda x: x[0].lower())  # Sort by name case-insensitive
             
-            # Connect all signals using the common helper
-            GalleryTemplatesSetup.connect_template_signals(gallery, template_card, template_data)
-            
-            gallery.templates_grid.addWidget(template_card, row, col)
-            gallery.template_cards.append(template_card)
-            
-            col += 1
-            if col >= max_cols:
-                col = 0
-                row += 1
+            for name, data in sorted_templates:
+                # Make sure we're passing the template data dictionary with the correct name
+                if isinstance(data, dict):
+                    # Ensure the template data has the correct name
+                    template_data = dict(data)  # Create a copy to avoid modifying the original
+                    template_data['name'] = name  # Ensure name is set correctly
+                    # Also verify we're not using Template-# as the name
+                    if name.startswith("Template-") and 'name' in data and not data['name'].startswith("Template-"):
+                        template_data['name'] = data['name']  # Use the real name from the data
+                    
+                    print(f"[DEBUG] Gallery: Creating template card for '{template_data['name']}'")
+                else:
+                    # If data is not a dictionary, create one with the name
+                    template_data = {"name": name, "category": "Custom", "description": ""}
+                    print(f"[DEBUG] Gallery: Creating template card from name only '{name}'")
+                
+                print(f"DEBUG (Card): Populating card with data: {template_data}")
+                template_card = TemplateCard(gallery, template=template_data, app=gallery.app)
+                
+                # Connect all signals using the common helper
+                GalleryTemplatesSetup.connect_template_signals(gallery, template_card, template_data)
+                
+                gallery.templates_grid.addWidget(template_card, row, col)
+                gallery.template_cards.append(template_card)
+                
+                col += 1
+                if col >= max_cols:
+                    col = 0
+                    row += 1
+        else:
+            print(f"[ERROR] populate_templates_grid: Unsupported templates_to_show type: {type(templates_to_show)}")
         
         # If we have the currently selected template, highlight it
         if hasattr(gallery, 'selected_template') and gallery.selected_template:
@@ -1113,25 +1148,13 @@ class GalleryTemplatesSetup:
     @staticmethod
     def create_template_card(gallery, template_data):
         """Create a template card widget based on the current view mode"""
-        from app.templates.components import TemplateCard
+        from app.ui.gallery.components.template_card import TemplateCard
         
         # Create card for grid view
         template_card = TemplateCard(gallery, template=template_data, app=gallery.app)
         
         # Connect all signals using the common helper
         GalleryTemplatesSetup.connect_template_signals(gallery, template_card, template_data)
-
-    @staticmethod
-    def create_template_list_item(gallery, template_data):
-        # This method is now largely obsolete if TemplateListItem is no longer used for display.
-        # It might be kept if TemplateListItem holds data/logic needed elsewhere,
-        # but it shouldn't be creating visual list items anymore.
-        print(f"[WARNING] create_template_list_item called - should be obsolete with TableView.")
-        # from app.templates.components import TemplateListItem # Keep import if class used elsewhere
-        # list_item = TemplateListItem(template_data, gallery=gallery)
-        # GalleryTemplatesSetup.connect_template_signals(gallery, list_item, template_data)
-        # return list_item
-        return None # Return None or raise error if it shouldn't be called
 
     @staticmethod
     def set_template_sort(gallery, sort_field):

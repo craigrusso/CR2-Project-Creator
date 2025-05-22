@@ -18,9 +18,11 @@ from PyQt5.QtGui import QIcon, QDrag, QPixmap
 # Import app modules
 from app.templates.template_manager import TemplateManager
 from app.core.project_builder import ProjectBuilder
+from app.dialogs.dialog_windows_pyqt import show_edit_template, show_manage_templates, show_preferences_dialog
+# from app.templates.template_gallery_ui_pyqt import TemplateGallery # Old import
+from app.gallery.gallery_widget import TemplateGallery # New import
 from app.ui.structure_editor_enhanced import EnhancedStructureEditor
-from app.templates.template_gallery_ui_pyqt import TemplateGallery
-from app.dialogs.dialog_windows_pyqt import preview_structure
+from app.core.config_manager import get_templates_path, get_config_file_path, get_custom_structures_path
 
 class TestSignals(QObject):
     """Signal handler for test events"""

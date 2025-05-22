@@ -4,7 +4,7 @@
 import unittest
 import sys
 from unittest.mock import MagicMock, patch
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QKeyEvent
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
@@ -17,6 +17,11 @@ if app is None:
 from app.templates.gallery_events import GalleryEvents
 from app.templates.components.template_folder_card import TemplateFolderCard
 from app.templates.components.template_folder_list_item import TemplateFolderListItem
+
+# from app.templates.template_gallery_ui_pyqt import TemplateGallery # Old import
+from app.gallery.gallery_widget import TemplateGallery # New import
+from app.templates.template_manager import TemplateManager
+from app.core.config_manager import get_settings_path, get_templates_path
 
 class TestFolderDeletion(unittest.TestCase):
     """Test cases for folder deletion using the delete key."""
@@ -122,7 +127,6 @@ class TestFolderDeletion(unittest.TestCase):
         event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier)
         
         # Test the keyPressEvent method directly
-        from app.templates.template_gallery_ui_pyqt import TemplateGallery
         gallery = MagicMock(spec=TemplateGallery)
         gallery.selected_folder = "TestFolder"
         gallery.template_manager = self.template_manager

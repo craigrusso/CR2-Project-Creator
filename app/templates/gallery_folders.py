@@ -5,12 +5,12 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                             QFrame, QScrollArea, QGridLayout, QButtonGroup, 
                             QToolButton, QSlider, QSizePolicy, QPushButton)
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QIcon
 
 from app.ui.color_scheme_pyqt import colors, ACCENT_BUTTON_STYLE
-from .components.utils import SYSTEM_FONT
-from .components.template_folder_card import TemplateFolderCard
-from .components.template_folder_list_item import TemplateFolderListItem
+from app.ui.gallery.components.template_folder_card import TemplateFolderCard
+from app.templates.components.template_folder_list_item import TemplateFolderListItem
+from app.templates.components.utils import SYSTEM_FONT
 
 class GalleryFoldersSetup:
     """Folder-related functionality for the Template Gallery"""
@@ -172,7 +172,26 @@ class GalleryFoldersSetup:
     @staticmethod
     def populate_folders_grid(gallery, folders):
         """Populate folders in grid view"""
-        gallery.folder_cards = []
+        # Clear existing cards from the grid first
+        # This check is important to avoid errors if folders_grid is None
+        if gallery.folders_grid is not None:
+            while gallery.folders_grid.count():
+                item = gallery.folders_grid.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+        else:
+            # Initialize folders_grid if it's None (should not happen if setup_ui is correct)
+            # This is a defensive measure.
+            if hasattr(gallery, 'folders_container') and gallery.folders_container is not None:
+                gallery.folders_grid = QGridLayout(gallery.folders_container)
+                gallery.folders_grid.setContentsMargins(0, 0, 0, 0)
+                gallery.folders_grid.setSpacing(10)
+                gallery.folders_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+            else:
+                print("[ERROR] GalleryFoldersSetup: folders_container is not available to create folders_grid.")
+                return # Cannot proceed without a grid
+
+        gallery.folder_cards.clear() # Clear the list of card objects
         
         # Grid layout parameters
         col = 0
@@ -190,8 +209,20 @@ class GalleryFoldersSetup:
             calculated_cols = max(min_cols, container_width // folder_width)
             max_cols = min(8, calculated_cols)  # Increased max columns to 8 (was 6)
         
-        for folder in folders:
-            folder_card = TemplateFolderCard(gallery, folder_name=folder, app=gallery.app)
+        for folder_item in folders: # folder_item could be a string or a dict like {'name': 'FolderName', 'is_folder': True}
+            folder_name = None
+            if isinstance(folder_item, dict):
+                if 'name' not in folder_item:
+                    print(f"[WARNING] GalleryFoldersSetup: Folder dict missing 'name' key: {folder_item}, skipping.")
+                    continue
+                folder_name = folder_item['name']
+            elif isinstance(folder_item, str):
+                folder_name = folder_item
+            else:
+                print(f"[WARNING] GalleryFoldersSetup: Invalid folder data: {folder_item}, skipping.")
+                continue
+            
+            folder_card = TemplateFolderCard(gallery, folder_name=folder_name, app=gallery.app)
             folder_card.clicked.connect(gallery._on_folder_select)
             folder_card.doubleClicked.connect(gallery._on_folder_enter)
             folder_card.renameRequested.connect(gallery._on_rename_folder_requested)
@@ -213,9 +244,20 @@ class GalleryFoldersSetup:
         # List layout - one column
         row = 0
         
-        # Sort folders alphabetically
-        for i, folder in enumerate(sorted(folders)):
-            folder_item = TemplateFolderListItem(gallery, folder_name=folder, app=gallery.app)
+        # Process folders, handling both string names and dictionary objects
+        # Sort folders alphabetically 
+        folder_names = []
+        for folder_item in folders:
+            if isinstance(folder_item, dict) and 'name' in folder_item:
+                folder_names.append(folder_item['name'])
+            elif isinstance(folder_item, str):
+                folder_names.append(folder_item)
+            else:
+                print(f"[WARNING] GalleryFoldersSetup: Invalid folder data: {folder_item}, skipping.")
+                
+        # Sort folder names for consistent display
+        for i, folder_name in enumerate(sorted(folder_names)):
+            folder_item = TemplateFolderListItem(gallery, folder_name=folder_name, app=gallery.app)
             folder_item.clicked.connect(gallery._on_folder_select)
             folder_item.doubleClicked.connect(gallery._on_folder_enter)
             folder_item.renameRequested.connect(gallery._on_rename_folder_requested)
