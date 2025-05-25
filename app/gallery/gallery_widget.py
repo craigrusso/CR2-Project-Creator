@@ -3,7 +3,7 @@
 
 from PyQt5.QtWidgets import QDesktopWidget, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QComboBox, \
      QPushButton, QLineEdit, QFrame, QGridLayout, QMessageBox, QApplication, QSizePolicy, QTabWidget, QMainWindow, QDockWidget, QToolButton, QButtonGroup, QMenu, QAction, QShortcut, QInputDialog, QAbstractItemView
-from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSignal, QPoint, QModelIndex, QItemSelectionModel
+from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSignal, QPoint, QModelIndex, QItemSelectionModel, QItemSelection
 from PyQt5.QtGui import QKeySequence, QDrag, QPixmap, QPainter, QColor, QPalette
 import re
 import os
@@ -101,9 +101,11 @@ class TemplateGallery(QWidget):
         print(f"🔍 GALLERY: Selection Manager reported update. Primary: {primary_selected.get('name') if primary_selected else 'None'}, Multi: {[t.get('name') for t in multi_selected_list]}")
         
         # _update_selection_ui is now the canonical method for updating all selection visuals
+        # Call it via a single shot timer to allow the current event cycle to complete.
         if hasattr(self, '_update_selection_ui'):
-            self._update_selection_ui()
+            QTimer.singleShot(0, self._update_selection_ui)
         
+        # Update button state immediately is fine
         self._update_button_state()
 
         if primary_selected:
@@ -1325,31 +1327,27 @@ class TemplateGallery(QWidget):
                 # else:
                 #     print(f"DEBUG: _on_table_item_clicked: No structure found for '{template_name}', using empty list.")
             
-            # Previous selection logic (that was almost working):
-            # Trust _on_table_selection_changed to update GallerySelectionManager correctly.
-            # This handler (_on_table_item_clicked) should only make the clicked item primary *if* it's currently selected.
-            is_currently_selected_in_manager = False
-            if self.selection_manager:
-                clicked_item_name = template_data.get('name')
-                if self.selection_manager.selected_template and self.selection_manager.selected_template.get('name') == clicked_item_name:
-                    is_currently_selected_in_manager = True
-                elif any(t.get('name') == clicked_item_name for t in self.selection_manager.multi_selected_templates):
-                    is_currently_selected_in_manager = True
+            # The selection logic below is removed because _on_table_selection_changed (connected to the
+            # table's selectionModel().selectionChanged signal) is now the primary way the gallery_widget
+            # syncs with the table view's selection state. _on_table_selection_changed
+            # correctly uses keyboard modifiers and updates the GallerySelectionManager.
+            # Keeping the logic below would cause interference or redundant processing.
+            # The original logic was:
+            # is_currently_selected_in_manager = False
+            # if self.selection_manager:
+            #     clicked_item_name = template_data.get('name')
+            #     if self.selection_manager.selected_template and self.selection_manager.selected_template.get('name') == clicked_item_name:
+            #         is_currently_selected_in_manager = True
+            #     elif any(t.get('name') == clicked_item_name for t in self.selection_manager.multi_selected_templates):
+            #         is_currently_selected_in_manager = True
 
-            if is_currently_selected_in_manager:
-                # Item is clicked and is part of the current selection (primary or multi).
-                # Make it primary, preserving other multi-selected items.
-                print(f"[DEBUG] _on_table_item_clicked: Clicked item '{template_name}' IS in manager's selection. Setting as primary (preserving multi-select).")
-                GalleryEvents.on_template_select(self, template_data, clear_multi=False)
-            else:
-                # Item is clicked but is NOT part of the current selection in the manager.
-                # This implies it was just deselected (e.g., by Ctrl+click), or it's a click
-                # on an unselected item that *should* become the sole selection (handled by _on_table_selection_changed path).
-                # In the deselection case, we do nothing to avoid re-selecting it.
-                # If it was a plain click on a new item, _on_table_selection_changed would have made it selected,
-                # and the above `if is_currently_selected_in_manager:` block would have been true.
-                print(f"[DEBUG] _on_table_item_clicked: Clicked item '{template_name}' is NOT in manager's selection. No action taken by _on_table_item_clicked.")
-                pass # Do nothing, _on_table_selection_changed handles this.
+            # if is_currently_selected_in_manager:
+            #     print(f"[DEBUG] _on_table_item_clicked: Clicked item '{template_name}' IS in manager's selection. Setting as primary (preserving multi-select).")
+            #     GalleryEvents.on_template_select(self, template_data, clear_multi=False)
+            # else:
+            #     print(f"[DEBUG] _on_table_item_clicked: Clicked item '{template_name}' is NOT in manager's selection. No action taken by _on_table_item_clicked.")
+            #     pass
+            pass # Explicitly do nothing regarding selection in this click handler.
         else:
             print(f"[WARNING] _on_table_item_clicked: Could not find template data for '{template_name}'")
 
@@ -1630,7 +1628,7 @@ class TemplateGallery(QWidget):
         from PyQt5.QtCore import QModelIndex, QItemSelectionModel, Qt
         from PyQt5.QtWidgets import QAbstractItemView
         
-        # print(f\"🔍 GALLERY WIDGET: _update_selection_ui called.\")
+        print(f"[DEBUG _update_selection_ui] START")
         # Access selection state through the selection_manager
         primary_template = self.selection_manager.selected_template
         multi_templates = self.selection_manager.multi_selected_templates
@@ -1639,7 +1637,7 @@ class TemplateGallery(QWidget):
         primary_selected_name = primary_template.get('name') if primary_template else None
         multi_selected_names = {t.get('name') for t in multi_templates if isinstance(t, dict) and t.get('name')}
 
-        # print(f\"🔍 GALLERY WIDGET (UI Update): Primary: {primary_selected_name}, Multi count: {len(multi_selected_names)}, Is multi mode: {is_multi_select_mode}\")
+        # print(f"[DEBUG _update_selection_ui] Primary: {primary_selected_name}, Multi count: {len(multi_selected_names)}, Is multi mode: {is_multi_select_mode}")
 
         # Update Template Cards
         for card in self.template_cards:
@@ -1647,7 +1645,7 @@ class TemplateGallery(QWidget):
             is_primary = card_template_name == primary_selected_name
             is_multi = card_template_name in multi_selected_names
 
-            # print(f\"  Card '{card_template_name}': is_primary={is_primary}, is_multi_selected_for_style={is_multi}\")
+            # print(f"[DEBUG _update_selection_ui]  Card '{card_template_name}': is_primary={is_primary}, is_multi_selected_for_style={is_multi}")
             card.set_multi_selected(is_multi) # Style for being part of a multi-selection
             card.set_selected(is_primary)    # Style for being the primary selection (takes precedence if also multi)
 
@@ -1659,55 +1657,76 @@ class TemplateGallery(QWidget):
                 print("WARNING: No model or selection model found for table view during UI update")
                 return
 
-            selection_model.blockSignals(True)
-            selection_model.clear() # Clear existing selection first
-            print(f"🔍 LISTENER (UI Update): Cleared table selection model.")
+            # --- IMPORTANT CHANGE: --- # 
+            # The table view's selection is now primarily driven by user interaction (clicks + modifiers)
+            # and QTableView's native ExtendedSelection behavior. _on_table_selection_changed reads this
+            # native selection and updates GallerySelectionManager.
+            # Therefore, _update_selection_ui (called from manager updates) should NOT try to reset/
+            # re-apply selection to the table view itself, as it should already be visually correct.
+            # We only need to ensure the *current focused index* in the table matches the manager's primary.
 
-            primary_row_index = -1 # Track the row index of the primary selection
+            selection_model.blockSignals(True) # Still good to block signals during sync
 
-            for row in range(model.rowCount()):
-                index = model.index(row, 0) # Get index for the Name column
-                if not index.isValid(): continue
-                item_name = model.data(index, Qt.DisplayRole)
+            primary_model_index_to_set = QModelIndex()
+            if primary_selected_name:
+                # Find the row for the primary_selected_name
+                for row in range(model.rowCount()):
+                    index = model.index(row, 0)
+                    if index.isValid() and model.data(index, Qt.DisplayRole) == primary_selected_name:
+                        primary_model_index_to_set = index
+                        break
+            
+            # Sync the focused item (currentIndex)
+            if primary_model_index_to_set.isValid():
+                # --- MODIFIED SECTION START ---
+                # Only explicitly select if not already selected by the table's model
+                if not selection_model.isSelected(primary_model_index_to_set):
+                    selection_model.select(primary_model_index_to_set, QItemSelectionModel.Select | QItemSelectionModel.Rows)
+                    print(f"[DEBUG _update_selection_ui] Table: Explicitly selected primary index r{primary_model_index_to_set.row()} ({primary_selected_name}) because it wasn't selected in the view's model.")
+                else:
+                    print(f"[DEBUG _update_selection_ui] Table: Primary index r{primary_model_index_to_set.row()} ({primary_selected_name}) already selected in view's model. Not re-selecting.")
+                # --- MODIFIED SECTION END ---
 
-                should_select_row = False
-                if item_name == primary_selected_name:
-                     should_select_row = True
-                     primary_row_index = row
-                     print(f"🔍 LISTENER (UI Update): Marking row {row} ({item_name}) for selection (Primary).")
-                elif item_name in multi_selected_names:
-                     should_select_row = True
-                     print(f"🔍 LISTENER (UI Update): Marking row {row} ({item_name}) for selection (Multi).")
+                if self.template_table_view.currentIndex() != primary_model_index_to_set:
+                    self.template_table_view.setFocus() 
+                    self.template_table_view.setCurrentIndex(primary_model_index_to_set)
+                    print(f"[DEBUG _update_selection_ui] Table: Synced current table index to row {primary_model_index_to_set.row()} ({primary_selected_name}).")
+                    # RE-ASSERT SELECTION for the new current index if it should be selected
+                    if primary_selected_name in multi_selected_names: # Check against the manager's state
+                        selection_model.select(primary_model_index_to_set, QItemSelectionModel.Select | QItemSelectionModel.Rows)
+                        print(f"[DEBUG _update_selection_ui] Table: Re-asserted selection for newly set current index r{primary_model_index_to_set.row()} ({primary_selected_name}).")
+                else:
+                    print(f"[DEBUG _update_selection_ui] Table: Primary index r{primary_model_index_to_set.row()} ({primary_selected_name}) is already current. Not resetting currentIndex.")
+                    # EVEN IF ALREADY CURRENT, RE-ASSERT SELECTION if it should be selected according to manager
+                    if primary_selected_name in multi_selected_names and not selection_model.isSelected(primary_model_index_to_set):
+                        selection_model.select(primary_model_index_to_set, QItemSelectionModel.Select | QItemSelectionModel.Rows)
+                        print(f"[DEBUG _update_selection_ui] Table: Re-asserted selection for already current index r{primary_model_index_to_set.row()} ({primary_selected_name}) as it was not selected in view.")
 
-                if should_select_row:
-                    selection_model.select(index, QItemSelectionModel.Select | QItemSelectionModel.Rows)
-                    print(f"🔍 LISTENER (UI Update): Selected row {row} in table model.")
+                 # Optional: scroll to it if it was set by other means (e.g. card click)
+                 # self.template_table_view.scrollTo(primary_model_index_to_set, QAbstractItemView.PositionAtCenter)
+            elif not primary_selected_name and self.template_table_view.currentIndex().isValid():
+                 self.template_table_view.setCurrentIndex(QModelIndex()) # Clear current index if manager has no primary
+                 print(f"[DEBUG _update_selection_ui] Table: Cleared current table index as manager has no primary.")
 
-            if primary_row_index != -1:
-                 primary_model_index = model.index(primary_row_index, 0)
-                 if primary_model_index.isValid():
-                     self.template_table_view.setFocus() # Ensure table has focus before setting index/scrolling
-                     self.template_table_view.setCurrentIndex(primary_model_index)
-                     print(f"🔍 LISTENER (UI Update): Set current table index to row {primary_row_index}.")
-                     self.template_table_view.scrollTo(primary_model_index, QAbstractItemView.PositionAtCenter) # Scroll to selected
-            else:
-                 self.template_table_view.setCurrentIndex(QModelIndex()) # Clear current index if no primary selection
-                 print(f"🔍 LISTENER (UI Update): Cleared current table index.")
+            # No longer clearing and re-selecting rows here.
+            # No longer calling repaint() here, native selection change should handle it.
 
             selection_model.blockSignals(False)
-            print(f"🔍 LISTENER (UI Update): Unblocked table selection signals.")
+            print(f"[DEBUG _update_selection_ui] Table: Unblocked table selection signals. Current focused index: r{self.template_table_view.currentIndex().row()}")
 
-        print(f"DEBUG: Finished updating selection UI")
+        print(f"[DEBUG _update_selection_ui] END")
     # --- End Update Selection UI ---
     
     # --- Table Selection Handler (Restored) ---
     def _on_table_selection_changed(self, selected, deselected):
-        """Handles selection changes in the TemplateTableView by informing the SelectionManager."""
-        # This method is called by the table view's selectionModel().selectionChanged signal.
-        # It should determine the new primary and multi-selection based on the table's state
-        # and then update the GallerySelectionManager.
+        """Handles selection changes in the TemplateTableView by informing the SelectionManager.
 
-        # print(f"[DEBUG] GalleryWidget: _on_table_selection_changed triggered.")
+        Args:
+            selected (QItemSelection): The items that were just selected.
+            deselected (QItemSelection): The items that were just deselected.
+        """
+        print(f"[DEBUG _on_table_selection_changed] START")
+        # print(f"  Selected: {len(selected.indexes())} indexes, Deselected: {len(deselected.indexes())} indexes")
 
         if not self.template_table_view or not self.template_table_view.model():
             print("[WARN] GalleryWidget: Table view or model not available in _on_table_selection_changed.")
@@ -1719,58 +1738,102 @@ class TemplateGallery(QWidget):
             print("[WARN] GalleryWidget: Source model not available.")
             return
 
-        # Get all currently selected rows' data from the table
-        selected_row_indexes = self.template_table_view.selectionModel().selectedRows()
-        current_multi_selection_data = []
-        for proxy_idx in selected_row_indexes:
+        current_modifiers = QApplication.keyboardModifiers()
+        is_ctrl_cmd_click = (current_modifiers & Qt.ControlModifier) or (current_modifiers & Qt.MetaModifier)
+        is_shift_click = bool(current_modifiers & Qt.ShiftModifier)
+
+        # --- Helper to get template data from a QModelIndex (proxy) ---
+        def get_template_data_from_proxy_index(proxy_idx):
             if proxy_idx.isValid():
                 source_idx = proxy_model.mapToSource(proxy_idx)
-                name_item = source_model.item(source_idx.row(), 0)  # Assuming Name is column 0
+                name_item = source_model.item(source_idx.row(), 0) # Assuming Name is column 0
                 if name_item:
                     template_name = name_item.text()
-                    # Fetch full template data from template_manager to ensure it's the rich dict
-                    template_data = self.template_manager.get_template_by_name(template_name)
-                    if template_data:
-                        if template_data not in current_multi_selection_data: # Avoid duplicates
-                            current_multi_selection_data.append(template_data)
-                    else:
-                        print(f"[WARN] _on_table_selection_changed: Could not get template_data for '{template_name}'.")
-        
-        # Determine the primary selection candidate based on the table's current (focused) index
-        primary_template_candidate = None
-        current_focused_proxy_idx = self.template_table_view.currentIndex()
-        if current_focused_proxy_idx.isValid():
-            source_focused_idx = proxy_model.mapToSource(current_focused_proxy_idx)
-            if source_focused_idx.isValid(): # Check if source index is also valid
-                name_item = source_model.item(source_focused_idx.row(), 0)
-                if name_item:
-                    template_name = name_item.text()
-                    # Ensure this primary candidate is actually part of the multi-selection list from the table
-                    # (it should be, as currentIndex is usually one of the selectedRows)
-                    for td in current_multi_selection_data:
-                        if td.get('name') == template_name:
-                            primary_template_candidate = td
-                            break
-        
-        # If no specific primary candidate from focus, but there's a selection, pick the first/last from multi.
-        # The selection manager's set_selection_state will also normalize this.
-        if not primary_template_candidate and current_multi_selection_data:
-            primary_template_candidate = current_multi_selection_data[0] # Default to first selected if no specific focus
+                    return self.template_manager.get_template_by_name(template_name)
+            return None
 
-        # print(f"[DEBUG] GalleryWidget: Updating manager. Primary: {primary_template_candidate.get('name') if primary_template_candidate else 'None'}. Multi count: {len(current_multi_selection_data)}")
+        # Get names of items just selected and deselected
+        just_selected_data = [get_template_data_from_proxy_index(idx) for idx in selected.indexes() if idx.column() == 0]
+        just_deselected_data = [get_template_data_from_proxy_index(idx) for idx in deselected.indexes() if idx.column() == 0]
+        just_selected_data = [d for d in just_selected_data if d] # Filter out Nones
+        just_deselected_data = [d for d in just_deselected_data if d] # Filter out Nones
         
-        # Update the selection manager with the new state derived from the table
-        self.selection_manager.set_selection_state(
-            primary_template_data=primary_template_candidate,
-            multi_selected_list=current_multi_selection_data,
-            emit_signal=True # Manager will emit its signal, which GalleryWidget handles
-        )
+        # print(f"  Modifiers: {current_modifiers}, Ctrl/Cmd: {is_ctrl_cmd_click}, Shift: {is_shift_click}")
+        # print(f"  Just selected: {[d['name'] for d in just_selected_data]}")
+        # print(f"  Just deselected: {[d['name'] for d in just_deselected_data]}")
+
+        # --- Case 1: Special Handling for Single Cmd-Deselect ---
+        # This is when Ctrl/Cmd is held (no Shift), exactly one item is deselected, and no items are selected.
+        if is_ctrl_cmd_click and not is_shift_click and len(just_deselected_data) == 1 and not just_selected_data:
+            item_to_remove = just_deselected_data[0]
+            item_to_remove_name = item_to_remove.get('name')
+            print(f"  HANDLING: Single Cmd-Deselect for '{item_to_remove_name}'")
+
+            prev_manager_multi_list = list(self.selection_manager.multi_selected_templates)
+            prev_manager_primary = self.selection_manager.selected_template
+            
+            # Construct new multi-list by removing the item
+            final_multi_list = [t for t in prev_manager_multi_list if t.get('name') != item_to_remove_name]
+            final_primary = None
+
+            if final_multi_list:
+                # If previous primary is still in the list, keep it
+                if prev_manager_primary and any(t.get('name') == prev_manager_primary.get('name') for t in final_multi_list):
+                    final_primary = prev_manager_primary
+                else:
+                    # Try to set primary to the table's current focused item, if it's in our new list
+                    current_focused_proxy_idx = self.template_table_view.currentIndex()
+                    focused_template_data = get_template_data_from_proxy_index(current_focused_proxy_idx)
+                    if focused_template_data and any(t.get('name') == focused_template_data.get('name') for t in final_multi_list):
+                        final_primary = focused_template_data
+                    else:
+                        # Fallback: Pick the first item in the new multi-list
+                        final_primary = final_multi_list[0]
+            
+            # print(f"  New Primary (Cmd-Deselect): {final_primary.get('name') if final_primary else 'None'}")
+            # print(f"  New Multi (Cmd-Deselect): {[t.get('name') for t in final_multi_list]}")
+            
+            self.selection_manager.set_selection_state(
+                primary_template_data=final_primary,
+                multi_selected_list=final_multi_list,
+                emit_signal=True
+            )
+
+        # --- Case 2: Standard Handling for all other selection changes ---
+        else:
+            # print("  HANDLING: Standard selection logic")
+            # Get all currently selected rows' data from the table's current state
+            selected_row_indexes = self.template_table_view.selectionModel().selectedRows()
+            current_table_multi_selection_data = []
+            for proxy_idx in selected_row_indexes:
+                template_data = get_template_data_from_proxy_index(proxy_idx)
+                if template_data and template_data not in current_table_multi_selection_data:
+                    current_table_multi_selection_data.append(template_data)
+            
+            # Determine the primary selection candidate based on the table's current (focused) index
+            primary_template_candidate = None
+            current_focused_proxy_idx = self.template_table_view.currentIndex()
+            if current_focused_proxy_idx.isValid(): # Check if the index itself is valid
+                 focused_template_data = get_template_data_from_proxy_index(current_focused_proxy_idx)
+                 if focused_template_data and any(t.get('name') == focused_template_data.get('name') for t in current_table_multi_selection_data):
+                     primary_template_candidate = focused_template_data
+            
+            # If no specific primary from focus, but there's a selection, pick the first one from the table's selection
+            if not primary_template_candidate and current_table_multi_selection_data:
+                primary_template_candidate = current_table_multi_selection_data[0]
+
+            # print(f"  New Primary (Standard): {primary_template_candidate.get('name') if primary_template_candidate else 'None'}")
+            # print(f"  New Multi (Standard): {[t.get('name') for t in current_table_multi_selection_data]}")
+
+            self.selection_manager.set_selection_state(
+                primary_template_data=primary_template_candidate,
+                multi_selected_list=current_table_multi_selection_data,
+                emit_signal=True
+            )
         
-        # Old direct manipulation and UI update calls are removed:
-        # self.multi_selected_templates = new_multi_selected_templates
-        # self.selected_template = primary_selection_candidate (or other logic)
-        # self._update_selection_ui() 
-        # self.template_selected.emit(self.selected_template if self.selected_template else {}) 
+        primary_name_for_log = self.selection_manager.selected_template.get('name') if self.selection_manager.selected_template else 'None'
+        multi_count_for_log = len(self.selection_manager.multi_selected_templates)
+        print(f"[DEBUG _on_table_selection_changed] END - Manager Updated. Primary: {primary_name_for_log}, Multi Count: {multi_count_for_log}")
              
     # --- End Table Selection Handler ---
 
