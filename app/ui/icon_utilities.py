@@ -234,28 +234,17 @@ class IconProvider:
         }
     
     def _init_platform_specific_folder_icons(self):
-        """Initialize platform-specific folder icons"""
-        # Default folder icon (regular and open state)
+        """Initialize folder icons using QApplication.style().standardIcon"""
+        # Directly use Qt's standard icons, which should provide a native look.
         self._folder_icon = QApplication.style().standardIcon(QStyle.SP_DirIcon)
         self._folder_open_icon = QApplication.style().standardIcon(QStyle.SP_DirOpenIcon)
-        
-        # Try to load platform-specific folder icons if available
-        system_name = self._system.lower()
-        platform_folder_path = get_resource_path(f'app/assets/icons/platform/folder_{system_name}.png')
-        if os.path.exists(platform_folder_path):
-            self._folder_icon = QIcon(platform_folder_path)
-            debug(f"Using platform-specific folder icon: {platform_folder_path}")
-        else:
-            warning(f"Resource path does not exist: {platform_folder_path}")
-            debug(f"Using system standard folder icon (no custom icon found at {platform_folder_path})")
-            
-        platform_folder_open_path = get_resource_path(f'app/assets/icons/platform/folder_open_{system_name}.png')
-        if os.path.exists(platform_folder_open_path):
-            self._folder_open_icon = QIcon(platform_folder_open_path)
-            debug(f"Using platform-specific open folder icon: {platform_folder_open_path}")
-        else:
-            warning(f"Resource path does not exist: {platform_folder_open_path}")
-            debug("Using system standard open folder icon (no custom icon found)")
+
+        # If SP_DirOpenIcon is null (e.g., on some styles/platforms), fallback to SP_DirIcon for the open state.
+        if self._folder_open_icon.isNull():
+            warning("SP_DirOpenIcon is null, using SP_DirIcon for open folder state as well.")
+            self._folder_open_icon = self._folder_icon # Fallback to the closed icon if open one isn't available
+
+        debug(f"Folder icon set to SP_DirIcon (name: {self._folder_icon.name()}), Open folder icon set to SP_DirOpenIcon (name: {self._folder_open_icon.name()})")
     
     def get_folder_icon(self, is_open=False):
         """Get platform-specific folder icon"""

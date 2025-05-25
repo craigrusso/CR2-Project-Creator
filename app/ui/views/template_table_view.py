@@ -660,31 +660,14 @@ class TemplateTableView(QTableView):
     def startDrag(self, supportedActions):
         selected_indexes = self.selectionModel().selectedRows() # Get indexes for Name column (col 0)
         if not selected_indexes:
-            return
+            return Qt.IgnoreAction
 
         template_names = []
         model = self.model()
         if not model:
             print("[ERROR] startDrag: No model assigned to TableView via self.model()")
-            return
+            return Qt.IgnoreAction
         
-        # Get the template names and row data for selected items
-        templates_to_drag = []
-        for index in selected_indexes:
-            # Get data directly from the model's DisplayRole (proxy should handle this)
-            name = model.data(index, Qt.DisplayRole)
-            if name:
-                # Create a simple template dict for consistency with TemplateCard drag
-                template_dict = {'name': name}
-                templates_to_drag.append(template_dict)
-            else:
-                # Use the proxy index row for warning
-                print(f"[WARNING] startDrag: Could not get template name for proxy row {index.row()}")
-
-        if not templates_to_drag:
-            print("[WARNING] startDrag: No template names found for selected rows.")
-            return
-
         # Save the current selection state before dragging
         primary_template = None
         multi_selected_templates = []
@@ -700,6 +683,49 @@ class TemplateTableView(QTableView):
             primary_template = gallery.selection_manager.selected_template
             multi_selected_templates = list(gallery.selection_manager.multi_selected_templates)
             print(f"[DEBUG] Table drag: Saved selection state - Primary: {primary_template.get('name') if primary_template else 'None'}, Multi count: {len(multi_selected_templates)}")
+            
+            # Use templates from selection manager for multi-selection
+            if multi_selected_templates and len(multi_selected_templates) > 0:
+                templates_to_drag = multi_selected_templates
+                print(f"[DEBUG] Using {len(templates_to_drag)} templates from selection manager for drag")
+            else:
+                # Fallback to getting templates from the table selection if no multi-selection
+                templates_to_drag = []
+                for index in selected_indexes:
+                    # Get data directly from the model's DisplayRole (proxy should handle this)
+                    name = model.data(index, Qt.DisplayRole)
+                    if name:
+                        # Get full template data from template manager if available
+                        if hasattr(gallery, 'template_manager') and gallery.template_manager:
+                            template_data = gallery.template_manager.get_template_by_name(name)
+                            if template_data:
+                                templates_to_drag.append(template_data)
+                            else:
+                                # Fallback to simple dict if template not found in manager
+                                templates_to_drag.append({'name': name})
+                        else:
+                            # No template manager, use simple dict
+                            templates_to_drag.append({'name': name})
+                    else:
+                        # Use the proxy index row for warning
+                        print(f"[WARNING] startDrag: Could not get template name for proxy row {index.row()}")
+        else:
+            # No selection manager found, fallback to simple template list from selection
+            templates_to_drag = []
+            for index in selected_indexes:
+                # Get data directly from the model's DisplayRole (proxy should handle this)
+                name = model.data(index, Qt.DisplayRole)
+                if name:
+                    # Create a simple template dict for consistency with TemplateCard drag
+                    template_dict = {'name': name}
+                    templates_to_drag.append(template_dict)
+                else:
+                    # Use the proxy index row for warning
+                    print(f"[WARNING] startDrag: Could not get template name for proxy row {index.row()}")
+
+        if not templates_to_drag:
+            print("[WARNING] startDrag: No template names found for selected rows.")
+            return Qt.IgnoreAction
 
         drag = QDrag(self)
         mime_data = QMimeData()
@@ -742,7 +768,25 @@ class TemplateTableView(QTableView):
             selection_model.blockSignals(True)
             
         # Execute the drag
-        result = drag.exec_(supportedActions, Qt.CopyAction)  # Use CopyAction to prevent clearing selection
+        action_performed = drag.exec_(supportedActions, Qt.CopyAction)  # Use CopyAction to prevent clearing selection
+        
+        final_result = action_performed
+
+        # If the view is DragOnly, it should ideally only report CopyAction or IgnoreAction,
+        # as it's not supposed to be the source of a move.
+        if self.dragDropMode() == QAbstractItemView.DragOnly:
+            if action_performed == Qt.MoveAction:
+                # Even if a MoveAction was reported by drag.exec_,
+                # a DragOnly source should report CopyAction,
+                # as it implies the data was copied, not moved from the source.
+                print(f"[INFO] DragOnly source: drag.exec_ returned MoveAction ({action_performed}). Overriding to CopyAction.")
+                final_result = Qt.CopyAction
+            elif not (action_performed == Qt.CopyAction or action_performed == Qt.IgnoreAction):
+                # If it's not Ignore, and not Copy (and not Move, handled above),
+                # then it's some other action like LinkAction.
+                # For DragOnly, this is also unexpected. Default to Ignore.
+                print(f"[INFO] DragOnly source: drag.exec_ returned unexpected action {action_performed} ({type(action_performed)}). Overriding to IgnoreAction.")
+                final_result = Qt.IgnoreAction
         
         # Unblock selection signals
         if selection_model:
@@ -759,9 +803,8 @@ class TemplateTableView(QTableView):
                 gallery.selection_manager.set_selection_state(primary_template, multi_selected_templates)
                 
         # Finish the drag operation
-        print(f"[DEBUG] Table drag completed with result: {result}")
-        
-        return result
+        # print(f"[DEBUG] Table drag completed with result: {result}") # Original print
+        print(f"[DEBUG] Table drag completed. Reported action: {final_result}, Actual action from exec: {action_performed}")
 
     def mousePressEvent(self, event):
         # Get the index at the click position

@@ -370,9 +370,40 @@ class TemplateGallery(QWidget):
     def _on_search(self, search_text):
         GalleryEvents.on_search(self, search_text)
     
-    def _on_template_select(self, template):
-        """Handle template selection by delegating to GalleryEvents"""
-        GalleryEvents.on_template_select(self, template)
+    def _on_template_select(self, template_data):
+        """Handle template selection by delegating to GalleryEvents, being mindful of multi-selection state."""
+        template_name = template_data.get('name', 'Unknown') if isinstance(template_data, dict) else 'Unknown'
+        
+        # Default to clearing multi-selection for a standard click.
+        should_clear_multi = True 
+
+        # If the clicked item is already part of an existing multi-selection in the manager,
+        # a simple click on it (which this is, as _on_table_item_clicked doesn't pass modifiers)
+        # should ideally not clear the other selected items if the user intends to drag the group
+        # or perform a context menu action on them.
+        # The QTableView's selection model (handled by _on_table_selection_changed) will ultimately
+        # determine the selection state based on actual user interaction with modifiers.
+        # This logic here tries to prevent _this_ specific call path from prematurely destroying
+        # a multi-selection state in the manager that might be valid.
+        
+        is_part_of_manager_multi_select = False
+        if self.selection_manager and self.selection_manager.multi_selected_templates: # Check if selection_manager and list exist
+            if any(t.get('name') == template_name for t in self.selection_manager.multi_selected_templates):
+                is_part_of_manager_multi_select = True
+        
+        if is_part_of_manager_multi_select:
+            # If the clicked item is already in the manager's multi-select list,
+            # this specific call path should not clear the multi-selection.
+            # It will effectively just ensure this item is primary.
+            print(f"[DEBUG] GalleryWidget._on_template_select: Clicked '{template_name}' is part of manager's multi-select. Setting clear_multi=False.")
+            should_clear_multi = False
+        # else:
+            # Clicked item is not part of an existing multi-selection in the manager,
+            # or there is no multi-selection. So, this click should result in a single selection.
+            # print(f"[DEBUG] GalleryWidget._on_template_select: Clicked '{template_name}' is NOT part of manager's multi-select or no multi-select. Setting clear_multi=True.")
+            # should_clear_multi remains True
+
+        GalleryEvents.on_template_select(self, template_data, clear_multi=should_clear_multi)
         
     def on_template_multi_select(self, template, add_to_selection):
         """Handles multi-selection of templates by delegating to SelectionManager.
@@ -1253,52 +1284,74 @@ class TemplateGallery(QWidget):
         proxy_model = self.template_table_view.model()
         source_model = proxy_model.sourceModel()
         source_index = proxy_model.mapToSource(index)
-        # Use source model and index for getting items
         name_item = source_model.item(source_index.row(), 0) # Assuming Name is column 0
-        if name_item:
-            template_name = name_item.text()
-            print(f"DEBUG: Table item clicked: {template_name}")
-            
-            # Get the full template data using the name
-            # MODIFIED: Get complete template data including structure
-            template_data = self.template_manager.get_template_by_name(template_name)
-            
-            if template_data:
-                # Try multiple approaches to get the structure
+
+        if not name_item:
+            print(f"[WARNING] _on_table_item_clicked: Could not get name_item for index {index.row()}, {index.column()}")
+            return
+
+        template_name = name_item.text()
+        # print(f"DEBUG: Table item clicked: {template_name}") # Reduced verbosity
+        
+        template_data = self.template_manager.get_template_by_name(template_name)
+        
+        if template_data:
+            # Ensure structure is loaded into template_data, as subsequent handlers might expect it.
+            current_structure = template_data.get('structure')
+            if not current_structure: # Only load if not already present or is an empty list/None
+                structure_to_set = None
+                structure_name_from_template = template_data.get('structure_name', f"Template_{template_name}")
+                loaded_structure = self.template_manager.get_structure(structure_name_from_template)
                 
-                # 1. First try explicitly getting the structure from template_manager
-                structure_name = template_data.get('structure_name', f"Template_{template_name}")
-                structure = self.template_manager.get_structure(structure_name)
-                
-                # 2. If that didn't work, try alternate structure name
-                if not structure:
-                    structure = self.template_manager.get_structure(template_name)
-                
-                # 3. If still no structure, try to extract it directly from the template file
-                if not structure and 'file_path' in template_data and os.path.exists(template_data['file_path']):
+                if loaded_structure:
+                    structure_to_set = loaded_structure
+                else: 
+                    loaded_structure = self.template_manager.get_structure(template_name)
+                    if loaded_structure:
+                         structure_to_set = loaded_structure
+
+                if not structure_to_set and 'file_path' in template_data and os.path.exists(template_data['file_path']):
                     try:
-                        print(f"DEBUG: Attempting to extract structure directly from template file: {template_data['file_path']}")
                         with open(template_data['file_path'], 'r', encoding='utf-8') as f:
-                            raw_template_data = json.load(f)
-                            if isinstance(raw_template_data, dict) and 'structure' in raw_template_data:
-                                structure = raw_template_data['structure']
-                                print(f"DEBUG: Successfully extracted structure from template file")
-                    except Exception as extract_err:
-                        print(f"DEBUG: Error extracting structure from template file: {extract_err}")
-                
-                # 4. If we have a structure now, set it on the template data
-                if structure:
-                    template_data['structure'] = structure
-                    print(f"DEBUG: Successfully loaded structure for selected template '{template_name}'")
-                else:
-                    print(f"⚠️ GALLERY EVENTS: No structure found for template, using empty structure")
-                    # Initialize with empty structure - can be edited in the structure editor
-                    template_data['structure'] = []
-                
-                # Use the existing selection logic
-                self._on_template_select(template_data) 
+                            raw_file_data = json.load(f)
+                            if isinstance(raw_file_data, dict) and 'structure' in raw_file_data:
+                                structure_to_set = raw_file_data['structure']
+                    except Exception: # nosec B110
+                        pass 
+
+                template_data['structure'] = structure_to_set if structure_to_set is not None else []
+                # if structure_to_set is not None:
+                #     print(f"DEBUG: _on_table_item_clicked: Loaded/ensured structure for '{template_name}'")
+                # else:
+                #     print(f"DEBUG: _on_table_item_clicked: No structure found for '{template_name}', using empty list.")
+            
+            # Previous selection logic (that was almost working):
+            # Trust _on_table_selection_changed to update GallerySelectionManager correctly.
+            # This handler (_on_table_item_clicked) should only make the clicked item primary *if* it's currently selected.
+            is_currently_selected_in_manager = False
+            if self.selection_manager:
+                clicked_item_name = template_data.get('name')
+                if self.selection_manager.selected_template and self.selection_manager.selected_template.get('name') == clicked_item_name:
+                    is_currently_selected_in_manager = True
+                elif any(t.get('name') == clicked_item_name for t in self.selection_manager.multi_selected_templates):
+                    is_currently_selected_in_manager = True
+
+            if is_currently_selected_in_manager:
+                # Item is clicked and is part of the current selection (primary or multi).
+                # Make it primary, preserving other multi-selected items.
+                print(f"[DEBUG] _on_table_item_clicked: Clicked item '{template_name}' IS in manager's selection. Setting as primary (preserving multi-select).")
+                GalleryEvents.on_template_select(self, template_data, clear_multi=False)
             else:
-                print(f"[WARNING] Could not find template data for '{template_name}'")
+                # Item is clicked but is NOT part of the current selection in the manager.
+                # This implies it was just deselected (e.g., by Ctrl+click), or it's a click
+                # on an unselected item that *should* become the sole selection (handled by _on_table_selection_changed path).
+                # In the deselection case, we do nothing to avoid re-selecting it.
+                # If it was a plain click on a new item, _on_table_selection_changed would have made it selected,
+                # and the above `if is_currently_selected_in_manager:` block would have been true.
+                print(f"[DEBUG] _on_table_item_clicked: Clicked item '{template_name}' is NOT in manager's selection. No action taken by _on_table_item_clicked.")
+                pass # Do nothing, _on_table_selection_changed handles this.
+        else:
+            print(f"[WARNING] _on_table_item_clicked: Could not find template data for '{template_name}'")
 
     def _on_table_item_double_clicked(self, index: QModelIndex):
         """Handle double click on a row in the TemplateTableView."""
@@ -1445,7 +1498,10 @@ class TemplateGallery(QWidget):
         # Use a helper function for deletion to handle single/multi logic clearly
         def delete_selected():
              print(f"DEBUG: Context Menu Delete Triggered for: {names_to_process}")
-             GalleryEvents.on_delete_template(self, names_to_process)
+             # GalleryEvents.on_delete_template(self, names_to_process)
+             # Instead of passing names_to_process, call on_delete_template with no parameter
+             # It will use the selection manager internally to determine what to delete
+             GalleryEvents.on_delete_template(self)
         
         # Define the text for the delete action based on selection
         delete_action_text = "Delete Selected Templates" if is_multi_select else "Delete Template"

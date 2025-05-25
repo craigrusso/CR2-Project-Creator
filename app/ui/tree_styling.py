@@ -8,7 +8,7 @@ Provides centralized styling for tree widgets
 
 import sys
 import os
-from PyQt5.QtWidgets import QTreeWidget, QWidget, QAbstractItemView, QApplication, QTreeWidgetItem
+from PyQt5.QtWidgets import QTreeWidget, QWidget, QAbstractItemView, QApplication, QTreeWidgetItem, QStyle
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QIcon, QColor
 
@@ -191,8 +191,17 @@ def update_item_icon(item):
     # Set appropriate icon
     if is_folder:
         # For folders, use open folder icon if expanded
-        is_expanded = item.isExpanded()
-        item.setIcon(0, get_folder_icon(is_expanded))
+        # is_expanded = item.isExpanded()
+        # item.setIcon(0, get_folder_icon(is_expanded))
+
+        # Directly use QApplication.style().standardIcon like in TemplateDirectoryEditor
+        if item.isExpanded():
+            folder_icon = QApplication.style().standardIcon(QStyle.SP_DirOpenIcon)
+            if folder_icon.isNull(): # Fallback if SP_DirOpenIcon is not available
+                folder_icon = QApplication.style().standardIcon(QStyle.SP_DirIcon)
+        else:
+            folder_icon = QApplication.style().standardIcon(QStyle.SP_DirIcon)
+        item.setIcon(0, folder_icon)
         
         # Store folder type in data
         if not item_type:
@@ -225,8 +234,6 @@ def apply_color_by_extension(item, ext):
         item: The QTreeWidgetItem to colorize
         ext: The file extension (without the dot)
     """
-    from PyQt5.QtGui import QColor
-    
     if not ext:
         return
         
