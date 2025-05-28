@@ -8,8 +8,8 @@ Tests the addition of files and folders, context menu, and basic functionality.
 
 import sys
 import os
-from PyQt5.QtWidgets import QApplication, QTreeWidgetItem
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QTreeWidgetItem
+from PyQt6.QtCore import Qt
 
 # Create application instance first
 app = QApplication(sys.argv)
@@ -36,7 +36,7 @@ def test_file_operations():
     assert isinstance(root_folder, QTreeWidgetItem), "Root folder not a QTreeWidgetItem"
     
     # Get the folder data
-    folder_data = root_folder.data(0, Qt.UserRole)
+    folder_data = root_folder.data(0, Qt.ItemDataRole.UserRole)
     assert folder_data is not None, "Folder data is None"
     assert folder_data.get('type') == 'folder', "Folder type not set correctly"
     
@@ -54,7 +54,7 @@ def test_file_operations():
     assert child_count > 0, "No file was added to the folder"
     
     # Get the file data
-    file_data = file_item.data(0, Qt.UserRole)
+    file_data = file_item.data(0, Qt.ItemDataRole.UserRole)
     assert file_data is not None, "File data is None"
     assert file_data.get('type') == 'file', "File type not set correctly"
     

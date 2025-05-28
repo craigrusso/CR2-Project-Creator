@@ -9,7 +9,7 @@ import datetime
 import subprocess
 import re
 import platform
-from PyQt5.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout, 
+from PyQt6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout, 
                             QPushButton, QLineEdit, QFrame, QScrollArea,
                             QToolTip, QSizePolicy, QFileDialog, QDialog,
                             QCheckBox, QListWidget, QListWidgetItem,
@@ -17,10 +17,10 @@ from PyQt5.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout,
                             QMessageBox, QInputDialog, QGridLayout, QTabWidget,
                             QApplication, QStyle, QMainWindow, QGroupBox,
                             QRadioButton, QComboBox, QProgressBar, QSplitter,
-                            QMenu, QAction, QListView, QStyledItemDelegate,
+                            QMenu, QListView, QStyledItemDelegate,
                             QStyleOptionViewItem, QAbstractItemView, QSpacerItem)
-from PyQt5.QtCore import Qt, QTimer, QPoint, QSize, pyqtSignal, QEvent, QUrl, QMimeData
-from PyQt5.QtGui import QFont, QCursor, QIcon, QColor, QPalette, QDragEnterEvent, QDropEvent, QPixmap, QPainter, QPen, QFontMetrics, QStandardItemModel, QStandardItem, QDesktopServices
+from PyQt6.QtCore import Qt, QTimer, QPoint, QSize, pyqtSignal, QEvent, QUrl, QMimeData
+from PyQt6.QtGui import QFont, QCursor, QIcon, QColor, QPalette, QDragEnterEvent, QDropEvent, QPixmap, QPainter, QPen, QFontMetrics, QStandardItemModel, QStandardItem, QDesktopServices, QAction
 
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, LINEEDIT_STYLE, LABEL_STYLE
 from app.ui.tree_styling import apply_tree_styling, setup_tree_for_structure_editing
@@ -121,7 +121,7 @@ class CardFrame(QFrame):
         # Add title if provided
         if title:
             title_label = QLabel(title)
-            title_label.setFont(QFont(UI_FONT, 12, QFont.Bold))
+            title_label.setFont(QFont(UI_FONT, 12, QFont.Weight.Bold))
             title_label.setStyleSheet(f"color: {colors['text']};")
             self.main_layout.addWidget(title_label)
         
@@ -197,7 +197,7 @@ class TemplateFileCard(QFrame):
         self.selected = False
         
         # Setup styling
-        self.setCursor(Qt.PointingHandCursor)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFrameShape(QFrame.StyledPanel)
         
         # Use a fixed grid layout with fixed row heights
@@ -219,17 +219,17 @@ class TemplateFileCard(QFrame):
             # Create template icon and title
             self.icon_label = QLabel("📄") # Document icon
             self.icon_label.setFont(QFont(UI_FONT, 24))
-            self.icon_label.setAlignment(Qt.AlignCenter)
+            self.icon_label.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
             
             self.title_label = QLabel(self.template_name)
-            self.title_label.setFont(QFont(UI_FONT, 10, QFont.Bold))
-            self.title_label.setAlignment(Qt.AlignCenter)
+            self.title_label.setFont(QFont(UI_FONT, 10, QFont.Weight.Bold))
+            self.title_label.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
             self.title_label.setWordWrap(True)
             
             # Simple template label 
             self.template_label = QLabel("Template")
             self.template_label.setFont(QFont(UI_FONT, 9))
-            self.template_label.setAlignment(Qt.AlignCenter)
+            self.template_label.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
             self.template_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
             
             # Path label (truncated if too long)
@@ -239,12 +239,12 @@ class TemplateFileCard(QFrame):
             
             self.path_label = QLabel(display_path)
             self.path_label.setFont(QFont(UI_FONT, 8))
-            self.path_label.setAlignment(Qt.AlignCenter)
+            self.path_label.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
             self.path_label.setWordWrap(True)
             
             # Empty widget for bottom space
             empty = QWidget()
-            empty.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            empty.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
             
             # Add widgets to grid
             self.grid.addWidget(self.icon_label, 0, 0)
@@ -269,12 +269,12 @@ class TemplateFileCard(QFrame):
                         background-color: #d32f2f;
                     }
                 """)
-                self.remove_btn.setCursor(Qt.PointingHandCursor)
+                self.remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 self.remove_btn.clicked.connect(lambda: self.remove_callback(self.template_path))
                 self.remove_btn.setToolTip("Remove from recent templates")
                 
                 # Place in top-right corner
-                self.grid.addWidget(self.remove_btn, 0, 0, 1, 1, Qt.AlignRight | Qt.AlignTop)
+                self.grid.addWidget(self.remove_btn, 0, 0, 1, 1, Qt.AlignmentFlagFlagFlagFlagFlag.AlignRight | Qt.AlignmentFlagFlagFlagFlagFlag.AlignTop)
                 
         except Exception as e:
             self.error_label = QLabel(f"Error: {str(e)}")
@@ -293,7 +293,7 @@ class TemplateFileCard(QFrame):
             elif event.type() == QEvent.Leave:
                 self._on_hover_leave()
                 return True
-            elif event.type() == QEvent.MouseButtonPress and event.button() == Qt.LeftButton:
+            elif event.type() == QEvent.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
                 if self.select_callback:
                     self.select_callback(self.template_path)
                 return True
@@ -475,7 +475,7 @@ class StructureEditor(QDialog):
         parent_item = selected_items[0] if selected_items else self.tree.topLevelItem(0)
         
         # If selected item is a file, use its parent
-        if parent_item and parent_item.data(0, Qt.UserRole) == "file":
+        if parent_item and parent_item.data(0, Qt.ItemDataRole.UserRole) == "file":
             parent_item = parent_item.parent() or self.tree.topLevelItem(0)
         
         # Get folder name from user
@@ -484,8 +484,8 @@ class StructureEditor(QDialog):
         if ok and folder_name:
             item = QTreeWidgetItem(parent_item)
             item.setText(0, folder_name)
-            item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-            item.setData(0, Qt.UserRole, "folder")  # Mark as folder in user data
+            item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+            item.setData(0, Qt.ItemDataRole.UserRole, "folder")  # Mark as folder in user data
             parent_item.setExpanded(True)
             
     def _remove_folder(self):
@@ -546,7 +546,7 @@ class StructureEditor(QDialog):
     def _build_structure_from_item(self, item, parent_list):
         """Recursively build a structure list from the tree item"""
         # Check if this is a folder or file based on user data
-        is_file = item.data(0, Qt.UserRole) == "file"
+        is_file = item.data(0, Qt.ItemDataRole.UserRole) == "file"
         
         if is_file:
             # It's a file, add as a simple string
@@ -570,7 +570,7 @@ class StructureEditor(QDialog):
             folder_name = child.text(0)
             
             # Check if it's a file or folder
-            is_file = child.data(0, Qt.UserRole) == "file"
+            is_file = child.data(0, Qt.ItemDataRole.UserRole) == "file"
             
             if is_file:
                 # Skip files - structure only maintains folders for compatibility
@@ -650,8 +650,8 @@ class StructureEditor(QDialog):
         # Create a folder item
         folder_item = QTreeWidgetItem(parent_item)
         folder_item.setText(0, dir_name)
-        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-        folder_item.setData(0, Qt.UserRole, "folder")  # Mark as folder
+        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        folder_item.setData(0, Qt.ItemDataRole.UserRole, "folder")  # Mark as folder
         folder_item.setExpanded(True)
         
         # Recursively process subdirectories
@@ -681,8 +681,8 @@ class StructureEditor(QDialog):
                 file_name = os.path.basename(file_path)
                 file_item = QTreeWidgetItem(folder_item)
                 file_item.setText(0, file_name)
-                file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-                file_item.setData(0, Qt.UserRole, "file")  # Mark as file
+                file_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+                file_item.setData(0, Qt.ItemDataRole.UserRole, "file")  # Mark as file
                 
                 # Copy the file to the template cache directory
                 if self.template_path and os.path.isdir(self.template_path):
@@ -909,9 +909,9 @@ class TemplateDirectoryEditor(QDialog):
         # Add a root item for the project
         root_item = QTreeWidgetItem(self.structure_tree)
         root_item.setText(0, self.template_path or "Template Root")
-        root_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-        root_item.setData(0, Qt.UserRole, {"type": "folder"})
-        root_item.setFlags(root_item.flags() | Qt.ItemIsEditable)  # Make root editable
+        root_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        root_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder"})
+        root_item.setFlags(root_item.flags() | Qt.ItemFlag.ItemIsEditable)  # Make root editable
         
         # Expand root by default
         self.structure_tree.expandItem(root_item)
@@ -1054,7 +1054,7 @@ class TemplateDirectoryEditor(QDialog):
         if selected_items:
             parent_item = selected_items[0]
             # Only allow adding folders to other folders
-            if parent_item.data(0, Qt.UserRole) and parent_item.data(0, Qt.UserRole).get("type") != "folder":
+            if parent_item.data(0, Qt.ItemDataRole.UserRole) and parent_item.data(0, Qt.ItemDataRole.UserRole).get("type") != "folder":
                 QMessageBox.warning(self, "Invalid Selection", "You can only add folders to other folders.")
                 return
         else:
@@ -1069,9 +1069,9 @@ class TemplateDirectoryEditor(QDialog):
         # Create new folder item
         folder_item = QTreeWidgetItem(parent_item)
         folder_item.setText(0, folder_name)
-        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-        folder_item.setData(0, Qt.UserRole, {"type": "folder"})
-        folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)  # Make folder editable
+        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        folder_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder"})
+        folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)  # Make folder editable
         
         # Expand the parent to show the new folder
         parent_item.setExpanded(True)
@@ -1119,7 +1119,7 @@ class TemplateDirectoryEditor(QDialog):
             selected_item = selected_items[0]
             
             # If selected item is a file, use its parent
-            if selected_item.data(0, Qt.UserRole) and selected_item.data(0, Qt.UserRole).get("type") != "folder":
+            if selected_item.data(0, Qt.ItemDataRole.UserRole) and selected_item.data(0, Qt.ItemDataRole.UserRole).get("type") != "folder":
                 parent_item = selected_item.parent()
             else:
                 parent_item = selected_item
@@ -1130,9 +1130,9 @@ class TemplateDirectoryEditor(QDialog):
         # Create new file item
         file_item = QTreeWidgetItem(parent_item)
         file_item.setText(0, template_file_name)
-        file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-        file_item.setData(0, Qt.UserRole, {"type": "file", "source_path": file_path})
-        file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)  # Make file editable
+        file_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+        file_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "source_path": file_path})
+        file_item.setFlags(file_item.flags() | Qt.ItemFlag.ItemIsEditable)  # Make file editable
         
         # Expand the parent to show the new file
         parent_item.setExpanded(True)
@@ -1190,7 +1190,7 @@ class TemplateDirectoryEditor(QDialog):
         else:
             # It's a file
             file_name = item.text(0)
-            structure_dict[file_name] = item.data(0, Qt.UserRole)["source_path"]
+            structure_dict[file_name] = item.data(0, Qt.ItemDataRole.UserRole)["source_path"]
     
     def _get_item_path(self, item):
         """Get the path from root to the given item"""
@@ -1288,7 +1288,7 @@ class TemplateDirectoryEditor(QDialog):
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             name = f"UNTITLED_{timestamp}"
             # Inform user about auto-generated name
-            from PyQt5.QtWidgets import QMessageBox
+            from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Auto-generated Name", 
                               f"No template name was provided. Your template will be saved as '{name}'.\n\n"
                               "You can rename it later from the template gallery.")
@@ -1399,8 +1399,8 @@ class TemplateDirectoryEditor(QDialog):
         # Create a folder item
         folder_item = QTreeWidgetItem(parent_item)
         folder_item.setText(0, dir_name)
-        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-        folder_item.setData(0, Qt.UserRole, "folder")  # Mark as folder
+        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        folder_item.setData(0, Qt.ItemDataRole.UserRole, "folder")  # Mark as folder
         folder_item.setExpanded(True)
         
         # Recursively process subdirectories
@@ -1430,8 +1430,8 @@ class TemplateDirectoryEditor(QDialog):
                 file_name = os.path.basename(file_path)
                 file_item = QTreeWidgetItem(folder_item)
                 file_item.setText(0, file_name)
-                file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-                file_item.setData(0, Qt.UserRole, "file")  # Mark as file
+                file_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+                file_item.setData(0, Qt.ItemDataRole.UserRole, "file")  # Mark as file
                 
                 # Copy the file to the template cache directory
                 if self.template_path and os.path.isdir(self.template_path):
@@ -1548,7 +1548,7 @@ class ProjectNameInput(QDialog):
         
         # Header
         header = QLabel("Enter Project Names")
-        header.setFont(QFont(UI_FONT, 16, QFont.Bold))
+        header.setFont(QFont(UI_FONT, 16, QFont.Weight.Bold))
         header.setStyleSheet(f"color: {colors['text']};")
         layout.addWidget(header)
         
@@ -1690,7 +1690,7 @@ class TemplateFolderCard(QFrame):
         # Setup styling
         self.setFrameShape(QFrame.StyledPanel)
         self.setFixedSize(200, 250)
-        self.setCursor(Qt.PointingHandCursor)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         
         # Use a fixed grid layout with fixed row heights
         self.grid = QGridLayout(self)
@@ -1705,23 +1705,23 @@ class TemplateFolderCard(QFrame):
         self.icon_label = QLabel("📁")  # Using a folder emoji
         self.icon_label.setFont(QFont(UI_FONT, 48))
         self.icon_label.setStyleSheet(f"color: {colors['secondary_text']};")
-        self.icon_label.setAlignment(Qt.AlignCenter)
+        self.icon_label.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
         
         # Folder name
         self.title = QLabel(folder_name)
-        self.title.setFont(QFont(UI_FONT, 12, QFont.Bold))
-        self.title.setAlignment(Qt.AlignCenter)
+        self.title.setFont(QFont(UI_FONT, 12, QFont.Weight.Bold))
+        self.title.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
         self.title.setStyleSheet("color: white;")
         
         # Folder label
         self.folder_label = QLabel("Folder")
         self.folder_label.setFont(QFont(UI_FONT, 9))
-        self.folder_label.setAlignment(Qt.AlignCenter)
+        self.folder_label.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
         self.folder_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
         
         # Empty widget for bottom space
         empty = QWidget()
-        empty.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        empty.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         
         # Add widgets to grid
         self.grid.addWidget(self.icon_label, 0, 0)
@@ -1744,7 +1744,7 @@ class TemplateFolderCard(QFrame):
                 self.hover = False
                 self._update_styling()
                 return True
-            elif event.type() == QEvent.MouseButtonRelease and event.button() == Qt.LeftButton:
+            elif event.type() == QEvent.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
                 self.clicked.emit(self.folder_name)
                 return True
         return super().eventFilter(obj, event)
@@ -1809,7 +1809,7 @@ class UpdateNotificationBanner(QFrame):
 
         self.download_button = QPushButton("Download Now")
         self.download_button.setStyleSheet(ACCENT_BUTTON_STYLE) # Use existing accent style
-        self.download_button.setCursor(Qt.PointingHandCursor)
+        self.download_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.download_button.setFixedHeight(28)
         self.download_button.clicked.connect(self._open_download_page)
         layout.addWidget(self.download_button)
@@ -1818,7 +1818,7 @@ class UpdateNotificationBanner(QFrame):
         self.close_button.setFlat(True)
         self.close_button.setFixedSize(24, 24)
         self.close_button.setStyleSheet("QPushButton { border: none; font-size: 16px; color: #AAAAAA; } QPushButton:hover { color: #FFFFFF; }")
-        self.close_button.setCursor(Qt.PointingHandCursor)
+        self.close_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.close_button.clicked.connect(self.hide)
         layout.addWidget(self.close_button)
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
-from PyQt5.QtWidgets import QStyledItemDelegate, QLineEdit
-from PyQt5.QtCore import Qt, QEvent
+from PyQt6.QtWidgets import QStyledItemDelegate, QLineEdit
+from PyQt6.QtCore import Qt, QEvent
 
 class TreeItemDelegate(QStyledItemDelegate):
     """
@@ -29,11 +29,11 @@ class TreeItemDelegate(QStyledItemDelegate):
         self.current_index = index
         
         # Force the item to be editable
-        if not (index.flags() & Qt.ItemIsEditable):
+        if not (index.flags() & Qt.ItemFlag.ItemIsEditable):
             print(f"DEBUG: Making item at {index.row()} editable")
             model = index.model()
             if model:
-                model.setData(index, True, Qt.ItemIsEditable)
+                model.setData(index, True, Qt.ItemFlag.ItemIsEditable)
         
         # Create the line edit
         editor = QLineEdit(parent)
@@ -71,7 +71,7 @@ class TreeItemDelegate(QStyledItemDelegate):
             index: Model index
         """
         # Get the current text
-        value = index.model().data(index, Qt.EditRole) or index.model().data(index, Qt.DisplayRole)
+        value = index.model().data(index, Qt.ItemDataRole.EditRole) or index.model().data(index, Qt.ItemDataRole.DisplayRole)
         if value:
             editor.setText(str(value))
             editor.selectAll()  # Select all text for easy editing
@@ -93,7 +93,7 @@ class TreeItemDelegate(QStyledItemDelegate):
             value = editor.text()
             
             # Update the model
-            model.setData(index, value, Qt.EditRole)
+            model.setData(index, value, Qt.ItemDataRole.EditRole)
             
             # Get the tree widget item
             tree_widget = editor.parent().parent() if editor.parent() else None
@@ -101,10 +101,10 @@ class TreeItemDelegate(QStyledItemDelegate):
                 tree_item = tree_widget.itemFromIndex(index) 
                 if tree_item:
                     # Update user data if it exists
-                    item_data = tree_item.data(0, Qt.UserRole)
+                    item_data = tree_item.data(0, Qt.ItemDataRole.UserRole)
                     if isinstance(item_data, dict):
                         item_data['name'] = value
-                        tree_item.setData(0, Qt.UserRole, item_data)
+                        tree_item.setData(0, Qt.ItemDataRole.UserRole, item_data)
             
             # Log success
             print(f"DEBUG: Updated item text to '{value}'")
@@ -163,37 +163,37 @@ class TreeItemDelegate(QStyledItemDelegate):
             event: Event being processed
         """
         if obj is self.editor:
-            if event.type() == QEvent.KeyPress:
+            if event.type() == QEvent.Type.KeyPress:
                 key = event.key()
                 
                 # Handle Enter/Return key - commit changes and close editor
-                if key in (Qt.Key_Enter, Qt.Key_Return):
+                if key in (Qt.Key.Key_Enter, Qt.Key.Key_Return):
                     # First commit the data
                     self.commitData.emit(obj)
                     
                     # Schedule the closing of the editor to avoid immediate recursion
-                    from PyQt5.QtCore import QTimer
+                    from PyQt6.QtCore import QTimer
                     QTimer.singleShot(0, lambda: self._finishEditing(obj))
                     
                     return True
                 
                 # Handle Escape key - just close editor without committing
-                elif key == Qt.Key_Escape:
+                elif key == Qt.Key.Key_Escape:
                     # Schedule the closing of the editor to avoid immediate recursion
-                    from PyQt5.QtCore import QTimer
+                    from PyQt6.QtCore import QTimer
                     QTimer.singleShot(0, lambda: self._cancelEditing(obj))
                     
                     return True
             
             # Handle focus out - commit changes if not another editor
-            elif event.type() == QEvent.FocusOut:
+            elif event.type() == QEvent.Type.FocusOut:
                 # Don't close if a popup is active or another editor is being opened
                 if not obj.hasFocus():
                     # First commit the data
                     self.commitData.emit(obj)
                     
                     # Schedule the closing of the editor to avoid immediate recursion
-                    from PyQt5.QtCore import QTimer
+                    from PyQt6.QtCore import QTimer
                     QTimer.singleShot(0, lambda: self._finishEditing(obj))
         
         # Let the base class handle other events
@@ -205,7 +205,7 @@ class TreeItemDelegate(QStyledItemDelegate):
             try:
                 # Call the closeEditor signal via QMetaObject.invokeMethod
                 # to properly trigger the signal
-                from PyQt5.QtCore import QMetaObject, Q_ARG, Qt
+                from PyQt6.QtCore import QMetaObject, Q_ARG, Qt
                 QMetaObject.invokeMethod(
                     self, 
                     "closeEditor", 
@@ -229,7 +229,7 @@ class TreeItemDelegate(QStyledItemDelegate):
         if self.edit_in_progress and editor == self.editor:
             try:
                 # Call the closeEditor signal via QMetaObject.invokeMethod
-                from PyQt5.QtCore import QMetaObject, Q_ARG, Qt
+                from PyQt6.QtCore import QMetaObject, Q_ARG, Qt
                 QMetaObject.invokeMethod(
                     self, 
                     "closeEditor", 

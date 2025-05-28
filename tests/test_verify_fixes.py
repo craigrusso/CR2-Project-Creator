@@ -5,9 +5,9 @@ import tempfile
 import shutil
 import json
 from pathlib import Path
-from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QMessageBox, QDialog
-from PyQt5.QtCore import Qt, QMimeData, QUrl, QPoint, QObject, QEvent
-from PyQt5.QtGui import QDragEnterEvent, QDropEvent
+from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QMessageBox, QDialog
+from PyQt6.QtCore import Qt, QMimeData, QUrl, QPoint, QObject, QEvent
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent
 
 # Add the application directory to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -114,10 +114,10 @@ class FixVerifier(QMainWindow):
         # Create drop event at root level
         drop_event = QDropEvent(
             QPoint(100, 100),
-            Qt.CopyAction,
+            Qt.DropAction.CopyAction,
             mime_data,
-            Qt.LeftButton,
-            Qt.NoModifier,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
             QEvent.Drop
         )
         

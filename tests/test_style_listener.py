@@ -3,10 +3,10 @@
 
 import sys
 import os
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem,
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem,
                             QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QLabel,
                             QStyle, QSplitter, QTextEdit)
-from PyQt5.QtCore import Qt, QEvent
+from PyQt6.QtCore import Qt, QEvent
 
 from app.ui.style_debugger import StyleDebugger, create_style_report
 from app.ui.tree_styling import apply_tree_styling, setup_tree_for_structure_editing
@@ -33,7 +33,7 @@ class StyleListenerWindow(QMainWindow):
         main_layout.addWidget(instructions)
         
         # Create splitter for tree and log
-        splitter = QSplitter(Qt.Horizontal)
+        splitter = QSplitter(Qt.Orientation.Horizontal)
         main_layout.addWidget(splitter)
         
         # Left side - Tree widget with our fixed styling
@@ -57,9 +57,9 @@ class StyleListenerWindow(QMainWindow):
         # Add a root item
         root_item = QTreeWidgetItem(self.tree)
         root_item.setText(0, "Template Root")
-        root_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-        root_item.setData(0, Qt.UserRole, {"type": "folder"})
-        root_item.setFlags(root_item.flags() | Qt.ItemIsEditable)
+        root_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        root_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder"})
+        root_item.setFlags(root_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
         # Expand root
         self.tree.expandItem(root_item)
@@ -125,9 +125,9 @@ class StyleListenerWindow(QMainWindow):
         # Create a new folder item
         folder_item = QTreeWidgetItem(parent_item)
         folder_item.setText(0, "New Folder")
-        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-        folder_item.setData(0, Qt.UserRole, {"type": "folder"})
-        folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        folder_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder"})
+        folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
         # Expand parent to show new item
         parent_item.setExpanded(True)
@@ -149,9 +149,9 @@ class StyleListenerWindow(QMainWindow):
         # Create a new file item
         file_item = QTreeWidgetItem(parent_item)
         file_item.setText(0, "new_file.txt")
-        file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-        file_item.setData(0, Qt.UserRole, {"type": "file", "source_path": ""})
-        file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+        file_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+        file_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "source_path": ""})
+        file_item.setFlags(file_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
         # Expand parent to show new item
         parent_item.setExpanded(True)
@@ -208,7 +208,7 @@ class StyleListenerWindow(QMainWindow):
         self.log(f"\n=== ITEM STYLING ANALYSIS ===")
         self.log(f"Item text: {item.text(0)}")
         self.log(f"Item flags: {item.flags()}")
-        self.log(f"Is editable: {bool(item.flags() & Qt.ItemIsEditable)}")
+        self.log(f"Is editable: {bool(item.flags() & Qt.ItemFlag.ItemIsEditable)}")
         self.log(f"Is selected: {item.isSelected()}")
         
         # Get background and foreground colors
@@ -263,4 +263,4 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = StyleListenerWindow()
     window.show()
-    sys.exit(app.exec_()) 
+    sys.exit(app.exec()) 

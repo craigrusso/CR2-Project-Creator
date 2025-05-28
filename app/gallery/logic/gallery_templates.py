@@ -12,7 +12,7 @@ import re
 import copy
 from datetime import datetime
 from functools import partial
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QGridLayout, 
     QLabel, QPushButton, QComboBox, QSizePolicy, QApplication,
     QFrame, QMenu, QMessageBox, QAction, QButtonGroup, QToolButton, QTableWidget, 
@@ -20,8 +20,8 @@ from PyQt5.QtWidgets import (
     QListWidget, QListWidgetItem, QStyle, QStyledItemDelegate, QStyleOptionViewItem,
     QStyleOptionFrame, QCheckBox, QDialog, QTreeWidget, QTreeWidgetItem, QSplitter
 )
-from PyQt5.QtGui import QIcon, QColor, QFont, QPixmap, QCursor, QPainter, QPalette, QPen, QBrush
-from PyQt5.QtCore import Qt, pyqtSignal, QSize, QPoint, QRect, QBuffer, QTimer, QEvent, QItemSelectionModel
+from PyQt6.QtGui import QIcon, QColor, QFont, QPixmap, QCursor, QPainter, QPalette, QPen, QBrush
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QPoint, QRect, QBuffer, QTimer, QEvent, QItemSelectionModel
 import traceback # Import the traceback module
 
 from app.ui.color_scheme_pyqt import colors, ACCENT_BUTTON_STYLE
@@ -524,17 +524,17 @@ class GalleryTemplatesSetup:
         gallery.templates_scroll.setFrameShape(QFrame.NoFrame) # No border for scroll area
         gallery.templates_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         gallery.templates_scroll.setStyleSheet("background: transparent; border: none;")
-        gallery.templates_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        gallery.templates_scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         
         # Container for template cards
         gallery.templates_container = QWidget()
         gallery.templates_container.setStyleSheet("background: transparent;")
-        gallery.templates_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred) # Let it grow vertically
+        gallery.templates_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred) # Let it grow vertically
         
         gallery.templates_grid = QGridLayout(gallery.templates_container)
         gallery.templates_grid.setContentsMargins(0, 0, 0, 0) # No margins for the grid itself
         gallery.templates_grid.setSpacing(10)  # Space between cards
-        gallery.templates_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        gallery.templates_grid.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignTop | Qt.AlignmentFlagFlagFlagFlagFlag.AlignLeft)
         
         gallery.templates_scroll.setWidget(gallery.templates_container)
         gallery.templates_content_layout.addWidget(gallery.templates_scroll)
@@ -569,7 +569,7 @@ class GalleryTemplatesSetup:
 
         # Templates section header
         gallery.header_label = QLabel("Templates")
-        gallery.header_label.setFont(QFont(get_system_font(), 14, QFont.Bold))
+        gallery.header_label.setFont(QFont(get_system_font(), 14, QFont.Weight.Bold))
         gallery.header_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold; background: transparent;")
         gallery.templates_header_layout.addWidget(gallery.header_label)
 
@@ -599,7 +599,7 @@ class GalleryTemplatesSetup:
 
         # Folder label (shows current folder)
         gallery.folder_label = QLabel("")
-        gallery.folder_label.setFont(QFont(get_system_font(), 11, QFont.Bold))
+        gallery.folder_label.setFont(QFont(get_system_font(), 11, QFont.Weight.Bold))
         gallery.folder_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
         gallery.folder_label.hide()
         gallery.templates_header_layout.addWidget(gallery.folder_label)
@@ -846,8 +846,8 @@ class GalleryTemplatesSetup:
                 print(f"[WARN] Failed to create template card for: {template_data.get('name', 'Unknown')}")
         
         # Add a stretch at the end of the grid to push items to the top-left
-        # gallery.templates_grid.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding), row + 1, 0, 1, max_cols)
-        # gallery.templates_grid.addItem(QSpacerItem(20, 40, QSizePolicy.Expanding, QSizePolicy.Minimum), 0, max_cols, row + 1, 1)
+        # gallery.templates_grid.addItem(QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding), row + 1, 0, 1, max_cols)
+        # gallery.templates_grid.addItem(QSpacerItem(20, 40, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum), 0, max_cols, row + 1, 1)
 
         # Update selection state after populating
         GalleryTemplatesSetup.update_template_selection_state(gallery)
@@ -879,7 +879,7 @@ class GalleryTemplatesSetup:
             gallery.template_table_view.show()
             # Ensure the table view header is correctly sized after showing
             if hasattr(gallery.template_table_view, 'horizontalHeader'):
-                gallery.template_table_view.horizontalHeader().resizeSections(QHeaderView.ResizeToContents)
+                gallery.template_table_view.horizontalHeader().resizeSections(QHeaderView.ResizeMode.ResizeToContents)
 
         # Ensure folders section remains visible in both modes when appropriate
         # This is a critical fix - we don't hide the folders section just because we switch to list view
@@ -1117,7 +1117,7 @@ class GalleryTemplatesSetup:
         # We might need to handle clicks on the QTableView's viewport() background.
         
         # Assuming `self` is the TemplateGallery instance
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             # Check if click was on an item or blank space
             index = self.template_table_view.indexAt(event.pos())
             if not index.isValid(): # Click was on blank space

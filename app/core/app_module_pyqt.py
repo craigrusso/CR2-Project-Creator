@@ -3,13 +3,13 @@
 
 import os
 import platform
-from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                            QLabel, QPushButton, QComboBox, QLineEdit, 
-                           QFileDialog, QMessageBox, QAction, QMenu, 
+                           QFileDialog, QMessageBox, QMenu,
                            QStatusBar, QFrame, QSplitter, QScrollArea, QSizePolicy,
                            QApplication, QGroupBox, QListView, QTextEdit, QLayout)
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex, QPoint, QUrl, QMimeData, QSettings, QObject, QThread
-from PyQt5.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, QPixmap, QDesktopServices, QCursor, QDragEnterEvent, QDropEvent, QFontMetrics, QStandardItemModel, QStandardItem
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex, QPoint, QUrl, QMimeData, QSettings, QObject, QThread
+from PyQt6.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, QPixmap, QDesktopServices, QCursor, QDragEnterEvent, QDropEvent, QFontMetrics, QStandardItemModel, QStandardItem, QAction
 
 from app.core.app_config import APP_NAME, APP_VERSION, RECENT_TEMPLATES_MAX
 from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE, LISTVIEW_POPUP_STYLE, APP_COLORS
@@ -236,7 +236,7 @@ class ProjectCreatorApp(QMainWindow):
         self.setMinimumSize(1000, 600)
         
         # Add main horizontal splitter
-        self.main_splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.main_layout.addWidget(self.main_splitter)
         
         # Create left panel with project settings
@@ -286,7 +286,7 @@ class ProjectCreatorApp(QMainWindow):
             }}
         """)
         # Set size policy to make text edit expand
-        self.batch_text_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.batch_text_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         middle_layout.addWidget(self.batch_text_edit)
         
         # Add the expandable middle section
@@ -300,13 +300,13 @@ class ProjectCreatorApp(QMainWindow):
         # Output directory
         self.output_dir_layout = QHBoxLayout()
         # Make sure components don't wrap to next line by setting some key properties
-        self.output_dir_layout.setSizeConstraint(QLayout.SetNoConstraint)
+        self.output_dir_layout.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
         # Add margins to the output dir layout to create space on both sides
         self.output_dir_layout.setContentsMargins(10, 0, 10, 0)  # Left, top, right, bottom
         self.output_dir_layout.setSpacing(5)  # Space between elements
         
         self.output_dir_label = QLabel("Output Directory:")
-        self.output_dir_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.output_dir_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         # Make label match app background and have no border
         self.output_dir_label.setStyleSheet(f"""
             QLabel {{
@@ -335,7 +335,7 @@ class ProjectCreatorApp(QMainWindow):
         self.output_dir_btn = QPushButton("Browse...")
         self.output_dir_btn.clicked.connect(self.get_output_dir)
         # Make sure the browse button doesn't get too large
-        self.output_dir_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.output_dir_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         # Custom style for the browse button - match height with input field
         self.output_dir_btn.setStyleSheet(f"""
             QPushButton {{
@@ -381,7 +381,7 @@ class ProjectCreatorApp(QMainWindow):
         
         # Create right panel with template gallery
         self.right_panel = QWidget()
-        self.right_panel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.right_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.right_layout = QVBoxLayout(self.right_panel)
         self.right_layout.setContentsMargins(0, 0, 0, 0)
         
@@ -440,7 +440,8 @@ class ProjectCreatorApp(QMainWindow):
     def center_window(self):
         """Center the window on the screen"""
         qr = self.frameGeometry()
-        cp = QApplication.desktop().availableGeometry().center()
+        screen = QApplication.primaryScreen()
+        cp = screen.availableGeometry().center()
         qr.moveCenter(cp)
         self.move(qr.topLeft())
     
@@ -816,7 +817,7 @@ class ProjectCreatorApp(QMainWindow):
         later_button = msg_box.addButton("Later", QMessageBox.RejectRole)
         msg_box.setDefaultButton(download_button)
         
-        msg_box.exec_()
+        msg_box.exec()
 
         if msg_box.clickedButton() == download_button:
             # print(f"DEBUG: Opening download URL: {download_url}")
@@ -1125,7 +1126,7 @@ class ProjectCreatorApp(QMainWindow):
     def process_batch_projects(self):
         """Process the entered project names for batch creation"""
         import re
-        from PyQt5.QtWidgets import QMessageBox
+        from PyQt6.QtWidgets import QMessageBox
         from app.core.project_operations import handle_batch_create
         
         # Get text from the batch input area

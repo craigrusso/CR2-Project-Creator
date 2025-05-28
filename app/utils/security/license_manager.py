@@ -18,8 +18,8 @@ import importlib.resources # For accessing bundled data files
 from datetime import datetime, timedelta
 import socket # Added import
 import math # Added for time calculations
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QLineEdit, QFormLayout, QMessageBox, QProgressBar, QHBoxLayout
-from PyQt5.QtCore import Qt, QSettings, QTimer
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QLineEdit, QFormLayout, QMessageBox, QProgressBar, QHBoxLayout
+from PyQt6.QtCore import Qt, QSettings, QTimer
 
 # Import styling constants
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
@@ -733,7 +733,7 @@ class TrialNagDialog(QDialog):
             message = "Your trial period has expired.\\n\\nPlease purchase a license to continue using Echelon."
             
         message_label = QLabel(message)
-        message_label.setAlignment(Qt.AlignCenter)
+        message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         message_label.setWordWrap(True)
         layout.addWidget(message_label)
         
@@ -789,7 +789,7 @@ class TrialNagDialog(QDialog):
             trial_expired_label = QLabel("Your trial has expired. Please activate to continue using Echelon.")
             trial_expired_label.setStyleSheet("color: yellow;") # Make it noticeable
             trial_expired_label.setWordWrap(True)
-            trial_expired_label.setAlignment(Qt.AlignCenter) # Center align this label too
+            trial_expired_label.setAlignment(Qt.AlignmentFlag.AlignCenter) # Center align this label too
             
             # The original insertWidget call places trial_expired_label before message_label if not handled carefully.
             # Original logic: layout.insertWidget(layout.count() -1, trial_expired_label)
@@ -835,7 +835,7 @@ class TrialNagDialog(QDialog):
     def open_activation_dialog(self):
         """Opens the separate ActivationDialog."""
         dialog = LicenseActivationDialog(self, self.license_manager)
-        result = dialog.exec_()
+        result = dialog.exec()
         
-        if result == QDialog.Accepted:
+        if result == QDialog.DialogCode.Accepted:
             self.accept() 

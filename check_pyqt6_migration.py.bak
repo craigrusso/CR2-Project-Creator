@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+"""
+PyQt6 Migration Checker
+Identifies all PyQt5 to PyQt6 migration issues in the codebase
+"""
+
+import os
+import re
+from pathlib import Path
+from typing import List, Tuple, Dict
+
+# Common PyQt5 to PyQt6 migration patterns
+MIGRATION_PATTERNS = {
+    # QFont enum issues
+    'QFont.Bold': 'QFont.Weight.Bold',
+    'QFont.Normal': 'QFont.Weight.Normal',
+    'QFont.DemiBold': 'QFont.Weight.DemiBold',
+    'QFont.Light': 'QFont.Weight.Light',
+    'QFont.Black': 'QFont.Weight.Black',
+    
+    # Qt Key enums
+    'Qt.Key_': 'Qt.Key.Key_',
+    
+    # QSizePolicy enums
+    'QSizePolicy.Expanding': 'QSizePolicy.Policy.Expanding',
+    'QSizePolicy.Fixed': 'QSizePolicy.Policy.Fixed',
+    'QSizePolicy.Minimum': 'QSizePolicy.Policy.Minimum',
+    'QSizePolicy.Maximum': 'QSizePolicy.Policy.Maximum',
+    'QSizePolicy.Preferred': 'QSizePolicy.Policy.Preferred',
+    'QSizePolicy.MinimumExpanding': 'QSizePolicy.Policy.MinimumExpanding',
+    'QSizePolicy.Ignored': 'QSizePolicy.Policy.Ignored',
+    
+    # QStyle standard icons
+    'QStyle.SP_': 'QStyle.StandardPixmap.SP_',
+    
+    # Qt enums
+    'Qt.AlignLeft': 'Qt.AlignmentFlag.AlignLeft',
+    'Qt.AlignRight': 'Qt.AlignmentFlag.AlignRight',
+    'Qt.AlignCenter': 'Qt.AlignmentFlag.AlignCenter',
+    'Qt.AlignTop': 'Qt.AlignmentFlag.AlignTop',
+    'Qt.AlignBottom': 'Qt.AlignmentFlag.AlignBottom',
+    'Qt.AlignVCenter': 'Qt.AlignmentFlag.AlignVCenter',
+    'Qt.AlignHCenter': 'Qt.AlignmentFlag.AlignHCenter',
+    
+    'Qt.LeftButton': 'Qt.MouseButton.LeftButton',
+    'Qt.RightButton': 'Qt.MouseButton.RightButton',
+    'Qt.MiddleButton': 'Qt.MouseButton.MiddleButton',
+    
+    'Qt.NoModifier': 'Qt.KeyboardModifier.NoModifier',
+    'Qt.ShiftModifier': 'Qt.KeyboardModifier.ShiftModifier',
+    'Qt.ControlModifier': 'Qt.KeyboardModifier.ControlModifier',
+    'Qt.AltModifier': 'Qt.KeyboardModifier.AltModifier',
+    'Qt.MetaModifier': 'Qt.KeyboardModifier.MetaModifier',
+    
+    'Qt.Horizontal': 'Qt.Orientation.Horizontal',
+    'Qt.Vertical': 'Qt.Orientation.Vertical',
+    
+    'Qt.Checked': 'Qt.CheckState.Checked',
+    'Qt.Unchecked': 'Qt.CheckState.Unchecked',
+    'Qt.PartiallyChecked': 'Qt.CheckState.PartiallyChecked',
+    
+    'Qt.NoPen': 'Qt.PenStyle.NoPen',
+    'Qt.SolidLine': 'Qt.PenStyle.SolidLine',
+    'Qt.DashLine': 'Qt.PenStyle.DashLine',
+    
+    'Qt.NoBrush': 'Qt.BrushStyle.NoBrush',
+    'Qt.SolidPattern': 'Qt.BrushStyle.SolidPattern',
+    
+    'Qt.KeepAspectRatio': 'Qt.AspectRatioMode.KeepAspectRatio',
+    'Qt.IgnoreAspectRatio': 'Qt.AspectRatioMode.IgnoreAspectRatio',
+    
+    'Qt.SmoothTransformation': 'Qt.TransformationMode.SmoothTransformation',
+    'Qt.FastTransformation': 'Qt.TransformationMode.FastTransformation',
+    
+    'Qt.CustomContextMenu': 'Qt.ContextMenuPolicy.CustomContextMenu',
+    'Qt.DefaultContextMenu': 'Qt.ContextMenuPolicy.DefaultContextMenu',
+    'Qt.NoContextMenu': 'Qt.ContextMenuPolicy.NoContextMenu',
+    
+    'Qt.WindowModal': 'Qt.WindowModality.WindowModal',
+    'Qt.ApplicationModal': 'Qt.WindowModality.ApplicationModal',
+    'Qt.NonModal': 'Qt.WindowModality.NonModal',
+    
+    'Qt.StrongFocus': 'Qt.FocusPolicy.StrongFocus',
+    'Qt.NoFocus': 'Qt.FocusPolicy.NoFocus',
+    'Qt.TabFocus': 'Qt.FocusPolicy.TabFocus',
+    'Qt.ClickFocus': 'Qt.FocusPolicy.ClickFocus',
+    'Qt.WheelFocus': 'Qt.FocusPolicy.WheelFocus',
+    
+    'Qt.ItemIsEnabled': 'Qt.ItemFlag.ItemIsEnabled',
+    'Qt.ItemIsSelectable': 'Qt.ItemFlag.ItemIsSelectable',
+    'Qt.ItemIsEditable': 'Qt.ItemFlag.ItemIsEditable',
+    'Qt.ItemIsDragEnabled': 'Qt.ItemFlag.ItemIsDragEnabled',
+    'Qt.ItemIsDropEnabled': 'Qt.ItemFlag.ItemIsDropEnabled',
+    
+    'Qt.DisplayRole': 'Qt.ItemDataRole.DisplayRole',
+    'Qt.UserRole': 'Qt.ItemDataRole.UserRole',
+    'Qt.DecorationRole': 'Qt.ItemDataRole.DecorationRole',
+    
+    'Qt.PointingHandCursor': 'Qt.CursorShape.PointingHandCursor',
+    'Qt.ArrowCursor': 'Qt.CursorShape.ArrowCursor',
+    'Qt.WaitCursor': 'Qt.CursorShape.WaitCursor',
+    
+    'Qt.transparent': 'Qt.GlobalColor.transparent',
+    'Qt.black': 'Qt.GlobalColor.black',
+    'Qt.white': 'Qt.GlobalColor.white',
+    
+    'Qt.MaskOutColor': 'Qt.MaskMode.MaskOutColor',
+    'Qt.MaskInColor': 'Qt.MaskMode.MaskInColor',
+    
+    'Qt.MoveAction': 'Qt.DropAction.MoveAction',
+    'Qt.CopyAction': 'Qt.DropAction.CopyAction',
+    
+    # Painter composition modes
+    'QPainter.CompositionMode_SourceIn': 'QPainter.CompositionMode.CompositionMode_SourceIn',
+    'QPainter.CompositionMode_SourceOver': 'QPainter.CompositionMode.CompositionMode_SourceOver',
+}
+
+def find_migration_issues(file_path: Path) -> List[Tuple[int, str, str, str]]:
+    """Find PyQt6 migration issues in a file"""
+    issues = []
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+            
+        for line_num, line in enumerate(lines, 1):
+            for old_pattern, new_pattern in MIGRATION_PATTERNS.items():
+                # Create regex pattern with word boundaries where appropriate
+                if old_pattern.endswith('_'):
+                    # For patterns like Qt.Key_, match the full enum
+                    pattern = re.compile(rf'\b{re.escape(old_pattern)}[A-Za-z0-9_]+\b')
+                else:
+                    pattern = re.compile(rf'\b{re.escape(old_pattern)}\b')
+                
+                if pattern.search(line):
+                    issues.append((line_num, line.strip(), old_pattern, new_pattern))
+                    
+    except Exception as e:
+        print(f"Error reading {file_path}: {e}")
+        
+    return issues
+
+def scan_directory(directory: Path) -> Dict[str, List[Tuple[int, str, str, str]]]:
+    """Scan directory for PyQt6 migration issues"""
+    all_issues = {}
+    
+    # Only scan Python files
+    for py_file in directory.rglob('*.py'):
+        # Skip venv, __pycache__, and other irrelevant directories
+        if any(part in str(py_file) for part in ['venv', '__pycache__', '.git', 'build', 'dist']):
+            continue
+            
+        issues = find_migration_issues(py_file)
+        if issues:
+            all_issues[str(py_file.relative_to(directory))] = issues
+            
+    return all_issues
+
+def main():
+    """Main function to scan and report issues"""
+    # Get the V4 directory
+    v4_dir = Path(__file__).parent
+    
+    print("PyQt6 Migration Checker")
+    print("=" * 80)
+    print(f"Scanning directory: {v4_dir}")
+    print()
+    
+    # Scan for issues
+    all_issues = scan_directory(v4_dir)
+    
+    if not all_issues:
+        print("No PyQt6 migration issues found!")
+        return
+        
+    # Report issues
+    total_issues = 0
+    for file_path, issues in sorted(all_issues.items()):
+        print(f"\n{file_path}:")
+        print("-" * len(file_path))
+        
+        for line_num, line_content, old_pattern, new_pattern in issues:
+            print(f"  Line {line_num}: {old_pattern} -> {new_pattern}")
+            print(f"    {line_content}")
+            total_issues += 1
+            
+    print(f"\n\nTotal issues found: {total_issues}")
+    print("\nSuggested fixes have been identified. Run fix_pyqt6_migration.py to apply them.")
+
+if __name__ == "__main__":
+    main() 

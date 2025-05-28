@@ -6,8 +6,8 @@ import sys
 import json
 import tempfile
 import shutil
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QTreeWidget, QTreeWidgetItem
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QTreeWidget, QTreeWidgetItem
+from PyQt6.QtCore import Qt
 
 # Add the parent directory to the path to import app modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -387,4 +387,4 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     test_window = FileFormatTest()
     test_window.show()
-    sys.exit(app.exec_()) 
+    sys.exit(app.exec()) 

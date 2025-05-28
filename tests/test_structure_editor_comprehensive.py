@@ -8,12 +8,12 @@ import tempfile
 import shutil
 import time
 import json
-from PyQt5.QtWidgets import (QApplication, QDialog, QVBoxLayout, QHBoxLayout, 
+from PyQt6.QtWidgets import (QApplication, QDialog, QVBoxLayout, QHBoxLayout, 
                            QPushButton, QLabel, QTreeWidget, QTreeWidgetItem,
                            QTabWidget, QWidget, QMessageBox, QFileDialog,
                            QListWidget, QComboBox)
-from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal
-from PyQt5.QtGui import QIcon, QDrag, QPixmap
+from PyQt6.QtCore import Qt, QTimer, QObject, pyqtSignal
+from PyQt6.QtGui import QIcon, QDrag, QPixmap
 
 # Import app modules
 from app.templates.template_manager import TemplateManager
@@ -550,8 +550,8 @@ class StructureEditorTester(QDialog):
             # Add a file
             file_item = QTreeWidgetItem(root_item)
             file_item.setText(0, "test_file.txt")
-            file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-            file_item.setData(0, Qt.UserRole, "file")
+            file_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+            file_item.setData(0, Qt.ItemDataRole.UserRole, "file")
             
             self.log_result("Added test folder and file to editor")
         except Exception as e:
@@ -586,8 +586,8 @@ class StructureEditorTester(QDialog):
             # Add a file with the same name
             file_item = QTreeWidgetItem(root_item)
             file_item.setText(0, "same_name")
-            file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-            file_item.setData(0, Qt.UserRole, "file")
+            file_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+            file_item.setData(0, Qt.ItemDataRole.UserRole, "file")
             
             self.log_result("Added items with the same name (file and folder)")
         except Exception as e:
@@ -602,8 +602,8 @@ class StructureEditorTester(QDialog):
             # Add a JSON file
             file_item = QTreeWidgetItem(root_item)
             file_item.setText(0, "config.json")
-            file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-            file_item.setData(0, Qt.UserRole, "file")
+            file_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+            file_item.setData(0, Qt.ItemDataRole.UserRole, "file")
             
             # Add a folder with the same name
             self.structure_editor.tree.setCurrentItem(root_item)
@@ -613,8 +613,8 @@ class StructureEditorTester(QDialog):
             # Add a child file to the folder
             child_file = QTreeWidgetItem(folder_item)
             child_file.setText(0, "settings.json")
-            child_file.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-            child_file.setData(0, Qt.UserRole, "file")
+            child_file.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+            child_file.setData(0, Qt.ItemDataRole.UserRole, "file")
             
             self.log_result("Added JSON file and folder with the same name")
         except Exception as e:
@@ -629,8 +629,8 @@ class StructureEditorTester(QDialog):
             # Add a README file
             readme_item = QTreeWidgetItem(root_item)
             readme_item.setText(0, "README.md")
-            readme_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-            readme_item.setData(0, Qt.UserRole, "file")
+            readme_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+            readme_item.setData(0, Qt.ItemDataRole.UserRole, "file")
             
             # Add src folder
             self.structure_editor.tree.setCurrentItem(root_item)
@@ -640,8 +640,8 @@ class StructureEditorTester(QDialog):
             # Add files to src folder
             index_file = QTreeWidgetItem(src_folder)
             index_file.setText(0, "index.js")
-            index_file.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-            index_file.setData(0, Qt.UserRole, "file")
+            index_file.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+            index_file.setData(0, Qt.ItemDataRole.UserRole, "file")
             
             # Add components subfolder
             self.structure_editor.tree.setCurrentItem(src_folder)
@@ -651,14 +651,14 @@ class StructureEditorTester(QDialog):
             # Add files to components folder
             app_file = QTreeWidgetItem(comp_folder)
             app_file.setText(0, "App.js")
-            app_file.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-            app_file.setData(0, Qt.UserRole, "file")
+            app_file.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+            app_file.setData(0, Qt.ItemDataRole.UserRole, "file")
             
             # Add package.json to root
             pkg_file = QTreeWidgetItem(root_item)
             pkg_file.setText(0, "package.json")
-            pkg_file.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-            pkg_file.setData(0, Qt.UserRole, "file")
+            pkg_file.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+            pkg_file.setData(0, Qt.ItemDataRole.UserRole, "file")
             
             self.log_result("Added complex structure to editor")
         except Exception as e:
@@ -745,7 +745,7 @@ def run_tests():
     app = QApplication.instance() or QApplication(sys.argv)
     tester = StructureEditorTester()
     tester.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     run_tests() 

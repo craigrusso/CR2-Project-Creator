@@ -10,7 +10,7 @@ This module provides functions for working with the enhanced structure editor.
 import os
 import sys
 import json
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
     QPushButton, QLineEdit, QComboBox, QDialog, QMessageBox,
     QTreeWidget, QTreeWidgetItem, QMainWindow, QFileDialog
@@ -102,7 +102,7 @@ def show_enhanced_structure_editor(
             # Directly set the name field text if found
             if hasattr(editor, 'name_field') and editor.name_field:
                 print(f"🔧 STRUCTURE EDITOR: Directly setting name_field text to '{template_name}'")
-                from PyQt5.QtWidgets import QApplication
+                from PyQt6.QtWidgets import QApplication
                 editor.name_field.blockSignals(True)
                 try:
                     editor.name_field.setText(template_name)
@@ -136,12 +136,12 @@ def show_enhanced_structure_editor(
         # ----------------------------------------------------------
         
         # Show the dialog and get the result
-        result = editor.exec_()
+        result = editor.exec()
         
         # After dialog is shown, verify name field still has the template name
         # This code will only execute after the dialog is closed
         
-        if result == editor.Accepted:
+        if result == QDialog.DialogCode.Accepted:
             print(f"🔧 STRUCTURE EDITOR: Dialog accepted")
             
             # Get UI values (name, category, description)
@@ -402,8 +402,8 @@ def show_basic_structure_editor(parent, structure_name, structure, is_new=False,
     Returns:
         tuple: (success, structure, structure_name, original_template_name, updated_template_name)
     """
-    from PyQt5.QtWidgets import QDialog, QVBoxLayout, QTreeWidget, QTreeWidgetItem, QLabel, QLineEdit, QPushButton, QHBoxLayout
-    from PyQt5.QtCore import Qt
+    from PyQt6.QtWidgets import QDialog, QVBoxLayout, QTreeWidget, QTreeWidgetItem, QLabel, QLineEdit, QPushButton, QHBoxLayout
+    from PyQt6.QtCore import Qt
     
     print(f"🔧 BASIC STRUCTURE EDITOR: Showing basic editor for '{structure_name}'")
     
@@ -455,33 +455,33 @@ def show_basic_structure_editor(parent, structure_name, structure, is_new=False,
                 
                 tree_item = QTreeWidgetItem(parent_item)
                 tree_item.setText(0, item_name)
-                tree_item.setFlags(tree_item.flags() | Qt.ItemIsEditable)
+                tree_item.setFlags(tree_item.flags() | Qt.ItemFlag.ItemIsEditable)
                 
                 # Store item data
-                tree_item.setData(0, Qt.UserRole, {'type': item_type, 'name': item_name})
+                tree_item.setData(0, Qt.ItemDataRole.UserRole, {'type': item_type, 'name': item_name})
                 
                 # Set icon based on type
                 if item_type == 'folder':
                     # Use folder icon
-                    from PyQt5.QtWidgets import QStyle, QApplication
-                    tree_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+                    from PyQt6.QtWidgets import QStyle, QApplication
+                    tree_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
                     
                     # Add children
                     add_structure_items(tree_item, children)
                 else:
                     # Use file icon
-                    from PyQt5.QtWidgets import QStyle, QApplication
-                    tree_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+                    from PyQt6.QtWidgets import QStyle, QApplication
+                    tree_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
             elif isinstance(item, str):
                 # Handle string format (file in old format)
                 tree_item = QTreeWidgetItem(parent_item)
                 tree_item.setText(0, item)
-                tree_item.setFlags(tree_item.flags() | Qt.ItemIsEditable)
+                tree_item.setFlags(tree_item.flags() | Qt.ItemFlag.ItemIsEditable)
                 
                 # Set file icon and data
-                from PyQt5.QtWidgets import QStyle, QApplication
-                tree_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-                tree_item.setData(0, Qt.UserRole, {'type': 'file', 'name': item})
+                from PyQt6.QtWidgets import QStyle, QApplication
+                tree_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+                tree_item.setData(0, Qt.ItemDataRole.UserRole, {'type': 'file', 'name': item})
             elif isinstance(item, dict) and len(item) == 1:
                 # Handle old format structure (dictionary with single key)
                 folder_name = list(item.keys())[0]
@@ -489,12 +489,12 @@ def show_basic_structure_editor(parent, structure_name, structure, is_new=False,
                 
                 folder_item = QTreeWidgetItem(parent_item)
                 folder_item.setText(0, folder_name)
-                folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+                folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
                 
                 # Set folder icon and data
-                from PyQt5.QtWidgets import QStyle, QApplication
-                folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-                folder_item.setData(0, Qt.UserRole, {'type': 'folder', 'name': folder_name})
+                from PyQt6.QtWidgets import QStyle, QApplication
+                folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+                folder_item.setData(0, Qt.ItemDataRole.UserRole, {'type': 'folder', 'name': folder_name})
                 
                 # Add children
                 add_structure_items(folder_item, folder_contents)
@@ -527,7 +527,7 @@ def show_basic_structure_editor(parent, structure_name, structure, is_new=False,
         return result
     
     def get_item_data(item):
-        item_data = item.data(0, Qt.UserRole)
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
         item_type = item_data.get('type', 'folder') if isinstance(item_data, dict) else 'folder'
         item_name = item.text(0)
         
@@ -567,9 +567,9 @@ def show_basic_structure_editor(parent, structure_name, structure, is_new=False,
     original_template_name = display_name
     updated_template_name = display_name
     
-    # Execute dialog
-    if dialog.exec_() == QDialog.Accepted:
-        # Get updated values
+    # Show the dialog and process the result
+    if dialog.exec() == QDialog.DialogCode.Accepted:
+        # Get structure, name and description from the dialog
         updated_template_name = name_field.text()
         
         # Build structure name with Template_ prefix

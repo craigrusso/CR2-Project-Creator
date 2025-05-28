@@ -11,14 +11,14 @@ import mimetypes
 import random
 import string
 import json
-from PyQt5.QtWidgets import (
-    QTreeWidgetItem, QInputDialog, QMessageBox, QMenu, QAction,
+from PyQt6.QtWidgets import (
+    QTreeWidgetItem, QInputDialog, QMessageBox, QMenu,
     QFileDialog, QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
     QLineEdit, QPushButton, QComboBox, QCheckBox, QApplication, QStyle,
     QListWidget, QListWidgetItem
 )
-from PyQt5.QtCore import Qt, QSize, QTimer
-from PyQt5.QtGui import QIcon, QDrag, QBrush, QColor, QCursor
+from PyQt6.QtCore import Qt, QSize, QTimer
+from PyQt6.QtGui import QIcon, QDrag, QBrush, QColor, QCursor, QAction
 
 from .utils import get_file_icon_for_type
 
@@ -139,7 +139,7 @@ class FileOperations:
             else:
                 parent_item = QTreeWidgetItem(self.tree)
                 parent_item.setText(0, "Project Root")
-                parent_item.setData(0, Qt.UserRole, {"type": "folder", "name": "Project Root"})
+                parent_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Project Root"})
                 print(f"🔹 ADD_FILE: Created new root item as parent: Project Root")
     
         # If file_name is a list or tuple, add multiple files
@@ -176,7 +176,7 @@ class FileOperations:
             # (Caching will happen when template is saved)
             try:
                 # Get file data from the tree item
-                file_data = file_item.data(0, Qt.UserRole)
+                file_data = file_item.data(0, Qt.ItemDataRole.UserRole)
                 
                 # Set original path
                 file_data['path'] = file_path
@@ -202,7 +202,7 @@ class FileOperations:
                 print(f"🔹 ADD_FILE: Created file data: {file_data}")
                 
                 # Update file data in the tree item
-                file_item.setData(0, Qt.UserRole, file_data)
+                file_item.setData(0, Qt.ItemDataRole.UserRole, file_data)
                 
                 # Store reference to the file in the editor's cache tracking if available
                 if hasattr(self.editor, 'files_to_cache'):
@@ -216,7 +216,7 @@ class FileOperations:
                     print("🔹 ADD_FILE: Warning - editor does not have files_to_cache attribute")
                     
                 # Add visual indicator that file is tracked but not yet cached
-                from PyQt5.QtGui import QBrush, QColor
+                from PyQt6.QtGui import QBrush, QColor
                 colors = self._get_editor_colors()
                 file_item.setForeground(0, QBrush(QColor(colors.get('tracked', '#88AADD'))))
                 
@@ -257,7 +257,7 @@ class FileOperations:
         file_item.setIcon(0, get_file_icon_for_type(file_name))
         
         # Ensure the item is editable
-        file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+        file_item.setFlags(file_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
         # Store item data
         is_binary = False
@@ -287,7 +287,7 @@ class FileOperations:
             file_data['is_binary'] = True
         
         # Store file data in the item
-        file_item.setData(0, Qt.UserRole, file_data)
+        file_item.setData(0, Qt.ItemDataRole.UserRole, file_data)
         
         print(f"🔹 _ADD_FILE_ITEM: Set file data: {file_data}")
         
@@ -312,13 +312,13 @@ class FileOperations:
         
         # Set name and mark as folder
         folder_item.setText(0, folder_name)
-        folder_item.setData(0, Qt.UserRole, {"type": "folder"})
+        folder_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder"})
         
         # Make the folder editable
-        folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+        folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
         # Set folder icon - use app standard icon instead of theme
-        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
         
         # Apply styles for folders - use bold instead of color
         font = folder_item.font(0)
@@ -358,7 +358,7 @@ class FileOperations:
         # Add details about what's being deleted
         if count == 1:
             item = selected_items[0]
-            item_data = item.data(0, Qt.UserRole)
+            item_data = item.data(0, Qt.ItemDataRole.UserRole)
             if isinstance(item_data, dict):
                 item_type = item_data.get('type', 'item')
                 item_name = item.text(0)
@@ -430,7 +430,7 @@ class FileOperations:
             return False
             
         # Make sure the item is editable
-        item.setFlags(item.flags() | Qt.ItemIsEditable)
+        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
             
         try:
             # Try in-place editing first
@@ -462,7 +462,7 @@ class FileOperations:
             
         # Get current item name and type
         current_name = item.text(0)
-        item_data = item.data(0, Qt.UserRole)
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
         item_type = item_data.get('type', 'item') if isinstance(item_data, dict) else 'item'
         
         # Show dialog to get new name
@@ -482,7 +482,7 @@ class FileOperations:
         # Update item data
         if isinstance(item_data, dict):
             item_data['name'] = new_name
-            item.setData(0, Qt.UserRole, item_data)
+            item.setData(0, Qt.ItemDataRole.UserRole, item_data)
             
         return True
     
@@ -517,7 +517,7 @@ class FileOperations:
                 target_item = selected_items[0]
                 
                 # If selected item is a file, use its parent
-                item_data = target_item.data(0, Qt.UserRole)
+                item_data = target_item.data(0, Qt.ItemDataRole.UserRole)
                 if isinstance(item_data, dict) and item_data.get('type') == 'file':
                     if target_item.parent():
                         target_item = target_item.parent()
@@ -592,10 +592,10 @@ class FileOperations:
                             self.cached_files[cache_key] = content
                             
                             # Update file data
-                            file_data = file_item.data(0, Qt.UserRole)
+                            file_data = file_item.data(0, Qt.ItemDataRole.UserRole)
                             file_data['cached'] = True
                             file_data['cache_key'] = cache_key
-                            file_item.setData(0, Qt.UserRole, file_data)
+                            file_item.setData(0, Qt.ItemDataRole.UserRole, file_data)
                     except Exception as e:
                         print(f"DEBUG: Failed to cache binary file: {e}")
     
@@ -633,7 +633,7 @@ class FileOperations:
                     # Create root item if not exists
                     target_item = QTreeWidgetItem(self.tree)
                     target_item.setText(0, "Project Root")
-                    target_item.setData(0, Qt.UserRole, {"type": "folder", "name": "Project Root"})
+                    target_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Project Root"})
         
         # Import the file
         try:
@@ -647,7 +647,7 @@ class FileOperations:
             # (Caching will happen when template is saved)
             try:
                 # Get file data from the tree item
-                file_data = file_item.data(0, Qt.UserRole)
+                file_data = file_item.data(0, Qt.ItemDataRole.UserRole)
                 
                 # Set original path
                 file_data['path'] = file_path
@@ -671,7 +671,7 @@ class FileOperations:
                 file_data['template_name'] = template_name
                 
                 # Update file data in the tree item
-                file_item.setData(0, Qt.UserRole, file_data)
+                file_item.setData(0, Qt.ItemDataRole.UserRole, file_data)
                 
                 # Store reference to the file in the editor's cache tracking if available
                 if hasattr(self.editor, 'files_to_cache'):
@@ -682,7 +682,7 @@ class FileOperations:
                     }
                     
                 # Add visual indicator that file is tracked but not yet cached
-                from PyQt5.QtGui import QBrush, QColor
+                from PyQt6.QtGui import QBrush, QColor
                 colors = self._get_editor_colors()
                 file_item.setForeground(0, QBrush(QColor(colors.get('tracked', '#88AADD'))))
                 
@@ -708,26 +708,23 @@ class FileOperations:
         # Use BinaryFileHandler if available
         return BinaryFileHandler.is_binary_file(file_path)
     
-    def create_context_menu(self, item, position):
-        """
-        Create a context menu for a tree item at the specified position
-        
-        Args:
-            item: The tree item to create a menu for
-            position: Position to show the menu at
-            
-        Returns:
-            QMenu: The context menu
-        """
+    def create_context_menu(self, item, position=None):
+        """Create and return a context menu for the given item"""
         print("DEBUG: create_context_menu - creating context menu")
+        
+        if not self.tree:
+            print("ERROR: create_context_menu - tree not available")
+            return None
+            
+        # Create menu
         menu = QMenu(self.tree)
         
-        # Import styles for context menu, including destructive action styling
+        # Apply styling
         try:
-            from app.ui.color_scheme_pyqt import CONTEXT_MENU_STYLE, DELETE_TEXT_STYLE
+            from app.ui.color_scheme_pyqt import CONTEXT_MENU_STYLE
             menu.setStyleSheet(CONTEXT_MENU_STYLE)
-        except ImportError:
-            # Fallback styling
+        except Exception as e:
+            print(f"ERROR: Failed to apply menu styling: {e}")
             menu.setStyleSheet("""
                 QMenu {
                     background-color: #2D2D30;
@@ -748,116 +745,202 @@ class FileOperations:
                     margin: 5px;
                 }
             """)
+        
+        # Process by item type
+        if item:
+            # Get item data
+            item_data = item.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(item_data, dict) and 'type' in item_data:
+                item_type = item_data['type']
+                print(f"DEBUG: create_context_menu - item type: {item_type}")
+                
+                # Add item-specific actions based on type
+                if item_type == 'folder':
+                    self._add_folder_context_actions(menu, item)
+                elif item_type == 'file':
+                    self._add_file_context_actions(menu, item)
+                else:
+                    # Unknown item type - add basic actions
+                    self._add_generic_context_actions(menu, item)
+            else:
+                # Unknown item type - add basic actions
+                self._add_generic_context_actions(menu, item)
+        else:
+            # Root context menu (no item selected)
+            self._add_root_context_actions(menu)
             
-        # Get item data
-        item_data = item.data(0, Qt.UserRole) if item else None
-        is_file = isinstance(item_data, dict) and item_data.get('type') == 'file'
-        is_folder = isinstance(item_data, dict) and item_data.get('type') == 'folder'
+        # Make sure all actions are properly added
+        menu.ensurePolished()
         
-        print(f"DEBUG: create_context_menu - item type: {'file' if is_file else 'folder' if is_folder else 'unknown/none'}")
+        # Return the menu for display
+        return menu
+
+    def _add_file_context_actions(self, menu, item):
+        """Add context menu actions for file items"""
+        # Add "Add File" and "Add Folder" actions (to add sibling items)
+        # These should operate on the parent of the current file item
+        parent_for_add = item.parent() if item.parent() else self.tree.invisibleRootItem()
+
+        add_file_action = menu.addAction("Add File")
+        add_file_action.triggered.connect(lambda: self.add_file(parent_for_add))
         
-        # Add file action
-        add_file_action = QAction("Add File", menu)
-        add_file_action.triggered.connect(lambda: self.add_file(item if is_folder else item.parent() if item else None))
-        menu.addAction(add_file_action)
+        add_folder_action = menu.addAction("Add Folder")
+        add_folder_action.triggered.connect(lambda: self.add_folder(parent_for_add))
         
-        # Add folder action
-        add_folder_action = QAction("Add Folder", menu)
-        add_folder_action.triggered.connect(lambda: self.add_folder(item if is_folder else item.parent() if item else None))
-        menu.addAction(add_folder_action)
-        
-        # Import actions
         menu.addSeparator()
         
-        import_file_action = QAction("Import File...", menu)
-        import_file_action.triggered.connect(lambda: self.import_file(item if is_folder else item.parent() if item else None))
-        menu.addAction(import_file_action)
+        # Add rename action
+        rename_action = menu.addAction("Rename")
+        rename_action.triggered.connect(lambda: self.rename_item(item))
         
-        import_dir_action = QAction("Import Directory...", menu)
-        import_dir_action.triggered.connect(lambda: self.import_directory(item if is_folder else item.parent() if item else None))
-        menu.addAction(import_dir_action)
+        # Add delete action
+        delete_action = menu.addAction("Delete")
+        delete_action.triggered.connect(lambda: self.delete_selected()) # Assumes delete_selected handles current item
         
-        # Item-specific actions
-        if item:
+        # Add keyboard shortcuts (optional, but good practice)
+        # rename_action.setShortcut("F2")
+        # delete_action.setShortcut("Delete")
+        
+        # Project Name Options submenu
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
+        if isinstance(item_data, dict) and item_data.get('type') == 'file': # Ensure it's a file
             menu.addSeparator()
             
-            # Rename action
-            rename_action = QAction("Rename", menu)
-            rename_action.triggered.connect(lambda: self.rename_item(item))
-            menu.addAction(rename_action)
-            
-            # Delete action - with destructive styling
-            delete_action = QAction("Delete", menu)
-            delete_action.triggered.connect(lambda: self.delete_selected())
-            
-            # Apply destructive styling to delete action
+            project_name_menu = menu.addMenu("Project Name Options")
             try:
-                from app.ui.color_scheme_pyqt import DELETE_TEXT_STYLE
-                delete_action.setProperty("destructive", "true")  # Set property for styling
-                
-                # Apply direct styling using stylesheet for compatibility
-                delete_action.setStyleSheet("color: #FF5555; font-weight: bold;")
-            except:
-                # Fallback - set color using setData
-                print("DEBUG: Using fallback styling for delete action")
-                delete_action.setData(QColor("#FF5555"))
-                
-            menu.addAction(delete_action)
+                from app.ui.color_scheme_pyqt import CONTEXT_MENU_STYLE
+                # --- Restoring custom styling for the submenu ---
+                project_name_menu.setStyleSheet(CONTEXT_MENU_STYLE) 
+            except Exception as e:
+                print(f"ERROR: Failed to apply submenu styling: {e}")
+
+            # Get project name mode and usage status from item data
+            item_data = self._get_item_data(item)
+            name_mode = item_data.get('project_name_mode', 'none') # none, replace, append, prepend
+            uses_project_name = item_data.get('uses_project_name', False)
+            original_name = item_data.get('original_name', item.text(0))
             
-            # File-specific actions
-            if is_file:
-                menu.addSeparator()
+            # Only add these options if the item is renameable and it's a file (not a folder)
+            if item.flags() & Qt.ItemFlag.ItemIsEditable and item_data.get('type') == 'file':
+                # Action to use project name (replace current name)
+                use_action = project_name_menu.addAction("Use Project Name")
+                use_action.setCheckable(True)
+                # Set checked based on the specific mode being active, or if uses_project_name is true and mode is none (legacy)
+                use_action.setChecked(name_mode == 'replace' or (uses_project_name and name_mode == 'none'))
+                use_action.triggered.connect(lambda checked, i=item: self._toggle_project_name_for_file(i, mode='replace', is_checked=checked))
+
+                # Action to append project name
+                append_action = project_name_menu.addAction("Append Project Name")
+                append_action.setCheckable(True)
+                append_action.setChecked(name_mode == 'append')
+                append_action.triggered.connect(lambda checked, i=item: self._toggle_project_name_for_file(i, mode='append', is_checked=checked))
+
+                # Action to prepend project name
+                prepend_action = project_name_menu.addAction("Prepend Project Name")
+                prepend_action.setCheckable(True)
+                prepend_action.setChecked(name_mode == 'prepend')
+                prepend_action.triggered.connect(lambda checked, i=item: self._toggle_project_name_for_file(i, mode='prepend', is_checked=checked))
                 
-                # Create a submenu for project name options
-                project_name_menu = menu.addMenu("Project Name Options")
-                
-                # Determine current state
-                name_mode = item_data.get('project_name_mode', 'none')
-                uses_project_name = item_data.get('uses_project_name', False)
-                
-                # Create project name actions
-                replace_name_action = project_name_menu.addAction("Replace with Project Name")
-                prepend_name_action = project_name_menu.addAction("Prepend Project Name")
-                append_name_action = project_name_menu.addAction("Append Project Name")
-                pattern_action = project_name_menu.addAction("Use Custom Pattern...")
-                separator_action = project_name_menu.addAction("Use Custom Separator...")
                 project_name_menu.addSeparator()
-                reset_name_action = project_name_menu.addAction("Reset to Original Name")
+
+                # Add Custom Pattern and Custom Separator actions
+                pattern_action = project_name_menu.addAction("Use Custom Pattern...")
+                pattern_action.triggered.connect(lambda bound_item=item: self._configure_naming_pattern(bound_item))
+
+                separator_action = project_name_menu.addAction("Use Custom Separator...")
+                separator_action.triggered.connect(lambda bound_item=item: self._configure_custom_separator(bound_item))
+
+                project_name_menu.addSeparator() # Add another separator before Revert
+
+                # Action to revert to original name
+                revert_action = project_name_menu.addAction(f'Revert to "{original_name}"')
+                # Enable only if current name differs from original due to project name usage
+                revert_action.setEnabled(uses_project_name or name_mode != 'none') 
+            else:
+                # If not editable or a folder, add a disabled placeholder
+                disabled_action = project_name_menu.addAction("(Options N/A for folders)")
+                disabled_action.setEnabled(False)
                 
-                # Set checkable and check the current mode
-                replace_name_action.setCheckable(True)
-                prepend_name_action.setCheckable(True)
-                append_name_action.setCheckable(True)
-                
-                replace_name_action.setChecked(name_mode == 'replace' or (uses_project_name and name_mode == 'none'))
-                prepend_name_action.setChecked(name_mode == 'prepend')
-                append_name_action.setChecked(name_mode == 'append')
-                
-                # Enable/disable reset based on whether a project name option is active
-                reset_name_action.setEnabled(uses_project_name or name_mode != 'none')
-                
-                # Connect actions
-                replace_name_action.triggered.connect(lambda: self._use_project_name_for_file(item, mode='replace'))
-                prepend_name_action.triggered.connect(lambda: self._use_project_name_for_file(item, mode='prepend'))
-                append_name_action.triggered.connect(lambda: self._use_project_name_for_file(item, mode='append'))
-                pattern_action.triggered.connect(lambda: self._configure_naming_pattern(item))
-                separator_action.triggered.connect(lambda: self._configure_custom_separator(item))
-                reset_name_action.triggered.connect(lambda: self._reset_file_name(item))
+        # Add separator before other actions if project_name_menu was added
+        if project_name_menu:
+             menu.addSeparator()
+
+    def _add_folder_context_actions(self, menu, item):
+        """Add context menu actions for folder items"""
+        # Add "Add Folder" and "Add File" actions
+        add_folder_action = menu.addAction(QIcon.fromTheme("folder-new"), "Add Folder")
+        add_folder_action.triggered.connect(lambda: self.add_folder(item))
         
-        return menu
-    
+        add_file_action = menu.addAction(QIcon.fromTheme("document-new"), "Add File")
+        add_file_action.triggered.connect(lambda: self.add_file(item))
+        
+        # Add separator
+        menu.addSeparator()
+        
+        # Add rename action
+        rename_action = menu.addAction(QIcon.fromTheme("edit-rename"), "Rename")
+        rename_action.triggered.connect(lambda: self.rename_item(item))
+        
+        # Add delete action
+        delete_action = menu.addAction(QIcon.fromTheme("edit-delete"), "Delete")
+        delete_action.triggered.connect(lambda: self.delete_selected())
+        
+        # Add keyboard shortcuts
+        rename_action.setShortcut("F2")
+        delete_action.setShortcut("Delete")
+        
+        # Add "Import File" and "Import Directory" actions
+        import_menu = menu.addMenu("Import")
+        import_file_action = import_menu.addAction(QIcon.fromTheme("document-import"), "Import File")
+        import_dir_action = import_menu.addAction(QIcon.fromTheme("folder-import"), "Import Directory")
+        
+        # Connect actions
+        import_file_action.triggered.connect(lambda: self.import_file(item))
+        import_dir_action.triggered.connect(lambda: self.import_directory(item))
+
+    def _add_generic_context_actions(self, menu, item):
+        """Add context menu actions for generic items"""
+        # Add "Add Folder" and "Add File" actions
+        add_folder_action = menu.addAction("Add Folder")
+        add_folder_action.triggered.connect(lambda: self.add_folder())
+        
+        add_file_action = menu.addAction("Add File")
+        add_file_action.triggered.connect(lambda: self.add_file())
+        
+        # Add separator
+        menu.addSeparator()
+        
+        # Add "Import Directory" action
+        import_dir_action = menu.addAction("Import Directory...")
+        import_dir_action.triggered.connect(lambda: self.import_directory())
+
+    def _add_root_context_actions(self, menu):
+        """Add context menu actions for the root item"""
+        # Add "Add Folder" and "Add File" actions
+        add_folder_action = menu.addAction("Add Folder")
+        add_folder_action.triggered.connect(lambda: self.add_folder())
+        
+        add_file_action = menu.addAction("Add File")
+        add_file_action.triggered.connect(lambda: self.add_file())
+        
+        # Add separator
+        menu.addSeparator()
+        
+        # Add "Import Directory" action
+        import_dir_action = menu.addAction("Import Directory...")
+        import_dir_action.triggered.connect(lambda: self.import_directory())
+
     def _setup_context_menu(self):
         """Set up the context menu for the tree widget"""
         if not self.tree:
             return
         
-        # Make sure tree widget has context menu policy set
-        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        # Do NOT connect the context menu signal here - this is handled by the structure editor.
+        # Only set the policy if needed.
+        if self.tree.contextMenuPolicy() != Qt.ContextMenuPolicy.CustomContextMenu:
+            self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         
-        # Connect context menu to our handler
-        self.tree.customContextMenuRequested.connect(self._show_context_menu)
-        
-        print("DEBUG: Context menu set up")
+        print("DEBUG: Context menu policy set (but not connecting the signal to avoid duplicates)")
 
     def _show_context_menu(self, position):
         """
@@ -874,7 +957,7 @@ class FileOperations:
         
         if item:
             # Get the item data
-            item_data = item.data(0, Qt.UserRole)
+            item_data = item.data(0, Qt.ItemDataRole.UserRole)
             
             # Create menu based on item type
             if isinstance(item_data, dict) and item_data.get('type') == 'folder':
@@ -906,7 +989,7 @@ class FileOperations:
         import_dir_action = menu.addAction("Import Directory...")
         
         # Execute the menu
-        action = menu.exec_(self.tree.mapToGlobal(position))
+        action = menu.exec(self.tree.mapToGlobal(position))
         
         # Handle actions
         if action == add_folder_action:
@@ -952,7 +1035,7 @@ class FileOperations:
         delete_action.setShortcut("Delete")
         
         # Execute the menu
-        action = menu.exec_(self.tree.mapToGlobal(position))
+        action = menu.exec(self.tree.mapToGlobal(position))
         
         # Handle actions
         if action == add_folder_action:
@@ -988,7 +1071,7 @@ class FileOperations:
         menu.addSeparator()
         
         # Get item data
-        item_data = item.data(0, Qt.UserRole)
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
         
         # Create a submenu for project name options
         project_name_menu = menu.addMenu("Project Name Options")
@@ -1026,7 +1109,7 @@ class FileOperations:
         delete_action.setShortcut("Delete")
         
         # Execute the menu
-        action = menu.exec_(self.tree.mapToGlobal(position))
+        action = menu.exec(self.tree.mapToGlobal(position))
         
         # Handle actions
         if action == rename_action:
@@ -1046,25 +1129,14 @@ class FileOperations:
         elif action == delete_action:
             self.delete_selected()
             
-    def _use_project_name_for_file(self, item, mode='replace'):
-        """
-        Set a file to use the project name as part of its name
-        
-        Args:
-            item: The file item to update
-            mode: How to use the project name: 'replace', 'prepend', 'append', or 'pattern'
-        
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        if not item:
-            print("DEBUG: FileOperations._use_project_name_for_file - no item provided")
+    def _use_project_name_for_file(self, item, mode):
+        """Set a file item to use the project name with a specific mode (replace, append, prepend)."""
+        if not item or not self.editor:
             return False
         
         # Get current file data and name
-        item_data = item.data(0, Qt.UserRole)
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
         if not isinstance(item_data, dict) or item_data.get('type') != 'file':
-            print(f"DEBUG: FileOperations._use_project_name_for_file - item is not a file: {item.text(0)}")
             return False
         
         current_name = item.text(0)
@@ -1150,7 +1222,7 @@ class FileOperations:
         item_data['original_extension'] = extension
         
         # Store the item_data back to the item
-        item.setData(0, Qt.UserRole, item_data)
+        item.setData(0, Qt.ItemDataRole.UserRole, item_data)
         
         # Apply styling to indicate this is a dynamic file
         font = item.font(0)
@@ -1178,7 +1250,7 @@ class FileOperations:
             return False
         
         # Get current file data
-        item_data = item.data(0, Qt.UserRole)
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
         if not isinstance(item_data, dict) or item_data.get('type') != 'file':
             return False
         
@@ -1205,7 +1277,7 @@ class FileOperations:
         print(f"DEBUG: Reset file back to original name: {original_name}")
         
         # Update the data
-        item.setData(0, Qt.UserRole, item_data)
+        item.setData(0, Qt.ItemDataRole.UserRole, item_data)
         
         return True
 
@@ -1223,7 +1295,7 @@ class FileOperations:
             return False
         
         # Get current file data
-        item_data = item.data(0, Qt.UserRole)
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
         if not isinstance(item_data, dict) or item_data.get('type') != 'file':
             return False
         
@@ -1243,7 +1315,7 @@ class FileOperations:
         
         # Store the separator
         item_data['custom_separator'] = separator
-        item.setData(0, Qt.UserRole, item_data)
+        item.setData(0, Qt.ItemDataRole.UserRole, item_data)
         
         # If already using project name, update the display
         if item_data.get('uses_project_name', False):
@@ -1252,32 +1324,23 @@ class FileOperations:
         
         return True
 
-    def _toggle_project_name_for_file(self, item):
-        """
-        Toggle between using project name and original name for a file
-        
-        Args:
-            item: The file item to update
-        """
-        # This function is kept for compatibility with existing code
-        # It will simply toggle between the current mode and reset
+    def _toggle_project_name_for_file(self, item, mode, is_checked):
+        """Toggle the project name usage for a file item and update item data."""
         if not item:
             return False
         
         # Get current file data
-        item_data = item.data(0, Qt.UserRole)
+        item_data = self._get_item_data(item)
         if not isinstance(item_data, dict) or item_data.get('type') != 'file':
             return False
         
-        # Get current state
-        uses_project_name = item_data.get('uses_project_name', False)
-        
-        if uses_project_name:
-            # Currently using project name, reset to original name
-            return self._reset_file_name(item)
+        # New logic based on is_checked and mode
+        if is_checked:
+            # If the action is being checked (turned on), apply the specified mode
+            return self._use_project_name_for_file(item, mode=mode)
         else:
-            # Currently using original name, use project name with replace mode (original behavior)
-            return self._use_project_name_for_file(item, mode='replace')
+            # If the action is being unchecked, revert to the original name
+            return self._reset_file_name(item)
 
     def _get_relative_path(self, item):
         """
@@ -1345,7 +1408,7 @@ class FileOperations:
             return False
         
         # Get current file data
-        item_data = item.data(0, Qt.UserRole)
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
         if not isinstance(item_data, dict) or item_data.get('type') != 'file':
             return False
         
@@ -1377,12 +1440,29 @@ Example: $project_$base$ext
         # Store the pattern
         item_data['custom_pattern'] = pattern
         item_data['project_name_mode'] = 'pattern'
-        item.setData(0, Qt.UserRole, item_data)
+        item.setData(0, Qt.ItemDataRole.UserRole, item_data)
         
         # Update the display
         self._use_project_name_for_file(item, mode='pattern')
         
         return True
+
+    def _get_item_data(self, item):
+        """Retrieve the dictionary of data associated with a QTreeWidgetItem."""
+        if not item:
+            return {}
+        try:
+            data = item.data(0, Qt.ItemDataRole.UserRole)
+            return data if isinstance(data, dict) else {}
+        except Exception as e:
+            # print(f"Error getting item data for '{item.text(0)}': {e}")
+            return {}
+
+    def _update_item_data(self, item, data_dict):
+        # Placeholder for actual update logic
+        # print(f"DEBUG: Updating data for item: {item.text(0)} with: {data_dict}")
+        # This needs to be implemented based on how item data is stored
+        pass
 
 class FileDetailsDialog(QDialog):
     """Dialog for entering file details"""

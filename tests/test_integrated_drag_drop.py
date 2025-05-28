@@ -13,9 +13,9 @@ import tempfile
 import shutil
 import time
 import unittest
-from PyQt5.QtWidgets import QApplication, QTreeWidgetItem
-from PyQt5.QtCore import Qt, QMimeData, QUrl, QPoint
-from PyQt5.QtGui import QDropEvent
+from PyQt6.QtWidgets import QApplication, QTreeWidgetItem
+from PyQt6.QtCore import Qt, QMimeData, QUrl, QPoint
+from PyQt6.QtGui import QDropEvent
 
 # Create application instance before importing UI components
 app = QApplication(sys.argv)
@@ -91,10 +91,10 @@ class DragDropIntegrationTest(unittest.TestCase):
         # Create and execute drop event
         drop_event = QDropEvent(
             pos,
-            Qt.CopyAction,
+            Qt.DropAction.CopyAction,
             mime_data,
-            Qt.LeftButton,
-            Qt.NoModifier,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
             QDropEvent.Drop
         )
         
@@ -208,7 +208,7 @@ class DragDropIntegrationTest(unittest.TestCase):
         for i in range(item.childCount()):
             child = item.child(i)
             item_text = child.text(0)
-            item_data = child.data(0, Qt.UserRole)
+            item_data = child.data(0, Qt.ItemDataRole.UserRole)
             print(f"{indent}├─ {item_text} ({item_data})")
             self._print_item_recursive(child, level + 1)
 

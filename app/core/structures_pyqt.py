@@ -3,11 +3,11 @@
 
 import os
 import sys
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                             QPushButton, QMessageBox, QInputDialog, QListWidget,
                             QAbstractItemView, QScrollArea, QWidget, QFrame)
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QStandardItemModel, QStandardItem
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QStandardItemModel, QStandardItem
 
 # Import from our centralized color scheme
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE
@@ -24,7 +24,7 @@ def create_custom_structure(app):
         is_new=True,
         save_callback=lambda name, structure: save_structure_with_project_type(app, name, structure)
     )
-    editor.exec_()
+    editor.exec()
 
 
 def save_custom_structure(app, name, structure):
@@ -57,7 +57,7 @@ def edit_structure(app):
         structure=structure,
         save_callback=lambda name, s: update_custom_structure(app, structure_name, name, s)
     )
-    editor.exec_()
+    editor.exec()
 
 
 def update_custom_structure(app, old_name, new_name, structure):
@@ -156,7 +156,7 @@ def manage_structures(app):
     layout.addWidget(close_btn)
     
     # Show dialog
-    dialog.exec_()
+    dialog.exec()
 
 
 def edit_structure_from_list(app, listbox, structures):
@@ -181,7 +181,7 @@ def edit_structure_from_list(app, listbox, structures):
         save_callback=lambda new_name, s: update_custom_structure_from_list(
             app, name, new_name, s, listbox, structures, row)
     )
-    editor.exec_()
+    editor.exec()
 
 
 def update_custom_structure_from_list(app, old_name, new_name, structure, listbox, structures, row):
@@ -253,7 +253,7 @@ def update_structure_dropdown(app):
     # Add default structures header
     item_default_header = QStandardItem("---- Default Structures ----")
     item_default_header.setEnabled(False) # Make it non-selectable
-    item_default_header.setFlags(item_default_header.flags() & ~Qt.ItemIsSelectable) # Ensure non-selectable visually
+    item_default_header.setFlags(item_default_header.flags() & ~Qt.ItemFlag.ItemIsSelectable) # Ensure non-selectable visually
     model.appendRow(item_default_header)
 
     # Add default structures
@@ -265,13 +265,13 @@ def update_structure_dropdown(app):
     if custom_structures:
         # Add separator line visually if needed (optional)
         # separator = QStandardItem()
-        # separator.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable) # Make it like a separator line visually
-        # separator.setData(QVariant(QSize(0, 1)), Qt.SizeHintRole) # Set size hint
+        # separator.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable) # Make it like a separator line visually
+        # separator.setData(QVariant(QSize(0, 1)), Qt.ItemDataRole.SizeHintRole) # Set size hint
         # model.appendRow(separator)
 
         item_custom_header = QStandardItem("---- Custom Structures ----")
         item_custom_header.setEnabled(False) # Make it non-selectable
-        item_custom_header.setFlags(item_custom_header.flags() & ~Qt.ItemIsSelectable) # Ensure non-selectable visually
+        item_custom_header.setFlags(item_custom_header.flags() & ~Qt.ItemFlag.ItemIsSelectable) # Ensure non-selectable visually
         model.appendRow(item_custom_header)
 
         # Add custom structures

@@ -1,0 +1,1592 @@
+#!/usr/bin/env python3
+# Copyright (c) 2023-present Craig P. Russo and CR2 Creative
+
+"""
+File Operations Module for Structure Editor
+Handles file and folder operations for the structure
+"""
+
+import os
+import mimetypes
+import random
+import string
+import json
+from PyQt6.QtWidgets import (
+    QTreeWidgetItem, QInputDialog, QMessageBox, QMenu, QAction,
+    QFileDialog, QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+    QLineEdit, QPushButton, QComboBox, QCheckBox, QApplication, QStyle,
+    QListWidget, QListWidgetItem
+)
+from PyQt6.QtCore import Qt, QSize, QTimer
+from PyQt6.QtGui import QIcon, QDrag, QBrush, QColor, QCursor
+
+from .utils import get_file_icon_for_type
+
+# Import binary file handler
+try:
+    from app.utils.binary_file_handler import BinaryFileHandler
+except ImportError:
+    # Simple fallback implementation
+    class BinaryFileHandler:
+        @staticmethod
+        def is_binary_file(file_path):
+            # Very basic check
+            if not os.path.exists(file_path):
+                return False
+            _, ext = os.path.splitext(file_path)
+            ext = ext.lower()
+            binary_extensions = ['.jpg', '.png', '.gif', '.mp3', '.mp4', '.pdf']
+            return ext in binary_extensions
+        
+        @staticmethod
+        def should_embed_binary_file(file_path, max_size_kb=500):
+            if not os.path.exists(file_path):
+                return False
+            return os.path.getsize(file_path) / 1024 <= max_size_kb
+
+# Define file extensions (copied from the original file_types.py)
+FILE_EXTENSIONS = {
+    'Image': ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg'],
+    'Audio': ['.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a'],
+    'Video': ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv'],
+    'Archive': ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'],
+}
+
+FILE_CATEGORIES = {
+    'Image': 'Images',
+    'Audio': 'Audio',
+    'Video': 'Video',
+    'Archive': 'Archives',
+    'Document': 'Documents',
+    'Code': 'Code',
+    'Data': 'Data'
+}
+
+COMMON_EXTENSIONS = {
+    '.jpg': 'Image', 
+    '.jpeg': 'Image',
+    '.png': 'Image',
+    '.mp3': 'Audio',
+    '.wav': 'Audio',
+    '.mp4': 'Video',
+    '.avi': 'Video',
+    '.zip': 'Archive',
+    '.rar': 'Archive',
+    '.txt': 'Text',
+    '.md': 'Markdown',
+    '.html': 'HTML',
+    '.css': 'CSS',
+    '.js': 'JavaScript',
+    '.py': 'Python',
+    '.json': 'JSON',
+    '.xml': 'XML'
+}
+
+class FileOperations:
+    """
+    Handles file and folder operations for the structure editor
+    
+    This class provides methods for adding, removing, and organizing files
+    and folders in the structure tree.
+    """
+    
+    def __init__(self, tree_widget=None, editor=None):
+        """
+        Initialize the file operations
+        
+        Args:
+            tree_widget: Reference to the tree widget (QTreeWidget)
+            editor: Reference to the parent editor (optional)
+        """
+        self.editor = editor
+        self.tree = tree_widget
+        self.cached_files = {}
+        
+        # Store reference to cached files if available
+        if editor and hasattr(editor, 'files_to_cache'):
+            self.cached_files = editor.files_to_cache
+    
+    def add_file(self, parent_item=None, file_name=None, file_type=None):
+        """
+        Add a file or files to the structure tree
+        
+        Args:
+            parent_item: Parent tree item to add the file to
+            file_name: Name of the file (optional)
+            file_type: Type of file (optional)
+        
+        Returns:
+            QTreeWidgetItem or list of QTreeWidgetItems: The created file item(s)
+        """
+        print(f"🔹 ADD_FILE: Called with parent_item={parent_item}, file_name={file_name}, file_type={file_type}")
+        
+        # Get reference to the tree widget
+        if not hasattr(self, 'tree'):
+            if hasattr(self.editor, 'tree'):
+                self.tree = self.editor.tree
+            elif hasattr(self.editor, 'structure_tree'):
+                self.tree = self.editor.structure_tree
+            
+        if not self.tree:
+            print("ERROR: No tree widget available for file operations")
+            return None
+    
+        # If parent is not specified, use root item
+        if not parent_item:
+            if self.tree.topLevelItemCount() > 0:
+                parent_item = self.tree.topLevelItem(0)
+                print(f"🔹 ADD_FILE: Using first top level item as parent: {parent_item.text(0)}")
+            else:
+                parent_item = QTreeWidgetItem(self.tree)
+                parent_item.setText(0, "Project Root")
+                parent_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Project Root"})
+                print(f"🔹 ADD_FILE: Created new root item as parent: Project Root")
+    
+        # If file_name is a list or tuple, add multiple files
+        if isinstance(file_name, (list, tuple)):
+            print(f"🔹 ADD_FILE: Adding multiple files: {file_name}")
+            added_items = []
+            for name in file_name:
+                added_item = self._add_file_item(parent_item, name, file_type)
+                if added_item:
+                    added_items.append(added_item)
+            return added_items
+    
+        # If file_name is not specified, show file browser
+        if not file_name:
+            file_path, _ = QFileDialog.getOpenFileName(
+                self.editor, 
+                "Select File", 
+                "", 
+                "All Files (*.*)"
+            )
+            
+            if not file_path:
+                print("🔹 ADD_FILE: User cancelled file selection")
+                return None
+            
+            # Get file name from path
+            file_name = os.path.basename(file_path)
+            print(f"🔹 ADD_FILE: User selected file: {file_path}, using name: {file_name}")
+            
+            # Add file with original path
+            file_item = self._add_file_item(parent_item, file_name)
+            
+            # Store file information for caching but don't cache yet
+            # (Caching will happen when template is saved)
+            try:
+                # Get file data from the tree item
+                file_data = file_item.data(0, Qt.ItemDataRole.UserRole)
+                
+                # Set original path
+                file_data['path'] = file_path
+                file_data['original_path'] = file_path
+                
+                # Determine if binary
+                from app.utils.binary_file_handler import BinaryFileHandler
+                is_binary = BinaryFileHandler.is_binary_file(file_path)
+                file_data['is_binary'] = is_binary
+                
+                # Get template name from the editor if available
+                template_name = "Unknown Template"
+                if hasattr(self.editor, 'template_name'):
+                    template_name = self.editor.template_name
+                elif hasattr(self.editor, 'name_input') and hasattr(self.editor.name_input, 'text'):
+                    template_name = self.editor.name_input.text()
+                
+                # Get relative path in the tree structure for later use
+                relative_path = self._get_relative_path(file_item)
+                file_data['relative_path'] = relative_path
+                file_data['template_name'] = template_name
+                
+                print(f"🔹 ADD_FILE: Created file data: {file_data}")
+                
+                # Update file data in the tree item
+                file_item.setData(0, Qt.ItemDataRole.UserRole, file_data)
+                
+                # Store reference to the file in the editor's cache tracking if available
+                if hasattr(self.editor, 'files_to_cache'):
+                    self.editor.files_to_cache[relative_path] = {
+                        "original_path": file_path,
+                        "relative_path": relative_path,
+                        "template_name": template_name
+                    }
+                    print(f"🔹 ADD_FILE: Added to files_to_cache with key {relative_path}")
+                else:
+                    print("🔹 ADD_FILE: Warning - editor does not have files_to_cache attribute")
+                    
+                # Add visual indicator that file is tracked but not yet cached
+                from PyQt6.QtGui import QBrush, QColor
+                colors = self._get_editor_colors()
+                file_item.setForeground(0, QBrush(QColor(colors.get('tracked', '#88AADD'))))
+                
+            except Exception as e:
+                print(f"Error preparing file for caching: {e}")
+            
+            return file_item
+        
+        # If file name is provided, just add a single file
+        print(f"🔹 ADD_FILE: Adding single file with name: {file_name}")
+        return self._add_file_item(parent_item, file_name, file_type)
+    
+    def _add_file_item(self, parent_item, file_name, file_type=None, original_path=None):
+        """
+        Create a tree item for a file
+        
+        Args:
+            parent_item: Parent item for the file
+            file_name: Name of the file
+            file_type: Type of file (optional)
+            original_path: Original path to the file (optional)
+            
+        Returns:
+            QTreeWidgetItem: The created file item
+        """
+        print(f"🔹 _ADD_FILE_ITEM: Creating file item: {file_name}, parent: {parent_item.text(0) if parent_item else 'None'}")
+        
+        # Make sure we have a parent
+        if not parent_item:
+            parent_item = self.tree.invisibleRootItem()
+            
+        # Create the item
+        file_item = QTreeWidgetItem(parent_item)
+        file_item.setText(0, file_name)
+        
+        # Set the icon based on file extension
+        from .utils import get_file_icon_for_type
+        file_item.setIcon(0, get_file_icon_for_type(file_name))
+        
+        # Ensure the item is editable
+        file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+        
+        # Store item data
+        is_binary = False
+        
+        # Check if it's a binary file if we have a path
+        if original_path and os.path.exists(original_path):
+            from app.utils.binary_file_handler import BinaryFileHandler
+            is_binary = BinaryFileHandler.is_binary_file(original_path)
+        
+        # Create file data entry
+        file_data = {
+            'name': file_name,
+            'type': 'file',
+            'path': original_path or ""
+        }
+        
+        # Add original_path explicitly in the file data
+        if original_path:
+            file_data['original_path'] = original_path
+        
+        # Add file type if specified
+        if file_type:
+            file_data['file_type'] = file_type
+        
+        # Set binary flag if known
+        if is_binary:
+            file_data['is_binary'] = True
+        
+        # Store file data in the item
+        file_item.setData(0, Qt.ItemDataRole.UserRole, file_data)
+        
+        print(f"🔹 _ADD_FILE_ITEM: Set file data: {file_data}")
+        
+        return file_item
+    
+    def add_folder(self, parent_item=None):
+        """Add a new folder to the tree under the given parent"""
+        folder_name, ok = QInputDialog.getText(
+            self.tree, 
+            "Add Folder", 
+            "Enter folder name:"
+        )
+        
+        if not ok or not folder_name:
+            return None
+        
+        # Create folder item
+        if parent_item is None:
+            folder_item = QTreeWidgetItem(self.tree)
+        else:
+            folder_item = QTreeWidgetItem(parent_item)
+        
+        # Set name and mark as folder
+        folder_item.setText(0, folder_name)
+        folder_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder"})
+        
+        # Make the folder editable
+        folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+        
+        # Set folder icon - use app standard icon instead of theme
+        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+        
+        # Apply styles for folders - use bold instead of color
+        font = folder_item.font(0)
+        font.setBold(True)
+        folder_item.setFont(0, font)
+        
+        # Expand parent to show new folder
+        if parent_item:
+            parent_item.setExpanded(True)
+        
+        # Return the created folder item
+        return folder_item
+    
+    def delete_selected(self):
+        """
+        Delete selected items from the structure
+        
+        Returns:
+            bool: True if items were deleted, False otherwise
+        """
+        if not self.tree:
+            print("DEBUG: delete_selected - tree widget not available")
+            return False
+            
+        # Get selected items
+        selected_items = self.tree.selectedItems()
+        if not selected_items:
+            print("DEBUG: delete_selected - no items selected")
+            return False
+            
+        # Confirm deletion
+        count = len(selected_items)
+        print(f"DEBUG: delete_selected - {count} items selected for deletion")
+        confirm_msg = f"Delete {count} selected item{'s' if count > 1 else ''}?"
+        confirm_title = "Confirm Delete"
+        
+        # Add details about what's being deleted
+        if count == 1:
+            item = selected_items[0]
+            item_data = item.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(item_data, dict):
+                item_type = item_data.get('type', 'item')
+                item_name = item.text(0)
+                confirm_msg = f"Delete {item_type} '{item_name}'?"
+        
+        # Show confirmation dialog
+        reply = QMessageBox.question(
+            self.editor, 
+            confirm_title,
+            confirm_msg, 
+            QMessageBox.Yes | QMessageBox.No, 
+            QMessageBox.No
+        )
+        
+        if reply != QMessageBox.Yes:
+            print("DEBUG: delete_selected - user cancelled deletion")
+            return False
+            
+        # Delete items
+        deleted_count = 0
+        root = self.tree.invisibleRootItem()
+        
+        for item in selected_items:
+            # Get the parent of the item
+            parent = item.parent()
+            
+            if parent:
+                # Handle child items (non-top-level)
+                print(f"DEBUG: delete_selected - removing child item '{item.text(0)}' from parent '{parent.text(0)}'")
+                index = parent.indexOfChild(item)
+                if index >= 0:
+                    parent.takeChild(index)
+                    deleted_count += 1
+                    print(f"DEBUG: delete_selected - child item removed successfully")
+                else:
+                    print(f"ERROR: delete_selected - failed to find index of child item")
+            else:
+                # Handle top-level items
+                print(f"DEBUG: delete_selected - removing top-level item '{item.text(0)}'")
+                index = root.indexOfChild(item)
+                if index >= 0:
+                    root.takeChild(index)
+                    deleted_count += 1
+                    print(f"DEBUG: delete_selected - top-level item removed successfully")
+                else:
+                    print(f"ERROR: delete_selected - failed to find index of top-level item")
+        
+        # Refresh the tree view
+        if deleted_count > 0:
+            self.tree.update()
+            print(f"DEBUG: delete_selected - {deleted_count} items deleted successfully")
+            return True
+        else:
+            print(f"DEBUG: delete_selected - no items were deleted")
+            return False
+    
+    def rename_item(self, item):
+        """
+        Rename an item
+        
+        Args:
+            item: The item to rename
+            
+        Returns:
+            bool: True if renamed, False otherwise
+        """
+        if not item:
+            print("ERROR: rename_item - no item provided")
+            return False
+            
+        # Make sure the item is editable
+        item.setFlags(item.flags() | Qt.ItemIsEditable)
+            
+        try:
+            # Try in-place editing first
+            self.tree.editItem(item, 0)
+            
+            # Setup timer to check if edit was successful
+            # This is needed because editItem is asynchronous
+            def check_edit_status():
+                # If editor is not visible, the edit may have failed
+                if not self.tree.isPersistentEditorOpen(item, 0) and not self.tree.itemWidget(item, 0):
+                    print("edit: editing failed")
+                    # Use dialog fallback
+                    self._rename_with_dialog(item)
+            
+            # Check status after a short delay
+            QTimer.singleShot(200, check_edit_status)
+            
+            return True
+            
+        except Exception as e:
+            print(f"edit: editing failed with error: {e}")
+            # Use dialog fallback
+            return self._rename_with_dialog(item)
+    
+    def _rename_with_dialog(self, item):
+        """Fallback for renaming using a dialog"""
+        if not item:
+            return False
+            
+        # Get current item name and type
+        current_name = item.text(0)
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
+        item_type = item_data.get('type', 'item') if isinstance(item_data, dict) else 'item'
+        
+        # Show dialog to get new name
+        new_name, ok = QInputDialog.getText(
+            self.tree,
+            f"Rename {item_type.capitalize()}",
+            f"Enter new name for {item_type}:",
+            text=current_name
+        )
+        
+        if not ok or not new_name or new_name == current_name:
+            return False
+            
+        # Update item name
+        item.setText(0, new_name)
+        
+        # Update item data
+        if isinstance(item_data, dict):
+            item_data['name'] = new_name
+            item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+            
+        return True
+    
+    def import_directory(self, target_item=None):
+        """
+        Import a directory from the file system
+        
+        Args:
+            target_item: Item to import into (optional)
+            
+        Returns:
+            bool: True if imported, False otherwise
+        """
+        if not self.tree:
+            return False
+            
+        # Get directory path
+        dir_path = QFileDialog.getExistingDirectory(
+            self.editor,
+            "Select Directory to Import",
+            os.path.expanduser("~"),
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
+        
+        if not dir_path:
+            return False  # User canceled
+            
+        # If no target specified, use selected item or root
+        if not target_item:
+            selected_items = self.tree.selectedItems()
+            if selected_items:
+                target_item = selected_items[0]
+                
+                # If selected item is a file, use its parent
+                item_data = target_item.data(0, Qt.ItemDataRole.UserRole)
+                if isinstance(item_data, dict) and item_data.get('type') == 'file':
+                    if target_item.parent():
+                        target_item = target_item.parent()
+                    else:
+                        target_item = self.tree.invisibleRootItem()
+            else:
+                # Use root item
+                target_item = self.tree.invisibleRootItem()
+        
+        # Import the directory
+        try:
+            # Get directory name from path
+            dir_name = os.path.basename(dir_path)
+            
+            # Create folder item
+            folder_item = self.add_folder(target_item, dir_name)
+            
+            # Import contents
+            self._import_directory_contents(dir_path, folder_item)
+            
+            return True
+        except Exception as e:
+            QMessageBox.critical(
+                self.editor,
+                "Import Error",
+                f"Error importing directory: {str(e)}"
+            )
+            return False
+    
+    def _import_directory_contents(self, dir_path, parent_item):
+        """
+        Import contents of a directory recursively
+        
+        Args:
+            dir_path: Path to the directory
+            parent_item: Parent item to add contents to
+        """
+        # List all files and subdirectories
+        for item_name in os.listdir(dir_path):
+            item_path = os.path.join(dir_path, item_name)
+            
+            # Skip hidden files (like .DS_Store)
+            if item_name.startswith('.'):
+                continue
+                
+            if os.path.isdir(item_path):
+                # Create subdirectory
+                folder_item = self.add_folder(parent_item, item_name)
+                
+                # Use system folder icon directly
+                folder_icon = QIcon.fromTheme("folder", QIcon("icons/folder.png"))
+                if not folder_icon.isNull():
+                    folder_item.setIcon(0, folder_icon)
+                
+                # Import contents recursively
+                self._import_directory_contents(item_path, folder_item)
+            else:
+                # Add file
+                file_item = self._add_file_item(parent_item, item_name)
+                
+                # Use system file icon directly
+                file_icon = QIcon.fromTheme("document", QIcon("icons/file.png"))
+                if not file_icon.isNull():
+                    file_item.setIcon(0, file_icon)
+                
+                # If it's a binary file, cache it
+                if self.is_binary_file(item_name):
+                    try:
+                        with open(item_path, 'rb') as f:
+                            content = f.read()
+                            cache_key = f"{item_name}_{id(file_item)}"
+                            self.cached_files[cache_key] = content
+                            
+                            # Update file data
+                            file_data = file_item.data(0, Qt.ItemDataRole.UserRole)
+                            file_data['cached'] = True
+                            file_data['cache_key'] = cache_key
+                            file_item.setData(0, Qt.ItemDataRole.UserRole, file_data)
+                    except Exception as e:
+                        print(f"DEBUG: Failed to cache binary file: {e}")
+    
+    def import_file(self, target_item=None):
+        """
+        Import a file from the file system
+        
+        Args:
+            target_item: Target tree item to add the file to (optional)
+            
+        Returns:
+            QTreeWidgetItem: The created file item or None if canceled
+        """
+        # Open file dialog to select file
+        file_path, _ = QFileDialog.getOpenFileName(
+            self.editor, 
+            "Import File", 
+            "", 
+            "All Files (*.*)"
+        )
+        
+        if not file_path:
+            return None
+        
+        # Use target item or get selected item
+        if not target_item:
+            selected_items = self.tree.selectedItems()
+            if selected_items:
+                target_item = selected_items[0]
+            else:
+                # Use root item
+                if self.tree.topLevelItemCount() > 0:
+                    target_item = self.tree.topLevelItem(0)
+                else:
+                    # Create root item if not exists
+                    target_item = QTreeWidgetItem(self.tree)
+                    target_item.setText(0, "Project Root")
+                    target_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Project Root"})
+        
+        # Import the file
+        try:
+            # Get file name from path
+            file_name = os.path.basename(file_path)
+            
+            # Add file with original path
+            file_item = self._add_file_item(target_item, file_name, original_path=file_path)
+            
+            # Store file information for caching but don't cache yet
+            # (Caching will happen when template is saved)
+            try:
+                # Get file data from the tree item
+                file_data = file_item.data(0, Qt.ItemDataRole.UserRole)
+                
+                # Set original path
+                file_data['path'] = file_path
+                file_data['original_path'] = file_path
+                
+                # Determine if binary
+                from app.utils.binary_file_handler import BinaryFileHandler
+                is_binary = BinaryFileHandler.is_binary_file(file_path)
+                file_data['is_binary'] = is_binary
+                
+                # Get template name from the editor if available
+                template_name = "Unknown Template"
+                if hasattr(self.editor, 'template_name'):
+                    template_name = self.editor.template_name
+                elif hasattr(self.editor, 'name_input') and hasattr(self.editor.name_input, 'text'):
+                    template_name = self.editor.name_input.text()
+                
+                # Get relative path in the tree structure for later use  
+                relative_path = self._get_relative_path(file_item)
+                file_data['relative_path'] = relative_path
+                file_data['template_name'] = template_name
+                
+                # Update file data in the tree item
+                file_item.setData(0, Qt.ItemDataRole.UserRole, file_data)
+                
+                # Store reference to the file in the editor's cache tracking if available
+                if hasattr(self.editor, 'files_to_cache'):
+                    self.editor.files_to_cache[relative_path] = {
+                        "original_path": file_path,
+                        "relative_path": relative_path,
+                        "template_name": template_name
+                    }
+                    
+                # Add visual indicator that file is tracked but not yet cached
+                from PyQt6.QtGui import QBrush, QColor
+                colors = self._get_editor_colors()
+                file_item.setForeground(0, QBrush(QColor(colors.get('tracked', '#88AADD'))))
+                
+            except Exception as e:
+                print(f"Error preparing file for caching: {e}")
+                
+            return file_item
+            
+        except Exception as e:
+            print(f"Error importing file: {e}")
+            return None
+    
+    def is_binary_file(self, file_path):
+        """
+        Check if a file is binary based on extension
+        
+        Args:
+            file_path: Path to the file or just the filename
+            
+        Returns:
+            bool: True if binary, False otherwise
+        """
+        # Use BinaryFileHandler if available
+        return BinaryFileHandler.is_binary_file(file_path)
+    
+    def create_context_menu(self, item, position):
+        """
+        Create a context menu for a tree item at the specified position
+        
+        Args:
+            item: The tree item to create a menu for
+            position: Position to show the menu at
+            
+        Returns:
+            QMenu: The context menu
+        """
+        print("DEBUG: create_context_menu - creating context menu")
+        menu = QMenu(self.tree)
+        
+        # Import styles for context menu, including destructive action styling
+        try:
+            from app.ui.color_scheme_pyqt import CONTEXT_MENU_STYLE, DELETE_TEXT_STYLE
+            menu.setStyleSheet(CONTEXT_MENU_STYLE)
+        except ImportError:
+            # Fallback styling
+            menu.setStyleSheet("""
+                QMenu {
+                    background-color: #2D2D30;
+                    color: #FFFFFF;
+                    border: 1px solid #3F3F46;
+                    padding: 5px;
+                }
+                QMenu::item {
+                    padding: 5px 20px 5px 20px;
+                    border-radius: 3px;
+                }
+                QMenu::item:selected {
+                    background-color: #264F78;
+                }
+                QMenu::separator {
+                    height: 1px;
+                    background-color: #3F3F46;
+                    margin: 5px;
+                }
+            """)
+            
+        # Get item data
+        item_data = item.data(0, Qt.ItemDataRole.UserRole) if item else None
+        is_file = isinstance(item_data, dict) and item_data.get('type') == 'file'
+        is_folder = isinstance(item_data, dict) and item_data.get('type') == 'folder'
+        
+        print(f"DEBUG: create_context_menu - item type: {'file' if is_file else 'folder' if is_folder else 'unknown/none'}")
+        
+        # Add file action
+        add_file_action = QAction("Add File", menu)
+        add_file_action.triggered.connect(lambda: self.add_file(item if is_folder else item.parent() if item else None))
+        menu.addAction(add_file_action)
+        
+        # Add folder action
+        add_folder_action = QAction("Add Folder", menu)
+        add_folder_action.triggered.connect(lambda: self.add_folder(item if is_folder else item.parent() if item else None))
+        menu.addAction(add_folder_action)
+        
+        # Import actions
+        menu.addSeparator()
+        
+        import_file_action = QAction("Import File...", menu)
+        import_file_action.triggered.connect(lambda: self.import_file(item if is_folder else item.parent() if item else None))
+        menu.addAction(import_file_action)
+        
+        import_dir_action = QAction("Import Directory...", menu)
+        import_dir_action.triggered.connect(lambda: self.import_directory(item if is_folder else item.parent() if item else None))
+        menu.addAction(import_dir_action)
+        
+        # Item-specific actions
+        if item:
+            menu.addSeparator()
+            
+            # Rename action
+            rename_action = QAction("Rename", menu)
+            rename_action.triggered.connect(lambda: self.rename_item(item))
+            menu.addAction(rename_action)
+            
+            # Delete action - with destructive styling
+            delete_action = QAction("Delete", menu)
+            delete_action.triggered.connect(lambda: self.delete_selected())
+            
+            # Apply destructive styling to delete action
+            try:
+                from app.ui.color_scheme_pyqt import DELETE_TEXT_STYLE
+                delete_action.setProperty("destructive", "true")  # Set property for styling
+                
+                # Apply direct styling using stylesheet for compatibility
+                delete_action.setStyleSheet("color: #FF5555; font-weight: bold;")
+            except:
+                # Fallback - set color using setData
+                print("DEBUG: Using fallback styling for delete action")
+                delete_action.setData(QColor("#FF5555"))
+                
+            menu.addAction(delete_action)
+            
+            # File-specific actions
+            if is_file:
+                menu.addSeparator()
+                
+                # Create a submenu for project name options
+                project_name_menu = menu.addMenu("Project Name Options")
+                
+                # Determine current state
+                name_mode = item_data.get('project_name_mode', 'none')
+                uses_project_name = item_data.get('uses_project_name', False)
+                
+                # Create project name actions
+                replace_name_action = project_name_menu.addAction("Replace with Project Name")
+                prepend_name_action = project_name_menu.addAction("Prepend Project Name")
+                append_name_action = project_name_menu.addAction("Append Project Name")
+                pattern_action = project_name_menu.addAction("Use Custom Pattern...")
+                separator_action = project_name_menu.addAction("Use Custom Separator...")
+                project_name_menu.addSeparator()
+                reset_name_action = project_name_menu.addAction("Reset to Original Name")
+                
+                # Set checkable and check the current mode
+                replace_name_action.setCheckable(True)
+                prepend_name_action.setCheckable(True)
+                append_name_action.setCheckable(True)
+                
+                replace_name_action.setChecked(name_mode == 'replace' or (uses_project_name and name_mode == 'none'))
+                prepend_name_action.setChecked(name_mode == 'prepend')
+                append_name_action.setChecked(name_mode == 'append')
+                
+                # Enable/disable reset based on whether a project name option is active
+                reset_name_action.setEnabled(uses_project_name or name_mode != 'none')
+                
+                # Connect actions
+                replace_name_action.triggered.connect(lambda: self._use_project_name_for_file(item, mode='replace'))
+                prepend_name_action.triggered.connect(lambda: self._use_project_name_for_file(item, mode='prepend'))
+                append_name_action.triggered.connect(lambda: self._use_project_name_for_file(item, mode='append'))
+                pattern_action.triggered.connect(lambda: self._configure_naming_pattern(item))
+                separator_action.triggered.connect(lambda: self._configure_custom_separator(item))
+                reset_name_action.triggered.connect(lambda: self._reset_file_name(item))
+        
+        return menu
+    
+    def _setup_context_menu(self):
+        """Set up the context menu for the tree widget"""
+        if not self.tree:
+            return
+        
+        # Make sure tree widget has context menu policy set
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        
+        # Connect context menu to our handler
+        self.tree.customContextMenuRequested.connect(self._show_context_menu)
+        
+        print("DEBUG: Context menu set up")
+
+    def _show_context_menu(self, position):
+        """
+        Show a context menu at the given position
+        
+        Args:
+            position: Position to show the menu at
+        """
+        if not self.tree:
+            return
+        
+        # Get the item at the position
+        item = self.tree.itemAt(position)
+        
+        if item:
+            # Get the item data
+            item_data = item.data(0, Qt.ItemDataRole.UserRole)
+            
+            # Create menu based on item type
+            if isinstance(item_data, dict) and item_data.get('type') == 'folder':
+                self._show_folder_context_menu(item, position)
+            else:
+                self._show_file_context_menu(item, position)
+        else:
+            # Show the general context menu if no item is selected
+            self._show_general_context_menu(position)
+
+    def _show_general_context_menu(self, position):
+        """
+        Show a general context menu for the tree
+        
+        Args:
+            position: Position to show the menu at
+        """
+        # Import main app colors
+        from app.ui.color_scheme_pyqt import APP_COLORS, CONTEXT_MENU_STYLE
+        
+        # Create menu
+        menu = QMenu(self.tree)
+        menu.setStyleSheet(CONTEXT_MENU_STYLE)
+        
+        # Add actions
+        add_folder_action = menu.addAction("Add Folder")
+        add_file_action = menu.addAction("Add File")
+        menu.addSeparator()
+        import_dir_action = menu.addAction("Import Directory...")
+        
+        # Execute the menu
+        action = menu.exec_(self.tree.mapToGlobal(position))
+        
+        # Handle actions
+        if action == add_folder_action:
+            self.add_folder()
+        elif action == add_file_action:
+            self.add_file()
+        elif action == import_dir_action:
+            self.import_directory()
+
+    def _show_folder_context_menu(self, item, position):
+        """
+        Show a context menu for folder items
+        
+        Args:
+            item: The folder item
+            position: Position to show the menu at
+        """
+        # Import main app colors
+        from app.ui.color_scheme_pyqt import APP_COLORS, CONTEXT_MENU_STYLE
+        
+        # Create menu
+        menu = QMenu(self.tree)
+        menu.setStyleSheet(CONTEXT_MENU_STYLE)
+        
+        # Add actions
+        add_folder_action = menu.addAction(QIcon.fromTheme("folder-new"), "Add Folder")
+        add_file_action = menu.addAction(QIcon.fromTheme("document-new"), "Add File")
+        menu.addSeparator()
+        
+        # Import actions
+        import_menu = QMenu("Import", menu)
+        import_menu.setStyleSheet(CONTEXT_MENU_STYLE)
+        import_file_action = import_menu.addAction(QIcon.fromTheme("document-import"), "Import File")
+        import_dir_action = import_menu.addAction(QIcon.fromTheme("folder-import"), "Import Directory")
+        menu.addMenu(import_menu)
+        
+        menu.addSeparator()
+        rename_action = menu.addAction(QIcon.fromTheme("edit-rename"), "Rename")
+        delete_action = menu.addAction(QIcon.fromTheme("edit-delete"), "Delete")
+        
+        # Add keyboard shortcuts
+        rename_action.setShortcut("F2")
+        delete_action.setShortcut("Delete")
+        
+        # Execute the menu
+        action = menu.exec_(self.tree.mapToGlobal(position))
+        
+        # Handle actions
+        if action == add_folder_action:
+            self.add_folder(item)
+        elif action == add_file_action:
+            self.add_file(item)
+        elif action == import_file_action:
+            self.import_file(item)
+        elif action == import_dir_action:
+            self.import_directory(item)
+        elif action == rename_action:
+            self.rename_item(item)
+        elif action == delete_action:
+            self.delete_selected()
+
+    def _show_file_context_menu(self, item, position):
+        """
+        Show a context menu for file items
+        
+        Args:
+            item: The file item
+            position: Position to show the menu at
+        """
+        # Import main app colors
+        from app.ui.color_scheme_pyqt import APP_COLORS, CONTEXT_MENU_STYLE
+        
+        # Create menu
+        menu = QMenu(self.tree)
+        menu.setStyleSheet(CONTEXT_MENU_STYLE)
+        
+        # Add actions
+        rename_action = menu.addAction(QIcon.fromTheme("edit-rename"), "Rename")
+        menu.addSeparator()
+        
+        # Get item data
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
+        
+        # Create a submenu for project name options
+        project_name_menu = menu.addMenu("Project Name Options")
+        
+        # Determine current state
+        name_mode = item_data.get('project_name_mode', 'none')
+        uses_project_name = item_data.get('uses_project_name', False)
+        
+        # Create project name actions
+        replace_name_action = project_name_menu.addAction("Replace with Project Name")
+        prepend_name_action = project_name_menu.addAction("Prepend Project Name")
+        append_name_action = project_name_menu.addAction("Append Project Name")
+        pattern_action = project_name_menu.addAction("Use Custom Pattern...")
+        separator_action = project_name_menu.addAction("Use Custom Separator...")
+        project_name_menu.addSeparator()
+        reset_name_action = project_name_menu.addAction("Reset to Original Name")
+        
+        # Set checkable and check the current mode
+        replace_name_action.setCheckable(True)
+        prepend_name_action.setCheckable(True)
+        append_name_action.setCheckable(True)
+        
+        replace_name_action.setChecked(name_mode == 'replace' or (uses_project_name and name_mode == 'none'))
+        prepend_name_action.setChecked(name_mode == 'prepend')
+        append_name_action.setChecked(name_mode == 'append')
+        
+        # Enable/disable reset based on whether a project name option is active
+        reset_name_action.setEnabled(uses_project_name or name_mode != 'none')
+        
+        menu.addSeparator()
+        delete_action = menu.addAction(QIcon.fromTheme("edit-delete"), "Delete")
+        
+        # Add keyboard shortcuts
+        rename_action.setShortcut("F2")
+        delete_action.setShortcut("Delete")
+        
+        # Execute the menu
+        action = menu.exec_(self.tree.mapToGlobal(position))
+        
+        # Handle actions
+        if action == rename_action:
+            self.rename_item(item)
+        elif action == replace_name_action:
+            self._use_project_name_for_file(item, mode='replace')
+        elif action == prepend_name_action:
+            self._use_project_name_for_file(item, mode='prepend')
+        elif action == append_name_action:
+            self._use_project_name_for_file(item, mode='append')
+        elif action == pattern_action:
+            self._configure_naming_pattern(item)
+        elif action == reset_name_action:
+            self._reset_file_name(item)
+        elif action == separator_action:
+            self._configure_custom_separator(item)
+        elif action == delete_action:
+            self.delete_selected()
+            
+    def _use_project_name_for_file(self, item, mode='replace'):
+        """
+        Set a file to use the project name as part of its name
+        
+        Args:
+            item: The file item to update
+            mode: How to use the project name: 'replace', 'prepend', 'append', or 'pattern'
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not item:
+            print("DEBUG: FileOperations._use_project_name_for_file - no item provided")
+            return False
+        
+        # Get current file data and name
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(item_data, dict) or item_data.get('type') != 'file':
+            print(f"DEBUG: FileOperations._use_project_name_for_file - item is not a file: {item.text(0)}")
+            return False
+        
+        current_name = item.text(0)
+        
+        # Store original name if we don't already have it
+        if 'original_name' not in item_data:
+            item_data['original_name'] = current_name
+        
+        # Use original name as the base to work with
+        original_name = item_data.get('original_name', current_name)
+        
+        # Use ${PROJECT_NAME} as the placeholder that will be replaced during project creation
+        placeholder = "${PROJECT_NAME}"
+        
+        # For display in the editor, use the template name as an example
+        display_name = "Project_Name"
+        
+        # Try to get the actual template name from the editor for display
+        if self.editor:
+            # Check if editor has a template_name attribute
+            if hasattr(self.editor, 'template_name'):
+                temp_name = self.editor.template_name.strip()
+                if temp_name:
+                    display_name = temp_name
+                    print(f"DEBUG: FileOperations._use_project_name_for_file - using template name: {display_name}")
+                    
+            # Check if editor has a template_name_field in ui_builder as fallback
+            elif hasattr(self.editor, 'ui_builder') and hasattr(self.editor.ui_builder, 'template_name_field'):
+                temp_name = self.editor.ui_builder.template_name_field.text().strip()
+                if temp_name:
+                    display_name = temp_name
+                    print(f"DEBUG: FileOperations._use_project_name_for_file - using template name from field: {display_name}")
+        
+        # Get the file extension
+        extension = ""
+        name_without_extension = original_name
+        name_parts = original_name.split('.')
+        if len(name_parts) > 1:
+            extension = f".{name_parts[-1]}"
+            name_without_extension = original_name[:-len(extension)]
+        
+        # Get custom separator if configured
+        separator = item_data.get('custom_separator', '.')
+        
+        # Create new display name based on the selected mode
+        display_placeholder_name = ""
+        if mode == 'replace':
+            display_placeholder_name = f"{placeholder}{extension}"
+        elif mode == 'prepend':
+            display_placeholder_name = f"{placeholder}{separator}{name_without_extension}{extension}"
+        elif mode == 'append':
+            display_placeholder_name = f"{name_without_extension}{separator}{placeholder}{extension}"
+        elif mode == 'pattern':
+            # Use custom pattern
+            pattern = item_data.get('custom_pattern', '$project$ext')
+            
+            # Replace placeholders in the pattern
+            pattern_map = {
+                '$project': placeholder,
+                '$base': name_without_extension,
+                '$ext': extension,
+                '$sep': separator
+            }
+            
+            for key, value in pattern_map.items():
+                pattern = pattern.replace(key, value)
+            
+            display_placeholder_name = pattern
+        else:
+            print(f"DEBUG: FileOperations._use_project_name_for_file - unknown mode: {mode}")
+            return False
+        
+        print(f"DEBUG: FileOperations._use_project_name_for_file - displaying placeholder: '{display_placeholder_name}' (original: '{original_name}', mode: {mode})")
+        
+        # Update the display text (for visual feedback only)
+        item.setText(0, display_placeholder_name)
+        
+        # Update the data - keep the original name but set the flags
+        # IMPORTANT: Do not change the 'name' field, only add the flags
+        item_data['uses_project_name'] = True
+        item_data['project_name_mode'] = mode
+        item_data['rename_flag'] = True  # Set rename_flag to true when uses_project_name is true
+        item_data['original_extension'] = extension
+        
+        # Store the item_data back to the item
+        item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+        
+        # Apply styling to indicate this is a dynamic file
+        font = item.font(0)
+        font.setItalic(True)
+        item.setFont(0, font)
+        
+        # Also use a different color to make it clear
+        item.setForeground(0, QBrush(QColor("#4A9BFF")))
+        
+        print(f"DEBUG: FileOperations._use_project_name_for_file - file marked to use project name: {original_name}, mode: {mode}")
+        
+        return True
+
+    def _reset_file_name(self, item):
+        """
+        Reset file name to the original value
+        
+        Args:
+            item: The file item to update
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        if not item:
+            return False
+        
+        # Get current file data
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(item_data, dict) or item_data.get('type') != 'file':
+            return False
+        
+        # Get original name
+        original_name = item_data.get('original_name')
+        if not original_name:
+            print("ERROR: Original name not found, cannot reset")
+            return False
+        
+        # Update display to show original name
+        item.setText(0, original_name)
+        
+        # Update data - turn off the flags but keep original_name for future use
+        item_data['uses_project_name'] = False
+        item_data['project_name_mode'] = 'none'
+        item_data['rename_flag'] = False
+        
+        # Restore normal styling
+        font = item.font(0)
+        font.setItalic(False)
+        item.setFont(0, font)
+        item.setForeground(0, QBrush(QColor("#000000")))
+        
+        print(f"DEBUG: Reset file back to original name: {original_name}")
+        
+        # Update the data
+        item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+        
+        return True
+
+    def _configure_custom_separator(self, item):
+        """
+        Configure a custom separator for project name operations
+        
+        Args:
+            item: The file item to update
+            
+        Returns:
+            bool: True if a separator was set, False otherwise
+        """
+        if not item:
+            return False
+        
+        # Get current file data
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(item_data, dict) or item_data.get('type') != 'file':
+            return False
+        
+        # Get current separator
+        current_separator = item_data.get('custom_separator', '.')
+        
+        # Show input dialog to get the separator
+        separator, ok = QInputDialog.getText(
+            self.tree, 
+            "Custom Separator",
+            "Enter a custom separator to use between project name and filename:",
+            text=current_separator
+        )
+        
+        if not ok or not separator:
+            return False
+        
+        # Store the separator
+        item_data['custom_separator'] = separator
+        item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+        
+        # If already using project name, update the display
+        if item_data.get('uses_project_name', False):
+            mode = item_data.get('project_name_mode', 'replace')
+            self._use_project_name_for_file(item, mode=mode)
+        
+        return True
+
+    def _toggle_project_name_for_file(self, item):
+        """
+        Toggle between using project name and original name for a file
+        
+        Args:
+            item: The file item to update
+        """
+        # This function is kept for compatibility with existing code
+        # It will simply toggle between the current mode and reset
+        if not item:
+            return False
+        
+        # Get current file data
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(item_data, dict) or item_data.get('type') != 'file':
+            return False
+        
+        # Get current state
+        uses_project_name = item_data.get('uses_project_name', False)
+        
+        if uses_project_name:
+            # Currently using project name, reset to original name
+            return self._reset_file_name(item)
+        else:
+            # Currently using original name, use project name with replace mode (original behavior)
+            return self._use_project_name_for_file(item, mode='replace')
+
+    def _get_relative_path(self, item):
+        """
+        Get the relative path of an item in the tree
+        
+        Args:
+            item: Tree item to get path for
+            
+        Returns:
+            str: Relative path of the item
+        """
+        if not item:
+            return ""
+            
+        # Start with the item's name
+        path_parts = [item.text(0)]
+        
+        # Walk up the tree
+        parent = item.parent()
+        while parent and parent != self.tree.invisibleRootItem():
+            path_parts.insert(0, parent.text(0))
+            parent = parent.parent()
+        
+        # Join parts with platform-independent separator
+        return "/".join(path_parts[:-1])  # Exclude the file name itself
+
+    def _get_editor_colors(self):
+        """
+        Get color scheme from the editor or use defaults
+        
+        Returns:
+            dict: Dictionary of color values
+        """
+        try:
+            # Try to get colors from app's color scheme
+            from app.ui.color_scheme_pyqt import APP_COLORS
+            return APP_COLORS
+        except ImportError:
+            # Fallback colors
+            return {
+                'accent': '#007ACC',            # Blue accent color
+                'accent_light': '#338ACC',      # Lighter blue
+                'accent_dark': '#005A9C',       # Darker blue
+                'tracked': '#88AADD',           # Light blue for tracked files
+                'background': '#1E1E1E',        # Dark background
+                'text': '#FFFFFF',              # White text
+                'text_secondary': '#CCCCCC',    # Light gray secondary text
+                'border': '#444444',            # Dark gray borders
+                'warning': '#FF9900',           # Orange warning
+                'error': '#FF5555',             # Red error
+                'success': '#55AA55'            # Green success
+            }
+
+    def _configure_naming_pattern(self, item):
+        """
+        Configure a custom naming pattern for project name operations
+        
+        Args:
+            item: The file item to update
+            
+        Returns:
+            bool: True if a pattern was set, False otherwise
+        """
+        if not item:
+            return False
+        
+        # Get current file data
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(item_data, dict) or item_data.get('type') != 'file':
+            return False
+        
+        # Get current pattern or default
+        current_pattern = item_data.get('custom_pattern', '$project$ext')
+        
+        # Pattern description
+        pattern_desc = """
+Available placeholders:
+$project - Project name
+$base - Original filename without extension
+$ext - File extension (with dot)
+$sep - Custom separator
+
+Example: $project_$base$ext
+"""
+        
+        # Show input dialog to get the pattern
+        pattern, ok = QInputDialog.getText(
+            self.tree, 
+            "Custom Naming Pattern",
+            f"Enter a custom pattern for filename:{pattern_desc}",
+            text=current_pattern
+        )
+        
+        if not ok or not pattern:
+            return False
+        
+        # Store the pattern
+        item_data['custom_pattern'] = pattern
+        item_data['project_name_mode'] = 'pattern'
+        item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+        
+        # Update the display
+        self._use_project_name_for_file(item, mode='pattern')
+        
+        return True
+
+class FileDetailsDialog(QDialog):
+    """Dialog for entering file details"""
+    
+    def __init__(self, parent, title, message, file_name="", categories=None, 
+                selected_type="", show_binary=True, is_binary=False):
+        """Initialize the dialog"""
+        super().__init__(parent)
+        
+        self.setWindowTitle(title)
+        self.setMinimumWidth(400)
+        
+        # Create layout
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        
+        # Add message
+        if message:
+            label = QLabel(message)
+            layout.addWidget(label)
+        
+        # File name field
+        name_layout = QHBoxLayout()
+        name_label = QLabel("File name:")
+        name_layout.addWidget(name_label)
+        
+        self.file_name_edit = QLineEdit(file_name)
+        self.file_name_edit.setPlaceholderText("Enter file name with extension")
+        name_layout.addWidget(self.file_name_edit)
+        
+        layout.addLayout(name_layout)
+        
+        # File type dropdown
+        type_layout = QHBoxLayout()
+        type_label = QLabel("File type:")
+        type_layout.addWidget(type_label)
+        
+        self.file_type_combo = QComboBox()
+        if categories:
+            self.file_type_combo.addItems(categories)
+            if selected_type and selected_type in categories:
+                self.file_type_combo.setCurrentText(selected_type)
+                
+        self.file_type_combo.currentIndexChanged.connect(self._on_type_changed)
+        type_layout.addWidget(self.file_type_combo)
+        
+        layout.addLayout(type_layout)
+        
+        # Extensions dropdown
+        ext_layout = QHBoxLayout()
+        ext_label = QLabel("Extension:")
+        ext_layout.addWidget(ext_label)
+        
+        self.extension_combo = QComboBox()
+        self._update_extensions()
+        ext_layout.addWidget(self.extension_combo)
+        
+        # Update file name when extension changes
+        self.extension_combo.currentIndexChanged.connect(self._update_file_name)
+        
+        layout.addLayout(ext_layout)
+        
+        # Binary checkbox
+        if show_binary:
+            self.binary_checkbox = QCheckBox("Binary file (will be cached)")
+            self.binary_checkbox.setChecked(is_binary)
+            layout.addWidget(self.binary_checkbox)
+        else:
+            self.binary_checkbox = None
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_button)
+        
+        button_layout.addStretch()
+        
+        ok_button = QPushButton("OK")
+        ok_button.clicked.connect(self.accept)
+        button_layout.addWidget(ok_button)
+        
+        layout.addLayout(button_layout)
+        
+        # Apply styles
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #2D2D30;
+                color: #FFFFFF;
+            }
+            QLabel {
+                color: #FFFFFF;
+            }
+            QLineEdit, QComboBox {
+                background-color: #3E3E42;
+                color: #FFFFFF;
+                border: 1px solid #3F3F46;
+                border-radius: 3px;
+                padding: 5px;
+            }
+            QComboBox::drop-down {
+                border: none;
+                background-color: #007ACC;
+            }
+            QPushButton {
+                background-color: #3E3E42;
+                color: #FFFFFF;
+                border: 1px solid #3F3F46;
+                border-radius: 3px;
+                padding: 5px 15px;
+            }
+            QPushButton:hover {
+                background-color: #4E4E52;
+            }
+            QCheckBox {
+                color: #FFFFFF;
+            }
+            QCheckBox::indicator {
+                width: 15px;
+                height: 15px;
+                background-color: #3E3E42;
+                border: 1px solid #3F3F46;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #007ACC;
+            }
+        """)
+        
+        # Connect signals
+        self.file_name_edit.textChanged.connect(self._on_file_name_changed)
+        
+        # Initial update
+        self._on_file_name_changed(file_name)
+    
+    def _on_type_changed(self, index):
+        """Handle type selection change"""
+        self._update_extensions()
+        
+        # Update file name based on new extension
+        self._update_file_name()
+    
+    def _update_extensions(self):
+        """Update the extensions dropdown based on selected type"""
+        self.extension_combo.clear()
+        
+        # Get current file type
+        file_type = self.file_type_combo.currentText()
+        
+        # Get extensions for this type
+        extensions = FILE_EXTENSIONS.get(file_type, [])
+        if extensions:
+            self.extension_combo.addItems(extensions)
+    
+    def _update_file_name(self):
+        """Update file name based on selected extension"""
+        # Get current file name and remove any extension
+        file_name = self.file_name_edit.text()
+        base_name = os.path.splitext(file_name)[0]
+        
+        # If base name is empty, generate a random one
+        if not base_name:
+            # Generate a random file name
+            base_name = f"file_{''.join(random.choices(string.ascii_lowercase + string.digits, k=6))}"
+        
+        # Get selected extension
+        extension = self.extension_combo.currentText()
+        
+        # Update file name
+        self.file_name_edit.setText(f"{base_name}{extension}")
+    
+    def _on_file_name_changed(self, text):
+        """Handle file name changes"""
+        # Extract extension
+        _, ext = os.path.splitext(text)
+        
+        # Update binary checkbox if available
+        if self.binary_checkbox:
+            # Determine if binary based on extension
+            is_binary = False
+            for category in ['Image', 'Audio', 'Video', 'Archive']:
+                if category in FILE_EXTENSIONS and ext.lower() in FILE_EXTENSIONS[category]:
+                    is_binary = True
+                    break
+                    
+            self.binary_checkbox.setChecked(is_binary)
+            
+        # Try to select matching file type
+        for category, extensions in FILE_EXTENSIONS.items():
+            if ext.lower() in extensions:
+                self.file_type_combo.setCurrentText(category)
+                
+                # Select the extension in the dropdown
+                self.extension_combo.setCurrentText(ext.lower())
+                break
+    
+    def get_file_name(self):
+        """Get the entered file name"""
+        return self.file_name_edit.text()
+    
+    def get_file_type(self):
+        """Get the selected file type"""
+        return self.file_type_combo.currentText()
+    
+    def is_binary(self):
+        """Check if the file is marked as binary"""
+        return self.binary_checkbox.isChecked() if self.binary_checkbox else False 

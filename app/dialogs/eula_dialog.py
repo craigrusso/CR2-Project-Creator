@@ -3,10 +3,10 @@
 
 import os
 import sys
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton, 
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton, 
                            QLabel, QTextEdit, QScrollArea, QWidget, QApplication)
-from PyQt5.QtCore import Qt, QCoreApplication, QSettings
-from PyQt5.QtGui import QFont
+from PyQt6.QtCore import Qt, QCoreApplication, QSettings
+from PyQt6.QtGui import QFont, QScreen, QGuiApplication
 
 from app.constants import get_resource_path
 from app.utils.logging_utils import debug, info, warning, error
@@ -48,10 +48,12 @@ class EULADialog(QDialog):
         self.setup_layout()
         
         # Center dialog on screen
-        screen_geometry = QApplication.desktop().screenGeometry()
-        x = (screen_geometry.width() - self.width()) // 2
-        y = (screen_geometry.height() - self.height()) // 2
-        self.move(x, y)
+        screen = QGuiApplication.primaryScreen()
+        if screen:
+            screen_geometry = screen.geometry()
+            x = (screen_geometry.width() - self.width()) // 2
+            y = (screen_geometry.height() - self.height()) // 2
+            self.move(x, y)
 
     def load_eula_settings(self):
         """Load EULA settings from QSettings."""
@@ -95,7 +97,7 @@ class EULADialog(QDialog):
         # Title label
         self.title_label = QLabel("End User License Agreement (EULA)")
         self.title_label.setStyleSheet("font-size: 16pt; font-weight: bold;")
-        self.title_label.setAlignment(Qt.AlignCenter)
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         # EULA text area
         self.eula_text = QTextEdit()
@@ -157,8 +159,8 @@ class EULADialog(QDialog):
             
             if dialog.needs_to_show():
                 debug("Displaying EULA dialog.")
-                result = dialog.exec_()
-                if result == QDialog.Accepted:
+                result = dialog.exec()
+                if result == QDialog.DialogCode.Accepted:
                     debug("EULA accepted by user.")
                     return True
                 else:

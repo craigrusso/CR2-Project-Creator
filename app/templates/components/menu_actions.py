@@ -6,9 +6,10 @@ Custom menu action classes for the CR2 Project Creator PyQt UI
 Provides specialized action types that can be styled differently
 """
 
-from PyQt5.QtWidgets import QAction, QMenu, QWidgetAction, QLabel
-from PyQt5.QtGui import QColor, QFont
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import QMenu, QWidgetAction, QLabel
+from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtCore import Qt, pyqtSignal
 from app.ui.color_scheme_pyqt import colors
 
 class DeleteLabel(QLabel):

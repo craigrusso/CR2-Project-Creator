@@ -5,8 +5,8 @@ import os
 import sys
 import tempfile
 import shutil
-from PyQt5.QtWidgets import QApplication, QDialog, QVBoxLayout, QPushButton, QLabel
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QDialog, QVBoxLayout, QPushButton, QLabel
+from PyQt6.QtCore import Qt
 
 # Import app modules
 from app.templates.template_manager import TemplateManager
@@ -170,7 +170,7 @@ def run_test():
     app = QApplication(sys.argv)
     dialog = StructureTestDialog()
     dialog.show()
-    app.exec_()
+    app.exec()
 
 if __name__ == "__main__":
     run_test() 

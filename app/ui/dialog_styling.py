@@ -6,8 +6,8 @@ Enhanced dialog styling for the application.
 This file provides specialized dialog classes with consistent styling.
 """
 
-from PyQt5.QtWidgets import QMessageBox, QPushButton, QDialogButtonBox, QInputDialog, QLineEdit, QDialog
-from PyQt5.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import QMessageBox, QPushButton, QDialogButtonBox, QInputDialog, QLineEdit, QDialog
+from PyQt6.QtCore import Qt, QTimer
 from app.ui.color_scheme_pyqt import colors
 
 class StyledMessageBox(QMessageBox):
@@ -88,7 +88,7 @@ class StyledMessageBox(QMessageBox):
         msgbox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         msgbox.setDefaultButton(QMessageBox.No)
         msgbox.setIcon(QMessageBox.Question)
-        return msgbox.exec_()
+        return msgbox.exec()
     
     @staticmethod
     def show_information(parent, title, text, informative_text=""):
@@ -100,7 +100,7 @@ class StyledMessageBox(QMessageBox):
             msgbox.setInformativeText(informative_text)
         msgbox.setStandardButtons(QMessageBox.Ok)
         msgbox.setIcon(QMessageBox.Information)
-        return msgbox.exec_()
+        return msgbox.exec()
     
     @staticmethod
     def show_warning(parent, title, text, informative_text=""):
@@ -112,7 +112,7 @@ class StyledMessageBox(QMessageBox):
             msgbox.setInformativeText(informative_text)
         msgbox.setStandardButtons(QMessageBox.Ok)
         msgbox.setIcon(QMessageBox.Warning)
-        return msgbox.exec_()
+        return msgbox.exec()
     
     @staticmethod
     def show_error(parent, title, text, informative_text=""):
@@ -124,7 +124,7 @@ class StyledMessageBox(QMessageBox):
             msgbox.setInformativeText(informative_text)
         msgbox.setStandardButtons(QMessageBox.Ok)
         msgbox.setIcon(QMessageBox.Critical)
-        return msgbox.exec_()
+        return msgbox.exec()
 
 class StyledInputDialog:
     """
@@ -140,7 +140,7 @@ class StyledInputDialog:
         dialog.setWindowTitle(title)
         dialog.setLabelText(label)
         dialog.setTextValue(text)
-        dialog.setWindowModality(Qt.ApplicationModal if modal else Qt.NonModal)
+        dialog.setWindowModality(Qt.WindowModality.ApplicationModal if modal else Qt.WindowModality.NonModal)
         
         # Get the buttons after creation using a timer
         # This is necessary because the buttons aren't created until the dialog is shown
@@ -191,7 +191,7 @@ class StyledInputDialog:
         QTimer.singleShot(0, style_buttons)
         
         # Execute dialog and return results
-        if dialog.exec_() == QDialog.Accepted:
+        if dialog.exec() == QDialog.Accepted:
             return dialog.textValue(), True
         else:
             return "", False
@@ -208,7 +208,7 @@ class StyledInputDialog:
         dialog.setIntMaximum(max_val)
         dialog.setIntStep(step)
         dialog.setInputMode(QInputDialog.IntInput)
-        dialog.setWindowModality(Qt.ApplicationModal if modal else Qt.NonModal)
+        dialog.setWindowModality(Qt.WindowModality.ApplicationModal if modal else Qt.WindowModality.NonModal)
         
         # Style buttons using the same technique as in get_text
         def style_buttons():
@@ -256,7 +256,7 @@ class StyledInputDialog:
         QTimer.singleShot(0, style_buttons)
         
         # Execute dialog and return results
-        if dialog.exec_() == QDialog.Accepted:
+        if dialog.exec() == QDialog.Accepted:
             return dialog.intValue(), True
         else:
             return 0, False 

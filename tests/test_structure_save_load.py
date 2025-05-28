@@ -12,7 +12,7 @@ import os
 import json
 import tempfile
 import shutil
-from PyQt5.QtWidgets import QApplication, QTreeWidgetItem, QMessageBox
+from PyQt6.QtWidgets import QApplication, QTreeWidgetItem, QMessageBox
 
 # Create application instance before importing UI components
 app = QApplication(sys.argv)

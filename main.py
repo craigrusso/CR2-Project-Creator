@@ -7,20 +7,21 @@ import os
 import shutil # Ensure shutil is imported
 import json
 import logging
+import struct # For checking if we're running on ARM64
 
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt, QCoreApplication, QSettings, QTimer
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import Qt, QCoreApplication, QSettings, QTimer
+from PyQt6.QtGui import QIcon
 from app.core.app_module_pyqt import ProjectCreatorApp
-from app.config.app_config import APP_NAME, APP_VERSION, setup_dpi_awareness
+from app.config.app_config import APP_NAME, APP_VERSION, setup_dpi_awareness, APP_BUILD_NUMBER
 from app.ui.app_theme_pyqt import apply_dark_theme_to_template_section, force_app_palette, configure_styles
 from app.templates.template_manager_migration import TemplateManagerMigration
 from app.ui.tree_styling import apply_styling_to_all_tree_widgets, refresh_all_tree_icons
 from app.ui.icon_utilities import clear_icon_cache
-from PyQt5.QtGui import QIcon
 
 # Import the license manager for license checking
 from app.utils.security.license_manager import LicenseManager, TrialNagDialog
-from PyQt5.QtWidgets import QDialog
+from PyQt6.QtWidgets import QDialog
 
 # Import the EULA Dialog
 from app.dialogs.eula_dialog import EULADialog
@@ -36,7 +37,26 @@ from app.utils.logging_utils import (
 )
 
 # This is the PyQt version of the application
-UI_FRAMEWORK = 'pyqt'
+UI_FRAMEWORK = 'pyqt6'
+
+def is_arm64():
+    """Check if we're running on ARM64 architecture"""
+    try:
+        if platform.system() == "Windows":
+            # On Windows, check the processor architecture
+            return platform.machine().lower() in ["arm64", "aarch64"]
+        elif platform.system() == "Darwin":  # macOS
+            # On macOS, check using sysctl
+            import subprocess
+            result = subprocess.run(["sysctl", "-n", "hw.optional.arm64"], 
+                                   capture_output=True, text=True, check=False)
+            return result.returncode == 0 and result.stdout.strip() == "1"
+        else:  # Linux and others
+            return platform.machine().lower() in ["arm64", "aarch64"]
+    except Exception as e:
+        debug(f"Error checking for ARM64: {e}")
+        # Default to False if we can't determine
+        return False
 
 def deploy_example_templates():
     """
@@ -209,11 +229,37 @@ def get_user_home_directory():
     
     return home_dir
 
+def log_system_info():
+    """Log important system information for debugging"""
+    try:
+        info(f"System: {platform.system()} {platform.version()}")
+        info(f"Python: {sys.version}")
+        info(f"Executable: {sys.executable}")
+        info(f"Architecture: {platform.machine()}")
+        info(f"ARM64 detected: {is_arm64()}")
+        
+        # Log PyQt version
+        try:
+            from PyQt6.QtCore import QT_VERSION_STR, PYQT_VERSION_STR
+            info(f"Qt version: {QT_VERSION_STR}")
+            info(f"PyQt6 version: {PYQT_VERSION_STR}")
+        except ImportError:
+            pass
+        
+        # Log current directory
+        info(f"Current working directory: {os.getcwd()}")
+        info(f"Script directory: {os.path.dirname(os.path.abspath(__file__))}")
+    except Exception as e:
+        error(f"Error logging system info: {e}")
+
 def main():
     """Main entry point for the Echelon application"""
     try:
         # Initialize logging system
         initialize_logging()
+        
+        # Log system information for debugging
+        log_system_info()
         
         # Load the user's saved logging preferences instead of forcing production mode
         settings = QSettings()
@@ -256,16 +302,14 @@ def main():
                 import ctypes
                 
                 # Set explicit AppUserModelID for Windows taskbar
-                myappid = 'cr2creative.echelon.0.95'
+                # This MUST match the ID in the manifest file
+                app_version_for_id = APP_VERSION.replace('.', '_') # Ensure it's a valid ID component
+                myappid = f'cr2creative.echelon.{app_version_for_id}.{APP_BUILD_NUMBER}'
                 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
             except Exception as e:
                 debug(f"Could not set app ID: {e}")
                 pass
 
-        # Enable High DPI scaling
-        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
-        
         # Initialize the PyQt application
         app = QApplication(sys.argv)
         app.setApplicationName(APP_NAME)
@@ -295,10 +339,10 @@ def main():
         # On macOS, ensure we use our custom styling while maintaining native menu bar
         if platform.system() == "Darwin":  # macOS
             # Use native menu bar for better macOS integration
-            app.setAttribute(Qt.AA_DontUseNativeMenuBar, False)
+            app.setAttribute(Qt.ApplicationAttribute.AA_DontUseNativeMenuBar, False)
             
             # Apply an additional attribute to help prevent macOS from overriding our theme
-            app.setAttribute(Qt.AA_DontShowIconsInMenus, True)
+            app.setAttribute(Qt.ApplicationAttribute.AA_DontShowIconsInMenus, True)
         
         # Check license status before proceeding
         license_manager = LicenseManager()
@@ -323,8 +367,8 @@ def main():
             if was_ever_licensed:
                 # Force activation dialog - treat as if trial expired
                 trial_dialog = TrialNagDialog(None, license_manager, 0) # 0 days forces activation
-                dialog_result = trial_dialog.exec_()
-                if dialog_result == QDialog.Accepted and license_manager.is_licensed():
+                dialog_result = trial_dialog.exec()
+                if dialog_result == QDialog.DialogCode.Accepted and license_manager.is_licensed():
                     can_proceed = True
                     # Ensure flag is set (should be already, but belt-and-suspenders)
                     if not settings.value("license/was_ever_licensed", False, type=bool):
@@ -340,10 +384,10 @@ def main():
 
                     # Show trial nag dialog
                     trial_dialog = TrialNagDialog(None, license_manager, time_parts=time_parts)
-                    dialog_result = trial_dialog.exec_()
+                    dialog_result = trial_dialog.exec()
 
                     # Check status AFTER dialog closes
-                    if dialog_result == QDialog.Accepted:
+                    if dialog_result == QDialog.DialogCode.Accepted:
                         if license_manager.is_licensed(): # Check if activation occurred
                              can_proceed = True
                              # Set the flag since activation was successful
@@ -356,10 +400,10 @@ def main():
                     time_parts = {'days': 0, 'hours': 0, 'minutes': 0} # Ensure time_parts show zero
                     # Trial expired (and never licensed before), show the nag dialog with exit option only
                     trial_dialog = TrialNagDialog(None, license_manager, time_parts=time_parts)
-                    dialog_result = trial_dialog.exec_()
+                    dialog_result = trial_dialog.exec()
 
                     # Check status AFTER dialog closes
-                    if dialog_result == QDialog.Accepted and license_manager.is_licensed():
+                    if dialog_result == QDialog.DialogCode.Accepted and license_manager.is_licensed():
                          can_proceed = True
                          # Set the flag since activation was successful
                          settings.setValue("license/was_ever_licensed", True)
@@ -384,7 +428,7 @@ def main():
             
             # Create the license action
             license_action = main_window.help_menu.addAction("License Management...")
-            license_action.triggered.connect(lambda: LicenseManagementDialog(main_window, license_manager).exec_())
+            license_action.triggered.connect(lambda: LicenseManagementDialog(main_window, license_manager).exec())
             
             # Add a separator before the action
             main_window.help_menu.insertSeparator(license_action)
@@ -436,7 +480,7 @@ def main():
         app.aboutToQuit.connect(save_table_view_state)
         # ------------------------------------------
         
-        return app.exec_()
+        return app.exec()
     except Exception as e:
         critical(f"CRITICAL ERROR during application startup: {e}")
         exception("Application startup failure details:")

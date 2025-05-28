@@ -15,8 +15,8 @@ from unittest.mock import MagicMock, patch
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from PyQt5.QtWidgets import QApplication, QDialog
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QDialog
+from PyQt6.QtCore import Qt
 
 # Import the modules to test
 from app.ui.structure_editor_enhanced import EnhancedStructureEditor
@@ -53,7 +53,7 @@ except ImportError:
         editor.template_manager = gallery.template_manager
         
         # Execute the editor and refresh the gallery if accepted
-        if editor.exec_() == QDialog.Accepted:
+        if editor.exec() == QDialog.Accepted:
             gallery.refresh_gallery()
             return True
         return False

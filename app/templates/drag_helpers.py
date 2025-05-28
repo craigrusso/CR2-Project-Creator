@@ -6,9 +6,9 @@ Helper functions for drag and drop operations in the Echelon application.
 Provides consistent drag-and-drop behavior across different views (grid, list, etc.).
 """
 
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt, QSize, QRect, QRectF, QByteArray, QMimeData
-from PyQt5.QtGui import QPixmap, QPainter, QBrush, QColor, QPen, QFont, QPainterPath, QIcon
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import Qt, QSize, QRect, QRectF, QByteArray, QMimeData
+from PyQt6.QtGui import QPixmap, QPainter, QBrush, QColor, QPen, QFont, QPainterPath, QIcon
 
 from app.ui.color_scheme_pyqt import colors
 
@@ -39,11 +39,11 @@ def create_drag_pixmap(widget, source_pixmap=None, item_count=1, highlight=True)
     padding = 10
     pixmap_size = source_pixmap.size()
     result_pixmap = QPixmap(pixmap_size.width() + padding, pixmap_size.height() + padding)
-    result_pixmap.fill(Qt.transparent)
+    result_pixmap.fill(Qt.GlobalColor.transparent)
     
     painter = QPainter(result_pixmap)
-    painter.setRenderHint(QPainter.Antialiasing)
-    painter.setRenderHint(QPainter.SmoothPixmapTransform)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
     
     # Apply a highlight effect if requested
     if highlight:
@@ -73,14 +73,14 @@ def create_drag_pixmap(widget, source_pixmap=None, item_count=1, highlight=True)
         # Create a circular background
         badge_rect = QRect(badge_x, badge_y, badge_size, badge_size)
         painter.setBrush(QBrush(QColor(colors.get('error', '#E8574C'))))
-        painter.setPen(Qt.NoPen)
+        painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(badge_rect)
         
         # Draw the count text
         painter.setPen(QColor(colors.get('highlight_text', '#FFFFFF')))
-        font = QFont("Arial", 10, QFont.Bold)
+        font = QFont("Arial", 10, QFont.Weight.Bold)
         painter.setFont(font)
-        painter.drawText(badge_rect, Qt.AlignCenter, str(item_count))
+        painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, str(item_count))
     
     painter.end()
     return result_pixmap

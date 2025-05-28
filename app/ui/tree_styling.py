@@ -8,9 +8,9 @@ Provides centralized styling for tree widgets
 
 import sys
 import os
-from PyQt5.QtWidgets import QTreeWidget, QWidget, QAbstractItemView, QApplication, QTreeWidgetItem, QStyle
-from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QIcon, QColor
+from PyQt6.QtWidgets import QTreeWidget, QWidget, QAbstractItemView, QApplication, QTreeWidgetItem, QStyle
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QIcon, QColor
 
 # Import the application color scheme
 from app.ui.color_scheme_pyqt import APP_COLORS
@@ -168,7 +168,7 @@ def update_item_icon(item):
     is_folder = False
     
     # First check if there's stored data indicating type
-    item_type = item.data(0, Qt.UserRole)
+    item_type = item.data(0, Qt.ItemDataRole.UserRole)
     if item_type == "folder":
         is_folder = True
     elif item_type == "file":
@@ -196,16 +196,16 @@ def update_item_icon(item):
 
         # Directly use QApplication.style().standardIcon like in TemplateDirectoryEditor
         if item.isExpanded():
-            folder_icon = QApplication.style().standardIcon(QStyle.SP_DirOpenIcon)
+            folder_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon)
             if folder_icon.isNull(): # Fallback if SP_DirOpenIcon is not available
-                folder_icon = QApplication.style().standardIcon(QStyle.SP_DirIcon)
+                folder_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
         else:
-            folder_icon = QApplication.style().standardIcon(QStyle.SP_DirIcon)
+            folder_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
         item.setIcon(0, folder_icon)
         
         # Store folder type in data
         if not item_type:
-            item.setData(0, Qt.UserRole, "folder")
+            item.setData(0, Qt.ItemDataRole.UserRole, "folder")
     else:
         # For files, get icon based on file extension
         filename = item.text(0)
@@ -293,8 +293,8 @@ def setup_tree_for_structure_editing(tree_widget):
         return
         
     # Make sure the tree widget is set up for editing
-    from PyQt5.QtWidgets import QAbstractItemView, QTreeWidgetItem
-    from PyQt5.QtCore import Qt
+    from PyQt6.QtWidgets import QAbstractItemView, QTreeWidgetItem
+    from PyQt6.QtCore import Qt
     
     # Import custom delegate
     from app.ui.tree_item_delegate import TreeItemDelegate
@@ -305,21 +305,20 @@ def setup_tree_for_structure_editing(tree_widget):
     # Configure edit triggers - essential for editing to work properly
     # Setting all triggers to ensure maximum compatibility
     tree_widget.setEditTriggers(
-        QAbstractItemView.DoubleClicked |
-        QAbstractItemView.EditKeyPressed |
-        QAbstractItemView.SelectedClicked |
-        QAbstractItemView.CurrentChanged 
+        QAbstractItemView.EditTrigger.DoubleClicked |
+        QAbstractItemView.EditTrigger.EditKeyPressed |
+        QAbstractItemView.EditTrigger.AnyKeyPressed
     )
     
     # Enable drag and drop operations
     tree_widget.setDragEnabled(True)
     tree_widget.setAcceptDrops(True)
     tree_widget.setDropIndicatorShown(True)
-    tree_widget.setDragDropMode(QAbstractItemView.InternalMove)
+    tree_widget.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
     
     # Set selection behavior and mode
-    tree_widget.setSelectionBehavior(QAbstractItemView.SelectItems)
-    tree_widget.setSelectionMode(QAbstractItemView.ExtendedSelection)
+    tree_widget.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+    tree_widget.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
     
     # Create and set custom item delegate - enhanced for editing
     delegate = TreeItemDelegate(tree_widget)
@@ -338,7 +337,7 @@ def setup_tree_for_structure_editing(tree_widget):
     tree_widget.setProperty("iconSize", QSize(28, 28))
     
     # Force icon visibility by enabling it explicitly
-    tree_widget.viewport().setAttribute(Qt.WA_AlwaysShowToolTips)
+    tree_widget.viewport().setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips)
     
     # Explicitly update all icons in the tree to ensure proper display
     # This is particularly important for structure editing where icons need to be visible
@@ -353,7 +352,7 @@ def update_folder_icon_on_expand(item, expanded):
         return
         
     # Check if this is a folder item
-    item_type = item.data(0, Qt.UserRole)
+    item_type = item.data(0, Qt.ItemDataRole.UserRole)
     if item_type == "folder" or item.childCount() > 0:
         # Update icon based on expanded state
         item.setIcon(0, get_folder_icon(expanded))
@@ -363,10 +362,10 @@ def ensure_item_editable(item):
     if not item:
         return
         
-    from PyQt5.QtCore import Qt
+    from PyQt6.QtCore import Qt
     
     # Make the item editable
-    item.setFlags(item.flags() | Qt.ItemIsEditable)
+    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
     
     # Process all children recursively
     for i in range(item.childCount()):
@@ -382,8 +381,8 @@ def apply_styling_to_all_tree_widgets(parent_widget=None):
     Returns:
         int: Number of tree widgets styled
     """
-    from PyQt5.QtWidgets import QApplication
-    from PyQt5.QtCore import Qt
+    from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtCore import Qt
     
     try:
         from app.ui.tree_item_delegate import TreeItemDelegate
@@ -483,7 +482,7 @@ def _refresh_tree_item_icons(item):
         return
         
     # Get the item's data if it has any
-    item_data = item.data(0, Qt.UserRole)
+    item_data = item.data(0, Qt.ItemDataRole.UserRole)
     
     # If the item has data, update its icon based on the data type and content
     if item_data:

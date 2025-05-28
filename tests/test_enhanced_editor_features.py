@@ -12,9 +12,9 @@ import sys
 import unittest
 import tempfile
 import shutil
-from PyQt5.QtWidgets import QApplication, QTreeWidgetItem
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor
+from PyQt6.QtWidgets import QApplication, QTreeWidgetItem
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -61,11 +61,11 @@ class TestEnhancedEditorFeatures(unittest.TestCase):
         # Add top-level folders
         folder1 = QTreeWidgetItem(root)
         folder1.setText(0, "Top Folder 1")
-        folder1.setData(0, Qt.UserRole, {"type": "folder", "name": "Top Folder 1"})
+        folder1.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Top Folder 1"})
         
         folder2 = QTreeWidgetItem(root)
         folder2.setText(0, "Top Folder 2")
-        folder2.setData(0, Qt.UserRole, {"type": "folder", "name": "Top Folder 2"})
+        folder2.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Top Folder 2"})
         
         # Count before deletion
         count_before = root.childCount()
@@ -90,7 +90,7 @@ class TestEnhancedEditorFeatures(unittest.TestCase):
         root = self.editor.tree_widget.invisibleRootItem()
         test_item = QTreeWidgetItem(root)
         test_item.setText(0, "Test Item")
-        test_item.setData(0, Qt.UserRole, {"type": "folder", "name": "Test Item"})
+        test_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Test Item"})
         
         # Select the test item
         self.editor.tree_widget.setCurrentItem(test_item)
@@ -125,12 +125,12 @@ class TestEnhancedEditorFeatures(unittest.TestCase):
         # Add a folder
         folder_item = QTreeWidgetItem(root)
         folder_item.setText(0, "Test Folder")
-        folder_item.setData(0, Qt.UserRole, {"type": "folder", "name": "Test Folder"})
+        folder_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Test Folder"})
         
         # Add a file
         file_item = QTreeWidgetItem(folder_item)
         file_item.setText(0, "test_file.txt")
-        file_item.setData(0, Qt.UserRole, {"type": "file", "name": "test_file.txt"})
+        file_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "name": "test_file.txt"})
         
         # Apply "Use Project Name" to the file
         self.editor._use_project_name_for_file(file_item)
@@ -140,7 +140,7 @@ class TestEnhancedEditorFeatures(unittest.TestCase):
                         "File should display the placeholder with extension")
         
         # Verify the metadata is set correctly
-        item_data = file_item.data(0, Qt.UserRole)
+        item_data = file_item.data(0, Qt.ItemDataRole.UserRole)
         self.assertTrue(item_data.get('uses_project_name', False), 
                        "File should be marked to use project name")
         self.assertEqual(item_data.get('placeholder'), "${PROJECT_NAME}", 
@@ -154,7 +154,7 @@ class TestEnhancedEditorFeatures(unittest.TestCase):
         
         # Check text color
         foreground = file_item.foreground(0)
-        self.assertNotEqual(foreground.color(), QColor(Qt.black), 
+        self.assertNotEqual(foreground.color(), QColor(Qt.GlobalColor.black), 
                           "Text color should be different from default")
     
     def test_project_name_placeholder_replacement(self):

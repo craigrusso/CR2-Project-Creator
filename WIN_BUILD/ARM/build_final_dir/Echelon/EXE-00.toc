@@ -1,0 +1,88 @@
+('Y:\\WIN_BUILD\\ARM\\build_final_dir\\Echelon\\Echelon.exe',
+ False,
+ False,
+ True,
+ ['Y:\\ICONS\\Echelon.ico'],
+ None,
+ False,
+ False,
+ b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<assembly xmlns='
+ b'"urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">\n  <trustInfo x'
+ b'mlns="urn:schemas-microsoft-com:asm.v3">\n    <security>\n      <requested'
+ b'Privileges>\n        <requestedExecutionLevel level="asInvoker" uiAccess='
+ b'"false"/>\n      </requestedPrivileges>\n    </security>\n  </trustInfo>\n  '
+ b'<application xmlns="urn:schemas-microsoft-com:asm.v3">\n    <windowsSetti'
+ b'ngs>\n      <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/Window'
+ b'sSettings">true</dpiAware>\n      <dpiAwareness xmlns="http://schemas.mic'
+ b'rosoft.com/SMI/2016/WindowsSettings">PerMonitorV2</dpiAwareness>\n      <'
+ b'ms_windowsSettings:AppUserModelID xmlns:ms_windowsSettings="http://schemas.m'
+ b'icrosoft.com/SMI/2005/WindowsSettings">cr2creative.echelon.1.0.260</ms_windo'
+ b'wsSettings:AppUserModelID>\n      <ms_windowsSettings:taskbarIconResource'
+ b' xmlns:ms_windowsSettings="http://schemas.microsoft.com/SMI/2005/WindowsSett'
+ b'ings">ICONS\\Echelon.ico</ms_windowsSettings:taskbarIconResource>\n    </w'
+ b'indowsSettings>\n  </application>\n  <dependency>\n    <dependentAssembly>\n'
+ b'      <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls'
+ b'" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1'
+ b'df" language="*"/>\n    </dependentAssembly>\n  </dependency>\n  <compatibi'
+ b'lity xmlns="urn:schemas-microsoft-com:compatibility.v1">\n    <applicatio'
+ b'n>\n      <supportedOS Id="{e2011457-1546-43c5-a5fe-008deee3d3f0}"/>\n    '
+ b'  <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}"/>\n      <supp'
+ b'ortedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}"/>\n      <supportedOS'
+ b' Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}"/>\n      <supportedOS Id="{8'
+ b'e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>\n    </application>\n  </compatibi'
+ b'lity>\n</assembly>',
+ True,
+ False,
+ None,
+ None,
+ None,
+ 'Y:\\WIN_BUILD\\ARM\\build_final_dir\\Echelon\\Echelon.pkg',
+ [('pyi-contents-directory _internal', '', 'OPTION'),
+  ('PYZ-00.pyz',
+   'Y:\\WIN_BUILD\\ARM\\build_final_dir\\Echelon\\PYZ-00.pyz',
+   'PYZ'),
+  ('struct',
+   'Y:\\WIN_BUILD\\ARM\\build_final_dir\\Echelon\\localpycs\\struct.pyc',
+   'PYMODULE'),
+  ('pyimod01_archive',
+   'Y:\\WIN_BUILD\\ARM\\build_final_dir\\Echelon\\localpycs\\pyimod01_archive.pyc',
+   'PYMODULE'),
+  ('pyimod02_importers',
+   'Y:\\WIN_BUILD\\ARM\\build_final_dir\\Echelon\\localpycs\\pyimod02_importers.pyc',
+   'PYMODULE'),
+  ('pyimod03_ctypes',
+   'Y:\\WIN_BUILD\\ARM\\build_final_dir\\Echelon\\localpycs\\pyimod03_ctypes.pyc',
+   'PYMODULE'),
+  ('pyimod04_pywin32',
+   'Y:\\WIN_BUILD\\ARM\\build_final_dir\\Echelon\\localpycs\\pyimod04_pywin32.pyc',
+   'PYMODULE'),
+  ('pyiboot01_bootstrap',
+   'y:\\.venv\\Lib\\site-packages\\PyInstaller\\loader\\pyiboot01_bootstrap.py',
+   'PYSOURCE'),
+  ('pyi_rth_pkgutil',
+   '\\\\Mac\\V4\\.venv\\lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_pkgutil.py',
+   'PYSOURCE'),
+  ('pyi_rth_inspect',
+   '\\\\Mac\\V4\\.venv\\lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_inspect.py',
+   'PYSOURCE'),
+  ('pyi_rth_multiprocessing',
+   '\\\\Mac\\V4\\.venv\\lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_multiprocessing.py',
+   'PYSOURCE'),
+  ('pyi_rth_pyqt5',
+   '\\\\Mac\\V4\\.venv\\lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_pyqt5.py',
+   'PYSOURCE'),
+  ('pyi_rth_pkgres',
+   '\\\\Mac\\V4\\.venv\\lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_pkgres.py',
+   'PYSOURCE'),
+  ('pyi_rth_setuptools',
+   '\\\\Mac\\V4\\.venv\\lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_setuptools.py',
+   'PYSOURCE'),
+  ('main', '\\\\Mac\\V4\\main.py', 'PYSOURCE')],
+ [],
+ False,
+ False,
+ 1748299169,
+ [('runw.exe',
+   'y:\\.venv\\Lib\\site-packages\\PyInstaller\\bootloader\\Windows-64bit-intel\\runw.exe',
+   'EXECUTABLE')],
+ 'C:\\Users\\craigrusso\\AppData\\Local\\Programs\\Python\\Python313\\python313.dll')

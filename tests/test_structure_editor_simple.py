@@ -3,7 +3,7 @@
 # Tests just the opening of the structure editor with minimal dependencies
 
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget
 from app.ui.structure_editor_enhanced import EnhancedStructureEditor, show_enhanced_structure_editor
 
 class TestWindow(QMainWindow):
@@ -91,7 +91,7 @@ def main():
     app = QApplication(sys.argv)
     window = TestWindow()
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main() 

@@ -1,0 +1,3 @@
+# Remove get_resource_path function, moved to app/constants.py
+
+# ... rest of utils.py if any ... 

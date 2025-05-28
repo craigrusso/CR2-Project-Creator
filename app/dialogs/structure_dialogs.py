@@ -7,10 +7,10 @@ Dialog windows for displaying and editing project structures.
 
 import os
 import json
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                            QPushButton, QTreeWidget, QTreeWidgetItem,
                            QApplication, QStyle)
-from PyQt5.QtCore import Qt
+from PyQt6.QtCore import Qt
 
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE
 from app.ui.structure_editor_enhanced import EnhancedStructureEditor
@@ -57,18 +57,18 @@ def preview_structure(app, structure):
     # Add root project item
     root_item = QTreeWidgetItem(tree)
     root_item.setText(0, "Project Root")
-    root_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+    root_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
     root_item.setExpanded(True)
     
     # Import needed for file icons
-    from PyQt5.QtWidgets import QFileIconProvider
-    from PyQt5.QtCore import QFileInfo
+    from PyQt6.QtWidgets import QFileIconProvider
+    from PyQt6.QtCore import QFileInfo
     icon_provider = QFileIconProvider()
     
     # Helper function to get file icon by extension
     def get_file_icon(file_name):
         """Get proper system icon for a file based on its extension"""
-        from PyQt5.QtGui import QIcon
+        from PyQt6.QtGui import QIcon
         import os
         
         # Get file extension
@@ -77,15 +77,15 @@ def preview_structure(app, structure):
         # Try to use custom icons which are more visually distinctive
         try:
             # Import directly for better icons
-            from PyQt5.QtWidgets import QStyle
+            from PyQt6.QtWidgets import QStyle
             
             # File type constants - these provide more distinct icons than QFileIconProvider
-            VIDEO_ICON = QApplication.style().standardIcon(QStyle.SP_MediaPlay)
-            AUDIO_ICON = QApplication.style().standardIcon(QStyle.SP_MediaVolume)
-            IMAGE_ICON = QApplication.style().standardIcon(QStyle.SP_DesktopIcon)
-            DOC_ICON = QApplication.style().standardIcon(QStyle.SP_FileDialogDetailedView)
-            CODE_ICON = QApplication.style().standardIcon(QStyle.SP_FileDialogContentsView)
-            ADOBE_ICON = QApplication.style().standardIcon(QStyle.SP_FileLinkIcon)
+            VIDEO_ICON = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+            AUDIO_ICON = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_MediaVolume)
+            IMAGE_ICON = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DesktopIcon)
+            DOC_ICON = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
+            CODE_ICON = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView)
+            ADOBE_ICON = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileLinkIcon)
             
             # More specific file type mapping
             # Video files
@@ -113,8 +113,8 @@ def preview_structure(app, structure):
                 return ADOBE_ICON
                 
             # Now try the system icon provider as a fallback
-            from PyQt5.QtCore import QFileInfo
-            from PyQt5.QtWidgets import QFileIconProvider
+            from PyQt6.QtCore import QFileInfo
+            from PyQt6.QtWidgets import QFileIconProvider
             icon_provider = QFileIconProvider()
             
             # For project name placeholders with extension
@@ -153,7 +153,7 @@ def preview_structure(app, structure):
             print(f"Error getting file icon: {e}")
         
         # Last resort - use generic file icon
-        return QApplication.style().standardIcon(QStyle.SP_FileIcon)
+        return QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
     
     # Helper function to add items recursively
     def add_items(parent_item, items):
@@ -163,10 +163,10 @@ def preview_structure(app, structure):
                 for dir_name, children in item.items():
                     dir_item = QTreeWidgetItem(parent_item)
                     dir_item.setText(0, dir_name)
-                    dir_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+                    dir_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
                     dir_item.setExpanded(True)
                     # Mark as folder in data
-                    dir_item.setData(0, Qt.UserRole, "folder")
+                    dir_item.setData(0, Qt.ItemDataRole.UserRole, "folder")
                     # Add children if any exist
                     if children:
                         add_items(dir_item, children)
@@ -218,20 +218,20 @@ def preview_structure(app, structure):
                     # It's a folder
                     folder_name = item.rstrip('/') if item.endswith('/') else item
                     child_item.setText(0, folder_name)
-                    child_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+                    child_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
                     # Mark as folder in data
-                    child_item.setData(0, Qt.UserRole, "folder")
+                    child_item.setData(0, Qt.ItemDataRole.UserRole, "folder")
                 else:
                     # It's a file
                     child_item.setText(0, item)
                     # Get proper icon for this file type
                     child_item.setIcon(0, get_file_icon(item))
                     # Mark as file in data
-                    child_item.setData(0, Qt.UserRole, "file")
+                    child_item.setData(0, Qt.ItemDataRole.UserRole, "file")
                     
                     # Set special data for project name placeholder files
                     if is_project_file or has_file_emoji:
-                        child_item.setData(0, Qt.UserRole + 3, True)  # Mark as using project name
+                        child_item.setData(0, Qt.ItemDataRole.UserRole + 3, True)  # Mark as using project name
     
     # Add structure items
     add_items(root_item, structure)
@@ -245,7 +245,7 @@ def preview_structure(app, structure):
     close_button.clicked.connect(dialog.accept)
     layout.addWidget(close_button)
     
-    dialog.exec_()
+    dialog.exec()
 
 def edit_template_structure(parent, template, structure_tab):
     """Open enhanced structure editor for the template"""
@@ -352,7 +352,7 @@ def populate_structure_tree(parent_item, structure_items):
             for folder_name, sub_items in item.items():
                 folder_item = QTreeWidgetItem(parent_item)
                 folder_item.setText(0, folder_name)
-                folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+                folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
                 
                 # Recursively add subitems
                 populate_structure_tree(folder_item, sub_items)
@@ -394,13 +394,13 @@ def populate_structure_tree(parent_item, structure_items):
             tree_item.setText(0, item)
             
             if is_folder:
-                tree_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+                tree_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
                 # Store that this is a folder in the data
-                tree_item.setData(0, Qt.UserRole, "folder")
+                tree_item.setData(0, Qt.ItemDataRole.UserRole, "folder")
             else:
-                tree_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+                tree_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
                 # Store that this is a file in the data
-                tree_item.setData(0, Qt.UserRole, "file")
+                tree_item.setData(0, Qt.ItemDataRole.UserRole, "file")
 
 def import_template_structure(parent, template, structure_tab):
     """Import a structure from an existing template"""
@@ -413,7 +413,7 @@ def preview_template_structure(parent, template, structure_tab):
     # Get structure from template
     structure = template.get('structure', [])
     if not structure:
-        from PyQt5.QtWidgets import QMessageBox
+        from PyQt6.QtWidgets import QMessageBox
         QMessageBox.warning(parent, "No Structure", 
                            "This template has no structure defined yet.")
         return

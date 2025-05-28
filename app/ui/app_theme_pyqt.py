@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
-from PyQt5.QtWidgets import QWidget, QLabel, QLineEdit, QPushButton, QComboBox, QFrame, QListView, QAbstractItemView, QStyledItemDelegate, QApplication, QProxyStyle, QStyle
-from PyQt5.QtCore import Qt, QEvent, QObject, QRect, QSize
-from PyQt5.QtGui import QPalette, QColor, QPainter, QBrush, QPen, QFont, QPixmap, QPainterPath
+from PyQt6.QtWidgets import QWidget, QLabel, QLineEdit, QPushButton, QComboBox, QFrame, QListView, QAbstractItemView, QStyledItemDelegate, QApplication, QProxyStyle, QStyle
+from PyQt6.QtCore import Qt, QEvent, QObject, QRect, QSize
+from PyQt6.QtGui import QPalette, QColor, QPainter, QBrush, QPen, QFont, QPixmap, QPainterPath
 import sys, time
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE, LINEEDIT_STYLE, LABEL_STYLE, LISTVIEW_POPUP_STYLE, MESSAGE_BOX_BUTTON_STYLE, DIALOG_BUTTON_STYLE
 import platform
@@ -14,26 +14,26 @@ def force_app_palette(app):
     dark_palette = QPalette()
     
     # Set up the dark palette
-    dark_palette.setColor(QPalette.Window, QColor(colors['bg']))
-    dark_palette.setColor(QPalette.WindowText, QColor(colors['text']))
-    dark_palette.setColor(QPalette.Base, QColor(colors['card_bg']))
-    dark_palette.setColor(QPalette.AlternateBase, QColor(colors['bg']))
-    dark_palette.setColor(QPalette.ToolTipBase, QColor(colors['card_bg']))
-    dark_palette.setColor(QPalette.ToolTipText, QColor(colors['text']))
-    dark_palette.setColor(QPalette.Text, QColor(colors['text']))
-    dark_palette.setColor(QPalette.Button, QColor(colors['card_bg']))
-    dark_palette.setColor(QPalette.ButtonText, QColor(colors['text']))
-    dark_palette.setColor(QPalette.BrightText, QColor(colors['highlight_text']))
-    dark_palette.setColor(QPalette.Link, QColor(colors['accent']))
-    dark_palette.setColor(QPalette.Highlight, QColor(colors['highlight_bg']))
-    dark_palette.setColor(QPalette.HighlightedText, QColor(colors['highlight_text']))
+    dark_palette.setColor(QPalette.ColorRole.Window, QColor(colors['bg']))
+    dark_palette.setColor(QPalette.ColorRole.WindowText, QColor(colors['text']))
+    dark_palette.setColor(QPalette.ColorRole.Base, QColor(colors['card_bg']))
+    dark_palette.setColor(QPalette.ColorRole.AlternateBase, QColor(colors['bg']))
+    dark_palette.setColor(QPalette.ColorRole.ToolTipBase, QColor(colors['card_bg']))
+    dark_palette.setColor(QPalette.ColorRole.ToolTipText, QColor(colors['text']))
+    dark_palette.setColor(QPalette.ColorRole.Text, QColor(colors['text']))
+    dark_palette.setColor(QPalette.ColorRole.Button, QColor(colors['card_bg']))
+    dark_palette.setColor(QPalette.ColorRole.ButtonText, QColor(colors['text']))
+    dark_palette.setColor(QPalette.ColorRole.BrightText, QColor(colors['highlight_text']))
+    dark_palette.setColor(QPalette.ColorRole.Link, QColor(colors['accent']))
+    dark_palette.setColor(QPalette.ColorRole.Highlight, QColor(colors['highlight_bg']))
+    dark_palette.setColor(QPalette.ColorRole.HighlightedText, QColor(colors['highlight_text']))
     
     # Add additional macOS specific palette settings
-    dark_palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor(colors['secondary_text']))
-    dark_palette.setColor(QPalette.Disabled, QPalette.Text, QColor(colors['secondary_text']))
-    dark_palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(colors['secondary_text']))
-    dark_palette.setColor(QPalette.Inactive, QPalette.Highlight, QColor(colors['highlight_bg']))
-    dark_palette.setColor(QPalette.Inactive, QPalette.HighlightedText, QColor(colors['highlight_text']))
+    dark_palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.WindowText, QColor(colors['secondary_text']))
+    dark_palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, QColor(colors['secondary_text']))
+    dark_palette.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, QColor(colors['secondary_text']))
+    dark_palette.setColor(QPalette.ColorGroup.Inactive, QPalette.ColorRole.Highlight, QColor(colors['highlight_bg']))
+    dark_palette.setColor(QPalette.ColorGroup.Inactive, QPalette.ColorRole.HighlightedText, QColor(colors['highlight_text']))
     
     # Apply the palette
     app.setPalette(dark_palette)
@@ -94,7 +94,7 @@ class ComboBoxItemDelegate(QStyledItemDelegate):
         
         # Setup the painter
         painter.save()
-        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         # Define colors based on state
         bg_color = QColor(colors['card_bg'])
@@ -137,7 +137,7 @@ class ComboBoxItemDelegate(QStyledItemDelegate):
             painter.fillRect(rect, bg_color)
         
         # Draw the text
-        text = index.data(Qt.DisplayRole)
+        text = index.data(Qt.ItemDataRole.DisplayRole)
         painter.setPen(QPen(text_color))
         
         # Use bold font for hovered items
@@ -148,7 +148,7 @@ class ComboBoxItemDelegate(QStyledItemDelegate):
         
         # Text padding - leave space for left border
         text_rect = rect.adjusted(10, 0, -5, 0)
-        painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, text)
+        painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
         
         painter.restore()
 
@@ -194,6 +194,9 @@ def configure_styles(app):
             background-color: {colors['bg']};
             color: {colors['text']};
         }}
+        
+        /* Apply QLineEdit styling */
+        {LINEEDIT_STYLE}
         
         /* Force macOS menu bar to use dark theme */
         QMenuBar {{
@@ -420,10 +423,10 @@ def configure_styles(app):
     def create_checkmark_icon():
         size = 14  # Size of the checkmark icon
         pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.transparent)  # Start with transparent background
+        pixmap.fill(Qt.GlobalColor.transparent)  # Start with transparent background
         
         painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         
         # Draw checkmark path
         path = QPainterPath()
@@ -453,10 +456,10 @@ def configure_styles(app):
             super().drawControl(element, option, painter, widget)
             
             # If this is a checkbox indicator and it's checked, draw our checkmark
-            if element == QStyle.CE_CheckBox or element == QStyle.CE_CheckBoxLabel:
-                if option.state & QStyle.State_On:  # If checked
+            if element == QStyle.ControlElement.CE_CheckBox or element == QStyle.ControlElement.CE_CheckBoxLabel:
+                if option.state & QStyle.State.State_On:  # If checked
                     # Get the indicator rect
-                    rect = self.subElementRect(QStyle.SE_CheckBoxIndicator, option, widget)
+                    rect = self.subElementRect(QStyle.SubElement.SE_CheckBoxIndicator, option, widget)
                     
                     # Calculate position to center the checkmark in the indicator
                     x = rect.x() + (rect.width() - self.checkmark.width()) // 2
@@ -467,7 +470,7 @@ def configure_styles(app):
             
         def drawPrimitive(self, element, option, painter, widget=None):
             # If this is a checkbox indicator and it's checked, handle custom drawing
-            if element == QStyle.PE_IndicatorCheckBox and option.state & QStyle.State_On:
+            if element == QStyle.PrimitiveElement.PE_IndicatorCheckBox and option.state & QStyle.State.State_On:
                 # Draw the blue background and border (already done by stylesheet)
                 super().drawPrimitive(element, option, painter, widget)
                 

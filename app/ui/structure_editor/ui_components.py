@@ -8,14 +8,14 @@ Handles building and managing UI elements
 
 import os
 import json
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
-    QTreeWidget, QTreeWidgetItem, QHeaderView, QMenu, QAction,
+    QTreeWidget, QTreeWidgetItem, QHeaderView, QMenu,
     QMessageBox, QTextEdit, QComboBox, QCheckBox, QSplitter, QWidget, 
-    QSizePolicy, QGroupBox, QFormLayout, QFrame, QTabWidget, QFileDialog, QInputDialog, QListWidget, QDialog, QApplication, QStyle
+    QSizePolicy, QGroupBox, QFormLayout, QFrame, QTabWidget, QFileDialog, QInputDialog, QListWidget, QDialog, QApplication, QStyle, QAbstractItemView
 )
-from PyQt5.QtCore import Qt, QSize, pyqtSignal, QTimer, QSettings, QObject
-from PyQt5.QtGui import QFont, QIcon, QColor, QPalette, QPainter, QDrag, QDropEvent, QPixmap, QCursor, QStandardItemModel, QStandardItem
+from PyQt6.QtCore import Qt, QSize, pyqtSignal, QTimer, QSettings, QObject
+from PyQt6.QtGui import QFont, QIcon, QColor, QPalette, QPainter, QDrag, QDropEvent, QPixmap, QCursor, QStandardItemModel, QStandardItem, QAction
 
 # Import the main application colors
 from app.ui.color_scheme_pyqt import APP_COLORS, BUTTON_STYLE, ACCENT_BUTTON_STYLE, CONTEXT_MENU_STYLE
@@ -29,14 +29,19 @@ from app.constants import DEFAULT_TEMPLATE_CATEGORIES, get_resource_path
 class StructureEditorTree(QTreeWidget):
     """Enhanced QTreeWidget for structure editing with improved styling"""
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, context_menu_handler=None):
         super().__init__(parent)
+        self.context_menu_handler = context_menu_handler
         self.setHeaderLabels(["Name"])
-        self.setSelectionMode(QTreeWidget.ExtendedSelection)
-        self.setDragEnabled(True)
-        self.setDragDropMode(QTreeWidget.InternalMove)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.setDropIndicatorShown(True)
         self.setIndentation(20)
+        self.setAlternatingRowColors(True)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        if self.context_menu_handler:
+            self.customContextMenuRequested.connect(self.context_menu_handler)
+        # self.setAttribute(Qt.WA_MacShowFocusRect, False) # Commented out for Qt6 compatibility
         
         # Add placeholder text attribute
         self.placeholder_text = "Drop Files and Folders Here"
@@ -105,13 +110,10 @@ class StructureEditorTree(QTreeWidget):
         self.setRootIsDecorated(True)
         self.setItemsExpandable(True)
         
-        # Disable focus rectangle on macOS
-        self.setAttribute(Qt.WA_MacShowFocusRect, False)
-        
         # Make all items editable with the right triggers
-        self.setEditTriggers(QTreeWidget.DoubleClicked | 
-                             QTreeWidget.EditKeyPressed | 
-                             QTreeWidget.SelectedClicked)
+        self.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked |
+                             QAbstractItemView.EditTrigger.EditKeyPressed |
+                             QAbstractItemView.EditTrigger.SelectedClicked)
     
     def setPlaceholderText(self, text):
         """Set the placeholder text to display when tree is empty"""
@@ -136,7 +138,7 @@ class StructureEditorTree(QTreeWidget):
             
             # Calculate text rectangle and draw centered text
             rect = self.viewport().rect()
-            painter.drawText(rect, Qt.AlignCenter, self.placeholder_text)
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.placeholder_text)
             
             painter.restore()
 
@@ -199,7 +201,7 @@ class StructureEditor(QDialog):
         # Add a root item
         self.root_item = QTreeWidgetItem(self.tree)
         self.root_item.setText(0, "Project Root")
-        self.root_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+        self.root_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
         self.root_item.setExpanded(True)
         
         # Populate tree with existing structure if available
@@ -253,8 +255,8 @@ class StructureEditor(QDialog):
                 # Folder with name and children
                 folder_item = QTreeWidgetItem(parent_item)
                 folder_item.setText(0, item['name'])
-                folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-                folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+                folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+                folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
                 
                 # Recursively add children
                 if 'children' in item:
@@ -263,15 +265,15 @@ class StructureEditor(QDialog):
                 # File item
                 file_item = QTreeWidgetItem(parent_item)
                 file_item.setText(0, item)
-                file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-                file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+                file_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+                file_item.setFlags(file_item.flags() | Qt.ItemFlag.ItemIsEditable)
             else:
                 # Dictionary with folder name as key
                 for folder_name, children in item.items():
                     folder_item = QTreeWidgetItem(parent_item)
                     folder_item.setText(0, folder_name)
-                    folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-                    folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+                    folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+                    folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
                     
                     # Recursively add children
                     if isinstance(children, list):
@@ -287,8 +289,8 @@ class StructureEditor(QDialog):
         if ok and folder_name:
             folder_item = QTreeWidgetItem(parent_item)
             folder_item.setText(0, folder_name)
-            folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-            folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+            folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+            folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
             parent_item.setExpanded(True)
     
     def _add_file(self):
@@ -301,8 +303,8 @@ class StructureEditor(QDialog):
         if ok and file_name:
             file_item = QTreeWidgetItem(parent_item)
             file_item.setText(0, file_name)
-            file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-            file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+            file_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+            file_item.setFlags(file_item.flags() | Qt.ItemFlag.ItemIsEditable)
             parent_item.setExpanded(True)
     
     def _remove_item(self):
@@ -343,8 +345,8 @@ class StructureEditor(QDialog):
         # Create folder item
         folder_item = QTreeWidgetItem(parent_item)
         folder_item.setText(0, folder_name)
-        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-        folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
         try:
             # Get all items in the folder
@@ -364,8 +366,8 @@ class StructureEditor(QDialog):
                     # Add file
                     file_item = QTreeWidgetItem(folder_item)
                     file_item.setText(0, item)
-                    file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-                    file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+                    file_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+                    file_item.setFlags(file_item.flags() | Qt.ItemFlag.ItemIsEditable)
             
             # Expand the folder
             folder_item.setExpanded(True)
@@ -412,7 +414,7 @@ class StructureEditor(QDialog):
             child = parent_item.child(i)
             
             # Check if it has a folder icon
-            is_folder = child.icon(0).cacheKey() == QApplication.style().standardIcon(QStyle.SP_DirIcon).cacheKey()
+            is_folder = child.icon(0).cacheKey() == QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon).cacheKey()
             
             if is_folder:
                 if child.childCount() > 0:
@@ -530,10 +532,11 @@ class UIBuilder(QObject):
         top_section_layout = QHBoxLayout()
         # Use QFormLayout for the top form fields
         form_layout = QFormLayout()
-        form_layout.setRowWrapPolicy(QFormLayout.DontWrapRows)
-        form_layout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
-        form_layout.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        form_layout.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
+        form_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        form_layout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
+        form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        form_layout.setContentsMargins(5, 5, 5, 5)
+        form_layout.setFormAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         form_layout.setHorizontalSpacing(10)
         form_layout.setVerticalSpacing(10)
 
@@ -575,7 +578,7 @@ class UIBuilder(QObject):
 
         # --- Category Field ---
         self.template_category_field = QComboBox()
-        self.template_category_field.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.template_category_field.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.template_category_field.setEditable(False) # Typically non-editable
         self.template_category_field.setObjectName("template_category_combo_box")
 
@@ -653,7 +656,7 @@ class UIBuilder(QObject):
         self.template_info_field = QTextEdit()
         self.template_info_field.setPlaceholderText("Enter template description")
         self.template_info_field.setFixedHeight(80) # Set a fixed height
-        self.template_info_field.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed) # Expand horizontally only
+        self.template_info_field.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed) # Expand horizontally only
         self.template_info_field.setStyleSheet(f"""
             QTextEdit {{
                 background-color: {colors['card_bg']};
@@ -683,7 +686,7 @@ class UIBuilder(QObject):
         
         # Structure header label
         structure_header = QLabel("Project Structure")
-        structure_header.setFont(QFont(structure_header.font().family(), 12, QFont.Bold))
+        structure_header.setFont(QFont(structure_header.font().family(), 12, QFont.Weight.Bold))
         structure_header.setStyleSheet(f"color: {colors['text']}; padding-top: 10px; padding-bottom: 5px; border: none; background-color: transparent;")
         structure_header_layout.addWidget(structure_header)
         
@@ -700,7 +703,7 @@ class UIBuilder(QObject):
         # Create the search field
         self.search_field = QLineEdit()
         self.search_field.setPlaceholderText("Search for file or folder in structure...")
-        self.search_field.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.search_field.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.search_field.setStyleSheet(f"""
             QLineEdit {{
                 background-color: {colors['card_bg']};
@@ -716,9 +719,8 @@ class UIBuilder(QObject):
         """)
         self.search_field.textChanged.connect(self._filter_structure)
 
-        # Add clear action to the search field
-        clear_action = self.search_field.addAction(QApplication.style().standardIcon(QStyle.SP_LineEditClearButton), QLineEdit.TrailingPosition)
-        clear_action.setToolTip("Clear search")
+        # Add clear button to search field
+        clear_action = self.search_field.addAction(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_LineEditClearButton), QLineEdit.ActionPosition.TrailingPosition)
         clear_action.triggered.connect(self._clear_search)
         # Make the clear action visible only when there's text
         self.search_field.textChanged.connect(lambda text: clear_action.setVisible(bool(text)))
@@ -733,7 +735,7 @@ class UIBuilder(QObject):
         structure_layout.addLayout(structure_header_layout)
         
         # Create the structure tree widget
-        self.tree = StructureEditorTree()
+        self.tree = StructureEditorTree(context_menu_handler=self._show_context_menu)
         
         # Set a placeholder message for empty tree
         self.tree.setPlaceholderText("Drop Files and Folders Here")
@@ -818,20 +820,20 @@ class UIBuilder(QObject):
 
         # --- Final Assembly using Splitter ---
         # Create a splitter to separate the form from the structure tree
-        splitter = QSplitter(Qt.Vertical) # Split vertically
+        splitter = QSplitter(Qt.Orientation.Vertical) # Split vertically
 
         # Create container widget for the top form section
         top_widget = QWidget()
         top_widget.setLayout(top_section_layout)
         # Set a reasonable initial height, but allow shrinking
         top_widget.setFixedHeight(200) 
-        top_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        top_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         splitter.addWidget(top_widget)
 
         # Create container widget for the bottom structure section
         bottom_widget = QWidget()
         bottom_widget.setLayout(structure_layout)
-        bottom_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        bottom_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         splitter.addWidget(bottom_widget)
 
         # Set initial sizes for splitter sections (adjust ratio as needed)
@@ -1095,50 +1097,44 @@ class UIBuilder(QObject):
                 }}
             """)
             
-            # Actions for selected item
+            # Add item-specific actions if an item is clicked
             if item:
-                add_file_here = menu.addAction("Add File Here")
-                add_folder_here = menu.addAction("Add Folder Here")
                 menu.addSeparator()
-                rename_item = menu.addAction("Rename")
-                
-                # Add project name option for files
-                if not item.childCount(): # It's a file (no children)
+                rename_action = menu.addAction("Rename")
+                rename_action.triggered.connect(lambda bound_item=item: self.tree.editItem(bound_item, 0))
+
+                delete_action = menu.addAction("Delete")
+                delete_action.triggered.connect(lambda bound_item=item: self.editor.file_operations.delete_item_confirmed(bound_item))
+                    
+                # Ensure the item's visual state is up-to-date before reading its data
+                self.tree.viewport().update(self.tree.visualItemRect(item))
+
+                # Add "Use Project Name" or "Revert to Original Name" action for files
+                item_data = item.data(0, Qt.ItemDataRole.UserRole)
+                if isinstance(item_data, dict) and item_data.get('type') == 'file':
                     menu.addSeparator()
-                    # Add options for file renaming with project name
-                    use_project_name = menu.addAction("Use Project Name for File")
-                    use_project_name.setCheckable(True)
-                    
-                    # Check if item has flag for using project name
-                    if item.data(0, Qt.UserRole) and 'uses_project_name' in item.data(0, Qt.UserRole):
-                        use_project_name.setChecked(item.data(0, Qt.UserRole)['uses_project_name'])
-                    
-                menu.addSeparator()
-                delete_item = menu.addAction("Delete")
+                    action_text = "Revert to Original Name" if item_data.get('rename_flag') or item_data.get('uses_project_name') else "Use Project Name"
+                    use_project_name_action = menu.addAction(action_text)
+                    use_project_name_action.setEnabled(True)
+                    # CORRECTED CONNECTION: Connect to the editor's method
+                    use_project_name_action.triggered.connect(lambda bound_item=item: self.editor._toggle_project_name_for_file(bound_item))
                 
-                # Connect signals for item-related actions
-                add_file_here.triggered.connect(lambda: self.editor.add_file(item))
-                add_folder_here.triggered.connect(lambda: self.editor.add_folder(item))
-                rename_item.triggered.connect(lambda: self._rename_item(item))
-                delete_item.triggered.connect(lambda: self.editor._delete_item(item))
-                
-                # Connect project name action if it exists
-                if not item.childCount():
-                    use_project_name.triggered.connect(lambda: self._toggle_project_name_for_file(item))
-            else:
-                # Global actions
-                add_file = menu.addAction("Add File")
-                add_folder = menu.addAction("Add Folder")
-                menu.addSeparator()
-                import_structure = menu.addAction("Import Structure...")
-                
-                # Connect signals for global actions
-                add_file.triggered.connect(self.editor.add_file)
-                add_folder.triggered.connect(self.editor.add_folder)
-                import_structure.triggered.connect(self._import_structure)
+                    # Add new placeholder actions
+                    prepend_action = menu.addAction("Prepend Project Name")
+                    prepend_action.setEnabled(False) # Placeholder
+
+                    append_action = menu.addAction("Append Project Name")
+                    append_action.setEnabled(False) # Placeholder
+
+                    custom_action = menu.addAction("Custom Rename...")
+                    custom_action.setEnabled(False) # Placeholder
+                else:
+                    use_project_name_action = None
+                    rename_action = None
+                    delete_action = None
             
             # Show the menu at the cursor position
-            menu.exec_(self.tree.viewport().mapToGlobal(position))
+            menu.exec(self.tree.viewport().mapToGlobal(position))
             
         except Exception as e:
             print(f"ERROR showing context menu: {e}")
@@ -1174,7 +1170,7 @@ class UIBuilder(QObject):
             file_dialog.setFileMode(QFileDialog.ExistingFile)
             
             # Show dialog and get selected file
-            if file_dialog.exec_():
+            if file_dialog.exec():
                 file_paths = file_dialog.selectedFiles()
                 if not file_paths:
                     return
@@ -1257,7 +1253,7 @@ class UIBuilder(QObject):
         print(f"UIBuilder: Opening category manager with initial categories: {manager_categories}")
         
         manager = CategoryManager(parent=self.editor, categories=manager_categories)
-        if manager.exec_() == QDialog.Accepted:
+        if manager.exec() == QDialog.Accepted:
             # Categories are saved via ProjectTypeManager now.
             # Dropdowns are updated dynamically via _update_ui_dropdowns 
             # when the setting changes or categories are added/removed in the manager.
@@ -1299,8 +1295,8 @@ class UIBuilder(QObject):
                 total_items += 1
                 
                 # Determine if it's a file or folder based on icon
-                if child.childCount() > 0 or (hasattr(child, 'data') and child.data(0, Qt.UserRole) and 
-                   isinstance(child.data(0, Qt.UserRole), dict) and child.data(0, Qt.UserRole).get('type') == 'folder'):
+                if child.childCount() > 0 or (hasattr(child, 'data') and child.data(0, Qt.ItemDataRole.UserRole) and 
+                   isinstance(child.data(0, Qt.ItemDataRole.UserRole), dict) and child.data(0, Qt.ItemDataRole.UserRole).get('type') == 'folder'):
                     folders += 1
                 else:
                     files += 1
@@ -1377,8 +1373,8 @@ class UIBuilder(QObject):
             print(f"[SET UI DEBUG] Dropdown items: {dropdown_items}")
             
             # Find and select the matching category
-            # Use Qt.MatchFixedString for exact match
-            index = self.template_category_field.findText(category_to_select, Qt.MatchFixedString)
+            # Use Qt.MatchFlag.MatchFixedString for exact match
+            index = self.template_category_field.findText(category_to_select, Qt.MatchFlag.MatchFixedString)
             
             print(f"[SET UI DEBUG] Found index for '{category_to_select}': {index}")
             

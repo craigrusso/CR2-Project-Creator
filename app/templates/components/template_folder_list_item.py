@@ -1,7 +1,7 @@
 from app.constants import get_resource_path
-from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QApplication, QStyle, QMessageBox
-from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QEvent, QMimeData, QByteArray
-from PyQt5.QtGui import QFont, QIcon, QPixmap, QPainter, QColor
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QApplication, QStyle, QMessageBox
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer, QEvent, QMimeData, QByteArray
+from PyQt6.QtGui import QFont, QIcon, QPixmap, QPainter, QColor
 import json
 
 from app.ui.color_scheme_pyqt import colors
@@ -23,9 +23,9 @@ class TemplateFolderListItem(QFrame):
         self.selected = False
         self.is_renaming = False
         self.setAcceptDrops(True)  # Enable drops
-        self.setCursor(Qt.PointingHandCursor)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setFocusPolicy(Qt.StrongFocus)  # Ensure list item can receive keyboard focus
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # Ensure list item can receive keyboard focus
         # Increase the fixed height to accommodate the larger icon
         self.setFixedHeight(44)
         
@@ -47,7 +47,7 @@ class TemplateFolderListItem(QFrame):
         self.folder_name_label = QLabel(folder_name)
         self.folder_name_label.setStyleSheet(f"color: {colors.get('text', '#FFFFFF')}; background-color: transparent;")
         # Increase font size to better match grid view (was 10)
-        self.folder_name_label.setFont(QFont("Segoe UI", 11, QFont.Bold))
+        self.folder_name_label.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         self.layout.addWidget(self.folder_name_label, 1)  # Stretch factor
         
         # Create rename field (hidden by default)
@@ -70,7 +70,7 @@ class TemplateFolderListItem(QFrame):
         try:
             # Get standard system folder icon
             style = QApplication.style()
-            icon = style.standardIcon(QStyle.SP_DirIcon)
+            icon = style.standardIcon(QStyle.StandardPixmap.SP_DirIcon)
             original_pixmap = icon.pixmap(width, height)
             
             if not original_pixmap.isNull():
@@ -79,7 +79,7 @@ class TemplateFolderListItem(QFrame):
                 
                 # Create a mask from non-transparent pixels
                 # This ensures we only color the actual folder shape
-                mask = pixmap.createMaskFromColor(Qt.transparent, Qt.MaskOutColor)
+                mask = pixmap.createMaskFromColor(Qt.GlobalColor.transparent, Qt.MaskMode.MaskOutColor)
                 
                 # Create painter to modify the pixmap
                 painter = QPainter(pixmap)
@@ -89,7 +89,7 @@ class TemplateFolderListItem(QFrame):
                 folder_color = QColor(colors.get('macos_folder_icon', '#3897F0'))
                 
                 # Use CompositionMode_SourceIn to preserve transparency
-                painter.setCompositionMode(QPainter.CompositionMode_SourceIn)
+                painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
                 painter.fillRect(pixmap.rect(), folder_color)
                 painter.end()
                 
@@ -247,7 +247,7 @@ class TemplateFolderListItem(QFrame):
         
     def mousePressEvent(self, event):
         """Set focus to this item when clicked"""
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self.setFocus()
             self.clicked.emit(self.folder_name)
         super().mousePressEvent(event)
@@ -420,7 +420,7 @@ class TemplateFolderListItem(QFrame):
                 self.app.show_status_message(f"Added {success_count} templates to folder '{self.folder_name}'", "info")
             
             # Set drop action and accept
-            event.setDropAction(Qt.MoveAction)
+            event.setDropAction(Qt.DropAction.MoveAction)
             event.accept()
             
             # Refresh the gallery to show the updated contents
@@ -449,10 +449,10 @@ class TemplateFolderListItem(QFrame):
     def keyPressEvent(self, event):
         """Handle key press events for rename operation and deletion"""
         if self.is_renaming:
-            if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+            if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
                 # Finish renaming
                 self._finish_rename()
-            elif event.key() == Qt.Key_Escape:
+            elif event.key() == Qt.Key.Key_Escape:
                 # Cancel renaming
                 self.is_renaming = False
                 # Hide rename field, show original label
@@ -461,7 +461,7 @@ class TemplateFolderListItem(QFrame):
                 if hasattr(self, 'title'):
                     self.title.show()
         # Handle both Delete and Backspace (for Mac) for folder deletion when selected
-        elif (event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace) and self.selected:
+        elif (event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace) and self.selected:
             print(f"[DEBUG] Folder List Item: Delete/Backspace key pressed for folder '{self.folder_name}'")
             success = self._delete_folder()
             # Consume the event

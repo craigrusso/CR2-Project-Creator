@@ -8,7 +8,7 @@ This script ensures that our logging system works correctly.
 
 import os
 import sys
-from PyQt5.QtCore import QCoreApplication
+from PyQt6.QtCore import QCoreApplication
 
 # Set up QCoreApplication for QSettings to work properly
 QCoreApplication.setOrganizationName("CR2 Creative")

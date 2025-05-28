@@ -33,15 +33,15 @@ if getattr(sys, 'frozen', False):
     print(f"app directory exists: {os.path.exists(os.path.join(bundle_dir, 'app'))}")
 
 # Now proceed with the original imports
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt, QCoreApplication
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import Qt, QCoreApplication
 from app.core.app_module_pyqt import ProjectCreatorApp
 from app.config.app_config import APP_NAME, APP_VERSION, setup_dpi_awareness
 from app.ui.app_theme_pyqt import apply_dark_theme_to_template_section, force_app_palette, configure_styles
 from app.templates.template_manager_migration import TemplateManagerMigration
 from app.ui.tree_styling import apply_styling_to_all_tree_widgets
 # Import QSettings if not already imported (might be handled by PyQt5 import)
-from PyQt5.QtCore import QSettings 
+from PyQt6.QtCore import QSettings 
 
 # This is the PyQt version of the application
 UI_FRAMEWORK = 'pyqt'
@@ -186,7 +186,7 @@ def main():
         # ------------------------------------------
         
         # print("DEBUG: Starting application main loop")
-        return app.exec_()
+        return app.exec()
     except Exception as e:
         print(f"CRITICAL ERROR during application startup: {e}")
         import traceback

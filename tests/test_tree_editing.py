@@ -2,10 +2,10 @@
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
 import sys
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem, 
                              QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QLabel, QStyle)
-from PyQt5.QtCore import Qt, QTimer, QSize
-from PyQt5.QtGui import QIcon
+from PyQt6.QtCore import Qt, QTimer, QSize
+from PyQt6.QtGui import QIcon
 
 # Import styling and color scheme
 from app.ui.tree_styling import apply_tree_styling
@@ -103,8 +103,8 @@ class TreeEditingTestWindow(QMainWindow):
         # Create root items
         project_root = QTreeWidgetItem(self.tree)
         project_root.setText(0, "Project Root")
-        project_root.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-        project_root.setFlags(project_root.flags() | Qt.ItemIsEditable)
+        project_root.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        project_root.setFlags(project_root.flags() | Qt.ItemFlag.ItemIsEditable)
         
         # Add some folders with nested structure
         folders = [
@@ -119,8 +119,8 @@ class TreeEditingTestWindow(QMainWindow):
         for folder_name in folders:
             folder_item = QTreeWidgetItem(project_root)
             folder_item.setText(0, folder_name)
-            folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-            folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+            folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+            folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
             folder_items[folder_name] = folder_item
         
         # Add subfolders
@@ -128,8 +128,8 @@ class TreeEditingTestWindow(QMainWindow):
         for subfolder in video_subfolders:
             subfolder_item = QTreeWidgetItem(folder_items["01_VIDEO_ASSETS"])
             subfolder_item.setText(0, subfolder)
-            subfolder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-            subfolder_item.setFlags(subfolder_item.flags() | Qt.ItemIsEditable)
+            subfolder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+            subfolder_item.setFlags(subfolder_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
         # Add some files to the folders
         files = {
@@ -144,8 +144,8 @@ class TreeEditingTestWindow(QMainWindow):
             for file_name in file_list:
                 file_item = QTreeWidgetItem(folder_item)
                 file_item.setText(0, file_name)
-                file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-                file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+                file_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+                file_item.setFlags(file_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
         # Expand root
         project_root.setExpanded(True)
@@ -160,8 +160,8 @@ class TreeEditingTestWindow(QMainWindow):
         # Create new folder
         folder_item = QTreeWidgetItem(parent_item)
         folder_item.setText(0, "New Folder")
-        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-        folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
         # Expand parent
         parent_item.setExpanded(True)
@@ -179,8 +179,8 @@ class TreeEditingTestWindow(QMainWindow):
         # Create new file
         file_item = QTreeWidgetItem(parent_item)
         file_item.setText(0, "new_file.txt")
-        file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-        file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+        file_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+        file_item.setFlags(file_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
         # Expand parent
         parent_item.setExpanded(True)
@@ -270,4 +270,4 @@ if __name__ == "__main__":
     window.show()
     
     # Run application
-    sys.exit(app.exec_()) 
+    sys.exit(app.exec()) 

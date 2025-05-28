@@ -106,7 +106,7 @@ if __name__ == "__main__":
     
     # Try to get the app instance
     try:
-        from PyQt5.QtWidgets import QApplication
+        from PyQt6.QtWidgets import QApplication
         app_instance = QApplication.instance()
         if app_instance:
             # Try to find the main window

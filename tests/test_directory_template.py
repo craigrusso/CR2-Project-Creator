@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QDialog, QMessageBox
+from PyQt6.QtCore import Qt
 
 from app.templates.template_operations import TemplateOperations
 from app.templates.template_manager import TemplateManager

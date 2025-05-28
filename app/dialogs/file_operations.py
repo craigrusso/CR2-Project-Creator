@@ -6,8 +6,8 @@ File and directory operation utilities for dialog windows.
 """
 
 import os
-from PyQt5.QtWidgets import (QTreeWidgetItem, QStyle, QApplication)
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import (QTreeWidgetItem, QStyle, QApplication)
+from PyQt6.QtCore import Qt
 
 def process_dropped_file(file_path, parent_item):
     """Process a file dropped onto the tree"""
@@ -20,7 +20,7 @@ def process_dropped_file(file_path, parent_item):
         
     # Create a file item
     file_item = QTreeWidgetItem(parent_item, [file_name, "File"])
-    file_item.setData(0, Qt.UserRole, file_path)  # Store the original path
+    file_item.setData(0, Qt.ItemDataRole.UserRole, file_path)  # Store the original path
     
     # Auto-expand the parent
     parent_item.setExpanded(True)
@@ -40,7 +40,7 @@ def process_dropped_directory(dir_path, parent_item):
     # Add the directory to the tree
     folder_item = QTreeWidgetItem(parent_item)
     folder_item.setText(0, dir_name)
-    folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+    folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
     folder_item.setExpanded(True)
     
     # Add all subdirectories and files
@@ -74,8 +74,8 @@ def add_file_to_tree(file_path, parent_item):
     # Create a file item
     file_item = QTreeWidgetItem(parent_item)
     file_item.setText(0, file_name)
-    file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-    file_item.setData(0, Qt.UserRole, file_path)  # Store the original path
+    file_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+    file_item.setData(0, Qt.ItemDataRole.UserRole, file_path)  # Store the original path
     
     # Auto-expand the parent
     parent_item.setExpanded(True)

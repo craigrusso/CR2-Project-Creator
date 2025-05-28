@@ -14,7 +14,7 @@ import os
 import json
 import platform
 import subprocess
-from PyQt5.QtCore import QSettings
+from PyQt6.QtCore import QSettings
 
 # Determine if we're running on macOS
 IS_MACOS = platform.system() == "Darwin"

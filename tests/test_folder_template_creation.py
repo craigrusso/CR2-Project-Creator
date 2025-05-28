@@ -88,7 +88,7 @@ class TestTemplateInFolderCreation(unittest.TestCase):
                     # We need to make os.path.exists return True for the import_path
                     with patch('os.path.exists', return_value=True):
                         # Mock QInputDialog.getText to return our test template name
-                        with patch('PyQt5.QtWidgets.QInputDialog.getText', return_value=(test_template_name, True)):
+                        with patch('PyQt6.QtWidgets.QInputDialog.getText', return_value=(test_template_name, True)):
                             # Import the gallery class directly to avoid circular imports
                             # from app.templates.template_gallery_ui_pyqt import TemplateListItem
                             

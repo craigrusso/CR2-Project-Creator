@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
                            QFrame, QScrollArea, QGridLayout, QComboBox, QButtonGroup, 
                            QToolButton, QSlider, QSizePolicy, QSplitter, QMenu)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
 
 from app.ui.color_scheme_pyqt import colors, get_color, BUTTON_STYLE, ACCENT_BUTTON_STYLE
 from .components.utils import SYSTEM_FONT
@@ -131,7 +131,7 @@ class GalleryUISetup:
                                     self.template_manager = self.parent().template_manager
                                 else:
                                     # No template_manager available in parent
-                                    from PyQt5.QtWidgets import QMessageBox
+                                    from PyQt6.QtWidgets import QMessageBox
                                     QMessageBox.warning(self, "Save Error", 
                                         "Cannot save structure: Template manager is not available in the parent application. Changes will be lost.")
                                     # Just close the dialog without saving
@@ -144,7 +144,7 @@ class GalleryUISetup:
                         except AttributeError as e:
                             if "Template manager instance is not available" in str(e):
                                 # Show a user-friendly message
-                                from PyQt5.QtWidgets import QMessageBox
+                                from PyQt6.QtWidgets import QMessageBox
                                 QMessageBox.warning(self, "Save Error", 
                                     "Cannot save structure: Template manager is not available. Changes will be lost.")
                                 # Just close the dialog without saving
@@ -160,9 +160,9 @@ class GalleryUISetup:
                     is_new=True,
                     project_type=None
                 )
-                editor.exec_()
+                editor.exec()
             else:
-                from PyQt5.QtWidgets import QMessageBox
+                from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.warning(gallery, "Error", "Could not access application context.")
         
         # Button moved to templates section, so don't connect event handler here
@@ -181,9 +181,9 @@ class GalleryUISetup:
     @staticmethod
     def setup_action_bar(gallery):
         """Set up the action bar with buttons for templates and folders"""
-        from PyQt5.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QComboBox, QLineEdit, QMenu, QToolButton
-        from PyQt5.QtCore import Qt
-        from PyQt5.QtGui import QAction
+        from PyQt6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QPushButton, QLabel, QSizePolicy, QComboBox, QLineEdit, QMenu, QToolButton
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtGui import QAction
         from app.ui.color_scheme_pyqt import BUTTON_STYLE, ACCENT_BUTTON_STYLE
         
         # Create the action bar - KEEPING THIS CODE BUT NOT USING IT
@@ -241,29 +241,29 @@ class GalleryUISetup:
     def setup_gallery_containers(gallery):
         """Set up the gallery containers for folders and templates"""
         # Add QSplitter import
-        from PyQt5.QtWidgets import QSplitter
+        from PyQt6.QtWidgets import QSplitter
         
         # Template gallery - use a main vertical layout
         gallery.gallery_scroll = QScrollArea()
         gallery.gallery_scroll.setWidgetResizable(True)
-        gallery.gallery_scroll.setFrameShape(QFrame.NoFrame)
-        gallery.gallery_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        gallery.gallery_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        gallery.gallery_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        gallery.gallery_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        gallery.gallery_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         # Ensure scroll area fills available space
-        gallery.gallery_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        gallery.gallery_scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         gallery.gallery_scroll.setStyleSheet("background: transparent; border: none;")
         
         # Main container widget with vertical layout and fixed spacing
         gallery.gallery_widget = QWidget()
         gallery.gallery_widget.setStyleSheet("background: transparent; border: none;")
-        gallery.gallery_widget.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        gallery.gallery_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         gallery.main_layout = QVBoxLayout(gallery.gallery_widget)
         gallery.main_layout.setContentsMargins(0, 0, 0, 0)  # No margins on the main layout
         gallery.main_layout.setSpacing(15)  # Space between sections
         
         # Create folder navigation bar (will be hidden initially)
         gallery.folder_nav = QFrame()
-        gallery.folder_nav.setFrameShape(QFrame.NoFrame)
+        gallery.folder_nav.setFrameShape(QFrame.Shape.NoFrame)
         gallery.folder_nav.setStyleSheet("background: transparent;")
         gallery.folder_nav.setMaximumHeight(40)
         gallery.folder_nav_layout = QHBoxLayout(gallery.folder_nav)
@@ -307,7 +307,7 @@ class GalleryUISetup:
         from .gallery_templates import GalleryTemplatesSetup
         
         # Create a splitter widget
-        gallery.content_splitter = QSplitter(Qt.Vertical)  # Vertical splitter for top/bottom sections
+        gallery.content_splitter = QSplitter(Qt.Orientation.Vertical)  # Vertical splitter for top/bottom sections
         gallery.content_splitter.setChildrenCollapsible(False)  # Don't allow sections to be collapsed
         gallery.content_splitter.setHandleWidth(5)  # Slightly wider handle for easier grabbing
         gallery.content_splitter.setStyleSheet("""

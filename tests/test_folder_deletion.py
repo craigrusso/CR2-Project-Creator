@@ -4,9 +4,9 @@
 import unittest
 import sys
 from unittest.mock import MagicMock, patch
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QKeyEvent
-from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
 # Create QApplication instance before importing Qt widgets
 app = QApplication.instance()
@@ -53,7 +53,7 @@ class TestFolderDeletion(unittest.TestCase):
     def test_delete_folder_with_delete_key(self, mock_message_box):
         """Test deleting a folder with Delete key."""
         # Create a delete key event
-        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier)
+        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key.Key_Delete, Qt.KeyboardModifier.NoModifier)
         
         # Call the method under test
         result = GalleryEvents.key_press_event(self.gallery, event)
@@ -77,7 +77,7 @@ class TestFolderDeletion(unittest.TestCase):
     def test_delete_folder_with_backspace_key(self, mock_message_box):
         """Test deleting a folder with Backspace key."""
         # Create a backspace key event
-        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Backspace, Qt.NoModifier)
+        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key.Key_Backspace, Qt.KeyboardModifier.NoModifier)
         
         # Call the method under test
         result = GalleryEvents.key_press_event(self.gallery, event)
@@ -107,7 +107,7 @@ class TestFolderDeletion(unittest.TestCase):
         self.gallery.selected_folder = "General"
         
         # Create a delete key event
-        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier)
+        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key.Key_Delete, Qt.KeyboardModifier.NoModifier)
         
         # Call the method under test
         result = GalleryEvents.key_press_event(self.gallery, event)
@@ -124,7 +124,7 @@ class TestFolderDeletion(unittest.TestCase):
     def test_gallery_delete_folder_with_delete_key(self):
         """Test deleting a folder from the gallery with Delete key."""
         # Create a delete key event
-        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier)
+        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key.Key_Delete, Qt.KeyboardModifier.NoModifier)
         
         # Test the keyPressEvent method directly
         gallery = MagicMock(spec=TemplateGallery)
@@ -172,7 +172,7 @@ class TestFolderDeletion(unittest.TestCase):
         folder_card._delete_folder = MagicMock()
         
         # Create a delete key event
-        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier)
+        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key.Key_Delete, Qt.KeyboardModifier.NoModifier)
         
         # Call the method under test
         TemplateFolderCard.keyPressEvent(folder_card, event)
@@ -195,7 +195,7 @@ class TestFolderDeletion(unittest.TestCase):
         folder_list_item.parent.return_value = parent
         
         # Create a delete key event
-        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier)
+        event = QKeyEvent(QKeyEvent.KeyPress, Qt.Key.Key_Delete, Qt.KeyboardModifier.NoModifier)
         
         # Mock the QMessageBox
         with patch('app.templates.components.template_folder_list_item.QMessageBox') as mock_message_box:
@@ -211,4 +211,4 @@ class TestFolderDeletion(unittest.TestCase):
 if __name__ == '__main__':
     unittest.main()
     # Make sure to quit the app
-    sys.exit(app.exec_()) 
+    sys.exit(app.exec()) 

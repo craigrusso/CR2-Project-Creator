@@ -2,8 +2,8 @@
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt
 
 # Import the structure editors
 from app.ui.structure_editor_enhanced import EnhancedStructureEditor
@@ -49,7 +49,7 @@ class TestApp(QMainWindow):
             structure=[{"folder1": [{"subfolder": []}]}, {"folder2": []}],
             save_callback=lambda name, structure: print(f"Saved structure '{name}' with {len(structure)} items")
         )
-        editor.exec_()
+        editor.exec()
     
     def test_basic_editor(self):
         """Test the basic StructureEditor"""
@@ -59,7 +59,7 @@ class TestApp(QMainWindow):
                 structure={"folder1": {"subfolder": {}}, "folder2": {}},
                 save_callback=lambda name, structure: print(f"Saved structure '{name}' with {len(structure)} items")
             )
-            editor.exec_()
+            editor.exec()
 
 
 class SimpleTemplateManager:
@@ -92,4 +92,4 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = TestApp()
     window.show()
-    sys.exit(app.exec_()) 
+    sys.exit(app.exec()) 

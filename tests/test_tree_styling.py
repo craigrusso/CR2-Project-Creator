@@ -6,9 +6,9 @@ Test script to verify tree styling with branch indicators and consistent selecti
 """
 
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QLabel
-from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QIcon
+from PyQt6.QtWidgets import QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QLabel
+from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtGui import QIcon
 
 # Import tree styling and color scheme
 from app.ui.tree_styling import apply_tree_styling
@@ -64,19 +64,19 @@ class TreeStylingTestWindow(QMainWindow):
         for i in range(3):
             root_item = QTreeWidgetItem(self.tree)
             root_item.setText(0, f"Root Item {i+1}")
-            root_item.setFlags(root_item.flags() | Qt.ItemIsEditable)
+            root_item.setFlags(root_item.flags() | Qt.ItemFlag.ItemIsEditable)
             
             # Add child items
             for j in range(3):
                 child_item = QTreeWidgetItem(root_item)
                 child_item.setText(0, f"Child {i+1}.{j+1}")
-                child_item.setFlags(child_item.flags() | Qt.ItemIsEditable)
+                child_item.setFlags(child_item.flags() | Qt.ItemFlag.ItemIsEditable)
                 
                 # Add grandchildren
                 for k in range(2):
                     grandchild = QTreeWidgetItem(child_item)
                     grandchild.setText(0, f"Item {i+1}.{j+1}.{k+1}")
-                    grandchild.setFlags(grandchild.flags() | Qt.ItemIsEditable)
+                    grandchild.setFlags(grandchild.flags() | Qt.ItemFlag.ItemIsEditable)
         
         # Expand all items
         self.tree.expandAll()
@@ -108,4 +108,4 @@ if __name__ == "__main__":
     window = TreeStylingTestWindow()
     window.show()
     
-    sys.exit(app.exec_()) 
+    sys.exit(app.exec()) 

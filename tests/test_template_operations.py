@@ -18,9 +18,9 @@ TEST_TEMPLATES_DIR = os.path.join(TEST_DIR, "templates")
 
 # Add mocks before any imports
 sys.modules['PyQt5'] = MagicMock()
-sys.modules['PyQt5.QtWidgets'] = MagicMock()
-sys.modules['PyQt5.QtCore'] = MagicMock()
-sys.modules['PyQt5.QtGui'] = MagicMock()
+sys.modules['PyQt6.QtWidgets'] = MagicMock()
+sys.modules['PyQt6.QtCore'] = MagicMock()
+sys.modules['PyQt6.QtGui'] = MagicMock()
 sys.modules['sip'] = MagicMock()
 sys.modules['PyQt5.sip'] = MagicMock()
 

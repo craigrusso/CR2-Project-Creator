@@ -6,12 +6,12 @@ Dialog window for application preferences.
 """
 
 import os
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                            QPushButton, QGridLayout, QTabWidget, QWidget,
                            QLineEdit, QFileDialog, QMessageBox, QCheckBox,
                            QSpinBox, QGroupBox, QDialogButtonBox, QSpacerItem,
                            QSizePolicy, QComboBox)
-from PyQt5.QtCore import QSettings
+from PyQt6.QtCore import QSettings
 
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, GROUPBOX_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE
 from app.ui.styles.dialog_styles import LABEL_STYLE, LINEEDIT_STYLE, CHECKBOX_STYLE, SPINBOX_STYLE
@@ -126,8 +126,8 @@ def show_preferences_dialog(parent=None):
     def reset_data_root():
         reply = QMessageBox.question(dialog, "Confirm Reset",
                                      "Are you sure you want to reset the data root directory to the default location?",
-                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if reply == QMessageBox.Yes:
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
             settings = QSettings()
             settings.remove(config_manager.SETTINGS_KEY_USER_DATA_ROOT)
             settings.sync() # Ensure change is saved
@@ -327,7 +327,7 @@ def show_preferences_dialog(parent=None):
             return
         result = QMessageBox.question(dialog, "Clean Cache",
                                      "Are you sure you want to clean the cache according to the current size/age settings? This will remove old and unused files.")
-        if result == QMessageBox.Yes:
+        if result == QMessageBox.StandardButton.Yes:
             try:
                 # --- MODIFIED: Handle dictionary return value --- 
                 prune_results = cache_manager_instance.prune_cache(
@@ -355,14 +355,15 @@ def show_preferences_dialog(parent=None):
     clear_cache_btn = QPushButton("Clear All Cache")
     clear_cache_btn.setStyleSheet(BUTTON_STYLE)
     clear_cache_btn.setEnabled(stats_available)
-    def clear_cache():
+    def clear_cache_action(): # Renamed to avoid conflict with outer scope
         if not cache_manager_instance:
             QMessageBox.warning(dialog, "Error", "Cache manager not available.")
             return
-        result = QMessageBox.warning(dialog, "Clear Cache",
+        # This is the specific QMessageBox.warning call that needs to be fixed.
+        confirm = QMessageBox.warning(dialog, "Clear Cache",
                                     "ARE YOU SURE you want to clear the entire cache?\nThis will remove ALL cached files and cannot be undone.",
-                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        if result == QMessageBox.Yes:
+                                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if confirm == QMessageBox.StandardButton.Yes:
             try:
                 total_removed = cache_manager_instance.clear_all_caches()
                 new_stats = cache_manager_instance.get_cache_stats()
@@ -373,7 +374,7 @@ def show_preferences_dialog(parent=None):
                 QMessageBox.information(dialog, "Cache Cleared", f"All cache files ({total_removed}) have been removed.")
             except Exception as e_clear:
                 QMessageBox.warning(dialog, "Error", f"Error clearing cache: {e_clear}")
-    clear_cache_btn.clicked.connect(clear_cache)
+    clear_cache_btn.clicked.connect(clear_cache_action)
     maintenance_layout.addWidget(clear_cache_btn)
     stats_layout.addLayout(maintenance_layout)
 
@@ -568,13 +569,13 @@ def show_preferences_dialog(parent=None):
     main_layout.addWidget(tabs)
 
     # Add buttons at the bottom
-    button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
     button_box.accepted.connect(save_preferences)
     button_box.rejected.connect(dialog.reject)
     
     # Style the buttons individually for proper styling
-    ok_button = button_box.button(QDialogButtonBox.Ok)
-    cancel_button = button_box.button(QDialogButtonBox.Cancel)
+    ok_button = button_box.button(QDialogButtonBox.StandardButton.Ok)
+    cancel_button = button_box.button(QDialogButtonBox.StandardButton.Cancel)
     
     # Apply the accent button style to OK button
     ok_button.setStyleSheet(ACCENT_BUTTON_STYLE)
@@ -584,4 +585,4 @@ def show_preferences_dialog(parent=None):
     
     main_layout.addWidget(button_box)
 
-    dialog.exec_()
+    dialog.exec()

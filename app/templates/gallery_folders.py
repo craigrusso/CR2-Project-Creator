@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                             QFrame, QScrollArea, QGridLayout, QButtonGroup, 
                             QToolButton, QSlider, QSizePolicy, QPushButton)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont, QIcon
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont, QIcon
 
 from app.ui.color_scheme_pyqt import colors, ACCENT_BUTTON_STYLE
 from app.ui.gallery.components.template_folder_card import TemplateFolderCard
@@ -35,10 +35,10 @@ class GalleryFoldersSetup:
         gallery.folders_header_layout.setContentsMargins(15, 10, 15, 10)  # Increase padding for better spacing
         
         # Folders section header - should stretch
-        gallery.folders_label = QLabel("Folders")
-        gallery.folders_label.setFont(QFont(SYSTEM_FONT, 14, QFont.Bold))
-        gallery.folders_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold; background: transparent;")
-        gallery.folders_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)  # Changed back to Expanding
+        gallery.folders_label = QLabel("PROJECT FOLDERS")
+        gallery.folders_label.setStyleSheet(f"color: {colors['accent']}; padding-left: 5px;")
+        gallery.folders_label.setFont(QFont(SYSTEM_FONT, 14, QFont.Weight.Bold))
+        gallery.folders_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)  # Changed back to Expanding
         gallery.folders_header_layout.addWidget(gallery.folders_label, 1)  # Give stretch factor of 1
         
         # Folder size label and slider
@@ -47,12 +47,12 @@ class GalleryFoldersSetup:
         gallery.folders_header_layout.addWidget(gallery.folder_size_label)
         
         # Size slider
-        gallery.folder_size_slider = QSlider(Qt.Horizontal)
-        gallery.folder_size_slider.setRange(50, 300)  # 50% to 300% scaling
-        gallery.folder_size_slider.setValue(gallery.icon_scale)  # Use current scale value
-        gallery.folder_size_slider.setFixedWidth(100)
-        gallery.folder_size_slider.setTickPosition(QSlider.TicksBelow)
-        gallery.folder_size_slider.setTickInterval(50)
+        gallery.folder_size_slider = QSlider(Qt.Orientation.Horizontal)
+        gallery.folder_size_slider.setMinimum(50)
+        gallery.folder_size_slider.setMaximum(250)
+        gallery.folder_size_slider.setTickPosition(QSlider.TickPosition.TicksBelow)
+        gallery.folder_size_slider.setTickInterval(25)
+        gallery.folder_size_slider.setValue(gallery.app.template_manager.preferences.get("folder_icon_size", 100))
         gallery.folder_size_slider.valueChanged.connect(gallery._on_icon_scale_changed)
         gallery.folders_header_layout.addWidget(gallery.folder_size_slider)
         
@@ -145,52 +145,42 @@ class GalleryFoldersSetup:
         spacer.setStyleSheet("background: transparent;")
         gallery.folders_section_layout.addWidget(spacer)
         
-        # Scrollable container for folders
+        # Create scroll area for folders
         gallery.folders_scroll = QScrollArea()
         gallery.folders_scroll.setWidgetResizable(True)
-        gallery.folders_scroll.setFrameShape(QFrame.NoFrame)
-        gallery.folders_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        gallery.folders_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        gallery.folders_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        gallery.folders_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         gallery.folders_scroll.setStyleSheet("background: transparent; border: none;")
         # Ensure scroll area fills available space
-        gallery.folders_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        gallery.folders_scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         
-        # Container for folder cards
+        # Container for folder items
         gallery.folders_container = QWidget()
-        gallery.folders_container.setStyleSheet("background: transparent;")
-        gallery.folders_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)  # Match templates container policy
-        
-        # Create a grid layout for folders
-        gallery.folders_grid = QGridLayout(gallery.folders_container)
-        gallery.folders_grid.setContentsMargins(0, 0, 0, 0)
-        gallery.folders_grid.setSpacing(10)  # Space between cards
-        gallery.folders_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)  # Align to top-left like templates
-        
-        # Set the container as the scroll area widget
+        gallery.folders_container.setStyleSheet("background: transparent; border: none;")
+        gallery.folders_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)  # Match templates container policy
+        gallery.folders_layout = QGridLayout(gallery.folders_container) # Reverted to QGridLayout
+        gallery.folders_layout.setContentsMargins(0, 0, 0, 0)
+        gallery.folders_layout.setSpacing(10)
+        gallery.folders_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         gallery.folders_scroll.setWidget(gallery.folders_container)
         gallery.folders_section_layout.addWidget(gallery.folders_scroll)
 
     @staticmethod
     def populate_folders_grid(gallery, folders):
         """Populate folders in grid view"""
-        # Clear existing cards from the grid first
-        # This check is important to avoid errors if folders_grid is None
-        if gallery.folders_grid is not None:
-            while gallery.folders_grid.count():
-                item = gallery.folders_grid.takeAt(0)
-                if item.widget():
-                    item.widget().deleteLater()
-        else:
-            # Initialize folders_grid if it's None (should not happen if setup_ui is correct)
-            # This is a defensive measure.
-            if hasattr(gallery, 'folders_container') and gallery.folders_container is not None:
-                gallery.folders_grid = QGridLayout(gallery.folders_container)
-                gallery.folders_grid.setContentsMargins(0, 0, 0, 0)
-                gallery.folders_grid.setSpacing(10)
-                gallery.folders_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
-            else:
-                print("[ERROR] GalleryFoldersSetup: folders_container is not available to create folders_grid.")
-                return # Cannot proceed without a grid
-
+        # Clear the folders grid and configure it
+        while gallery.folders_layout.count():
+            item = gallery.folders_layout.takeAt(0)
+            if item and item.widget():
+                item.widget().deleteLater()
+        
+        gallery.folders_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        
+        if not folders or len(folders) == 0:
+            print("[WARNING] GalleryFoldersSetup: folders is empty or None, cannot populate grid.")
+            return
+        
         gallery.folder_cards.clear() # Clear the list of card objects
         
         # Grid layout parameters
@@ -228,7 +218,7 @@ class GalleryFoldersSetup:
             folder_card.renameRequested.connect(gallery._on_rename_folder_requested)
             folder_card.renameDone.connect(gallery._on_rename_folder_done)
             
-            gallery.folders_grid.addWidget(folder_card, row, col)
+            gallery.folders_layout.addWidget(folder_card, row, col)
             gallery.folder_cards.append(folder_card)
             
             col += 1
@@ -271,7 +261,7 @@ class GalleryFoldersSetup:
             folder_item.style().polish(folder_item)
             folder_item._update_styling()
             
-            gallery.folders_grid.addWidget(folder_item, row, 0)
+            gallery.folders_layout.addWidget(folder_item, row, 0)
             gallery.folder_cards.append(folder_item)
             row += 1
         
@@ -281,7 +271,7 @@ class GalleryFoldersSetup:
         gallery.folders_section.repaint()
         
         # Process events to make UI changes immediately visible
-        from PyQt5.QtWidgets import QApplication
+        from PyQt6.QtWidgets import QApplication
         QApplication.processEvents()
     
     @staticmethod
@@ -295,11 +285,11 @@ class GalleryFoldersSetup:
         gallery.folder_list_view_btn.setChecked(mode == "list")
         
         # Only repopulate if the mode actually changed and we have a template manager
-        if old_mode != mode and hasattr(gallery, 'folders_grid') and gallery.folders_grid:
+        if old_mode != mode and hasattr(gallery, 'folders_layout') and gallery.folders_layout:
             # Clear existing layout
-            while gallery.folders_grid.count():
-                item = gallery.folders_grid.takeAt(0)
-                if item.widget():
+            while gallery.folders_layout.count():
+                item = gallery.folders_layout.takeAt(0)
+                if item and item.widget():
                     item.widget().deleteLater()
             
             if hasattr(gallery.app, 'template_manager') and hasattr(gallery.app.template_manager, 'get_folders'):
@@ -310,10 +300,10 @@ class GalleryFoldersSetup:
                 
                 # Adjust layout spacing based on mode
                 if mode == "grid":
-                    gallery.folders_grid.setSpacing(10)
+                    gallery.folders_layout.setSpacing(10)
                     GalleryFoldersSetup.populate_folders_grid(gallery, folders)
                 else:  # list mode
-                    gallery.folders_grid.setSpacing(0)
+                    gallery.folders_layout.setSpacing(0)
                     GalleryFoldersSetup.populate_folders_list(gallery, folders)
             
             # Show or hide size slider based on mode (visible only in grid mode)

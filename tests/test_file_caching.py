@@ -9,11 +9,11 @@ import os
 import sys
 import shutil
 import tempfile
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget,
     QPushButton, QLabel, QFileDialog, QTreeWidget, QTreeWidgetItem
 )
-from PyQt5.QtCore import Qt
+from PyQt6.QtCore import Qt
 
 # Import our modules
 from app.utils.file_cache_manager import FileCacheManager

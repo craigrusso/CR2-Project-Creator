@@ -7,12 +7,12 @@ Dialog windows for managing templates, template folders, and structures.
 
 import os
 import copy
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                            QPushButton, QTreeWidget, QTreeWidgetItem,
                            QMessageBox, QTabWidget, QWidget, QListWidget,
                            QInputDialog, QFileDialog, QApplication, QStyle,
                            QLineEdit)
-from PyQt5.QtCore import Qt
+from PyQt6.QtCore import Qt
 
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE
 from app.ui.structure_editor_functions import show_enhanced_structure_editor
@@ -66,7 +66,7 @@ def show_edit_template(template, callback=None, app=None, gallery=None):
         template_manager = TemplateManager()
     
     # Determine parent window for the dialog
-    from PyQt5.QtWidgets import QWidget
+    from PyQt6.QtWidgets import QWidget
     parent_window = None
     
     # Try to get a valid QWidget parent
@@ -219,7 +219,7 @@ def create_structure_tab(tabs, template, parent):
     # Root item
     root = QTreeWidgetItem(tree)
     root.setText(0, "Project Root")
-    root.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+    root.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
     root.setExpanded(True)
     
     # Button layout
@@ -415,7 +415,7 @@ def show_manage_templates(parent, template_manager, callback=None):
     dialog.finished.connect(lambda: callback() if callback else None)
     
     # Show dialog
-    dialog.exec_()
+    dialog.exec()
 
 def view_structure(parent, template_manager, structure_list):
     """View the selected structure"""
@@ -570,7 +570,7 @@ def import_template(parent, template_manager, dialog):
     file_dialog.setFileMode(QFileDialog.ExistingFile)
     file_dialog.setNameFilter("Project Files (*.prproj *.aep *.aepx *.psd *.ai);;All Files (*)")
     
-    if file_dialog.exec_():
+    if file_dialog.exec():
         selected_files = file_dialog.selectedFiles()
         if selected_files:
             file_path = selected_files[0]

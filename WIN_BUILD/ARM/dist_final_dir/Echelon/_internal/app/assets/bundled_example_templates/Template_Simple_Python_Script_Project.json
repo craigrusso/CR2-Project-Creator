@@ -1,0 +1,23 @@
+{
+    "name": "Simple Python Script Project",
+    "category": "Software Development",
+    "description": "A basic folder structure for a Python script or small command-line tool, including source, data, and test directories.",
+    "structure": [
+        {"src": [
+            {"core": ["logic.py"]},
+            {"utils": ["helpers.py"]},
+            "__init__.py",
+            "main.py"
+        ]},
+        {"data": [
+            {"input": ["sample_input.txt"]},
+            {"output": []}
+        ]},
+        {"tests": [
+            "test_logic.py",
+            "__init__.py"
+        ]},
+        "requirements.txt",
+        "README.md"
+    ]
+} 

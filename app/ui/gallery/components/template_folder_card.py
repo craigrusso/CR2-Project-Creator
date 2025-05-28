@@ -1,8 +1,9 @@
 # template_folder_card.py
 
-from PyQt5.QtWidgets import QFrame, QLabel, QLineEdit, QVBoxLayout, QHBoxLayout, QMessageBox, QMenu, QAction, QWidget, QApplication, QStyle
-from PyQt5.QtCore import pyqtSignal, Qt, QTimer, QEvent, QPoint, QRect, QRectF, QMimeData, QByteArray
-from PyQt5.QtGui import QFont, QIcon, QPixmap, QCursor, QColor, QFontMetrics, QPainter, QBrush, QPen, QPainterPath, QDrag
+from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import QFrame, QLabel, QLineEdit, QVBoxLayout, QHBoxLayout, QMessageBox, QMenu, QWidget, QApplication, QStyle
+from PyQt6.QtCore import pyqtSignal, Qt, QTimer, QEvent, QPoint, QRect, QRectF, QMimeData, QByteArray
+from PyQt6.QtGui import QFont, QIcon, QPixmap, QCursor, QColor, QFontMetrics, QPainter, QBrush, QPen, QPainterPath, QDrag
 from app.templates.components.utils import SYSTEM_FONT
 from app.templates.components.common_styles import CARD_NORMAL, CARD_HOVER, CARD_SELECTED
 from app.ui.color_scheme_pyqt import colors, MENU_DESTRUCTIVE_ITEM_STYLE, DELETE_TEXT_STYLE
@@ -34,10 +35,14 @@ class TemplateFolderCard(QFrame):
         self.click_timer.timeout.connect(self._handle_single_click)
         self.click_pending = False
 
-        self.setFrameShape(QFrame.NoFrame)
+        self.setObjectName(f"folder_card_{folder_name}")
+        self.setProperty("class", "folder_card")
+        
+        # Card styles
+        self.setFrameShape(QFrame.Shape.NoFrame)
         self.setMinimumSize(120, 130)  # Increase minimum height for text
-        self.setCursor(Qt.PointingHandCursor)
-        self.setFocusPolicy(Qt.StrongFocus)  # Ensure card can receive keyboard focus
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # Ensure card can receive keyboard focus
 
         # Layouts
         self.layout = QVBoxLayout(self)
@@ -46,13 +51,13 @@ class TemplateFolderCard(QFrame):
 
         # Icon Label (3D macOS-style Folder Icon)
         self.icon_label = QLabel()
-        self.icon_label.setAlignment(Qt.AlignCenter)
+        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         # --- MODIFICATION START: Use System Icon --- 
         # Get the standard system directory icon
         try:
             style = QApplication.style()
-            icon = style.standardIcon(QStyle.SP_DirIcon) 
+            icon = style.standardIcon(QStyle.StandardPixmap.SP_DirIcon) 
             pixmap = icon.pixmap(64, 64) # Initial size
             if not pixmap.isNull():
                 self.icon_label.setPixmap(pixmap)
@@ -65,7 +70,7 @@ class TemplateFolderCard(QFrame):
             self.icon_label.setText("SYSERR") # Fallback for exception
         # --- MODIFICATION END ---
         
-        self.layout.addWidget(self.icon_label, 0, Qt.AlignCenter)  # Force center alignment
+        self.layout.addWidget(self.icon_label, 0, Qt.AlignmentFlag.AlignCenter)  # Force center alignment
 
         # Folder Name Label/LineEdit
         self.name_container = QWidget()
@@ -77,7 +82,7 @@ class TemplateFolderCard(QFrame):
         self.name_layout.setSpacing(0)
 
         self.name_label = QLabel(self.folder_name)
-        self.name_label.setAlignment(Qt.AlignCenter)
+        self.name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         font = QFont(SYSTEM_FONT)
         font.setPointSize(10)
         self.name_label.setFont(font)
@@ -89,14 +94,14 @@ class TemplateFolderCard(QFrame):
 
         self.rename_edit = QLineEdit(self.folder_name)
         self.rename_edit.setFont(font)
-        self.rename_edit.setAlignment(Qt.AlignCenter)
+        self.rename_edit.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.rename_edit.setStyleSheet(f"color: {colors.get('text', '#FFFFFF')}; background-color: {colors.get('input_bg', '#444444')}; border: 1px solid {colors.get('highlight_bg', '#5A5A5A')}; border-radius: 3px;")
         self.rename_edit.editingFinished.connect(self._finish_rename)
         self.rename_edit.returnPressed.connect(self._finish_rename) # Also finish on Enter
         self.rename_edit.setVisible(False)
         self.name_layout.addWidget(self.rename_edit)
 
-        self.layout.addWidget(self.name_container, 0, Qt.AlignCenter)  # Force center alignment
+        self.layout.addWidget(self.name_container, 0, Qt.AlignmentFlag.AlignCenter)  # Force center alignment
 
         # Set frame background to transparent
         self.setAutoFillBackground(False)
@@ -149,7 +154,7 @@ class TemplateFolderCard(QFrame):
         # Get standard system icon at the new size
         try:
             style = QApplication.style()
-            icon = style.standardIcon(QStyle.SP_DirIcon)
+            icon = style.standardIcon(QStyle.StandardPixmap.SP_DirIcon)
             pixmap = icon.pixmap(new_icon_size, new_icon_size)
             if not pixmap.isNull():
                 self.icon_label.setPixmap(pixmap)
@@ -185,7 +190,7 @@ class TemplateFolderCard(QFrame):
         self.name_label.setStyleSheet(f"color: {text_color}; background-color: transparent; font-size: {font_size}pt;")
 
     def eventFilter(self, obj, event):
-        if obj == self.name_label and event.type() == QEvent.MouseButtonDblClick:
+        if obj == self.name_label and event.type() == QEvent.Type.MouseButtonDblClick:
             if not self.editing:
                 self._start_rename()
                 return True
@@ -391,7 +396,7 @@ class TemplateFolderCard(QFrame):
 
             if success_count > 0:
                 print(f"Successfully moved {success_count}/{len(processed_names)} templates to {self.folder_name}")
-                event.setDropAction(Qt.MoveAction)
+                event.setDropAction(Qt.DropAction.MoveAction)
                 event.accept()
                 
                 # Show success message in status bar
@@ -402,8 +407,7 @@ class TemplateFolderCard(QFrame):
                 if gallery and hasattr(gallery, 'populate_gallery'):
                     gallery.populate_gallery(force_refresh=True)
             else:
-                print(f"[ERROR] Failed to move any templates.")
-                event.ignore()
+                print(f"No templates were successfully moved.")
         else:
             print("[ERROR] Could not find template_manager or move_template_to_folder method.")
             event.ignore()
@@ -420,7 +424,7 @@ class TemplateFolderCard(QFrame):
         return gallery
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton and not self.editing:
+        if event.button() == Qt.MouseButton.LeftButton and not self.editing:
             self.click_timer.start()
             self.setFocus()  # Ensure the card gets focus when clicked
 
@@ -483,15 +487,15 @@ class TemplateFolderCard(QFrame):
     def keyPressEvent(self, event):
         """Handle key press events for rename operation"""
         if self.editing:
-            if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
+            if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
                 self._finish_rename()
-            elif event.key() == Qt.Key_Escape:
+            elif event.key() == Qt.Key.Key_Escape:
                 # Cancel editing
                 self.editing = False
                 self.rename_edit.hide()
                 self.name_label.show()
         # Handle both Delete and Backspace (for Mac) for folder deletion when selected
-        elif (event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace) and self.selected:
+        elif (event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace) and self.selected:
             print(f"[DEBUG] Folder Card: Delete/Backspace key pressed for folder '{self.folder_name}'")
             success = self._delete_folder()
             # Only consume the event if the folder was actually deleted
@@ -545,7 +549,7 @@ class TemplateFolderCard(QFrame):
             )
         
         # Show the menu
-        context_menu.exec_(event.globalPos())
+        context_menu.exec(event.globalPos())
     
     def _delete_folder(self):
         """Delete this folder"""

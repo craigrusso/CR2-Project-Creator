@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                             QFrame, QScrollArea, QGridLayout, QButtonGroup, 
                             QToolButton, QSlider, QSizePolicy, QPushButton)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont, QIcon
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont, QIcon
 
 from app.ui.color_scheme_pyqt import colors, ACCENT_BUTTON_STYLE
 from app.ui.gallery.components.template_folder_card import TemplateFolderCard
@@ -36,9 +36,9 @@ class GalleryFoldersSetup:
         
         # Folders section header - should stretch
         gallery.folders_label = QLabel("Folders")
-        gallery.folders_label.setFont(QFont(SYSTEM_FONT, 14, QFont.Bold))
+        gallery.folders_label.setFont(QFont(SYSTEM_FONT, 14, QFont.Weight.Bold))
         gallery.folders_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold; background: transparent;")
-        gallery.folders_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)  # Changed back to Expanding
+        gallery.folders_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)  # Changed back to Expanding
         gallery.folders_header_layout.addWidget(gallery.folders_label, 1)  # Give stretch factor of 1
         
         # Folder size label and slider
@@ -47,7 +47,7 @@ class GalleryFoldersSetup:
         gallery.folders_header_layout.addWidget(gallery.folder_size_label)
         
         # Size slider
-        gallery.folder_size_slider = QSlider(Qt.Horizontal)
+        gallery.folder_size_slider = QSlider(Qt.Orientation.Horizontal)
         gallery.folder_size_slider.setRange(50, 300)  # 50% to 300% scaling
         gallery.folder_size_slider.setValue(gallery.icon_scale)  # Use current scale value
         gallery.folder_size_slider.setFixedWidth(100)
@@ -152,18 +152,18 @@ class GalleryFoldersSetup:
         gallery.folders_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         gallery.folders_scroll.setStyleSheet("background: transparent; border: none;")
         # Ensure scroll area fills available space
-        gallery.folders_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        gallery.folders_scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         
         # Container for folder cards
         gallery.folders_container = QWidget()
         gallery.folders_container.setStyleSheet("background: transparent;")
-        gallery.folders_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)  # Match templates container policy
+        gallery.folders_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)  # Match templates container policy
         
         # Create a grid layout for folders
         gallery.folders_grid = QGridLayout(gallery.folders_container)
         gallery.folders_grid.setContentsMargins(0, 0, 0, 0)
         gallery.folders_grid.setSpacing(10)  # Space between cards
-        gallery.folders_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)  # Align to top-left like templates
+        gallery.folders_grid.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignTop | Qt.AlignmentFlagFlagFlagFlagFlag.AlignLeft)  # Align to top-left like templates
         
         # Set the container as the scroll area widget
         gallery.folders_scroll.setWidget(gallery.folders_container)
@@ -239,7 +239,7 @@ class GalleryFoldersSetup:
         gallery.folders_section.repaint()
         
         # Process events to make UI changes immediately visible
-        from PyQt5.QtWidgets import QApplication
+        from PyQt6.QtWidgets import QApplication
         QApplication.processEvents()
     
     @staticmethod

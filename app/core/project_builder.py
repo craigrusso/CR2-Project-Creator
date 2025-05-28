@@ -20,8 +20,8 @@ import base64
 from pathlib import Path
 
 # Using PyQt for the UI framework
-from PyQt5.QtWidgets import QMessageBox, QApplication, QDialog, QVBoxLayout, QLabel, QProgressBar, QPushButton, QProgressDialog
-from PyQt5.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import QMessageBox, QApplication, QDialog, QVBoxLayout, QLabel, QProgressBar, QPushButton, QProgressDialog
+from PyQt6.QtCore import Qt, QTimer
 UI_FRAMEWORK = 'pyqt'
 
 # Import binary file handler
@@ -87,7 +87,7 @@ class BatchProgressWindowPyQt(QDialog):
         # Cancel button (disabled for now since we don't have cancellation logic)
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setEnabled(False)
-        layout.addWidget(self.cancel_button, alignment=Qt.AlignRight)
+        layout.addWidget(self.cancel_button, alignment=Qt.AlignmentFlagFlagFlagFlagFlag.AlignRight)
     
     def update_status(self, text):
         """Update the status text"""

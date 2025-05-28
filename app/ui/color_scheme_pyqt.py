@@ -7,7 +7,7 @@ This file provides a centralized place for all color definitions
 to ensure consistency across the application.
 """
 
-from PyQt5.QtGui import QColor
+from PyQt6.QtGui import QColor
 import sys
 import os
 from app.constants import get_resource_path
@@ -357,7 +357,7 @@ CONTEXT_MENU_STYLE = f"""
     }}
     
     QMenu::item:selected {{
-        background-color: {colors['hover_bg']};
+        background-color: {colors['highlight_bg']};
         color: {colors['highlight_text']};
         border: 1px solid {colors['accent']};
     }}
@@ -386,8 +386,18 @@ LINEEDIT_STYLE = f"""
         padding: 5px;
         border-radius: 3px;
     }}
-    QLineEdit:hover, QLineEdit:focus {{
+    QLineEdit:hover {{
         border: 1px solid {colors['accent']};
+    }}
+    QLineEdit:focus {{
+        border: 2px solid {colors['highlight_border']};
+        padding: 4px;
+        background-color: {QColor(colors['card_bg']).lighter(110).name()};
+    }}
+    QLineEdit[readOnly="true"] {{
+        background-color: {QColor(colors['card_bg']).darker(110).name()};
+        color: {colors['secondary_text']};
+        border: 1px solid {colors['border']};
     }}
 """
 

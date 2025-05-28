@@ -13,8 +13,8 @@ from datetime import datetime, timedelta
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 try:
-    from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QLabel
-    from PyQt5.QtCore import Qt
+    from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QLabel
+    from PyQt6.QtCore import Qt
     
     from app.utils.security.license_manager import (
         LicenseManager, LicenseActivationDialog, TrialNagDialog
@@ -88,13 +88,13 @@ try:
         def show_license_info(self):
             """Show the license management dialog"""
             dialog = LicenseManagementDialog(self, self.license_manager)
-            dialog.exec_()
+            dialog.exec()
             self.update_status_label()
         
         def show_activation_dialog(self):
             """Show the activation dialog"""
             dialog = LicenseActivationDialog(self, self.license_manager)
-            dialog.exec_()
+            dialog.exec()
             self.update_status_label()
         
         def deactivate_license(self):
@@ -110,7 +110,7 @@ try:
             """Show the trial nag dialog"""
             days_left = self.license_manager.get_trial_days_remaining()
             dialog = TrialNagDialog(self, self.license_manager, days_left)
-            dialog.exec_()
+            dialog.exec()
             self.update_status_label()
         
         def clear_license_data(self):
@@ -123,7 +123,7 @@ try:
         app = QApplication(sys.argv)
         window = TestWindow()
         window.show()
-        sys.exit(app.exec_())
+        sys.exit(app.exec())
     
     if __name__ == "__main__":
         main()

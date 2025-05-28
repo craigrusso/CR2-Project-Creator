@@ -11,14 +11,27 @@ import platform
 import subprocess
 import tempfile
 import ctypes
-from PyQt5.QtWidgets import QApplication, QStyle, QFileIconProvider, QTreeWidget
-from PyQt5.QtGui import QIcon, QPixmap, QImage
-from PyQt5.QtCore import QFileInfo, QSize, Qt
+import io
+import sys
+import logging
+from enum import Enum
+from pathlib import Path
+from PyQt6.QtWidgets import QApplication, QStyle, QFileIconProvider, QTreeWidget
+from PyQt6.QtGui import QIcon, QPixmap, QImage, QPainter
+from PyQt6.QtCore import QFileInfo, QSize, Qt, QByteArray, QBuffer
 from app.constants import get_resource_path
 from app.ui.color_scheme_pyqt import APP_COLORS
 
-# Import our logging utilities
-from app.utils.logging_utils import debug, info, warning, error
+# Configure logger
+logger = logging.getLogger(__name__)
+
+def debug(msg):
+    """Log a debug message"""
+    logger.debug(msg)
+    
+def warning(msg):
+    """Log a warning message"""
+    logger.warning(msg)
 
 # Platform detection
 PLATFORM = platform.system()  # 'Darwin', 'Windows', 'Linux'
@@ -120,13 +133,13 @@ class IconProvider:
     def _init_file_type_mappings(self):
         """Initialize file type mappings with system standard icons"""
         # File type constants - using standard system icons
-        self.VIDEO_ICON = QApplication.style().standardIcon(QStyle.SP_MediaPlay)
-        self.AUDIO_ICON = QApplication.style().standardIcon(QStyle.SP_MediaVolume)
-        self.IMAGE_ICON = QApplication.style().standardIcon(QStyle.SP_DesktopIcon)
-        self.DOC_ICON = QApplication.style().standardIcon(QStyle.SP_FileDialogDetailedView)
-        self.CODE_ICON = QApplication.style().standardIcon(QStyle.SP_FileDialogContentsView)
-        self.GENERIC_FILE_ICON = QApplication.style().standardIcon(QStyle.SP_FileIcon)
-        self.PDF_ICON = QApplication.style().standardIcon(QStyle.SP_FileDialogDetailedView)
+        self.VIDEO_ICON = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
+        self.AUDIO_ICON = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_MediaVolume)
+        self.IMAGE_ICON = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DesktopIcon)
+        self.DOC_ICON = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
+        self.CODE_ICON = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView)
+        self.GENERIC_FILE_ICON = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
+        self.PDF_ICON = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
         
         # Create a mapping of common application-specific file extensions
         self.APP_SPECIFIC_EXTENSIONS = {
@@ -236,8 +249,8 @@ class IconProvider:
     def _init_platform_specific_folder_icons(self):
         """Initialize folder icons using QApplication.style().standardIcon"""
         # Directly use Qt's standard icons, which should provide a native look.
-        self._folder_icon = QApplication.style().standardIcon(QStyle.SP_DirIcon)
-        self._folder_open_icon = QApplication.style().standardIcon(QStyle.SP_DirOpenIcon)
+        self._folder_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
+        self._folder_open_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon)
 
         # If SP_DirOpenIcon is null (e.g., on some styles/platforms), fallback to SP_DirIcon for the open state.
         if self._folder_open_icon.isNull():
@@ -411,204 +424,72 @@ class IconProvider:
     
     def _nsimage_to_qicon(self, ns_image):
         """Convert an NSImage to a QIcon"""
+        if not ns_image:
+            return None
+
         try:
             from rubicon.objc import ObjCClass, at
             
-            qimage = QImage()
-            load_success = False
-
-            # Primary attempt: Use TIFFRepresentation
-            tiff_data = ns_image.TIFFRepresentation
-            if tiff_data is not None:
-                try:
-                    c_bytes_ptr = tiff_data.bytes
-                    length = tiff_data.length
-                    actual_tiff_bytes = ctypes.string_at(c_bytes_ptr, length)
+            # Try multiple conversion methods for better compatibility
+            qicon = QIcon()
+            
+            try:
+                # Method 1: Convert to PNG representation
+                NSData = ObjCClass('NSData')
+                data = ns_image.TIFFRepresentation
+                bitmap_rep = ObjCClass('NSBitmapImageRep').imageRepWithData_(data)
+                png_data = bitmap_rep.representationUsingType_properties_(4, None)  # 4 is NSPNGFileType
+                
+                if png_data:
+                    # Convert NSData to bytes
+                    length = png_data.length
+                    c_bytes_ptr = png_data.bytes
+                    png_bytes = ctypes.string_at(c_bytes_ptr, length)
                     
-                    debug(f"Extracted {length} bytes from TIFF NSData via ctypes.")
-                    load_success = qimage.loadFromData(actual_tiff_bytes, "TIFF")
+                    # Create QImage from PNG data
+                    qimg = QImage()
+                    qimg.loadFromData(QByteArray(png_bytes))
                     
-                    if load_success:
-                        debug("Successfully loaded TIFF data into QImage via ctypes bytes.")
-                    else:
-                        debug("Failed to load TIFF data (from ctypes bytes) into QImage.")
-                        if qimage.isNull():
-                            debug("QImage is null after attempting to load TIFF ctypes bytes.")
-                except Exception as e_tiff_ctypes:
-                    warning(f"Error converting TIFF NSData to bytes via ctypes or loading into QImage: {e_tiff_ctypes}")
-                    load_success = False
-            else:
-                debug("ns_image.TIFFRepresentation was None.")
-
-            if not load_success or qimage.isNull():
-                debug(f"Primary QImage loading (TIFF via ctypes) failed or QImage is Null. IsNull: {qimage.isNull()}. Falling back to PNG representation.")
-                # Fallback Attempt 1: Use PNG representation with ctypes (similar to previous attempt but now as fallback)
-                # This path was previously failing, so it's a long shot here.
-                bitmap_rep = ObjCClass('NSBitmapImageRep').imageRepWithData_(ns_image.TIFFRepresentation) # Attempt to make a rep from TIFF first
-                if not bitmap_rep: # If that fails, try to get a new rep directly from ns_image for PNG
-                    # This assumes ns_image can provide a generic bitmap rep if TIFF->BitmapRep failed.
-                    # This is a bit of a guess; ideally, we'd find a representation that ns_image itself offers.
-                    # For now, let's try to get *any* NSBitmapImageRep from ns_image to attempt PNG.
-                    # A more robust way might be to check ns_image.representations and pick one.
-                    # This simplification might fail if ns_image has no direct representation convertible to PNG easily.
-                    # Reverting to getting PNG data directly from NSImage if TIFF path failed
-                    all_reps = ns_image.representations()
-                    if all_reps and len(all_reps) > 0:
-                         # Try to find an NSBitmapImageRep or make one
-                        for rep_candidate in all_reps:
-                            if rep_candidate.isKindOfClass(ObjCClass('NSBitmapImageRep')):
-                                bitmap_rep = rep_candidate
-                                debug("Found an existing NSBitmapImageRep in ns_image.representations.")
-                                break
-                        if not bitmap_rep:
-                            # If no direct NSBitmapImageRep, try to create one from the first representation's data (if any)
-                            # This is highly speculative
-                            debug("No direct NSBitmapImageRep found, attempting to create from first representation's data (speculative).")
-                            # This part is risky as the first rep might not be suitable.
-                            # For now, let's stick to the more direct PNG approach if TIFF fails completely.
-                            pass # placeholder for more complex rep handling
-
-                # If we still don't have a bitmap_rep for PNG, this fallback path also fails early for PNG.
-                if bitmap_rep:
-                    properties = at({}) 
-                    png_data_fallback = bitmap_rep.representationUsingType_properties_(3, properties) # 3 = NSPNGFileType
-                    if png_data_fallback is not None:
-                        try:
-                            c_bytes_ptr_png = png_data_fallback.bytes
-                            length_png = png_data_fallback.length
-                            actual_png_bytes_fallback = ctypes.string_at(c_bytes_ptr_png, length_png)
-                            
-                            debug(f"DEBUG (Fallback): Extracted {length_png} bytes from PNG NSData via ctypes.")
-                            # Create a new QImage instance for this fallback attempt
-                            qimage_fallback_png = QImage()
-                            load_success = qimage_fallback_png.loadFromData(actual_png_bytes_fallback, "PNG")
-                            if load_success:
-                                debug("DEBUG (Fallback): Successfully loaded PNG data into QImage via ctypes bytes.")
-                                qimage = qimage_fallback_png # Use this image
-                            else:
-                                debug("DEBUG (Fallback): Failed to load PNG data (from ctypes bytes) into QImage.")
-                                if qimage_fallback_png.isNull():
-                                    debug("DEBUG (Fallback): QImage for PNG is null after attempting to load ctypes bytes.")
-                        except Exception as e_png_ctypes:
-                            warning(f"DEBUG (Fallback): Error converting PNG NSData to bytes via ctypes or loading: {e_png_ctypes}")
-                            load_success = False # Ensure load_success reflects this path's failure
-                    else:
-                        debug("DEBUG (Fallback): png_data_fallback from NSBitmapImageRep was None.")
-                else:
-                    debug("DEBUG (Fallback): Could not obtain NSBitmapImageRep for PNG fallback.")
-
-
-            # If all primary and ctypes-based fallbacks fail, resort to writing temp file (PNG)
-            if not load_success or qimage.isNull():
-                debug(f"DEBUG: All direct/ctypes QImage loading failed. IsNull: {qimage.isNull()}. Resorting to temp file (PNG).")
+                    # Create QIcon from the QImage
+                    if not qimg.isNull():
+                        pixmap = QPixmap.fromImage(qimg)
+                        qicon.addPixmap(pixmap)
+                        return qicon
+            except Exception as e:
+                debug(f"Method 1 (PNG) failed: {str(e)}")
                 
-                # Ensure we have a bitmap_rep to get PNG data for the file
-                # This logic is a bit redundant with the above PNG fallback but ensures we try for the file
-                final_bitmap_rep = None
-                if ns_image.TIFFRepresentation: # Prefer to make PNG from TIFF if possible
-                    final_bitmap_rep = ObjCClass('NSBitmapImageRep').imageRepWithData_(ns_image.TIFFRepresentation)
-                
-                if not final_bitmap_rep: # If that failed, try to get any representation
-                    all_reps = ns_image.representations()
-                    if all_reps and len(all_reps) > 0:
-                        for rep_candidate in all_reps:
-                            if rep_candidate.isKindOfClass(ObjCClass('NSBitmapImageRep')):
-                                final_bitmap_rep = rep_candidate
-                                break
-                
-                if not final_bitmap_rep:
-                    debug("DEBUG (Temp File): Could not obtain any NSBitmapImageRep to generate PNG for temp file.")
-                    return None
-
-                properties = at({})
-                png_data_for_file = final_bitmap_rep.representationUsingType_properties_(3, properties) # NSPNGFileType
-
-                if not png_data_for_file:
-                    debug("DEBUG (Temp File): Failed to get PNG data from final_bitmap_rep for temp file.")
-                    return None
-
-                icon_path = get_resource_path(f'app/assets/icons/platform/temp_icon_{self._system.lower()}.png')
-                try:
-                    os.makedirs(os.path.dirname(icon_path), exist_ok=True)
-                except Exception as e_mkdir:
-                    warning(f"DEBUG: Failed to create directory for temp icon {os.path.dirname(icon_path)}: {e_mkdir}")
-                    return None
-                
-                write_success = png_data_for_file.writeToFile_atomically_(icon_path, True)
-                if not write_success:
-                    warning(f"DEBUG (Temp File): Failed to write PNG data to {icon_path}")
-                    return None
-                
-                temp_qimage = QImage(icon_path)
-                if temp_qimage.isNull():
-                    warning(f"DEBUG (Temp File): QImage loaded from {icon_path} is Null")
-                    try:
-                        if os.path.exists(icon_path): os.remove(icon_path)
-                    except Exception as e_remove: warning(f"DEBUG: Error removing temp icon file {icon_path} on QImage null: {e_remove}")
-                    return None
-                
-                qimage = temp_qimage # Use the image loaded from file
-                load_success = True # Mark as success for the next stage
-                debug(f"DEBUG (Temp File): Successfully loaded QImage from temp file: {icon_path}. Has Alpha: {qimage.hasAlphaChannel()}")
-
-            # Determine if the qimage came from a successfully loaded temporary file for later cleanup
-            path_to_clean_after_pixmap = None
-            if load_success and not qimage.isNull() and "icon_path" in locals() and qimage.fileName() == icon_path:
-                path_to_clean_after_pixmap = icon_path
-
-            if not load_success or qimage.isNull():
-                 debug("DEBUG: All attempts to load image data failed or resulted in Null QImage.")
-                 # If failure implies a temp file was made but not used or failed, clean it here too
-                 if path_to_clean_after_pixmap and os.path.exists(path_to_clean_after_pixmap):
-                     try: 
-                         os.remove(path_to_clean_after_pixmap)
-                         debug(f"DEBUG: Cleaned up {path_to_clean_after_pixmap} due to load failure before QPixmap.")
-                     except Exception: pass                 
-                 return None
-
-            # If QImage loaded successfully, ensure it's in a format that preserves alpha for QPixmap
-            if qimage.hasAlphaChannel():
-                debug("DEBUG: Original QImage has alpha channel. Converting to ARGB32_Premultiplied for QPixmap.")
-                converted_qimage = qimage.convertToFormat(QImage.Format_ARGB32_Premultiplied)
-                if not converted_qimage.isNull():
-                    qimage = converted_qimage # Use the converted image
-                    debug("DEBUG: Successfully converted QImage to ARGB32_Premultiplied.")
-                else:
-                    debug("DEBUG: convertToFormat to ARGB32_Premultiplied resulted in a null QImage. Using original.")
+            # If we reach here, the PNG method failed, try direct TIFF loading
+            try:
+                data = ns_image.TIFFRepresentation
+                if data:
+                    length = data.length
+                    c_bytes_ptr = data.bytes
+                    tiff_bytes = ctypes.string_at(c_bytes_ptr, length)
+                    
+                    qimg = QImage()
+                    qimg.loadFromData(QByteArray(tiff_bytes))
+                    
+                    if not qimg.isNull():
+                        pixmap = QPixmap.fromImage(qimg)
+                        qicon.addPixmap(pixmap)
+                        return qicon
+            except Exception as e:
+                debug(f"Method 2 (TIFF) failed: {str(e)}")
             
-            qpixmap = QPixmap.fromImage(qimage)
+            # If all else fails, return fallback icon
+            return self.get_fallback_icon()
             
-            # Clean up the temporary file if it was used to create the current qimage
-            if path_to_clean_after_pixmap and os.path.exists(path_to_clean_after_pixmap):
-                try:
-                    os.remove(path_to_clean_after_pixmap)
-                    debug(f"DEBUG: Cleaned up temp icon file {path_to_clean_after_pixmap} after QPixmap creation.")
-                except Exception as e_remove_final:
-                    warning(f"DEBUG: Error removing temp icon file {path_to_clean_after_pixmap} after QPixmap creation: {e_remove_final}")
-
-            if qpixmap.isNull():
-                debug("DEBUG: QPixmap created from final QImage is Null")
-                return None
-            
-            # Check if QPixmap itself reports having an alpha channel
-            if qpixmap.hasAlphaChannel(): 
-                debug(f"DEBUG: QPixmap created successfully. Has Alpha Channel: True. Depth: {qpixmap.depth()}")
-            else:
-                debug(f"DEBUG: QPixmap created successfully. Has Alpha Channel: False. Depth: {qpixmap.depth()}. This might lead to white BGs.")
-            
-            icon = QIcon(qpixmap)
-            if icon.isNull():
-                debug("DEBUG: QIcon created from final QPixmap is Null")
-                return None
-            
-            debug("DEBUG: Successfully created QIcon from NSImage data.")
-            return icon
-                
         except Exception as e:
-            import traceback
-            warning(f"CRITICAL Error converting NSImage to QIcon: {e}\\n{traceback.format_exc()}")
-            return None
-            
+            logging.warning(f"Error converting NSImage to QIcon: {str(e)}")
+            return self.get_fallback_icon()
+    
+    def get_fallback_icon(self):
+        """Return a fallback icon when native icon retrieval fails"""
+        if self._system == "Darwin":
+            return self._icon_provider.icon(QFileIconProvider.IconType.File)
+        else:
+            return QIcon(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+    
     def _get_windows_native_icon(self, filepath):
         """Use Windows Shell API to get the icon for a file path - Windows specific"""
         if not USE_NATIVE_PLATFORM_ICONS or not self._shell or self._system != "Windows":
@@ -793,7 +674,7 @@ def _refresh_widget_item_icons(item):
         return
         
     # Force icon update based on item data or text
-    item_data = item.data(0, Qt.UserRole)
+    item_data = item.data(0, Qt.ItemDataRole.UserRole)
     item_name = item.text(0)
     
     # First try to identify by explicit data type

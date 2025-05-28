@@ -6,11 +6,11 @@ Dialog windows for handling batch operations.
 """
 
 import os
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QFrame, QTextEdit, QSpacerItem, 
                              QSizePolicy)
-from PyQt5.QtCore import Qt, QUrl
-from PyQt5.QtGui import QDesktopServices
+from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtGui import QDesktopServices
 
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE
 
@@ -225,7 +225,7 @@ def show_batch_results(app, results):
         button_layout.addWidget(open_button)
     
     # Add spacer
-    button_layout.addItem(QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum))
+    button_layout.addItem(QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
     
     # Add Close button
     close_button = QPushButton("Close", dialog)
@@ -256,7 +256,7 @@ def show_batch_results(app, results):
     dialog.finished.connect(cleanup_on_close)
     
     # Show dialog
-    dialog.exec_()
+    dialog.exec()
 
 def handle_batch_projects(app, projects):
     """Process a list of batch projects"""

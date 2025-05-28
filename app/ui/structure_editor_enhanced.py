@@ -13,14 +13,14 @@ import sys
 import json
 import time
 import platform # Added platform import
-from PyQt5.QtCore import Qt, QSize, QTimer, pyqtSignal
-from PyQt5.QtWidgets import (
+from PyQt6.QtCore import Qt, QSize, QTimer, pyqtSignal
+from PyQt6.QtWidgets import (
     QDialog, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QHBoxLayout,
     QPushButton, QLineEdit, QLabel, QComboBox, QMessageBox, QInputDialog,
     QFileDialog, QMenu, QWidget, QFormLayout, QSplitter, QAbstractItemView,
-    QHeaderView, QAction, QFrame, QShortcut, QGroupBox, QSizePolicy, QApplication
+    QHeaderView, QFrame, QGroupBox, QSizePolicy, QApplication
 )
-from PyQt5.QtGui import QFont, QColor, QIcon, QDrag, QBrush, QKeySequence, QPixmap, QPainter, QPen
+from PyQt6.QtGui import QFont, QColor, QIcon, QDrag, QBrush, QKeySequence, QPixmap, QPainter, QPen, QAction, QShortcut # QShortcut added
 
 # Import from app modules
 from app.ui.color_scheme_pyqt import colors, APP_COLORS, ACCENT_BUTTON_STYLE
@@ -143,22 +143,22 @@ class EnhancedStructureEditor(QDialog):
             
             # Setup QShortcut for Delete key on the tree_widget
             if self.tree_widget:
-                delete_shortcut = QShortcut(QKeySequence(Qt.Key_Delete), self.tree_widget)
+                delete_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.tree_widget)
                 delete_shortcut.activated.connect(self._schedule_delete_operation)
-                delete_shortcut.setContext(Qt.WidgetShortcut)
+                delete_shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
                 print("DEBUG: QShortcut for Delete key connected to _schedule_delete_operation")
 
                 # Add Backspace shortcut for macOS
                 if platform.system() == "Darwin":
-                    backspace_shortcut = QShortcut(QKeySequence(Qt.Key_Backspace), self.tree_widget)
+                    backspace_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Backspace), self.tree_widget)
                     backspace_shortcut.activated.connect(self._schedule_delete_operation)
-                    backspace_shortcut.setContext(Qt.WidgetShortcut)
+                    backspace_shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
                     print("DEBUG: QShortcut for Backspace key (macOS) connected to _schedule_delete_operation")
             
             # Connect tree widget signals
             if self.tree_widget:
                 # Connect context menu
-                self.tree_widget.setContextMenuPolicy(Qt.CustomContextMenu)
+                self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
                 self.tree_widget.customContextMenuRequested.connect(self._show_context_menu)
                 
                 # Store original keyPressEvent
@@ -280,8 +280,6 @@ class EnhancedStructureEditor(QDialog):
             
             # Connect item clicks and context menu
             self.tree_widget.itemDoubleClicked.connect(self._rename_item)
-            self.tree_widget.setContextMenuPolicy(Qt.CustomContextMenu)
-            self.tree_widget.customContextMenuRequested.connect(self._show_context_menu)
             
             # Connect key press event
             self.tree_widget.keyPressEvent = self._handle_key_press
@@ -405,7 +403,7 @@ class EnhancedStructureEditor(QDialog):
                     parent_item = selected_items[0]
                     
                     # If selected item is a file, use its parent
-                    item_data = parent_item.data(0, Qt.UserRole)
+                    item_data = parent_item.data(0, Qt.ItemDataRole.UserRole)
                     if isinstance(item_data, dict) and 'type' in item_data and item_data['type'] == 'file':
                         if parent_item.parent():
                             parent_item = parent_item.parent()
@@ -417,7 +415,7 @@ class EnhancedStructureEditor(QDialog):
             # Create untitled folder with inline editing
             folder_item = QTreeWidgetItem(parent_item)
             folder_item.setText(0, "Untitled Folder")
-            folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+            folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
             
             # Set folder icon
             # Try to get the icon in multiple ways to ensure we have one
@@ -451,7 +449,7 @@ class EnhancedStructureEditor(QDialog):
                 
             # Set user data
             folder_data = {'type': 'folder', 'name': 'Untitled Folder'}
-            folder_item.setData(0, Qt.UserRole, folder_data)
+            folder_item.setData(0, Qt.ItemDataRole.UserRole, folder_data)
             
             # Style the folder item to make it stand out but without the blue box
             font = folder_item.font(0)
@@ -478,20 +476,53 @@ class EnhancedStructureEditor(QDialog):
             
     def _show_context_menu(self, position):
         """Show context menu for tree widget"""
-        # Check if file operations has its own context menu handler
+        print(f"DEBUG: _show_context_menu called at position {position}")
+        
+        # Get item at position
+        item = self.tree_widget.itemAt(position)
+
+        # Ensure the item under the cursor is set as the current item
+        if item:
+            self.tree_widget.setCurrentItem(item)
+            # Also make sure this item is visible and scrolled to
+            self.tree_widget.scrollToItem(item)
+        
+        # Create the menu using file_operations if available
+        menu = None
+        
         if hasattr(self, 'file_operations') and hasattr(self.file_operations, 'create_context_menu'):
-            # Get item at position
-            item = self.tree_widget.itemAt(position)
-            
-            # Let file operations create the context menu
+            # Let file_operations create the context menu
+            print(f"DEBUG: Calling file_operations.create_context_menu for item: {item.text(0) if item else 'None'}")
             menu = self.file_operations.create_context_menu(item, position)
-            if menu:
-                # Execute the menu here instead of in create_context_menu
-                menu.exec_(self.tree_widget.mapToGlobal(position))
-                return
-                
-        # If file_operations not available or context menu creation failed, create our own menu
-        # Create menu
+        
+        # If we have a menu, show it
+        if menu and not menu.isEmpty():
+            # Execute menu at the right position
+            global_pos = self.tree_widget.viewport().mapToGlobal(position)
+            print(f"DEBUG: Executing context menu at global position {global_pos}")
+            menu.exec(global_pos)
+            return
+        
+        # Fallback - create our own menu if file_operations couldn't provide one
+        if item:
+            fallback_menu = self._create_fallback_context_menu(item)
+            if fallback_menu:
+                fallback_menu.exec(self.tree_widget.viewport().mapToGlobal(position))
+        else:
+            # No item selected, show general menu
+            general_menu = QMenu(self)
+            
+            # Add file/folder actions
+            add_file_action = general_menu.addAction("Add File")
+            add_file_action.triggered.connect(lambda: self.add_file())
+            
+            add_folder_action = general_menu.addAction("Add Folder")
+            add_folder_action.triggered.connect(lambda: self.add_folder())
+            
+            general_menu.exec(self.tree_widget.viewport().mapToGlobal(position))
+    
+    def _create_fallback_context_menu(self, item):
+        """Create a fallback context menu when file_operations is not available"""
         menu = QMenu(self)
         
         # Style the menu
@@ -516,50 +547,35 @@ class EnhancedStructureEditor(QDialog):
             }
         """)
         
-        # Get item at position
-        item = self.tree_widget.itemAt(position)
-        
         # Add common actions
         add_file_action = menu.addAction("Add File")
+        add_file_action.triggered.connect(lambda: self.add_file(item if item else None))
+        
         add_folder_action = menu.addAction("Add Folder")
+        add_folder_action.triggered.connect(lambda: self.add_folder(item if item else None))
         
         # Add item-specific actions if an item is clicked
         if item:
             menu.addSeparator()
             rename_action = menu.addAction("Rename")
+            rename_action.triggered.connect(lambda: self.tree_widget.editItem(item, 0))
+            
             delete_action = menu.addAction("Delete")
+            delete_action.triggered.connect(lambda: self._delete_item(item))
             
             # Add "Use Project Name" action for files
-            item_data = item.data(0, Qt.UserRole)
+            item_data = item.data(0, Qt.ItemDataRole.UserRole)
             if isinstance(item_data, dict) and item_data.get('type') == 'file':
                 menu.addSeparator()
-                use_project_name_action = menu.addAction("Use Project Name")
-                use_project_name_action.setEnabled(True)
-            else:
-                use_project_name_action = None
-        else:
-            rename_action = None
-            delete_action = None
-            use_project_name_action = None
+                
+                if item_data.get('rename_flag') or item_data.get('uses_project_name'):
+                    use_project_name_action = menu.addAction("Revert to Original Name")
+                else:
+                    use_project_name_action = menu.addAction("Use Project Name")
+                    
+                use_project_name_action.triggered.connect(lambda: self._toggle_project_name_for_file(item))
         
-        # Show menu and get selected action
-        action = menu.exec_(self.tree_widget.mapToGlobal(position))
-        
-        # Handle action
-        if action:
-            print(f"DEBUG: Context menu action: {action.text()}")
-            if action == add_file_action:
-                self.add_file(item)
-            elif action == add_folder_action:
-                self.add_folder(item)
-            elif item and action == rename_action:
-                self.tree_widget.editItem(item, 0)
-            elif item and action == delete_action:
-                print(f"DEBUG: Delete action triggered from context menu for item: {item.text(0)}")
-                self._delete_item(item)
-            elif item and action == use_project_name_action:
-                print(f"DEBUG: Use Project Name action triggered for item: {item.text(0)}")
-                self._use_project_name_for_file(item)
+        return menu
     
     def _delete_item(self, item):
         """Delete an item from the tree"""
@@ -613,7 +629,7 @@ class EnhancedStructureEditor(QDialog):
             return
         
         # Get item data
-        item_data = item.data(0, Qt.UserRole)
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
         if not isinstance(item_data, dict) or item_data.get('type') != 'file':
             print(f"DEBUG: use_project_name - item is not a file: {item.text(0)}")
             return
@@ -656,7 +672,7 @@ class EnhancedStructureEditor(QDialog):
         item_data['rename_flag'] = True  # Primary flag for indicating that file should be renamed
         item_data['uses_project_name'] = True  # Keep for backward compatibility
         item_data['original_extension'] = extension
-        item.setData(0, Qt.UserRole, item_data)
+        item.setData(0, Qt.ItemDataRole.UserRole, item_data)
         
         # Apply styling to indicate this is a dynamic file
         font = item.font(0)
@@ -674,7 +690,7 @@ class EnhancedStructureEditor(QDialog):
             return False
             
         # Get item data
-        item_data = item.data(0, Qt.UserRole)
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
         if not isinstance(item_data, dict) or item_data.get('type') != 'file':
             return False
             
@@ -708,7 +724,7 @@ class EnhancedStructureEditor(QDialog):
             return self._use_project_name_for_file(item)
             
         # Update the data
-        item.setData(0, Qt.UserRole, item_data)
+        item.setData(0, Qt.ItemDataRole.UserRole, item_data)
         
         return True
 
@@ -790,52 +806,72 @@ class EnhancedStructureEditor(QDialog):
         
         Args:
             event: The key press event
+            
+        Returns:
+            None: This method should not explicitly return a value if the event
+                  is passed to the superclass or default handler.
+                  It returns True if a custom action handles the event.
         """
         # Check if we have file operations
         have_file_ops = hasattr(self, 'file_operations') and self.file_operations
 
-        # First, let the original event handler try to process the event.
-        # This is important for allowing default Qt behaviors.
-        if hasattr(self.tree_widget, '_old_keyPressEvent') and self.tree_widget._old_keyPressEvent is not None:
-            self.tree_widget._old_keyPressEvent(event)
-        else:
-            # Fallback if _old_keyPressEvent isn't there
-            super(QTreeWidget, self.tree_widget).keyPressEvent(event)
+        # Initialize handled_by_custom_logic to False
+        handled_by_custom_logic = False
 
-        # Custom key handling (if not already handled by base)
-        # Note: Qt.Key_Delete is now handled by QShortcut, so it's removed from here.
+        # Custom key handling
+        # Note: Qt.Key.Key_Delete is now handled by QShortcut.
         
-        # Ctrl+A for select all (typically handled well by base, but can be explicit)
-        if event.key() == Qt.Key_A and event.modifiers() & Qt.ControlModifier: # Changed from elif to if
-            if hasattr(self, 'tree_widget') and self.tree_widget and not event.isAccepted():
+        # Ctrl+A for select all
+        if event.key() == Qt.Key.Key_A and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            if hasattr(self, 'tree_widget') and self.tree_widget:
                 self.tree_widget.selectAll()
                 event.accept()
+                handled_by_custom_logic = True
         
-        # Ctrl+C for copy (if not already handled)
-        elif event.key() == Qt.Key_C and event.modifiers() & Qt.ControlModifier and have_file_ops and not event.isAccepted():
+        # Ctrl+C for copy
+        elif event.key() == Qt.Key.Key_C and event.modifiers() & Qt.KeyboardModifier.ControlModifier and have_file_ops:
             selected = self.tree_widget.selectedItems()
             if selected and hasattr(self.file_operations, '_copy_item'):
                 self.file_operations._copy_item(selected[0])
                 event.accept()
+                handled_by_custom_logic = True
             
-        # Ctrl+V for paste (if not already handled)
-        elif event.key() == Qt.Key_V and event.modifiers() & Qt.ControlModifier and have_file_ops and not event.isAccepted():
+        # Ctrl+V for paste
+        elif event.key() == Qt.Key.Key_V and event.modifiers() & Qt.KeyboardModifier.ControlModifier and have_file_ops:
             selected = self.tree_widget.selectedItems()
             parent = selected[0] if selected else self.tree_widget.invisibleRootItem() 
             if hasattr(self.file_operations, '_paste_item'):
                 self.file_operations._paste_item(parent)
                 event.accept()
+                handled_by_custom_logic = True
         
-        # F2 for rename (if not already handled)
-        elif event.key() == Qt.Key_F2 and have_file_ops and not event.isAccepted():
+        # F2 for rename
+        elif event.key() == Qt.Key.Key_F2 and have_file_ops:
             selected = self.tree_widget.selectedItems()
             if selected and hasattr(self.file_operations, 'rename_item'):
                 self.file_operations.rename_item(selected[0])
                 event.accept()
+                handled_by_custom_logic = True
+
+        # If custom logic handled the event, return True
+        if handled_by_custom_logic:
+            return True
+
+        # If the event was not handled by custom logic,
+        # pass it to the original event handler.
+        if hasattr(self.tree_widget, '_old_keyPressEvent') and self.tree_widget._old_keyPressEvent is not None:
+            # _old_keyPressEvent (which is QTreeWidget.keyPressEvent) doesn't return a value.
+            # It modifies the event object (e.g., by calling event.accept() or event.ignore()).
+            self.tree_widget._old_keyPressEvent(event)
+        else:
+            # Fallback if _old_keyPressEvent isn't there for some reason
+            # QWidget.keyPressEvent (superclass of QTreeWidget) also doesn't return a value.
+            super(QTreeWidget, self.tree_widget).keyPressEvent(event)
         
-        # The method must return a boolean. event.isAccepted() reflects if any handler
-        # (ours or the base's) accepted the event.
-        return event.isAccepted()
+        # The Qt event system checks event.isAccepted(). We don't need to explicitly return it.
+        # If our custom handlers didn't handle it, and the base class didn't accept it,
+        # it will propagate further or be ignored as per Qt's rules.
+        # Implicitly returns None.
 
     def _schedule_delete_operation(self):
         """Schedules the delete operation to run after the current event processing."""
@@ -1115,11 +1151,12 @@ class EnhancedStructureEditor(QDialog):
 
         # Create and execute the category manager dialog
         from app.ui.structure_editor.category_manager import CategoryManager
-        manager_dialog = CategoryManager(parent=self, categories=current_categories)
-        result = manager_dialog.exec_()
+        manager = CategoryManager(parent=self, categories=current_categories)
+        result = manager.exec()
 
-        if result == QDialog.Accepted:
-            print("DEBUG: Category Manager accepted. Dropdown updates handled dynamically.")
+        if result == QDialog.DialogCode.Accepted:
+            self.ui_builder.template_category_field.clear()
+            # Repopulate with potentially updated categories after manager is done
             # Updates are handled dynamically by the CategoryManager itself now.
             # No explicit update needed here, but we could refresh internal state if necessary.
             # self.ui_builder.categories = template_manager.get_categories()

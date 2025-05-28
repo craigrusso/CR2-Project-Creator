@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
-from PyQt5.QtWidgets import QInputDialog, QMessageBox, QFileDialog, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QTextEdit, QApplication
-from PyQt5.QtCore import Qt, QTimer
+from PyQt6.QtWidgets import QInputDialog, QMessageBox, QFileDialog, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QTextEdit, QApplication
+from PyQt6.QtCore import Qt, QTimer
 import os
-from PyQt5.QtGui import QIcon, QFont, QPixmap
+from PyQt6.QtGui import QIcon, QFont, QPixmap
 import time
 import re
 
@@ -615,11 +615,11 @@ class GalleryEvents:
         message += "\n".join(f"- {name}" for name in template_display_names)
         
         # Ensure QMessageBox is imported if not at the top of the file
-        # from PyQt5.QtWidgets import QMessageBox 
+        # from PyQt6.QtWidgets import QMessageBox 
         reply = QMessageBox.question(gallery, "Confirm Template Deletion", message, 
-                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
 
-        if reply == QMessageBox.No:
+        if reply == QMessageBox.StandardButton.No:
             print(f"[DEBUG] Gallery: Deletion of {count} template(s) cancelled by user.")
             return
         # --- END CONFIRMATION DIALOG ---
@@ -668,7 +668,7 @@ class GalleryEvents:
         
         if errors:
             # Ensure QMessageBox is imported
-            # from PyQt5.QtWidgets import QMessageBox
+            # from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(gallery, "Deletion Errors", "Some templates could not be deleted:\n\n" + "\n".join(errors))
 
         # Ensure overall UI consistency after operations
@@ -692,7 +692,7 @@ class GalleryEvents:
     @staticmethod
     def on_recache_all_templates(gallery):
         """Handle recaching all templates"""
-        from PyQt5.QtWidgets import QMessageBox
+        from PyQt6.QtWidgets import QMessageBox
         
         # Check if template manager has cache_manager
         if (not hasattr(gallery.app, 'template_manager') or 
@@ -725,7 +725,7 @@ class GalleryEvents:
                 None,  # None means recache all templates
                 gallery
             )
-            dialog.exec_()
+            dialog.exec()
     
     @staticmethod
     def on_clear_all_caches(gallery):
@@ -733,7 +733,7 @@ class GalleryEvents:
         # Check if template manager has safe_clear_all_caches method
         if (not hasattr(gallery.app, 'template_manager') or 
             not hasattr(gallery.app.template_manager, 'safe_clear_all_caches')):
-            from PyQt5.QtWidgets import QMessageBox
+            from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(
                 gallery, 
                 "Cache Manager Not Available", 
@@ -746,7 +746,7 @@ class GalleryEvents:
         success = gallery.app.template_manager.safe_clear_all_caches()
         
         if success:
-            from PyQt5.QtWidgets import QMessageBox
+            from PyQt6.QtWidgets import QMessageBox
             QMessageBox.information(
                 gallery, 
                 "Caches Cleared", 
@@ -757,7 +757,7 @@ class GalleryEvents:
     @staticmethod
     def on_check_missing_originals(gallery):
         """Handle checking for templates with missing original files"""
-        from PyQt5.QtWidgets import QMessageBox
+        from PyQt6.QtWidgets import QMessageBox
         
         # Check if template manager has find_templates_with_missing_originals method
         if (not hasattr(gallery.app, 'template_manager') or 
@@ -771,7 +771,7 @@ class GalleryEvents:
             return
         
         # Show a progress message
-        from PyQt5.QtWidgets import QApplication
+        from PyQt6.QtWidgets import QApplication
         gallery.statusBar().showMessage("Checking for templates with missing original files...")
         QApplication.processEvents()
         
@@ -798,7 +798,7 @@ class GalleryEvents:
             templates_with_missing,
             gallery
         )
-        dialog.exec_()
+        dialog.exec()
     
     @staticmethod
     def _save_template_and_structure(gallery, data):
@@ -960,12 +960,12 @@ class GalleryEvents:
     @staticmethod
     def mouse_press_event(gallery, event):
         """Handle mouse press events in the template gallery area for blank space clicks."""
-        if event.button() != Qt.LeftButton:
+        if event.button() != Qt.MouseButton.LeftButton:
             event.ignore()
             return False
 
         modifiers = QApplication.keyboardModifiers()
-        is_modifier_active = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.ShiftModifier))
+        is_modifier_active = bool(modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier | Qt.KeyboardModifier.ShiftModifier))
 
         widget_at_pos = gallery.childAt(event.pos())
         is_card_click = False
@@ -1009,16 +1009,16 @@ class GalleryEvents:
     @staticmethod
     def key_press_event(gallery, event):
         """Handle key press events in the gallery"""
-        from PyQt5.QtCore import Qt
+        from PyQt6.QtCore import Qt
         
         try:
-            if event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace:
+            if event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace:
                 # Priority 1: Folder deletion if a folder is selected
                 if hasattr(gallery, 'selected_folder') and gallery.selected_folder:
                     print(f"[DEBUG] Delete/Backspace key pressed, folder selected: {gallery.selected_folder}")
                     
                     if gallery.selected_folder in getattr(gallery.template_manager, 'DEFAULT_FOLDERS', ["General", "Development", "Business"]):
-                        from PyQt5.QtWidgets import QMessageBox
+                        from PyQt6.QtWidgets import QMessageBox
                         QMessageBox.warning(gallery, "Error", 
                             f"'{gallery.selected_folder}' is a default folder and cannot be deleted.")
                         event.accept()
@@ -1042,7 +1042,7 @@ class GalleryEvents:
                             if hasattr(gallery, 'app') and hasattr(gallery.app, 'show_status_message'):
                                 gallery.app.show_status_message(f"Folder '{folder_name_to_delete}' deleted", "info")
                         else:
-                            from PyQt5.QtWidgets import QMessageBox
+                            from PyQt6.QtWidgets import QMessageBox
                             QMessageBox.warning(gallery, "Delete Failed", 
                                 f"Failed to delete folder '{folder_name_to_delete}'.")
                         

@@ -13,8 +13,8 @@ import unittest
 import tempfile
 import shutil
 import json
-from PyQt5.QtWidgets import QApplication, QTreeWidgetItem
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QTreeWidgetItem
+from PyQt6.QtCore import Qt
 
 # Add project directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -62,16 +62,16 @@ class TestProjectNamePreservation(unittest.TestCase):
         # Add a root folder
         self.project_folder = QTreeWidgetItem(self.root_item)
         self.project_folder.setText(0, "Project Folder")
-        self.project_folder.setData(0, Qt.UserRole, {"type": "folder", "name": "Project Folder"})
+        self.project_folder.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Project Folder"})
         
         # Add files to the folder with specific names for testing
         self.file_item1 = QTreeWidgetItem(self.project_folder)
         self.file_item1.setText(0, "original_file.txt")
-        self.file_item1.setData(0, Qt.UserRole, {"type": "file", "name": "original_file.txt", "path": self.test_file_path})
+        self.file_item1.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "name": "original_file.txt", "path": self.test_file_path})
         
         self.file_item2 = QTreeWidgetItem(self.project_folder)
         self.file_item2.setText(0, "project_name_file.prproj")
-        self.file_item2.setData(0, Qt.UserRole, {"type": "file", "name": "project_name_file.prproj", "path": self.test_file_path})
+        self.file_item2.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "name": "project_name_file.prproj", "path": self.test_file_path})
     
     def tearDown(self):
         # Clean up the editor
@@ -128,10 +128,10 @@ class TestProjectNamePreservation(unittest.TestCase):
         self.editor._use_project_name_for_file(self.file_item2)
         
         # Set data on file_item1 to ensure it doesn't use project name
-        item_data1 = self.file_item1.data(0, Qt.UserRole)
+        item_data1 = self.file_item1.data(0, Qt.ItemDataRole.UserRole)
         item_data1['uses_project_name'] = False
         item_data1['rename_flag'] = False
-        self.file_item1.setData(0, Qt.UserRole, item_data1)
+        self.file_item1.setData(0, Qt.ItemDataRole.UserRole, item_data1)
         
         # Convert to structure
         converter = StructureConverter(tree_widget=self.editor.tree_widget)
@@ -177,7 +177,7 @@ class TestProjectNamePreservation(unittest.TestCase):
         self.editor._use_project_name_for_file(self.file_item2)
         
         # Get the item data
-        item_data = self.file_item2.data(0, Qt.UserRole)
+        item_data = self.file_item2.data(0, Qt.ItemDataRole.UserRole)
         self.assertTrue(item_data.get('uses_project_name', False),
                       "uses_project_name flag should be set")
         
@@ -193,7 +193,7 @@ class TestProjectNamePreservation(unittest.TestCase):
         self.editor._toggle_project_name_for_file(self.file_item2)
         
         # Get updated item data
-        item_data = self.file_item2.data(0, Qt.UserRole)
+        item_data = self.file_item2.data(0, Qt.ItemDataRole.UserRole)
         self.assertFalse(item_data.get('uses_project_name', True),
                        "uses_project_name flag should be turned off")
         
@@ -205,7 +205,7 @@ class TestProjectNamePreservation(unittest.TestCase):
         self.editor._toggle_project_name_for_file(self.file_item2)
         
         # Get updated item data
-        item_data = self.file_item2.data(0, Qt.UserRole)
+        item_data = self.file_item2.data(0, Qt.ItemDataRole.UserRole)
         self.assertTrue(item_data.get('uses_project_name', False),
                       "uses_project_name flag should be set again")
         
@@ -219,7 +219,7 @@ class TestProjectNamePreservation(unittest.TestCase):
         self.editor._use_project_name_for_file(self.file_item2)
         
         # Get the item data
-        item_data = self.file_item2.data(0, Qt.UserRole)
+        item_data = self.file_item2.data(0, Qt.ItemDataRole.UserRole)
         
         # Check that uses_project_name is set to true
         self.assertTrue(item_data.get('uses_project_name', False),
@@ -233,7 +233,7 @@ class TestProjectNamePreservation(unittest.TestCase):
         self.editor._toggle_project_name_for_file(self.file_item2)
         
         # Get updated item data
-        item_data = self.file_item2.data(0, Qt.UserRole)
+        item_data = self.file_item2.data(0, Qt.ItemDataRole.UserRole)
         
         # Check that uses_project_name is set to false
         self.assertFalse(item_data.get('uses_project_name', True),
@@ -247,7 +247,7 @@ class TestProjectNamePreservation(unittest.TestCase):
         self.editor._toggle_project_name_for_file(self.file_item2)
         
         # Get updated item data
-        item_data = self.file_item2.data(0, Qt.UserRole)
+        item_data = self.file_item2.data(0, Qt.ItemDataRole.UserRole)
         
         # Check that both flags are set to true again
         self.assertTrue(item_data.get('uses_project_name', False),
@@ -264,7 +264,7 @@ class TestProjectNamePreservation(unittest.TestCase):
             self.editor._use_project_name_for_file(self.file_item2)
             
             # Get item data
-            item_data = self.file_item2.data(0, Qt.UserRole)
+            item_data = self.file_item2.data(0, Qt.ItemDataRole.UserRole)
             
             # Verify both flags are set
             self.assertTrue(item_data.get('uses_project_name', False), 

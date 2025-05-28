@@ -13,8 +13,8 @@ parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parent_dir)
 
 # Import required modules
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QMessageBox
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QMessageBox
+from PyQt6.QtCore import Qt
 
 from app.templates.template_operations import TemplateOperations
 from app.ui.structure_editor_enhanced import show_enhanced_structure_editor
@@ -359,7 +359,7 @@ def main():
     window.show()
     
     # Run the application
-    result = app.exec_()
+    result = app.exec()
     
     # Clean up
     window.cleanup()

@@ -10,8 +10,8 @@ This module provides functions for converting between tree widgets and structure
 import os
 import json
 from pathlib import Path
-from PyQt5.QtWidgets import QTreeWidgetItem, QApplication, QStyle
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QTreeWidgetItem, QApplication, QStyle
+from PyQt6.QtCore import Qt
 
 # Import StructureUtils
 try:
@@ -140,7 +140,7 @@ class StructureConverter:
             return None
         
         # Get item data and type
-        item_data = item.data(0, Qt.UserRole) or {}
+        item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
         item_type = item_data.get('type', None)
         
         # If type is not specified in data, infer it from child count
@@ -347,7 +347,7 @@ class StructureConverter:
             return
             
         # Get item data
-        item_data = item.data(0, Qt.UserRole)
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
         
         # If no data available, infer from text and children
         if not item_data:
@@ -357,13 +357,13 @@ class StructureConverter:
             else:
                 # Assume it's a file otherwise
                 item_data = {'type': 'file', 'name': item.text(0)}
-            item.setData(0, Qt.UserRole, item_data)
+            item.setData(0, Qt.ItemDataRole.UserRole, item_data)
         
         # Apply icon based on type
         if isinstance(item_data, dict) and 'type' in item_data:
             if item_data['type'] == 'folder':
                 # Use standard folder icon
-                from PyQt5.QtGui import QIcon
+                from PyQt6.QtGui import QIcon
                 item.setIcon(0, QIcon.fromTheme("folder"))
             else:
                 # Use file type icon
@@ -419,10 +419,10 @@ class StructureConverter:
                     
                     # Set user data
                     folder_data = {'type': 'folder', 'name': folder_name}
-                    tree_item.setData(0, Qt.UserRole, folder_data)
+                    tree_item.setData(0, Qt.ItemDataRole.UserRole, folder_data)
                     
                     # Set folder icon
-                    from PyQt5.QtGui import QIcon
+                    from PyQt6.QtGui import QIcon
                     tree_item.setIcon(0, QIcon.fromTheme("folder"))
                     
                     # Add children if they exist
@@ -475,7 +475,7 @@ class StructureConverter:
                     if uses_project_name and 'original_name' not in file_data:
                         file_data['original_name'] = file_name
                     
-                    tree_item.setData(0, Qt.UserRole, file_data)
+                    tree_item.setData(0, Qt.ItemDataRole.UserRole, file_data)
                     
                     # Set file icon
                     from .utils import get_file_icon_for_type
@@ -488,7 +488,7 @@ class StructureConverter:
                         tree_item.setFont(0, font)
                         
                         # Use a blue color for project name files
-                        from PyQt5.QtGui import QBrush, QColor
+                        from PyQt6.QtGui import QBrush, QColor
                         tree_item.setForeground(0, QBrush(QColor("#4A9BFF")))
                     
                     result_item = tree_item
@@ -519,10 +519,10 @@ class StructureConverter:
                     
                     # Set user data
                     folder_data = {'type': 'folder', 'name': folder_name}
-                    tree_item.setData(0, Qt.UserRole, folder_data)
+                    tree_item.setData(0, Qt.ItemDataRole.UserRole, folder_data)
                     
                     # Set folder icon
-                    from PyQt5.QtGui import QIcon
+                    from PyQt6.QtGui import QIcon
                     tree_item.setIcon(0, QIcon.fromTheme("folder"))
                     
                     # Filter and add children
@@ -561,10 +561,10 @@ class StructureConverter:
                     
                     # Set user data
                     folder_data = {'type': 'folder', 'name': key}
-                    folder_item.setData(0, Qt.UserRole, folder_data)
+                    folder_item.setData(0, Qt.ItemDataRole.UserRole, folder_data)
                     
                     # Set folder icon
-                    from PyQt5.QtGui import QIcon
+                    from PyQt6.QtGui import QIcon
                     folder_item.setIcon(0, QIcon.fromTheme("folder"))
                     
                     # Add children
@@ -593,7 +593,7 @@ class StructureConverter:
             
             # Set user data
             file_data = {'type': 'file', 'name': file_name}
-            tree_item.setData(0, Qt.UserRole, file_data)
+            tree_item.setData(0, Qt.ItemDataRole.UserRole, file_data)
             
             # Set file icon using utility function
             from .utils import get_file_icon_for_type
@@ -685,12 +685,12 @@ class StructureConverter:
         
         # Set folder name and mark as folder
         folder_item.setText(0, folder_name)
-        folder_item.setData(0, Qt.UserRole, {"type": "folder"})
+        folder_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder"})
         
         # Set folder icon
         try:
             # First try using QApplication standard icons (most reliable)
-            folder_icon = QApplication.style().standardIcon(QStyle.SP_DirIcon)
+            folder_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
             folder_item.setIcon(0, folder_icon)
             
             # Use bold text for folders
@@ -699,7 +699,7 @@ class StructureConverter:
             folder_item.setFont(0, font)
             
             # Make folder editable
-            folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+            folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
             
         except Exception as e:
             print(f"ERROR setting folder icon: {e}")
@@ -730,7 +730,7 @@ class StructureConverter:
         
         # Set file properties
         file_item.setText(0, file_name)
-        file_item.setData(0, Qt.UserRole, {"type": "file"})
+        file_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "file"})
         
         # Set file icon
         try:
@@ -740,7 +740,7 @@ class StructureConverter:
             
             # If no icon was found, use standard file icon
             if file_icon.isNull():
-                file_icon = QApplication.style().standardIcon(QStyle.SP_FileIcon)
+                file_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
                 
             file_item.setIcon(0, file_icon)
         except Exception as e:
@@ -748,12 +748,12 @@ class StructureConverter:
             
             # Fallback to standard file icon
             try:
-                file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+                file_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
             except:
                 pass  # Skip icon if even this fails
         
         # Set item to be editable
-        file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+        file_item.setFlags(file_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
         # Return the file item
         return file_item
@@ -781,7 +781,7 @@ class StructureConverter:
             
         if not template_manager:
             # Try to get main window template manager
-            from PyQt5.QtWidgets import QApplication
+            from PyQt6.QtWidgets import QApplication
             main_window = QApplication.activeWindow()
             if hasattr(main_window, 'template_manager'):
                 template_manager = main_window.template_manager
@@ -856,7 +856,7 @@ class StructureConverter:
             return None
             
         # Get item data if available
-        item_user_data = item.data(0, Qt.UserRole)
+        item_user_data = item.data(0, Qt.ItemDataRole.UserRole)
         
         # Determine if it's a folder
         is_folder = False
@@ -1108,7 +1108,7 @@ class StructureConverter:
                 "name": item.text(0),
                 "has_children": item.childCount() > 0,
                 "child_count": item.childCount(),
-                "user_data": str(item.data(0, Qt.UserRole))
+                "user_data": str(item.data(0, Qt.ItemDataRole.UserRole))
             }
             items_info.append(item_info)
             
@@ -1151,7 +1151,7 @@ class StructureConverter:
             item: Tree item to add
         """
         # Get item data
-        item_data = item.data(0, Qt.UserRole)
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
         
         # If no data, infer from text
         if not item_data:
@@ -1196,7 +1196,7 @@ class StructureConverter:
                         continue
                         
                     # Get child data
-                    child_data = child_item.data(0, Qt.UserRole)
+                    child_data = child_item.data(0, Qt.ItemDataRole.UserRole)
                     
                     if not child_data:
                         if child_item.childCount() > 0:

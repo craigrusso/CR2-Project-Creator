@@ -8,11 +8,11 @@ Provides a user interface for managing licenses in the application
 
 import os
 import webbrowser
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGroupBox, QFormLayout, QTabWidget, QWidget, QMessageBox
 )
-from PyQt5.QtCore import Qt, QSettings
+from PyQt6.QtCore import Qt, QSettings
 
 from app.utils.security.license_manager import (
     LicenseManager, LicenseActivationDialog,
@@ -76,7 +76,7 @@ class LicenseManagementDialog(QDialog):
         status_group = QGroupBox("License Status")
         status_layout = QFormLayout()  # Use QFormLayout for key-value pairs
         status_layout.setSpacing(10)  # Add spacing between rows
-        status_layout.setLabelAlignment(Qt.AlignRight) # Align labels to the right
+        status_layout.setLabelAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignRight) # Align labels to the right
         
         self.status_label = QLabel("Checking...")
         self.license_type_label = QLabel("--")
@@ -99,7 +99,7 @@ class LicenseManagementDialog(QDialog):
         trial_group = QGroupBox("Trial Information")
         trial_layout = QFormLayout()
         trial_layout.setSpacing(10)
-        trial_layout.setLabelAlignment(Qt.AlignRight)
+        trial_layout.setLabelAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignRight)
         
         self.trial_status_label = QLabel("Checking...")
         self.trial_days_label = QLabel("--")
@@ -303,7 +303,7 @@ class LicenseManagementDialog(QDialog):
     def open_activation_dialog(self):
         """Open the license activation dialog"""
         dialog = LicenseActivationDialog(self, self.license_manager)
-        result = dialog.exec_()
+        result = dialog.exec()
         
         if result == QDialog.Accepted:
             self.load_license_info() 

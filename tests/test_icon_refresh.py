@@ -13,8 +13,8 @@ import time
 # Add the parent directory to the path to make imports work
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QPushButton, QTreeWidget
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QPushButton, QTreeWidget
+from PyQt6.QtCore import Qt
 
 # Import tree styling and icon utilities
 from app.ui.tree_styling import apply_styling_to_all_tree_widgets
@@ -82,41 +82,41 @@ class IconRefreshTestWindow(QMainWindow):
     
     def _populate_sample_tree(self):
         """Add sample items to test the icon display"""
-        from PyQt5.QtWidgets import QTreeWidgetItem
+        from PyQt6.QtWidgets import QTreeWidgetItem
         
         # Adobe files
         adobe_folder = QTreeWidgetItem(self.tree)
         adobe_folder.setText(0, "Adobe Files")
-        adobe_folder.setData(0, Qt.UserRole, "folder")
+        adobe_folder.setData(0, Qt.ItemDataRole.UserRole, "folder")
         
         # Premiere Pro project
         prproj_item = QTreeWidgetItem(adobe_folder)
         prproj_item.setText(0, "MyProject.prproj")
-        prproj_item.setData(0, Qt.UserRole, "file")
+        prproj_item.setData(0, Qt.ItemDataRole.UserRole, "file")
         
         # After Effects project
         aep_item = QTreeWidgetItem(adobe_folder)
         aep_item.setText(0, "Animation.aep")
-        aep_item.setData(0, Qt.UserRole, "file")
+        aep_item.setData(0, Qt.ItemDataRole.UserRole, "file")
         
         # Photoshop file
         psd_item = QTreeWidgetItem(adobe_folder)
         psd_item.setText(0, "Graphic.psd")
-        psd_item.setData(0, Qt.UserRole, "file")
+        psd_item.setData(0, Qt.ItemDataRole.UserRole, "file")
         
         # Media files folder
         media_folder = QTreeWidgetItem(self.tree)
         media_folder.setText(0, "Media Files")
-        media_folder.setData(0, Qt.UserRole, "folder")
+        media_folder.setData(0, Qt.ItemDataRole.UserRole, "folder")
         
         # Video files
         mp4_item = QTreeWidgetItem(media_folder)
         mp4_item.setText(0, "Interview.mp4")
-        mp4_item.setData(0, Qt.UserRole, "file")
+        mp4_item.setData(0, Qt.ItemDataRole.UserRole, "file")
         
         mov_item = QTreeWidgetItem(media_folder)
         mov_item.setText(0, "Footage.mov")
-        mov_item.setData(0, Qt.UserRole, "file")
+        mov_item.setData(0, Qt.ItemDataRole.UserRole, "file")
         
         # Expand all items
         self.tree.expandAll()
@@ -157,4 +157,4 @@ if __name__ == "__main__":
     window = IconRefreshTestWindow()
     window.show()
     
-    sys.exit(app.exec_()) 
+    sys.exit(app.exec()) 

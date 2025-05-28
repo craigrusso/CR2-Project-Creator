@@ -13,8 +13,8 @@ import unittest
 import tempfile
 import shutil
 import json
-from PyQt5.QtWidgets import QApplication, QTreeWidgetItem
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QTreeWidgetItem
+from PyQt6.QtCore import Qt
 
 # Add project directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -62,20 +62,20 @@ class TestRenameFlag(unittest.TestCase):
         # Add a root folder
         self.project_folder = QTreeWidgetItem(self.root_item)
         self.project_folder.setText(0, "Project Folder")
-        self.project_folder.setData(0, Qt.UserRole, {"type": "folder", "name": "Project Folder"})
+        self.project_folder.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Project Folder"})
         
         # Add files to the folder with specific names for testing
         self.file_item1 = QTreeWidgetItem(self.project_folder)
         self.file_item1.setText(0, "regular_file.txt")
-        self.file_item1.setData(0, Qt.UserRole, {"type": "file", "name": "regular_file.txt", "path": self.test_file_path})
+        self.file_item1.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "name": "regular_file.txt", "path": self.test_file_path})
         
         self.file_item2 = QTreeWidgetItem(self.project_folder)
         self.file_item2.setText(0, "renamed_file.prproj")
-        self.file_item2.setData(0, Qt.UserRole, {"type": "file", "name": "renamed_file.prproj", "path": self.test_file_path})
+        self.file_item2.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "name": "renamed_file.prproj", "path": self.test_file_path})
         
         self.file_item3 = QTreeWidgetItem(self.project_folder)
         self.file_item3.setText(0, "legacy_file.txt")
-        self.file_item3.setData(0, Qt.UserRole, {"type": "file", "name": "legacy_file.txt", "path": self.test_file_path})
+        self.file_item3.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "name": "legacy_file.txt", "path": self.test_file_path})
     
     def tearDown(self):
         # Clean up the editor
@@ -84,11 +84,11 @@ class TestRenameFlag(unittest.TestCase):
     def test_rename_flag_prioritized(self):
         """Test that rename_flag is prioritized over uses_project_name."""
         # Set up item data with different flag combinations
-        item_data = self.file_item2.data(0, Qt.UserRole)
+        item_data = self.file_item2.data(0, Qt.ItemDataRole.UserRole)
         item_data['rename_flag'] = True
         item_data['uses_project_name'] = False  # uses_project_name is false but rename_flag is true
         item_data['original_name'] = "renamed_file.prproj"
-        self.file_item2.setData(0, Qt.UserRole, item_data)
+        self.file_item2.setData(0, Qt.ItemDataRole.UserRole, item_data)
         
         # Convert to structure
         converter = StructureConverter(tree_widget=self.editor.tree_widget)
@@ -136,11 +136,11 @@ class TestRenameFlag(unittest.TestCase):
     def test_uses_project_name_backward_compatibility(self):
         """Test backward compatibility with uses_project_name."""
         # Set up item data with only uses_project_name set
-        item_data = self.file_item3.data(0, Qt.UserRole)
+        item_data = self.file_item3.data(0, Qt.ItemDataRole.UserRole)
         item_data['uses_project_name'] = True  # Only uses_project_name is true
         item_data['rename_flag'] = False  # Explicitly set rename_flag to false
         item_data['original_name'] = "legacy_file.txt"
-        self.file_item3.setData(0, Qt.UserRole, item_data)
+        self.file_item3.setData(0, Qt.ItemDataRole.UserRole, item_data)
         
         # Convert to structure
         converter = StructureConverter(tree_widget=self.editor.tree_widget)
@@ -179,7 +179,7 @@ class TestRenameFlag(unittest.TestCase):
         self.editor._toggle_project_name_for_file(self.file_item1)
         
         # Check that both flags are set
-        item_data = self.file_item1.data(0, Qt.UserRole)
+        item_data = self.file_item1.data(0, Qt.ItemDataRole.UserRole)
         self.assertTrue(item_data.get('rename_flag', False),
                       "rename_flag should be set when toggling on")
         self.assertTrue(item_data.get('uses_project_name', False),
@@ -189,7 +189,7 @@ class TestRenameFlag(unittest.TestCase):
         self.editor._toggle_project_name_for_file(self.file_item1)
         
         # Check that both flags are cleared
-        item_data = self.file_item1.data(0, Qt.UserRole)
+        item_data = self.file_item1.data(0, Qt.ItemDataRole.UserRole)
         self.assertFalse(item_data.get('rename_flag', True),
                        "rename_flag should be cleared when toggling off")
         self.assertFalse(item_data.get('uses_project_name', True),

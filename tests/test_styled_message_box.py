@@ -7,7 +7,7 @@ This script runs quick tests to verify the styled message box buttons are displa
 """
 
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QMessageBox
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QMessageBox
 from app.ui.dialog_styling import StyledMessageBox
 from app.ui.app_theme_pyqt import force_app_palette, configure_styles
 
@@ -76,7 +76,7 @@ class TestWindow(QMainWindow):
         msgbox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         msgbox.setDefaultButton(QMessageBox.No)
         
-        result = msgbox.exec_()
+        result = msgbox.exec()
         
         if result == QMessageBox.Yes:
             print("User clicked Yes")
@@ -92,7 +92,7 @@ class TestWindow(QMainWindow):
         msgbox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
         msgbox.setDefaultButton(QMessageBox.No)
         
-        result = msgbox.exec_()
+        result = msgbox.exec()
         
         if result == QMessageBox.Yes:
             print("User clicked Yes")
@@ -111,7 +111,7 @@ def main():
     window = TestWindow()
     window.show()
     
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main() 

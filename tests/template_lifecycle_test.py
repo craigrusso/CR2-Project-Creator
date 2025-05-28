@@ -13,8 +13,8 @@ from pprint import pprint
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import PyQt modules
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QPushButton, QLabel, QWidget, QTextEdit, QScrollArea
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QPushButton, QLabel, QWidget, QTextEdit, QScrollArea
+from PyQt6.QtCore import Qt
 
 # Import template modules
 from app.templates.template_manager import TemplateManager
@@ -446,4 +446,4 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     test_window = TemplateLifecycleTest()
     test_window.show()
-    sys.exit(app.exec_()) 
+    sys.exit(app.exec()) 

@@ -17,7 +17,7 @@ import shutil
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Create QApplication first
-from PyQt5.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication
 app = QApplication(sys.argv)
 
 from app.ui.structure_editor.structure_converter import StructureConverter
@@ -69,8 +69,8 @@ def test_structure_converter():
         file_paths = create_test_files(temp_dir)
         
         # Create a mock QTreeWidgetItem with file data
-        from PyQt5.QtWidgets import QTreeWidgetItem, QTreeWidget
-        from PyQt5.QtCore import Qt
+        from PyQt6.QtWidgets import QTreeWidgetItem, QTreeWidget
+        from PyQt6.QtCore import Qt
         
         # Create a tree widget to hold our items
         tree = QTreeWidget()
@@ -80,7 +80,7 @@ def test_structure_converter():
         folder_item = QTreeWidgetItem(root)
         folder_item.setText(0, "TestFolder")
         folder_data = {'type': 'folder', 'name': 'TestFolder'}
-        folder_item.setData(0, Qt.UserRole, folder_data)
+        folder_item.setData(0, Qt.ItemDataRole.UserRole, folder_data)
         
         # Create file items in the folder with file paths
         for filename, filepath in file_paths.items():
@@ -94,7 +94,7 @@ def test_structure_converter():
                 'path': filepath,
                 'is_binary': False
             }
-            file_item.setData(0, Qt.UserRole, file_data)
+            file_item.setData(0, Qt.ItemDataRole.UserRole, file_data)
         
         # Create structure converter
         converter = StructureConverter(tree)

@@ -11,8 +11,8 @@ import sys
 import shutil
 import tempfile
 import json
-from PyQt5.QtWidgets import QApplication, QTreeWidgetItem
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QTreeWidgetItem
+from PyQt6.QtCore import Qt
 
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -73,7 +73,7 @@ class TestStructureConversion(unittest.TestCase):
     def test_structure_converter(self):
         """Test the StructureConverter's _process_item method"""
         # Create a tree structure manually
-        from PyQt5.QtWidgets import QTreeWidget
+        from PyQt6.QtWidgets import QTreeWidget
         
         # Create tree widget
         tree = QTreeWidget()
@@ -84,27 +84,27 @@ class TestStructureConversion(unittest.TestCase):
         # Create root item
         root = QTreeWidgetItem(tree)
         root.setText(0, "Project Root")
-        root.setData(0, Qt.UserRole, "folder")
+        root.setData(0, Qt.ItemDataRole.UserRole, "folder")
         
         # Add folder with children
         folder1 = QTreeWidgetItem(root)
         folder1.setText(0, "Folder1")
-        folder1.setData(0, Qt.UserRole, "folder")
+        folder1.setData(0, Qt.ItemDataRole.UserRole, "folder")
         
         # Add file to folder1
         file1 = QTreeWidgetItem(folder1)
         file1.setText(0, "file1.txt")
-        file1.setData(0, Qt.UserRole, "file")
+        file1.setData(0, Qt.ItemDataRole.UserRole, "file")
         
         # Add nested folder
         folder2 = QTreeWidgetItem(folder1)
         folder2.setText(0, "Folder2")
-        folder2.setData(0, Qt.UserRole, "folder")
+        folder2.setData(0, Qt.ItemDataRole.UserRole, "folder")
         
         # Add file to folder2
         file2 = QTreeWidgetItem(folder2)
         file2.setText(0, "file2.txt")
-        file2.setData(0, Qt.UserRole, "file")
+        file2.setData(0, Qt.ItemDataRole.UserRole, "file")
         
         # Process the structure
         structure = converter.get_structure()
@@ -167,7 +167,7 @@ class TestStructureConversion(unittest.TestCase):
         if editor.structure_tree.topLevelItemCount() == 0:
             root_item = QTreeWidgetItem(editor.structure_tree)
             root_item.setText(0, "Project Root")
-            root_item.setData(0, Qt.UserRole, "folder")
+            root_item.setData(0, Qt.ItemDataRole.UserRole, "folder")
         else:
             root_item = editor.structure_tree.topLevelItem(0)
         
@@ -226,45 +226,45 @@ class TestStructureConversion(unittest.TestCase):
     def test_nested_structure_conversion(self):
         """Test converting a nested structure with multiple levels"""
         # Create a tree widget to test
-        from PyQt5.QtWidgets import QTreeWidget, QTreeWidgetItem
+        from PyQt6.QtWidgets import QTreeWidget, QTreeWidgetItem
         tree = QTreeWidget()
         
         # Create a root item
         root_item = QTreeWidgetItem(tree)
         root_item.setText(0, "Project Root")
-        root_item.setData(0, Qt.UserRole, {"type": "folder", "name": "Project Root"})
+        root_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Project Root"})
         
         # Create first level folder
         folder1 = QTreeWidgetItem(root_item)
         folder1.setText(0, "Level1")
-        folder1.setData(0, Qt.UserRole, {"type": "folder", "name": "Level1"})
+        folder1.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Level1"})
         
         # Create second level folder
         folder2 = QTreeWidgetItem(folder1)
         folder2.setText(0, "Level2")
-        folder2.setData(0, Qt.UserRole, {"type": "folder", "name": "Level2"})
+        folder2.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Level2"})
         
         # Create third level folder
         folder3 = QTreeWidgetItem(folder2)
         folder3.setText(0, "Level3")
-        folder3.setData(0, Qt.UserRole, {"type": "folder", "name": "Level3"})
+        folder3.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Level3"})
         
         # Add a file to each level
         file1 = QTreeWidgetItem(root_item)
         file1.setText(0, "root_file.txt")
-        file1.setData(0, Qt.UserRole, {"type": "file", "name": "root_file.txt"})
+        file1.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "name": "root_file.txt"})
         
         file2 = QTreeWidgetItem(folder1)
         file2.setText(0, "level1_file.txt")
-        file2.setData(0, Qt.UserRole, {"type": "file", "name": "level1_file.txt"})
+        file2.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "name": "level1_file.txt"})
         
         file3 = QTreeWidgetItem(folder2)
         file3.setText(0, "level2_file.txt")
-        file3.setData(0, Qt.UserRole, {"type": "file", "name": "level2_file.txt"})
+        file3.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "name": "level2_file.txt"})
         
         file4 = QTreeWidgetItem(folder3)
         file4.setText(0, "level3_file.txt")
-        file4.setData(0, Qt.UserRole, {"type": "file", "name": "level3_file.txt"})
+        file4.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "name": "level3_file.txt"})
         
         # Create a structure converter
         converter = StructureConverter(tree_widget=tree)

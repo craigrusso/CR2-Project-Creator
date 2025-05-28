@@ -12,8 +12,8 @@ import json
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QLabel
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QPushButton, QTextEdit, QLabel
+from PyQt6.QtCore import Qt
 
 from app.ui.structure_editor_enhanced import EnhancedStructureEditor
 from app.templates.template_operations import TemplateOperations
@@ -247,7 +247,7 @@ class StructureEditorTestHarness(QWidget):
             # Set the template manager on the editor
             editor.template_manager = self.template_manager
             
-            result = editor.exec_()
+            result = editor.exec()
             self.log(f"Editor closed with result: {result}")
             
             if result == 1:  # Accepted
@@ -278,7 +278,7 @@ class StructureEditorTestHarness(QWidget):
             if hasattr(editor, 'name_input') and editor.name_input:
                 editor.name_input.setText("Test Template")
                 
-            result = editor.exec_()
+            result = editor.exec()
             self.log(f"Editor closed with result: {result}")
             
             if result == 1:  # Accepted
@@ -296,7 +296,7 @@ def main():
     app = QApplication(sys.argv)
     test_harness = StructureEditorTestHarness()
     test_harness.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main() 

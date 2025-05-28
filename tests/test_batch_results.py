@@ -4,8 +4,8 @@
 import os
 import sys
 import tempfile
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import Qt
 
 def main():
     """Test the show_batch_results function with different result formats"""

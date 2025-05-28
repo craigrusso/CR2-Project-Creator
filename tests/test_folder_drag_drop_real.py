@@ -10,9 +10,9 @@ import sys
 import os
 import tempfile
 import shutil
-from PyQt5.QtWidgets import QApplication, QDialog, QVBoxLayout, QPushButton, QLabel, QTreeWidgetItem
-from PyQt5.QtCore import Qt, QMimeData, QUrl, QPoint
-from PyQt5.QtGui import QDragEnterEvent, QDropEvent
+from PyQt6.QtWidgets import QApplication, QDialog, QVBoxLayout, QPushButton, QLabel, QTreeWidgetItem
+from PyQt6.QtCore import Qt, QMimeData, QUrl, QPoint
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent
 
 # Create application instance before importing UI components
 app = QApplication(sys.argv)
@@ -104,10 +104,10 @@ class FolderDragDropRealTest(QDialog):
         # Create the drop event
         drop_event = QDropEvent(
             pos,
-            Qt.CopyAction,
+            Qt.DropAction.CopyAction,
             mime_data,
-            Qt.LeftButton,
-            Qt.NoModifier,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
             QDropEvent.Drop
         )
         
@@ -168,7 +168,7 @@ class FolderDragDropRealTest(QDialog):
         for i in range(item.childCount()):
             child = item.child(i)
             item_name = child.text(0)
-            item_data = child.data(0, Qt.UserRole)
+            item_data = child.data(0, Qt.ItemDataRole.UserRole)
             
             print(f"{indent}├─ {item_name} ({item_data})")
             self._print_item_recursive(child, level + 1)
@@ -186,7 +186,7 @@ if __name__ == "__main__":
     try:
         test_window = FolderDragDropRealTest()
         test_window.show()
-        sys.exit(app.exec_())
+        sys.exit(app.exec())
     except Exception as e:
         print(f"Test failed: {e}")
         import traceback

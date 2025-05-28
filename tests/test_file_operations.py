@@ -3,8 +3,8 @@
 
 import sys
 import os
-from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import QTimer, QObject, pyqtSignal
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QTimer, QObject, pyqtSignal
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -136,7 +136,7 @@ try:
     print("Try using the Add Folder, Add File buttons manually to test their functionality.")
     
     # Exit the application after testing
-    app.exec_()
+    app.exec()
     
 except Exception as e:
     print(f"❌ Error during testing: {e}")

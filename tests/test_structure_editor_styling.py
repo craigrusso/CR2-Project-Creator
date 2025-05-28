@@ -4,9 +4,9 @@
 import sys
 import os
 import unittest
-from PyQt5.QtWidgets import QApplication, QTreeWidgetItem, QTreeWidget
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QIcon
+from PyQt6.QtWidgets import QApplication, QTreeWidgetItem, QTreeWidget
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIcon
 
 from app.ui.structure_editor_enhanced import EnhancedStructureEditor
 

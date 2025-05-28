@@ -7,7 +7,7 @@ Tests both standard dialogs and our styled versions to verify button appearance.
 """
 
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QInputDialog, QDialog
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QInputDialog, QDialog
 from app.ui.dialog_styling import StyledMessageBox, StyledInputDialog
 from app.ui.app_theme_pyqt import force_app_palette, configure_styles
 
@@ -86,7 +86,7 @@ def main():
     window = TestWindow()
     window.show()
     
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main() 

@@ -8,8 +8,8 @@ Tests context menu, folder icons, and inline text editing.
 
 import sys
 import os
-from PyQt5.QtWidgets import QApplication, QDialog, QVBoxLayout, QPushButton, QLabel
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QDialog, QVBoxLayout, QPushButton, QLabel
+from PyQt6.QtCore import Qt
 
 # Create application instance first
 app = QApplication(sys.argv)
@@ -35,7 +35,7 @@ class TestDialog(QDialog):
             "3. Test right-click context menu\n"
             "4. Test 'Use Project Name' feature"
         )
-        instructions.setAlignment(Qt.AlignCenter)
+        instructions.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
         layout.addWidget(instructions)
         
         # Add button to launch structure editor
@@ -45,7 +45,7 @@ class TestDialog(QDialog):
         
         # Add results label
         self.results_label = QLabel("Results will appear here")
-        self.results_label.setAlignment(Qt.AlignCenter)
+        self.results_label.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
         layout.addWidget(self.results_label)
     
     def launch_editor(self):
@@ -58,7 +58,7 @@ class TestDialog(QDialog):
             )
             
             # Show the editor as a dialog
-            result = editor.exec_()
+            result = editor.exec()
             
             if result == QDialog.Accepted:
                 # If editor was accepted, show success
@@ -82,7 +82,7 @@ if __name__ == "__main__":
         dialog.show()
         
         # Run application
-        sys.exit(app.exec_())
+        sys.exit(app.exec())
     except Exception as e:
         print(f"ERROR: Test failed: {e}")
         import traceback

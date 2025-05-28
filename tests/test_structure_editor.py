@@ -7,8 +7,8 @@ Test script for the Enhanced Structure Editor
 
 import sys
 import os
-from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt
 
 # Import from our app
 from app.ui.structure_editor_functions import (
@@ -184,7 +184,7 @@ def main():
     window.show()
     
     # Start the application event loop
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main() 

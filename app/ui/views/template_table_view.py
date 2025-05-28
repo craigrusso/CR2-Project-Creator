@@ -6,11 +6,12 @@ QTableView subclass for displaying templates with spreadsheet-like column behavi
 """
 
 import os
-from PyQt5.QtWidgets import (QTableView, QHeaderView, QAbstractItemView, 
+from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import (QTableView, QHeaderView, QAbstractItemView, 
                              QStyledItemDelegate, QStyleOptionViewItem, QStyle,
-                             QStyleOptionHeader, QApplication, QMenu, QAction, QMessageBox)
-from PyQt5.QtCore import Qt, QSettings, QModelIndex, QSize, QRect, QPoint, QSortFilterProxyModel, QByteArray, QMimeData, QItemSelectionModel, pyqtSignal, QTimer
-from PyQt5.QtGui import QStandardItemModel, QStandardItem, QColor, QPalette, QIcon, QBrush, QPainter, QFontMetrics, QFont, QDrag, QPixmap, QCursor
+                             QStyleOptionHeader, QApplication, QMenu, QMessageBox)
+from PyQt6.QtCore import Qt, QSettings, QModelIndex, QSize, QRect, QPoint, QSortFilterProxyModel, QByteArray, QMimeData, QItemSelectionModel, pyqtSignal, QTimer
+from PyQt6.QtGui import QStandardItemModel, QStandardItem, QColor, QPalette, QIcon, QBrush, QPainter, QFontMetrics, QFont, QDrag, QPixmap, QCursor
 
 from app.constants import get_resource_path
 # from app.utils.data_management import DataManager # Removed unused import
@@ -38,10 +39,10 @@ except ImportError:
 #     pass
 
 # Define a custom role for the warning flag
-WarningRole = Qt.UserRole + 1
+WarningRole = Qt.ItemDataRole.UserRole + 1
 # Define custom roles for filtering
-IsFolderRole = Qt.UserRole + 2
-ParentPathRole = Qt.UserRole + 3
+IsFolderRole = Qt.ItemDataRole.UserRole + 2
+ParentPathRole = Qt.ItemDataRole.UserRole + 3
 
 # --- Custom Delegate for Icon + Name ---
 class IconNameDelegate(QStyledItemDelegate):
@@ -50,14 +51,29 @@ class IconNameDelegate(QStyledItemDelegate):
         super().__init__(parent)
         self.icon_size = icon_size
         self.padding = padding # Space between icon and text, and left margin
+        self.selection_model = None
 
     def paint(self, painter, option, index):
+        """Custom painting for the item icon and name"""
+        # Debug line to log the important details - useful to understand widget state
+        print(f"[DEBUG IconNameDelegate.paint] START - Item: '{index.data()}', Row: {index.row()}, OptionState: {option.state}")
+        
+        # Check if the item is selected through option state OR selection model
+        is_selected_option_state = bool(option.state & QStyle.StateFlag.State_Selected)
+        is_selected_model = False
+        if self.selection_model:
+            is_selected_model = self.selection_model.isSelected(index)
+            print(f"[DEBUG IconNameDelegate.paint] Item: '{index.data()}', selection_model.isSelected(index): {is_selected_model}")
+        
         # Ensure we have style options
         self.initStyleOption(option, index)
         
+        item_text_for_log = index.data(Qt.ItemDataRole.DisplayRole) # Get text for logging
+        print(f"[DEBUG IconNameDelegate.paint] START - Item: '{item_text_for_log}', Row: {index.row()}, OptionState: {option.state}")
+
         # Get data from the model 
-        icon = index.data(Qt.DecorationRole) # Get icon set in populate_data
-        text = index.data(Qt.DisplayRole)
+        icon = index.data(Qt.ItemDataRole.DecorationRole) # Get icon set in populate_data
+        text = index.data(Qt.ItemDataRole.DisplayRole)
         is_warning = index.data(WarningRole) # Get warning flag
         
         # Get the cell rectangle
@@ -66,20 +82,25 @@ class IconNameDelegate(QStyledItemDelegate):
         # Save painter state to restore later
         painter.save()
         
-        # --- Check Selection Status (Multiple Ways) ---
-        # 1. First check the selection model directly (most reliable)
-        is_selected = False
-        if option.widget:
-            view = option.widget
-            if hasattr(view, 'selectionModel'):
-                selection_model = view.selectionModel()
-                if selection_model:
-                    # Check if this row is selected in the model
-                    is_selected = selection_model.isSelected(index)
-                    
-        # 2. Also check the option state as fallback
-        if not is_selected:
-            is_selected = bool(option.state & QStyle.State_Selected)
+        # Decide final is_selected (prioritize model check if available, otherwise option state)
+        is_selected = is_selected_model or is_selected_option_state
+        
+        print(f"[DEBUG IconNameDelegate.paint] Item: '{item_text_for_log}', Final is_selected decision: {is_selected}")
+        
+        # <<< NEW: Explicitly set option.state if our logic determined it's selected >>>
+        if is_selected:
+            option.state |= QStyle.StateFlag.State_Selected
+        else:
+            option.state &= ~QStyle.StateFlag.State_Selected # Ensure it's not set if not selected
+        # <<< END NEW >>>
+        
+        # Set up style flags for painting (will be used by the base implementation)
+        if is_selected:
+            option.state |= QStyle.StateFlag.State_Selected
+            option.palette.setBrush(QPalette.ColorRole.Text, QBrush(option.palette.color(QPalette.ColorRole.HighlightedText)))
+        else:
+            option.state &= ~QStyle.StateFlag.State_Selected
+            option.palette.setBrush(QPalette.ColorRole.Text, QBrush(option.palette.color(QPalette.ColorRole.Text)))
         
         # --- Draw Background ---
         if is_selected:
@@ -90,7 +111,7 @@ class IconNameDelegate(QStyledItemDelegate):
             # For non-selected items, use the default style
             option.text = "" # Prevent default text drawing
             option.icon = QIcon() # Prevent default icon drawing
-            option.widget.style().drawControl(QStyle.CE_ItemViewItem, option, painter, option.widget)
+            option.widget.style().drawControl(QStyle.ControlElement.CE_ItemViewItem, option, painter, option.widget)
         
         # --- Draw Icon or Warning Character --- 
         icon_offset = self.padding # Default to only left padding
@@ -112,14 +133,14 @@ class IconNameDelegate(QStyledItemDelegate):
             # Ensure the character is centered vertically within the icon area
             fm = QFontMetrics(font)
             char_rect = QRect(h_pos, rect.y(), self.icon_size.width(), rect.height())
-            painter.drawText(char_rect, Qt.AlignCenter, "⚠")
+            painter.drawText(char_rect, Qt.AlignmentFlag.AlignCenter, "⚠")
             painter.restore()
             icon_offset = self.icon_size.width() + self.padding * 2
             
         elif isinstance(icon, QIcon) and not icon.isNull(): # Draw default icon if not warning
             icon_rect = QRect(QPoint(h_pos, v_center), self.icon_size)
-            icon_mode = QIcon.Selected if is_selected else QIcon.Normal
-            icon_state = QIcon.On if is_selected else QIcon.Off
+            icon_mode = QIcon.Mode.Selected if is_selected else QIcon.Mode.Normal
+            icon_state = QIcon.State.On if is_selected else QIcon.State.Off
             pixmap = icon.pixmap(self.icon_size, icon_mode, icon_state)
             painter.drawPixmap(icon_rect, pixmap)
             icon_offset = self.icon_size.width() + self.padding * 2 # Icon width + padding on both sides
@@ -137,9 +158,10 @@ class IconNameDelegate(QStyledItemDelegate):
             
             # Use style options for font, alignment etc.
             # Elide text if it overflows
-            elided_text = option.fontMetrics.elidedText(text, Qt.ElideRight, text_rect.width())
-            painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, elided_text)
+            elided_text = option.fontMetrics.elidedText(text, Qt.TextElideMode.ElideRight, text_rect.width())
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, elided_text)
             
+        print(f"[DEBUG IconNameDelegate.paint] END - Item: '{item_text_for_log}'")
         # Restore painter state
         painter.restore()
 
@@ -217,11 +239,11 @@ class SortableHeaderView(QHeaderView):
         painter.setPen(text_color) # Set the text color directly
         
         # Get text and alignment flags
-        text = self.model().headerData(logicalIndex, self.orientation(), Qt.DisplayRole)
-        alignment = Qt.AlignLeft | Qt.AlignVCenter # Consistent alignment
+        text = self.model().headerData(logicalIndex, self.orientation(), Qt.ItemDataRole.DisplayRole)
+        alignment = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter # Consistent alignment
         
         # Elide text if necessary
-        elided_text = painter.fontMetrics().elidedText(text, Qt.ElideRight, text_rect.width())
+        elided_text = painter.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, text_rect.width())
         
         # Draw the text within the calculated text_rect
         painter.drawText(text_rect, alignment, elided_text)
@@ -231,19 +253,19 @@ class SortableHeaderView(QHeaderView):
             import platform # Import platform module here
             if platform.system() == "Windows":
                 # Draw simple character indicator for Windows
-                indicator_char = "v" if self.sortIndicatorOrder() == Qt.DescendingOrder else "^"
+                indicator_char = "v" if self.sortIndicatorOrder() == Qt.SortOrder.DescendingOrder else "^"
                 painter.setPen(text_color) # Use the same text color
                 # Draw text centered within the arrow_rect
-                painter.drawText(arrow_rect, Qt.AlignCenter, indicator_char)
+                painter.drawText(arrow_rect, Qt.AlignmentFlag.AlignCenter, indicator_char)
             else:
                 # Draw native arrow for macOS and others
                 arrow_option = QStyleOptionHeader() 
                 self.initStyleOption(arrow_option) 
                 arrow_option.rect = arrow_rect 
-                arrow_option.sortIndicator = (QStyleOptionHeader.SortDown 
-                                           if self.sortIndicatorOrder() == Qt.DescendingOrder 
-                                           else QStyleOptionHeader.SortUp)
-                self.style().drawPrimitive(QStyle.PE_IndicatorHeaderArrow, arrow_option, painter, self)
+                arrow_option.sortIndicator = (QStyleOptionHeader.SortIndicator.SortDown 
+                                           if self.sortIndicatorOrder() == Qt.SortOrder.DescendingOrder 
+                                           else QStyleOptionHeader.SortIndicator.SortUp)
+                self.style().drawPrimitive(QStyle.PrimitiveElement.PE_IndicatorHeaderArrow, arrow_option, painter, self)
         
         painter.restore()
 
@@ -264,7 +286,7 @@ class TemplateSortFilterProxyModel(QSortFilterProxyModel):
         self._current_filter_folder_path = folder_path
         self.invalidateFilter()
 
-    def sort(self, column, order=Qt.AscendingOrder):
+    def sort(self, column, order=Qt.SortOrder.AscendingOrder):
         """Override sort to ensure filtering is maintained during sorting."""
         # Maintain a local reference to the current filter settings before sorting
         current_filter_path = self._current_filter_folder_path
@@ -330,7 +352,7 @@ class TemplateSortFilterProxyModel(QSortFilterProxyModel):
 
         # Debugging output to help locate issues
         if self._sort_in_progress:
-            item_name = source_model.data(source_index, Qt.DisplayRole)
+            item_name = source_model.data(source_index, Qt.ItemDataRole.DisplayRole)
             parent_str = str(parent_path) if parent_path else "ROOT"
             print(f"[FILTER DEBUG] During sort - checking item '{item_name}', parent: {parent_str}, is_folder: {is_folder}")
 
@@ -413,18 +435,18 @@ class TemplateTableView(QTableView):
         self.setAlternatingRowColors(True) # Improves readability
         self.setShowGrid(False) # Cleaner look, like Finder
         self.setWordWrap(False)
-        self.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.setSelectionMode(QAbstractItemView.ExtendedSelection) # Allow multi-select
-        self.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
-        self.setEditTriggers(QAbstractItemView.NoEditTriggers) # Read-only view
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection) # Allow multi-select
+        self.setHorizontalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers) # Read-only view
         
         # Enable sorting
         self.setSortingEnabled(True)
         
         # --- Enable Dragging --- 
         self.setDragEnabled(True)
-        self.setDragDropMode(QAbstractItemView.DragOnly) # We only drag *from* this table
+        self.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly) # We only drag *from* this table
         # ---------------------
         
         # Set default icon size for the view - No longer needed here, delegate handles size
@@ -433,11 +455,11 @@ class TemplateTableView(QTableView):
         # Apply basic styling from color scheme
         # More specific styling might be needed via QSS
         palette = self.palette()
-        palette.setColor(QPalette.Base, QColor(colors.get('bg_dark', '#1E1E1E')))
-        palette.setColor(QPalette.AlternateBase, QColor(colors.get('bg_medium', '#2A2A2A')))
-        palette.setColor(QPalette.Text, QColor(colors.get('primary_text', '#FFFFFF')))
-        palette.setColor(QPalette.HighlightedText, QColor(colors.get('primary_text', '#FFFFFF')))
-        palette.setColor(QPalette.Highlight, QColor(colors.get('selection_bg', '#2C4F76')))
+        palette.setColor(QPalette.ColorRole.Base, QColor(colors.get('bg_dark', '#1E1E1E')))
+        palette.setColor(QPalette.ColorRole.AlternateBase, QColor(colors.get('bg_medium', '#2A2A2A')))
+        palette.setColor(QPalette.ColorRole.Text, QColor(colors.get('primary_text', '#FFFFFF')))
+        palette.setColor(QPalette.ColorRole.HighlightedText, QColor(colors.get('primary_text', '#FFFFFF')))
+        palette.setColor(QPalette.ColorRole.Highlight, QColor(colors.get('selection_bg', '#2C4F76')))
         self.setPalette(palette)
         
         # Delegate for custom row padding/styling if needed
@@ -446,13 +468,13 @@ class TemplateTableView(QTableView):
     def _configure_header(self):
         """Configure the horizontal header view for desired resize behavior."""
         # Use the custom SortableHeaderView
-        header = SortableHeaderView(Qt.Horizontal, self)
+        header = SortableHeaderView(Qt.Orientation.Horizontal, self)
         self.setHorizontalHeader(header)
         
         header.setObjectName("TemplateTableHeader")
         
         # Enable interactive resizing, disable auto-stretching
-        header.setSectionResizeMode(QHeaderView.Interactive) 
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive) 
         header.setStretchLastSection(False) 
         
         # Allow reordering columns
@@ -462,7 +484,7 @@ class TemplateTableView(QTableView):
         header.setMinimumSectionSize(self.DEFAULT_MIN_COLUMN_WIDTH)
         
         # Ensure header text is visible
-        header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         
         # Apply some basic styling (can be enhanced with QSS)
         # --- Temporarily commented out to test palette conflict ---
@@ -527,8 +549,8 @@ class TemplateTableView(QTableView):
             name = template_or_folder_data.get('name', 'Unknown') # Ensure name exists
             name_item = QStandardItem(name)
             # Store name data for display and editing (if applicable)
-            name_item.setData(name, Qt.DisplayRole)
-            name_item.setData(name, Qt.EditRole)
+            name_item.setData(name, Qt.ItemDataRole.DisplayRole)
+            name_item.setData(name, Qt.ItemDataRole.EditRole)
             
             is_folder_item = template_or_folder_data.get('is_folder', False)
             parent_folder_path = template_or_folder_data.get('parent_folder', None) # None implies root for templates
@@ -540,7 +562,7 @@ class TemplateTableView(QTableView):
             
             if is_folder_item:
                 # Folder specific setup
-                name_item.setIcon(QApplication.style().standardIcon(QStyle.SP_DirIcon)) # Standard folder icon
+                name_item.setIcon(QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)) # Standard folder icon
                 name_item.setData(False, WarningRole) # Folders don't have warning state like templates
                 name_item.setToolTip(f"Folder: {name}")
                 # Folders typically don't have category, created, modified in this context
@@ -552,8 +574,8 @@ class TemplateTableView(QTableView):
                         if not isinstance(row_items[col_idx], QStandardItem):
                             row_items[col_idx] = QStandardItem("")
                         # Optionally, set empty display/edit roles if needed for consistency
-                        row_items[col_idx].setData("", Qt.DisplayRole)
-                        row_items[col_idx].setData("", Qt.EditRole)
+                        row_items[col_idx].setData("", Qt.ItemDataRole.DisplayRole)
+                        row_items[col_idx].setData("", Qt.ItemDataRole.EditRole)
             else:
                 # Template specific setup (existing logic)
                 # --- Set Icon based on structure presence --- Corrected Logic ---
@@ -588,15 +610,15 @@ class TemplateTableView(QTableView):
                         if header in ['created', 'modified']:
                             try:
                                 timestamp = float(raw_value)
-                                item.setData(timestamp, Qt.EditRole) 
+                                item.setData(timestamp, Qt.ItemDataRole.EditRole) 
                                 display_str = self._format_timestamp(timestamp)
-                                item.setData(display_str, Qt.DisplayRole)
+                                item.setData(display_str, Qt.ItemDataRole.DisplayRole)
                             except (ValueError, TypeError):
-                                item.setData(str(raw_value), Qt.DisplayRole) 
-                                item.setData(str(raw_value), Qt.EditRole)
+                                item.setData(str(raw_value), Qt.ItemDataRole.DisplayRole) 
+                                item.setData(str(raw_value), Qt.ItemDataRole.EditRole)
                         else:
-                            item.setData(str(raw_value), Qt.DisplayRole)
-                            item.setData(str(raw_value), Qt.EditRole)
+                            item.setData(str(raw_value), Qt.ItemDataRole.DisplayRole)
+                            item.setData(str(raw_value), Qt.ItemDataRole.EditRole)
                     # If raw_value is None, item remains empty (default QStandardItem)
             
             source_model.appendRow(row_items) # Append to source model directly
@@ -693,7 +715,7 @@ class TemplateTableView(QTableView):
                 templates_to_drag = []
                 for index in selected_indexes:
                     # Get data directly from the model's DisplayRole (proxy should handle this)
-                    name = model.data(index, Qt.DisplayRole)
+                    name = model.data(index, Qt.ItemDataRole.DisplayRole)
                     if name:
                         # Get full template data from template manager if available
                         if hasattr(gallery, 'template_manager') and gallery.template_manager:
@@ -714,7 +736,7 @@ class TemplateTableView(QTableView):
             templates_to_drag = []
             for index in selected_indexes:
                 # Get data directly from the model's DisplayRole (proxy should handle this)
-                name = model.data(index, Qt.DisplayRole)
+                name = model.data(index, Qt.ItemDataRole.DisplayRole)
                 if name:
                     # Create a simple template dict for consistency with TemplateCard drag
                     template_dict = {'name': name}
@@ -767,26 +789,16 @@ class TemplateTableView(QTableView):
         if selection_model:
             selection_model.blockSignals(True)
             
-        # Execute the drag
-        action_performed = drag.exec_(supportedActions, Qt.CopyAction)  # Use CopyAction to prevent clearing selection
-        
-        final_result = action_performed
+        # Execute the drag operation
+        action_performed = drag.exec(supportedActions, Qt.DropAction.CopyAction)  # Use CopyAction to prevent clearing selection
 
-        # If the view is DragOnly, it should ideally only report CopyAction or IgnoreAction,
-        # as it's not supposed to be the source of a move.
-        if self.dragDropMode() == QAbstractItemView.DragOnly:
-            if action_performed == Qt.MoveAction:
-                # Even if a MoveAction was reported by drag.exec_,
-                # a DragOnly source should report CopyAction,
-                # as it implies the data was copied, not moved from the source.
-                print(f"[INFO] DragOnly source: drag.exec_ returned MoveAction ({action_performed}). Overriding to CopyAction.")
-                final_result = Qt.CopyAction
-            elif not (action_performed == Qt.CopyAction or action_performed == Qt.IgnoreAction):
-                # If it's not Ignore, and not Copy (and not Move, handled above),
-                # then it's some other action like LinkAction.
-                # For DragOnly, this is also unexpected. Default to Ignore.
-                print(f"[INFO] DragOnly source: drag.exec_ returned unexpected action {action_performed} ({type(action_performed)}). Overriding to IgnoreAction.")
-                final_result = Qt.IgnoreAction
+        # Check if the action was a move and if the source should be modified (e.g., remove item)
+        if action_performed == Qt.DropAction.MoveAction:
+            # Even if a MoveAction was reported by drag.exec_,
+            # a DragOnly source should report CopyAction,
+            # as it implies the data was copied, not moved from the source.
+            print(f"[INFO] DragOnly source: drag.exec_ returned MoveAction ({action_performed}). Overriding to CopyAction.")
+            action_performed = Qt.DropAction.CopyAction
         
         # Unblock selection signals
         if selection_model:
@@ -804,21 +816,25 @@ class TemplateTableView(QTableView):
                 
         # Finish the drag operation
         # print(f"[DEBUG] Table drag completed with result: {result}") # Original print
-        print(f"[DEBUG] Table drag completed. Reported action: {final_result}, Actual action from exec: {action_performed}")
+        print(f"[DEBUG] Table drag completed. Reported action: {action_performed}, Actual action from exec: {action_performed}")
 
     def mousePressEvent(self, event):
-        # Get the index at the click position
+        print(f"[DEBUG TemplateTableView.mousePressEvent] START - Pos: {event.pos()}, Button: {event.button()}, Modifiers: {event.modifiers()}")
         index = self.indexAt(event.pos())
-        
-        # Handle right-click on blank area (no valid index)
-        if event.button() == Qt.RightButton and not index.isValid():
-            # Let the parent class handle non-table click events (like context menu)
-            if hasattr(self, 'customContextMenuRequested'):
-                self.customContextMenuRequested.emit(event.pos())
-            return
-        
-        # For other cases, use the standard handler
+        item_text = self.model().data(index, Qt.ItemDataRole.DisplayRole) if index.isValid() else "N/A"
+        print(f"[DEBUG TemplateTableView.mousePressEvent] Index: r{index.row()},c{index.column()}, Valid: {index.isValid()}, Item: '{item_text}'")
+
+        # Let QTableView handle the selection logic primarily via super()
         super().mousePressEvent(event)
+
+        # Custom right-click handling for context menu on blank area can remain if needed,
+        # but it should be checked *after* super() if we want default processing first,
+        # or before if we want to intercept it.
+        # For now, let QTableView also handle right-clicks that might select then show context menu.
+        # If specific blank area context menu is needed without selection, it would be handled
+        # in the gallery widget via customContextMenuRequested on the table view itself.
+
+        print(f"[DEBUG TemplateTableView.mousePressEvent] END - After super()")
 
     def get_icon_for_template(self, template_name):
         """Return QIcon for the template, using default if specific one not found."""
@@ -850,7 +866,7 @@ class TemplateTableView(QTableView):
 
 if __name__ == '__main__':
     # Example usage for testing
-    from PyQt5.QtWidgets import QApplication
+    from PyQt6.QtWidgets import QApplication
     import sys
 
     app = QApplication(sys.argv)
@@ -871,4 +887,4 @@ if __name__ == '__main__':
     # Test saving state on close
     app.aboutToQuit.connect(view.save_state)
 
-    sys.exit(app.exec_()) 
+    sys.exit(app.exec()) 

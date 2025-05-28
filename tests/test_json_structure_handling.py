@@ -17,9 +17,9 @@ import sys
 
 # Mock PyQt modules before importing any project code
 sys.modules['PyQt5'] = unittest.mock.MagicMock()
-sys.modules['PyQt5.QtWidgets'] = unittest.mock.MagicMock()
-sys.modules['PyQt5.QtCore'] = unittest.mock.MagicMock()
-sys.modules['PyQt5.QtGui'] = unittest.mock.MagicMock()
+sys.modules['PyQt6.QtWidgets'] = unittest.mock.MagicMock()
+sys.modules['PyQt6.QtCore'] = unittest.mock.MagicMock()
+sys.modules['PyQt6.QtGui'] = unittest.mock.MagicMock()
 
 # Import the necessary modules from the application
 try:

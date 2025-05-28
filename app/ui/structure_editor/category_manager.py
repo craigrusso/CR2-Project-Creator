@@ -7,15 +7,15 @@ Category Manager for Structure Editor
 This module provides a dialog for managing template categories.
 """
 
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QLabel, QListWidget, QPushButton,
-                           QHBoxLayout, QLineEdit, QMessageBox, QListWidgetItem, QCheckBox, QComboBox, QListView, QStyledItemDelegate)
-from PyQt5.QtCore import Qt, QSettings
-from PyQt5.QtGui import QStandardItemModel, QStandardItem, QColor
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QListWidget, QPushButton,
+                           QHBoxLayout, QLineEdit, QMessageBox, QListWidgetItem, QCheckBox, QComboBox, QListView, QStyledItemDelegate, QInputDialog)
+from PyQt6.QtCore import Qt, QSettings
+from PyQt6.QtGui import QStandardItemModel, QStandardItem, QColor
 import os
 import json
 
 # Define a user role for the divider item
-DIVIDER_ROLE = Qt.UserRole + 1
+DIVIDER_ROLE = Qt.ItemDataRole.UserRole + 1
 
 # Import necessary modules
 from app.ui.color_scheme_pyqt import APP_COLORS
@@ -158,7 +158,7 @@ class CategoryManager(QDialog):
         if custom_categories:
             divider = QListWidgetItem("─────── Custom Categories ───────")
             divider.setFlags(Qt.NoItemFlags)  # Make non-selectable
-            divider.setTextAlignment(Qt.AlignCenter)
+            divider.setTextAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
             divider.setData(DIVIDER_ROLE, True) # Mark as divider
             
             # Apply styling to the divider
@@ -212,64 +212,35 @@ class CategoryManager(QDialog):
         self._toggle_default_categories_visibility() # Apply initial state
         
     def _add_category(self):
-        """Add a new category to the list"""
-        # Get category name
-        new_cat = self.new_category_input.text().strip()
-        if not new_cat:
-            return
+        """Add a new category to the list and save"""
+        category_name, ok = QInputDialog.getText(self, "Add Category", "Category Name:")
+        if ok and category_name:
+            category_name = category_name.strip()
+            if not category_name:
+                QMessageBox.warning(self, "Invalid Name", "Category name cannot be empty.")
+                return
+
+            # Check for duplicates (case-insensitive)
+            existing_categories = [
+                self.category_list.item(i).text().lower()
+                for i in range(self.category_list.count())
+                if self.category_list.item(i).flags() & Qt.ItemFlag.ItemIsSelectable # Corrected here
+            ]
+            if category_name.lower() in existing_categories:
+                QMessageBox.warning(self, "Duplicate Category", f"The category '{category_name}' already exists.")
+                return
+
+            # Add to list widget
+            item = QListWidgetItem(category_name)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsSelectable) # Corrected here
+            self.category_list.addItem(item)
+            self.category_list.setCurrentItem(item)
+            self.category_list.sortItems() # Keep the list sorted
             
-        # Check if already exists
-        existing_items = [self.category_list.item(i).text() for i in range(self.category_list.count()) 
-                         if self.category_list.item(i).flags() & Qt.ItemIsSelectable]  # Skip dividers
-        if new_cat in existing_items:
-            QMessageBox.warning(self, "Duplicate", f"Category '{new_cat}' already exists")
-            return
-            
-        # Determine if a divider already exists
-        divider_exists = False
-        divider_index = -1
-        for i in range(self.category_list.count()):
-            if not (self.category_list.item(i).flags() & Qt.ItemIsSelectable):
-                divider_exists = True
-                divider_index = i
-                self.divider_item = self.category_list.item(i) # Get reference if exists
-                break
-                
-        # If no divider exists, add one before adding the custom category
-        if not divider_exists:
-            # Create and add divider
-            divider = QListWidgetItem("─────── Custom Categories ───────")
-            divider.setFlags(Qt.NoItemFlags)  # Make non-selectable
-            divider.setTextAlignment(Qt.AlignCenter)
-            divider.setData(DIVIDER_ROLE, True) # Mark as divider
-            
-            # Apply styling to the divider
-            divider_font = divider.font()
-            divider_font.setBold(True)
-            divider.setFont(divider_font)
-            divider.setForeground(Qt.darkGray)
-            
-            self.category_list.addItem(divider)
-            self.divider_item = divider # Store reference
-            divider_index = self.category_list.count() - 1
-            
-        # Add the new category after the divider
-        self.category_list.insertItem(divider_index + 1, new_cat)
-        self.new_category_input.clear()
-        
-        # Update result categories
-        self._update_result()
-        
-        # Save to template category manager
-        self._save_to_category_manager()
-        
-        # Force immediate save to disk and reload
-        if self.template_manager and hasattr(self.template_manager, 'project_type_manager'):
-            print(f"Force-saving '{new_cat}' to project_type_manager")
-            # Add the new category directly to ensure it's saved
-            self.template_manager.project_type_manager.create_project_type(new_cat, "Video Editing - Standard")
-            # Force reload to make it available immediately
-            self.template_manager.project_type_manager.load_custom_project_types()
+            # Save and refresh
+            self._save_categories()
+            self._refresh_ui_components() 
+            print(f"DEBUG (CategoryManager): Added category '{category_name}'")
         
     def _remove_category(self):
         """Remove selected category from the list"""
@@ -353,7 +324,7 @@ class CategoryManager(QDialog):
         if custom_categories:
             divider = QListWidgetItem("─────── Custom Categories ───────")
             divider.setFlags(Qt.NoItemFlags)  # Make non-selectable
-            divider.setTextAlignment(Qt.AlignCenter)
+            divider.setTextAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
             divider.setData(DIVIDER_ROLE, True) # Mark as divider
             
             # Apply styling to the divider
@@ -378,7 +349,7 @@ class CategoryManager(QDialog):
         self.result_categories = []
         for i in range(self.category_list.count()):
             item = self.category_list.item(i)
-            if item.flags() & Qt.ItemIsSelectable:  # Only include selectable items
+            if item.flags() & Qt.ItemFlag.ItemIsSelectable:  # Only include selectable items
                 self.result_categories.append(item.text())
         
         print(f"CategoryManager: Updated result categories: {self.result_categories}")
@@ -448,7 +419,7 @@ class CategoryManager(QDialog):
         
         # Update category combobox in template dialogs
         # This needs to happen in the next event cycle
-        from PyQt5.QtCore import QTimer
+        from PyQt6.QtCore import QTimer
         QTimer.singleShot(100, self._update_ui_dropdowns)
     
     def _update_ui_dropdowns(self):
@@ -481,7 +452,7 @@ class CategoryManager(QDialog):
             print(f"Showing all categories (hide defaults is off): {categories_to_show}")
 
         # Use findChildren on the main app window to be more targeted than allWidgets
-        from PyQt5.QtWidgets import QComboBox
+        from PyQt6.QtWidgets import QComboBox
         project_type_combos = self.app.findChildren(QComboBox, "project_type_combo_box")
         template_category_combos = self.app.findChildren(QComboBox, "template_category_combo_box")
         
@@ -577,12 +548,12 @@ class CategoryManager(QDialog):
         print(f"CategoryManager: Finished updating {updated_widgets} dropdown widgets.")
             
         # Optional: Force a UI refresh if needed, though often not necessary
-        # from PyQt5.QtWidgets import QApplication
+        # from PyQt6.QtWidgets import QApplication
         # QApplication.processEvents()
         
     def _find_associated_label(self, widget):
         """Try to find a QLabel associated with this widget"""
-        from PyQt5.QtWidgets import QLabel
+        from PyQt6.QtWidgets import QLabel
         
         # Check siblings in layout
         parent = widget.parent()
@@ -663,7 +634,7 @@ def manage_categories(parent=None, categories=None):
     """
     # Create and show dialog
     dialog = CategoryManager(parent, categories)
-    result = dialog.exec_()
+    result = dialog.exec()
     
     # Return categories if accepted
     if result == QDialog.Accepted:

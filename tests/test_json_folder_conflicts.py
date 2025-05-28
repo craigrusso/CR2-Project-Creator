@@ -7,10 +7,10 @@ import tempfile
 import shutil
 import time
 import json
-from PyQt5.QtWidgets import (QApplication, QDialog, QVBoxLayout, QHBoxLayout, 
+from PyQt6.QtWidgets import (QApplication, QDialog, QVBoxLayout, QHBoxLayout, 
                            QPushButton, QLabel, QTextEdit, QGridLayout,
                            QTabWidget, QWidget, QMessageBox, QRadioButton)
-from PyQt5.QtCore import Qt
+from PyQt6.QtCore import Qt
 
 # Import app modules
 from app.templates.template_manager import TemplateManager
@@ -453,7 +453,7 @@ class JsonVsFolderTester(QDialog):
             layout.addWidget(close_btn)
             
             # Show the dialog
-            preview_dialog.exec_()
+            preview_dialog.exec()
             return True
         except Exception as e:
             self.log_result(f"Error showing structure preview: {e}", True)
@@ -623,7 +623,7 @@ def run_tests():
     app = QApplication.instance() or QApplication(sys.argv)
     tester = JsonVsFolderTester()
     tester.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     run_tests() 

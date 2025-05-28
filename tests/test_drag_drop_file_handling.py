@@ -11,10 +11,10 @@ import sys
 import shutil
 import tempfile
 import json
-from PyQt5.QtWidgets import QApplication, QTreeWidgetItem, QStyle
-from PyQt5.QtCore import Qt, QMimeData, QUrl, QPoint
-from PyQt5.QtTest import QTest
-from PyQt5.QtGui import QDragEnterEvent, QDropEvent
+from PyQt6.QtWidgets import QApplication, QTreeWidgetItem, QStyle
+from PyQt6.QtCore import Qt, QMimeData, QUrl, QPoint
+from PyQt6.QtTest import QTest
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent
 
 # Add the app directory to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -75,7 +75,7 @@ class TestDragDropFileHandling(unittest.TestCase):
         if self.tree.topLevelItemCount() == 0:
             root_item = QTreeWidgetItem(self.tree)
             root_item.setText(0, "Project Root")
-            root_item.setData(0, Qt.UserRole, "folder")
+            root_item.setData(0, Qt.ItemDataRole.UserRole, "folder")
             root_item.setExpanded(True)
     
     def test_process_dropped_directory(self):
@@ -131,7 +131,7 @@ class TestDragDropFileHandling(unittest.TestCase):
         def build_structure_from_item(item, parent_list):
             """Mock implementation of _build_structure_from_item for testing"""
             # Check if this is a folder or file based on user data
-            is_file = item.data(0, Qt.UserRole) == "file"
+            is_file = item.data(0, Qt.ItemDataRole.UserRole) == "file"
             
             if is_file:
                 # It's a file, add as a simple string

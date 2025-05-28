@@ -5,10 +5,10 @@
 Dialog windows for displaying information and tutorials.
 """
 
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                            QPushButton, QTabWidget, QWidget,
                            QScrollArea)
-from PyQt5.QtCore import Qt
+from PyQt6.QtCore import Qt
 
 # Import from the same place as APP_NAME and APP_VERSION for consistency
 from app.config.app_config import APP_NAME, APP_VERSION
@@ -43,19 +43,19 @@ def show_about(app):
     font.setBold(True)
     font.setPointSize(16)
     title_label.setFont(font)
-    title_label.setAlignment(Qt.AlignCenter)
+    title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     title_label.setStyleSheet(f"color: {colors['text']};")
     layout.addWidget(title_label)
     
     # Version with build in parentheses
     version_label = QLabel(f"{APP_VERSION} <span style='color: {colors['secondary_text']}; font-size: 10px;'>(build {APP_BUILD_NUMBER})</span>")
-    version_label.setAlignment(Qt.AlignCenter)
+    version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     version_label.setStyleSheet(f"color: {colors['text']};")
     layout.addWidget(version_label)
     
     # Copyright info
     copyright_label = QLabel("© 2023-present Craig P. Russo and CR2 Creative")
-    copyright_label.setAlignment(Qt.AlignCenter)
+    copyright_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     copyright_label.setStyleSheet(f"color: {colors['secondary_text']};")
     layout.addWidget(copyright_label)
     
@@ -66,7 +66,7 @@ def show_about(app):
         "from customizable templates."
     )
     description.setWordWrap(True)
-    description.setAlignment(Qt.AlignCenter)
+    description.setAlignment(Qt.AlignmentFlag.AlignCenter)
     description.setStyleSheet(f"color: {colors['text']};")
     layout.addWidget(description)
     
@@ -79,7 +79,7 @@ def show_about(app):
     close_button.clicked.connect(dialog.accept)
     layout.addWidget(close_button)
     
-    dialog.exec_()
+    dialog.exec()
 
 def show_tutorial(app):
     """Show the tutorial dialog"""
@@ -97,7 +97,7 @@ def show_tutorial(app):
     font.setBold(True)
     font.setPointSize(14)
     title_label.setFont(font)
-    title_label.setAlignment(Qt.AlignCenter)
+    title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     title_label.setStyleSheet(f"color: {colors['text']};")
     layout.addWidget(title_label)
     
@@ -321,7 +321,7 @@ Marketing Video; Promo Spot</code></pre>
         content = QLabel(tutorial_text)
         content.setTextFormat(Qt.RichText) # Allow rich text like bold, lists
         content.setWordWrap(True)
-        content.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        content.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         # Link color needs to be set explicitly for RichText
         content.setStyleSheet(f"""
             color: {colors['text']};
@@ -362,4 +362,4 @@ Marketing Video; Promo Spot</code></pre>
     close_button.clicked.connect(dialog.accept)
     layout.addWidget(close_button)
     
-    dialog.exec_()
+    dialog.exec()

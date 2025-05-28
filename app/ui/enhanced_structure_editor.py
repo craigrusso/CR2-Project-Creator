@@ -7,15 +7,15 @@ Enhanced Structure Editor - Main dialog for editing template structures
 import os
 import json
 import sys
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTreeWidget, QTreeWidgetItem, 
     QPushButton, QLabel, QLineEdit, QTextEdit, QComboBox, QGroupBox,
     QFormLayout, QMessageBox, QInputDialog, QDialogButtonBox, QAbstractItemView,
     QMenu, QApplication, QStyle, QFileDialog
 )
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject
-from PyQt5.QtGui import QIcon
-from PyQt5 import QtCore
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QObject
+from PyQt6.QtGui import QIcon
+from PyQt6 import QtCore
 
 from app.utils.file_operations import FileOperationsHandler
 from app.utils.template_validator import TemplateValidator
@@ -169,9 +169,11 @@ class EnhancedStructureEditor(QDialog):
             self.tree = self.ui_builder.tree
             print("DEBUG: Assigned self.tree from ui_builder")
             # Connect context menu AFTER tree is assigned
-            if hasattr(self, 'show_context_menu'):
-                 self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
-                 self.tree.customContextMenuRequested.connect(self.show_context_menu)
+            # The UIBuilder's StructureEditorTree already connects its own context menu handler (UIBuilder._show_context_menu).
+            # Connecting it again here in EnhancedStructureEditor to its own show_context_menu caused the double menu.
+            # if hasattr(self, 'show_context_menu'):
+            #      self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu) # Already set in StructureEditorTree
+            #      self.tree.customContextMenuRequested.connect(self.show_context_menu) # REMOVE THIS DUPLICATE CONNECTION
         else:
             # print("WARN: ui_builder missing tree")
             self.tree = None # Or some default QTreeWidget
@@ -270,9 +272,9 @@ class EnhancedStructureEditor(QDialog):
             self.tree.setDropIndicatorShown(True)
             self.tree.setDragDropMode(QAbstractItemView.DragDrop)  # Allow external drops
             
-            # Set up context menu
-            self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
-            self.tree.customContextMenuRequested.connect(self.show_context_menu)
+            # Set up context menu - THIS IS HANDLED BY UIBuilder via StructureEditorTree's context_menu_handler
+            # self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu) # Already set in StructureEditorTree & UIBuilder handles connection
+            # self.tree.customContextMenuRequested.connect(self.show_context_menu) # DO NOT RE-CONNECT HERE
             
             # Create and attach the drag drop handler
             self.drag_drop_handler = DragDropHandler(self.tree, self)
@@ -343,7 +345,7 @@ class EnhancedStructureEditor(QDialog):
                     tree_item = QTreeWidgetItem([item["name"], item["type"]])
                     
                     # Store the full item data as user data
-                    tree_item.setData(0, Qt.UserRole, item)
+                    tree_item.setData(0, Qt.ItemDataRole.UserRole, item)
                     
                     # If it's a folder, add children
                     if item["type"] == "folder" and "children" in item:
@@ -398,7 +400,7 @@ class EnhancedStructureEditor(QDialog):
                 child_item = QTreeWidgetItem([child["name"], child["type"]])
                 
                 # Store the full item data as user data
-                child_item.setData(0, Qt.UserRole, child)
+                child_item.setData(0, Qt.ItemDataRole.UserRole, child)
                 
                 # If it's a folder, add children recursively
                 if child["type"] == "folder" and "children" in child:
@@ -539,53 +541,26 @@ class EnhancedStructureEditor(QDialog):
     
     def show_context_menu(self, position):
         """Show context menu for the tree widget"""
-        selected = self.tree.selectedItems()
-        if not selected:
-            return
+        # This method is currently bypassed due to UIBuilder handling context menu directly.
+        # If it were to be used, it would need access to the correct FileOperations instance.
+        print(f"DEBUG (EnhancedStructureEditor.show_context_menu): This method was called at {position} - IF THIS APPEARS, THE CONTEXT MENU HANDLING IS STILL SPLIT.")
         
-        item = selected[0]
-        menu = QMenu()
-        
-        # Add action depends on selection
-        if item.text(1) == "folder":
-            add_folder = menu.addAction("Add Folder Here")
-            add_file = menu.addAction("Add File Here")
-        
-        edit_action = menu.addAction("Edit")
-        delete_action = menu.addAction("Delete")
-        
-        # Show the menu
-        action = menu.exec_(self.tree.viewport().mapToGlobal(position))
-        
-        # Handle action
-        if not action:
-            return
-        
-        if item.text(1) == "folder":
-            if action == add_folder:
-                # Get folder name
-                folder_name, ok = QInputDialog.getText(self, "Add Folder", "Folder name:")
-                if ok and folder_name:
-                    new_item = QTreeWidgetItem([folder_name, "folder"])
-                    item.addChild(new_item)
-                    item.setExpanded(True)
-            elif action == add_file:
-                # Get file name
-                file_name, ok = QInputDialog.getText(self, "Add File", "File name:")
-                if ok and file_name:
-                    new_item = QTreeWidgetItem([file_name, "file"])
-                    item.addChild(new_item)
-                    item.setExpanded(True)
-        
-        if action == edit_action:
-            self.edit_item()
-        elif action == delete_action:
-            self.remove_item()
-    
+        # Original intended logic (would require self.file_operations to be the correct type):
+        # selected_item = self.tree.currentItem()
+        # if not selected_item:
+        #     item_at_pos = self.tree.itemAt(position)
+        #     if not item_at_pos:
+        #         print("DEBUG (EnhancedStructureEditor): No item at position, not showing context menu")
+        #         return 
+        #     selected_item = item_at_pos
+        # print(f"DEBUG (EnhancedStructureEditor): Calling file_operations.create_context_menu for item: {selected_item.text(0)}")
+        # self.file_operations.create_context_menu(selected_item, self.tree.mapToGlobal(position))
+        pass # Keep this method, but it should ideally not be called if UIBuilder handles it.
+
     def accept(self):
         """Handle dialog acceptance"""
         from app.utils.template_validator import TemplateValidator
-        from PyQt5.QtWidgets import QMessageBox, QApplication
+        from PyQt6.QtWidgets import QMessageBox, QApplication
         
         print("DEBUG: EnhancedStructureEditor.accept method called")
         
@@ -683,7 +658,7 @@ class EnhancedStructureEditor(QDialog):
                 self.name_field.setText(self._template_name)
                 
                 # Force UI update
-                from PyQt5.QtWidgets import QApplication
+                from PyQt6.QtWidgets import QApplication
                 QApplication.processEvents()
                 
                 # Extra check to verify the text was set
@@ -721,7 +696,7 @@ class EnhancedStructureEditor(QDialog):
                     self.name_field.blockSignals(False)
                 
                 # Force UI update
-                from PyQt5.QtWidgets import QApplication
+                from PyQt6.QtWidgets import QApplication
                 QApplication.processEvents()
                 
                 print(f"DEBUG: showEvent - After setting, name field text is: '{self.name_field.text()}'")
@@ -732,11 +707,11 @@ class EnhancedStructureEditor(QDialog):
             
     def keyPressEvent(self, event):
         """Handle key press events for the dialog"""
-        from PyQt5.QtCore import Qt
-        from PyQt5.QtWidgets import QApplication, QLineEdit, QTextEdit, QComboBox
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtWidgets import QApplication, QLineEdit, QTextEdit, QComboBox
         
         # Handle Delete key press
-        if event.key() == Qt.Key_Delete:
+        if event.key() == Qt.Key.Key_Delete:
             print("DEBUG: Delete key pressed, calling delete_selected()")
             self.delete_selected()
             # Don't pass to parent class
@@ -744,14 +719,14 @@ class EnhancedStructureEditor(QDialog):
             return True
             
         # Handle Escape key
-        elif event.key() == Qt.Key_Escape:
+        elif event.key() == Qt.Key.Key_Escape:
             print("DEBUG: Escape key pressed, rejecting dialog")
             self.reject()  # Close dialog without saving
             event.accept()
             return
             
         # Handle Return/Enter key in special cases
-        elif event.key() in (Qt.Key_Return, Qt.Key_Enter):
+        elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             # Only handle Return key if the focus is not in a text field
             focused_widget = QApplication.focusWidget()
             if not isinstance(focused_widget, (QLineEdit, QTextEdit, QComboBox)):

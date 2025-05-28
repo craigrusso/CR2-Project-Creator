@@ -12,8 +12,8 @@ import os
 import unittest
 import tempfile
 import shutil
-from PyQt5.QtWidgets import QApplication, QTreeWidgetItem
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QTreeWidgetItem
+from PyQt6.QtCore import Qt
 import pytest
 from pathlib import Path
 

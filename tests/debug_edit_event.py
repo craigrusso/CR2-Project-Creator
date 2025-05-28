@@ -5,10 +5,10 @@ import sys
 import inspect
 import os
 import traceback
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QTreeWidget, QTreeWidgetItem, 
                             QVBoxLayout, QWidget, QPushButton, QHBoxLayout, QLabel, 
                             QStyle, QStyledItemDelegate)
-from PyQt5.QtCore import Qt, QObject, QEvent
+from PyQt6.QtCore import Qt, QObject, QEvent
 
 # This script intercepts PyQt edit events to find where "edit: editing failed"
 # is being printed or where editing is failing.
@@ -45,7 +45,7 @@ class EditEventFilter(QObject):
     def eventFilter(self, obj, event):
         # Track any edit-related events
         if event.type() == QEvent.KeyPress:
-            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
                 original_print(f"EDIT KEY PRESS: Enter/Return in {obj.__class__.__name__}")
         elif event.type() == QEvent.FocusOut:
             original_print(f"EDIT FOCUS OUT: {obj.__class__.__name__}")

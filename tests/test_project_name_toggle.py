@@ -12,8 +12,8 @@ import unittest
 import tempfile
 import shutil
 import json
-from PyQt5.QtWidgets import QApplication, QTreeWidgetItem
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QTreeWidgetItem
+from PyQt6.QtCore import Qt
 
 # Add project directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -61,16 +61,16 @@ class TestProjectNameToggle(unittest.TestCase):
         # Add a root folder
         self.project_folder = QTreeWidgetItem(self.root_item)
         self.project_folder.setText(0, "Project Folder")
-        self.project_folder.setData(0, Qt.UserRole, {"type": "folder", "name": "Project Folder"})
+        self.project_folder.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Project Folder"})
         
         # Add files to the folder
         self.file_item1 = QTreeWidgetItem(self.project_folder)
         self.file_item1.setText(0, "normal_file.txt")
-        self.file_item1.setData(0, Qt.UserRole, {"type": "file", "name": "normal_file.txt", "path": self.test_file_path})
+        self.file_item1.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "name": "normal_file.txt", "path": self.test_file_path})
         
         self.file_item2 = QTreeWidgetItem(self.project_folder)
         self.file_item2.setText(0, "toggle_file.txt")
-        self.file_item2.setData(0, Qt.UserRole, {"type": "file", "name": "toggle_file.txt", "path": self.test_file_path})
+        self.file_item2.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "name": "toggle_file.txt", "path": self.test_file_path})
     
     def tearDown(self):
         # Clean up the editor
@@ -83,7 +83,7 @@ class TestProjectNameToggle(unittest.TestCase):
         self.assertTrue(result, "Setting file to use project name should succeed")
         
         # Check that file is marked to use project name
-        file_data = self.file_item2.data(0, Qt.UserRole)
+        file_data = self.file_item2.data(0, Qt.ItemDataRole.UserRole)
         self.assertTrue(file_data.get('uses_project_name', False), "File should be marked to use project name")
         self.assertEqual(file_data.get('original_name'), "toggle_file.txt", "Original name should be stored")
         
@@ -92,7 +92,7 @@ class TestProjectNameToggle(unittest.TestCase):
         self.assertTrue(result, "Toggling file name should succeed")
         
         # Check that file is no longer using project name
-        file_data = self.file_item2.data(0, Qt.UserRole)
+        file_data = self.file_item2.data(0, Qt.ItemDataRole.UserRole)
         self.assertFalse(file_data.get('uses_project_name', True), "File should no longer be marked to use project name")
         self.assertEqual(self.file_item2.text(0), "toggle_file.txt", "File name should be restored to original")
         
@@ -101,7 +101,7 @@ class TestProjectNameToggle(unittest.TestCase):
         self.assertTrue(result, "Toggling file name should succeed")
         
         # Check that file is using project name again
-        file_data = self.file_item2.data(0, Qt.UserRole)
+        file_data = self.file_item2.data(0, Qt.ItemDataRole.UserRole)
         self.assertTrue(file_data.get('uses_project_name', False), "File should be marked to use project name again")
     
     def test_structure_conversion(self):

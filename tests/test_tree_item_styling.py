@@ -4,8 +4,8 @@
 import sys
 import os
 import unittest
-from PyQt5.QtWidgets import QApplication, QTreeWidget, QTreeWidgetItem, QStyle, QDialog, QVBoxLayout, QAbstractItemView
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QTreeWidget, QTreeWidgetItem, QStyle, QDialog, QVBoxLayout, QAbstractItemView
+from PyQt6.QtCore import Qt
 from app.ui.style_debugger import StyleDebugger
 
 class SimpleTreeTest(QDialog):
@@ -63,9 +63,9 @@ class SimpleTreeTest(QDialog):
         # Add a root item
         root_item = QTreeWidgetItem(self.structure_tree)
         root_item.setText(0, "Template Root")
-        root_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-        root_item.setData(0, Qt.UserRole, {"type": "folder"})
-        root_item.setFlags(root_item.flags() | Qt.ItemIsEditable)
+        root_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        root_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder"})
+        root_item.setFlags(root_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
         # Expand root
         self.structure_tree.expandItem(root_item)
@@ -109,15 +109,15 @@ class TestTreeItemStyling(unittest.TestCase):
         root_item = self.dialog.structure_tree.topLevelItem(0)
         folder_item = QTreeWidgetItem(root_item)
         folder_item.setText(0, "Test Folder")
-        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
-        folder_item.setData(0, Qt.UserRole, {"type": "folder"})
-        folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        folder_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder"})
+        folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
         # Verify the item is editable
-        self.assertTrue(folder_item.flags() & Qt.ItemIsEditable)
+        self.assertTrue(folder_item.flags() & Qt.ItemFlag.ItemIsEditable)
         
         # Verify that double-clicking would start editing
-        self.assertTrue(folder_item.flags() & Qt.ItemIsEditable)
+        self.assertTrue(folder_item.flags() & Qt.ItemFlag.ItemIsEditable)
     
     def test_add_file_editable(self):
         """Test that added files are editable"""
@@ -125,18 +125,18 @@ class TestTreeItemStyling(unittest.TestCase):
         root_item = self.dialog.structure_tree.topLevelItem(0)
         file_item = QTreeWidgetItem(root_item)
         file_item.setText(0, "test_file.txt")
-        file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
-        file_item.setData(0, Qt.UserRole, {"type": "file", "source_path": "/path/to/test/file.txt"})
-        file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+        file_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+        file_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "source_path": "/path/to/test/file.txt"})
+        file_item.setFlags(file_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
         # Verify the item is editable
-        self.assertTrue(file_item.flags() & Qt.ItemIsEditable)
+        self.assertTrue(file_item.flags() & Qt.ItemFlag.ItemIsEditable)
         
         # Verify that the item has all necessary properties
         self.assertEqual(file_item.text(0), "test_file.txt")
-        self.assertEqual(file_item.data(0, Qt.UserRole)["type"], "file")
-        self.assertEqual(file_item.data(0, Qt.UserRole)["source_path"], "/path/to/test/file.txt")
-        self.assertTrue(file_item.flags() & Qt.ItemIsEditable)
+        self.assertEqual(file_item.data(0, Qt.ItemDataRole.UserRole)["type"], "file")
+        self.assertEqual(file_item.data(0, Qt.ItemDataRole.UserRole)["source_path"], "/path/to/test/file.txt")
+        self.assertTrue(file_item.flags() & Qt.ItemFlag.ItemIsEditable)
     
     def test_tree_edit_triggers(self):
         """Test that the tree widget has the correct edit triggers"""

@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from PyQt5.QtWidgets import QApplication, QDialog, QTreeWidgetItem
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QDialog, QTreeWidgetItem
+from PyQt6.QtCore import Qt
 
 from app.ui.structure_editor_enhanced import EnhancedStructureEditor, show_enhanced_structure_editor
 from app.templates.template_operations import TemplateOperations
@@ -108,16 +108,16 @@ class TestTemplateEditor(unittest.TestCase):
         # Add items to tree
         root_item = QTreeWidgetItem(editor.tree)
         root_item.setText(0, "Project Root")
-        root_item.setData(0, Qt.UserRole, "project_root")
+        root_item.setData(0, Qt.ItemDataRole.UserRole, "project_root")
         
         folder_item = QTreeWidgetItem(root_item)
         folder_item.setText(0, "Test Folder")
-        folder_item.setData(0, Qt.UserRole, "folder")
+        folder_item.setData(0, Qt.ItemDataRole.UserRole, "folder")
         
         file_item = QTreeWidgetItem(root_item)
         file_item.setText(0, "Test File")
-        file_item.setData(0, Qt.UserRole, "file")
-        file_item.setData(0, Qt.UserRole + 3, True)  # Use project name
+        file_item.setData(0, Qt.ItemDataRole.UserRole, "file")
+        file_item.setData(0, Qt.ItemDataRole.UserRole + 3, True)  # Use project name
         
         # Create structure from tree
         structure = editor.create_structure_from_tree()
@@ -205,11 +205,11 @@ class TestTemplateEditor(unittest.TestCase):
         
         folder_item = project_root.child(0)
         self.assertEqual(folder_item.text(0), "Folder 1")
-        self.assertEqual(folder_item.data(0, Qt.UserRole), "folder")
+        self.assertEqual(folder_item.data(0, Qt.ItemDataRole.UserRole), "folder")
         
         file_item = project_root.child(1)
         self.assertEqual(file_item.text(0), "File 1")
-        self.assertEqual(file_item.data(0, Qt.UserRole), "file")
+        self.assertEqual(file_item.data(0, Qt.ItemDataRole.UserRole), "file")
         
         # Clean up
         editor.reject()

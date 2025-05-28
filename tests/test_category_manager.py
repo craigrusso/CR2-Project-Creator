@@ -11,7 +11,7 @@ import unittest
 import tempfile
 import shutil
 import json
-from PyQt5.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication
 
 # Add the project directory to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))

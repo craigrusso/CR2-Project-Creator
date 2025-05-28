@@ -7,8 +7,8 @@ import os
 import sys
 import glob
 import json
-from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QLabel, QVBoxLayout, QWidget
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt
 
 # Add the application directory to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -43,7 +43,7 @@ def verify_ui_buttons():
     app = QApplication(sys.argv)
     editor = EnhancedStructureEditor(structure_name="TestUIButtons", is_new=True)
     editor.show()
-    app.exec_()
+    app.exec()
     
     return True  # Manual verification
 
@@ -89,14 +89,14 @@ class VerificationWindow(QMainWindow):
         
         # Instructions
         title = QLabel("<h1>Manual Verification Tests</h1>")
-        title.setAlignment(Qt.AlignCenter)
+        title.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
         layout.addWidget(title)
         
         instructions = QLabel("""
         <p>These tests require manual verification to confirm the fixes are working.</p>
         <p>Please follow the on-screen instructions for each test.</p>
         """)
-        instructions.setAlignment(Qt.AlignCenter)
+        instructions.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
         layout.addWidget(instructions)
         
         # Test buttons
@@ -123,7 +123,7 @@ def main():
     window = VerificationWindow()
     window.show()
     
-    return app.exec_()
+    return app.exec()
 
 if __name__ == "__main__":
     sys.exit(main()) 

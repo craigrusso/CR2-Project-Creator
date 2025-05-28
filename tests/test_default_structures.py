@@ -4,8 +4,8 @@
 import os
 import sys
 import json
-from PyQt5.QtWidgets import QApplication, QDialog, QVBoxLayout, QPushButton, QLabel, QTextEdit, QComboBox
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QDialog, QVBoxLayout, QPushButton, QLabel, QTextEdit, QComboBox
+from PyQt6.QtCore import Qt
 
 # Add the parent directory to the path so we can import the app modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -218,7 +218,7 @@ def run_test():
     app = QApplication(sys.argv)
     dialog = DefaultStructuresTestDialog()
     dialog.show()
-    app.exec_()
+    app.exec()
 
 if __name__ == "__main__":
     run_test() 

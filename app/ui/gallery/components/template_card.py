@@ -1,19 +1,21 @@
 # template_card.py
 
-from PyQt5.QtWidgets import (
-    QFrame, QLabel, QVBoxLayout, QHBoxLayout, QWidget, QMenu, QAction, QMessageBox, 
+from PyQt6.QtWidgets import (
+    QFrame, QLabel, QVBoxLayout, QHBoxLayout,QWidget, QWidgetAction, QMenu, QMessageBox, 
     QListWidget, QListWidgetItem, QAbstractItemView, QScrollArea, QSizePolicy, QApplication,
     QPushButton
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QMimeData, QSize, QPoint, QRect, QByteArray, QTimer
-from PyQt5.QtGui import QPixmap, QFont, QDrag, QPainter, QColor, QBrush, QPen, QIcon, QCursor, QPalette
+from PyQt6.QtCore import Qt, pyqtSignal, QEvent, QMimeData, QSize, QPoint, QRect, QByteArray, QTimer
+from PyQt6.QtGui import QPixmap, QFont, QDrag, QPainter, QColor, QBrush, QPen, QIcon, QCursor, QPalette, QAction
+# Add SVG module import for better SVG support
+from PyQt6.QtSvg import QSvgRenderer
 import os
 from app.templates.components.utils import SYSTEM_FONT
 from app.templates.components.common_styles import CARD_NORMAL, CARD_HOVER, CARD_SELECTED
 from app.ui.color_scheme_pyqt import colors
 from app.templates.components.menu_actions import ContextMenu
 from app.constants import get_resource_path
-from PyQt5.QtWidgets import QApplication, QStyle
+from PyQt6.QtWidgets import QApplication, QStyle
 from app.templates.mime_types import TEMPLATE_NAMES_MIME_TYPE, TEMPLATE_MULTI_DRAG_MIME_TYPE
 from app.templates.drag_helpers import setup_drag_mime_data, create_drag_pixmap
 
@@ -62,7 +64,7 @@ class TemplateCard(QFrame):
         self.clicking_multi_selected = False
         self.dragging = False
         self.setAcceptDrops(False)
-        self.setCursor(Qt.PointingHandCursor)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedSize(140, 140)
         
         # Check if template has structure
@@ -86,41 +88,133 @@ class TemplateCard(QFrame):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
         
-        # Icon container with fixed height to maintain consistent positioning
-        icon_container = QWidget()
-        icon_container.setFixedHeight(70)  # Fixed height for icon area
-        icon_layout = QVBoxLayout(icon_container)
-        icon_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Template icon
+        # Icon container (allows for proper alignment)
+        self.icon_container = QWidget()
+        self.icon_container.setFixedHeight(70)  # Gives enough space for the icon
+
         self.icon_label = QLabel()
+        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        # Try to load the icon
         icon_size = 64 # Define icon size
         pixmap = None
 
-        # --- MODIFIED: Always use template_structure_icon.svg ---
+        # --- IMPROVED ICON LOADING WITH SVG SUPPORT ---
         icon_filename = "template_structure_icon.svg"
+        
+        # Try different paths to locate the icon
+        # 1. First try with the original path
         icon_path = get_resource_path(os.path.join(
-            "app", "assets", "icons", "templates", icon_filename)) # Corrected path
-        print(f"DEBUG (Card Icon Path): {icon_path}")
+            "app", "assets", "icons", "templates", icon_filename))
+        print(f"DEBUG (Card Icon Path 1): {icon_path}")
+        
+        # 2. Try with a direct absolute path
+        direct_icon_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+            "assets", "icons", "templates", icon_filename)
+        print(f"DEBUG (Card Icon Path 2): {direct_icon_path}")
+        
+        # 3. Try to find the project root and construct path
+        current_dir = os.path.dirname(__file__)
+        project_root = current_dir
+        for _ in range(10):  # Limit directory traversal to avoid infinite loop
+            if os.path.exists(os.path.join(project_root, "app")) and os.path.isdir(os.path.join(project_root, "app")):
+                break
+            parent = os.path.dirname(project_root)
+            if parent == project_root:  # Reached filesystem root
+                break
+            project_root = parent
+            
+        alt_icon_path = os.path.join(project_root, "app", "assets", "icons", "templates", icon_filename)
+        print(f"DEBUG (Card Icon Path 3): {alt_icon_path}")
+        print(f"DEBUG (Path exists 1): {os.path.exists(icon_path)}")
+        print(f"DEBUG (Path exists 2): {os.path.exists(direct_icon_path)}")
+        print(f"DEBUG (Path exists 3): {os.path.exists(alt_icon_path)}")
+        
+        # Use the first path that exists
         if os.path.exists(icon_path):
+            print(f"DEBUG: Using icon path 1")
+        elif os.path.exists(direct_icon_path):
+            icon_path = direct_icon_path
+            print(f"DEBUG: Using icon path 2")
+        elif os.path.exists(alt_icon_path):
+            icon_path = alt_icon_path
+            print(f"DEBUG: Using icon path 3")
+        
+        if os.path.exists(icon_path):
+            # Method 1: Try with QIcon (standard method)
             icon = QIcon(icon_path)
             pixmap = icon.pixmap(QSize(icon_size, icon_size))
+            
+            # Check if we got a valid pixmap
             if pixmap.isNull():
-                print(f"ERROR (Card): Failed to load icon pixmap from: {icon_path}")
+                print(f"Method 1 (QIcon) failed for: {icon_path}, trying Method 2 (QSvgRenderer)")
+                
+                # Method 2: Try with QSvgRenderer as fallback
+                try:
+                    renderer = QSvgRenderer(icon_path)
+                    if renderer.isValid():
+                        print(f"Successfully loaded SVG with QSvgRenderer: {icon_path}")
+                        pixmap = QPixmap(icon_size, icon_size)
+                        pixmap.fill(Qt.GlobalColor.transparent)
+                        painter = QPainter(pixmap)
+                        renderer.render(painter)
+                        painter.end()
+                    else:
+                        print(f"ERROR: QSvgRenderer could not load: {icon_path}")
+                except Exception as e:
+                    print(f"ERROR: SVG Renderer exception: {str(e)}")
+            else:
+                print(f"Successfully loaded icon with QIcon: {icon_path}")
         else:
-            print(f"ERROR (Card): Icon file not found at: {icon_path}")
-        # --- END MODIFICATION --- 
+            print(f"ERROR (Card): No icon file found at any path!")
+            print(f"Current working directory: {os.getcwd()}")
+            
+            # List the app/assets/icons/templates directory to see what's there
+            try:
+                templates_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 
+                                          "assets", "icons", "templates")
+                if os.path.exists(templates_dir):
+                    print(f"Contents of templates directory ({templates_dir}):")
+                    for file in os.listdir(templates_dir):
+                        print(f"  - {file}")
+                else:
+                    print(f"Templates directory not found: {templates_dir}")
+                    
+                # Try to list app/assets/icons directory
+                icons_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 
+                                       "assets", "icons")
+                if os.path.exists(icons_dir):
+                    print(f"Contents of icons directory ({icons_dir}):")
+                    for file in os.listdir(icons_dir):
+                        print(f"  - {file}")
+                else:
+                    print(f"Icons directory not found: {icons_dir}")
+            except Exception as e:
+                print(f"Error listing directory contents: {str(e)}")
+        # --- END IMPROVED ICON LOADING ---
         
         # Set the pixmap if successfully created
         if pixmap and not pixmap.isNull():
             self.icon_label.setPixmap(pixmap)
         else:
-            self.icon_label.setText("?") # Fallback text
-            print("ERROR (Card): Could not set icon pixmap.")
+            # Create a fallback pixmap with a text label
+            fallback_pixmap = QPixmap(icon_size, icon_size)
+            fallback_pixmap.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(fallback_pixmap)
+            painter.setPen(QColor(colors['text']))
+            painter.setBrush(QColor(colors['secondary_background']))
+            painter.drawRect(1, 1, icon_size-2, icon_size-2)
+            painter.drawText(QRect(0, 0, icon_size, icon_size), Qt.AlignmentFlag.AlignCenter, "T")
+            painter.end()
             
-        self.icon_label.setAlignment(Qt.AlignCenter)
-        icon_layout.addWidget(self.icon_label, 1, Qt.AlignCenter)
-        layout.addWidget(icon_container)
+            self.icon_label.setPixmap(fallback_pixmap)
+            print("Using fallback text icon")
+            
+        self.icon_layout = QVBoxLayout(self.icon_container)
+        self.icon_layout.setContentsMargins(0, 0, 0, 0)
+        self.icon_layout.addWidget(self.icon_label, 1, Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.icon_container)
         
         # If the template has no structure, add a warning icon overlay
         if not self.has_structure:
@@ -134,7 +228,7 @@ class TemplateCard(QFrame):
                 font-size: 16px;
             """)
             self.warning_indicator.setText("⚠")
-            self.warning_indicator.setAlignment(Qt.AlignCenter)
+            self.warning_indicator.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.warning_indicator.move(110, 10)  # Position in top right
             
             # Create a tooltip that explains the warning
@@ -149,7 +243,7 @@ class TemplateCard(QFrame):
         
         # Template name label
         self.name_label = QLabel(self.template_name(), self)
-        self.name_label.setAlignment(Qt.AlignCenter)
+        self.name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.name_label.setWordWrap(True)
         self.name_label.setMaximumHeight(30)  # Limit height of name label
         font = QFont(SYSTEM_FONT)
@@ -163,7 +257,7 @@ class TemplateCard(QFrame):
         # Display "No Category" if category is missing or empty
         display_category = category_str if category_str else "No Category" 
         self.category_label = QLabel(display_category, self)
-        self.category_label.setAlignment(Qt.AlignCenter)
+        self.category_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         font = QFont(SYSTEM_FONT)
         font.setPointSize(8)
         self.category_label.setFont(font)
@@ -209,15 +303,15 @@ class TemplateCard(QFrame):
 
     def mousePressEvent(self, event):
         """Handle mouse press events for template selection"""
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             # Save mouse press position for potential drag operation
             self.mouse_press_pos = event.pos()
             self.mouse_is_pressed = True
             
             # Get keyboard modifiers for multi-selection
             modifiers = QApplication.keyboardModifiers()
-            is_ctrl_or_cmd = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier))
-            is_shift = bool(modifiers & Qt.ShiftModifier)
+            is_ctrl_or_cmd = bool(modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier))
+            is_shift = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
             is_modifier_click = is_ctrl_or_cmd or is_shift
             
             # Store initial state for reference in mouseReleaseEvent
@@ -299,7 +393,7 @@ class TemplateCard(QFrame):
         
     def mouseReleaseEvent(self, event):
         """Handle mouse release after click or drag"""
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             # Reset pressed state
             self.mouse_is_pressed = False
             
@@ -312,8 +406,8 @@ class TemplateCard(QFrame):
             
             # Get current modifier state - may have changed since mouse press
             current_modifiers = QApplication.keyboardModifiers()
-            current_is_ctrl_cmd = bool(current_modifiers & (Qt.ControlModifier | Qt.MetaModifier))
-            current_is_shift = bool(current_modifiers & Qt.ShiftModifier)
+            current_is_ctrl_cmd = bool(current_modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier))
+            current_is_shift = bool(current_modifiers & Qt.KeyboardModifier.ShiftModifier)
             current_is_modifier_pressed = current_is_ctrl_cmd or current_is_shift
             
             # DEBUG LOGGING
@@ -412,7 +506,7 @@ class TemplateCard(QFrame):
 
     def mouseDoubleClickEvent(self, event):
         """Handle double click to open template editor"""
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self.doubleClicked.emit(self.template_name())
             event.accept()
 
@@ -510,7 +604,7 @@ class TemplateCard(QFrame):
             # Execute the drag operation
             # Use CopyAction initially to prevent clearing selection
             print(f"[DEBUG-DRAG] Executing drag operation")
-            result = drag.exec_(Qt.CopyAction | Qt.MoveAction, Qt.CopyAction) 
+            result = drag.exec(Qt.DropAction.CopyAction | Qt.DropAction.MoveAction, Qt.DropAction.CopyAction)
             
             # Reset flags after drag completes
             self.dragging = False
@@ -528,7 +622,7 @@ class TemplateCard(QFrame):
             
             # Optional: Handle result if needed (e.g., if MoveAction occurred)
             print(f"[DEBUG-DRAG] Drag completed with result: {result}")
-            if result == Qt.MoveAction:
+            if result == Qt.DropAction.MoveAction:
                 print("[DEBUG-DRAG] Drag resulted in MoveAction (Item might be removed by drop target)")
 
     def enterEvent(self, event):
@@ -759,7 +853,7 @@ class TemplateCard(QFrame):
     def keyPressEvent(self, event):
         """Handle key press events for template operations"""
         # Handle both Delete and Backspace (for Mac) for template deletion when selected
-        if (event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace) and self.selected:
+        if (event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace) and self.selected:
             print(f"[DEBUG] Template Card keyPressEvent: Delete/Backspace detected for {self.template_name()}")
             # Find the parent gallery for multi-selection handling
             gallery = None
@@ -832,7 +926,7 @@ class TemplateCard(QFrame):
         if gallery and not is_in_multi_selection:
             # Check if we have modifiers pressed (ctrl/cmd)
             modifiers = QApplication.keyboardModifiers()
-            is_modifier_pressed = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.ShiftModifier))
+            is_modifier_pressed = bool(modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier | Qt.KeyboardModifier.ShiftModifier))
             
             # If no modifiers, set this as primary but preserve multi-selection
             if not is_modifier_pressed:
@@ -955,7 +1049,7 @@ class TemplateCard(QFrame):
             context_menu.addMenu(move_to_menu)
         
         # Show the menu
-        context_menu.exec_(event.globalPos())
+        context_menu.exec(event.globalPos())
         
         # When context menu closes, make sure our selection state reflects reality
         if gallery and hasattr(gallery, 'selection_manager'):
@@ -970,7 +1064,7 @@ class TemplateCard(QFrame):
     def _move_template_out_of_folder(self, current_folder):
         """Move template out of its current folder and hide it for immediate feedback"""
         if not self.app or not hasattr(self.app, 'template_manager'):
-            from PyQt5.QtWidgets import QMessageBox
+            from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Error", "Template manager not available")
             return
             
@@ -985,13 +1079,13 @@ class TemplateCard(QFrame):
             
         if not gallery:
             print(f"[ERROR] Cannot move template: invalid gallery reference")
-            from PyQt5.QtWidgets import QMessageBox
+            from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Error", "Gallery reference not found")
             return
             
         # Store a reference to the original cursor
         original_cursor = self.cursor()
-        self.setCursor(QCursor(Qt.WaitCursor))
+        self.setCursor(QCursor(Qt.CursorShape.WaitCursor))
         
         try:
             selected_templates_for_op = []
@@ -1052,7 +1146,7 @@ class TemplateCard(QFrame):
                 self.moveToFolderRequested.emit(template_name, "")
             
             # Refresh UI for immediate feedback
-            from PyQt5.QtWidgets import QApplication
+            from PyQt6.QtWidgets import QApplication
             QApplication.processEvents()
             
             # Refresh the gallery view with a slight delay to ensure model is updated
@@ -1064,7 +1158,7 @@ class TemplateCard(QFrame):
             traceback.print_exc()
             
             # Show error dialog
-            from PyQt5.QtWidgets import QMessageBox
+            from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(
                 self, 
                 "Move Operation Failed",
@@ -1117,7 +1211,7 @@ class TemplateCard(QFrame):
     def _move_to_folder_and_hide(self, folder_name):
         """Move template to folder and hide for immediate feedback"""
         if not self.app or not hasattr(self.app, 'template_manager'):
-            from PyQt5.QtWidgets import QMessageBox
+            from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Error", "Template manager not available")
             return
             
@@ -1132,13 +1226,13 @@ class TemplateCard(QFrame):
             
         if not gallery:
             print(f"[ERROR] Cannot move template: invalid gallery reference")
-            from PyQt5.QtWidgets import QMessageBox
+            from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(self, "Error", "Gallery reference not found")
             return
             
         # Store a reference to the original cursor
         original_cursor = self.cursor()
-        self.setCursor(QCursor(Qt.WaitCursor))
+        self.setCursor(QCursor(Qt.CursorShape.WaitCursor))
         
         try:
             selected_templates_for_op = []
@@ -1207,7 +1301,7 @@ class TemplateCard(QFrame):
                  self.app.show_status_message(f"Requested move of {len(template_names_to_move)} template(s) to '{folder_name}'", "info")
 
             # Refresh UI for immediate feedback
-            from PyQt5.QtWidgets import QApplication
+            from PyQt6.QtWidgets import QApplication
             QApplication.processEvents()
             
             # Refresh the gallery view with a slight delay to ensure model is updated
@@ -1219,7 +1313,7 @@ class TemplateCard(QFrame):
             traceback.print_exc()
             
             # Show error dialog
-            from PyQt5.QtWidgets import QMessageBox
+            from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(
                 self, 
                 "Move Operation Failed",
@@ -1482,7 +1576,7 @@ class TemplateCard(QFrame):
         
         # Check if template manager has cache_manager
         if not hasattr(self.app.template_manager, 'cache_manager'):
-            from PyQt5.QtWidgets import QMessageBox
+            from PyQt6.QtWidgets import QMessageBox
             QMessageBox.warning(
                 self, 
                 "Cache Manager Not Available", 
@@ -1499,7 +1593,7 @@ class TemplateCard(QFrame):
             [template_name],
             self
         )
-        dialog.exec_()
+        dialog.exec()
     
     def _clear_template_cache(self):
         """Safely clear this template's cache"""
@@ -1513,7 +1607,7 @@ class TemplateCard(QFrame):
             success = self.app.template_manager.safe_clear_template_cache(template_name)
             
             if success:
-                from PyQt5.QtWidgets import QMessageBox
+                from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.information(
                     self, 
                     "Cache Cleared", 
@@ -1525,7 +1619,7 @@ class TemplateCard(QFrame):
             if (hasattr(self.app.template_manager, 'file_cache_manager') and 
                 hasattr(self.app.template_manager.file_cache_manager, 'clear_template_cache')):
                 
-                from PyQt5.QtWidgets import QMessageBox
+                from PyQt6.QtWidgets import QMessageBox
                 
                 result = QMessageBox.question(
                     self, 
@@ -1546,7 +1640,7 @@ class TemplateCard(QFrame):
                             QMessageBox.Ok
                         )
             else:
-                from PyQt5.QtWidgets import QMessageBox
+                from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.warning(
                     self, 
                     "Cache Manager Not Available", 

@@ -10,9 +10,10 @@ to avoid crashes from missing methods.
 import time
 import datetime
 import os
-from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QApplication, QMenu, QAction
-from PyQt5.QtCore import Qt, pyqtSignal, QEvent, QMimeData, QSize, QByteArray
-from PyQt5.QtGui import QFont, QPalette, QColor, QDrag, QPixmap, QIcon
+from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QSizePolicy, QApplication, QMenu
+from PyQt6.QtCore import Qt, pyqtSignal, QEvent, QMimeData, QSize, QByteArray
+from PyQt6.QtGui import QFont, QPalette, QColor, QDrag, QPixmap, QIcon
 
 from app.ui.color_scheme_pyqt import colors  # Add missing colors import
 from app.constants import get_resource_path # Added get_resource_path import
@@ -65,16 +66,16 @@ class TemplateListItem(QFrame):
         self.setAcceptDrops(True)
         
         # Enable context menu
-        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
         
         # Configure frame appearance
         self.setFrameShape(QFrame.StyledPanel)
-        self.setCursor(Qt.PointingHandCursor)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFixedHeight(40)
         
         # Set size policy to expand horizontally
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         
         # Create layout
         layout = QHBoxLayout(self)
@@ -83,7 +84,7 @@ class TemplateListItem(QFrame):
         
         # Icon label (template icon) - Load SVG
         self.icon_label = QLabel()
-        self.icon_label.setAlignment(Qt.AlignCenter)
+        self.icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.icon_label.setFixedSize(30, 30) # Keep fixed size for list view consistency
         self.icon_label.setStyleSheet("background-color: transparent;") # Ensure background is transparent
         
@@ -124,7 +125,7 @@ class TemplateListItem(QFrame):
         if not self.has_structure:
             self.warning_label = QLabel("⚠")
             self.warning_label.setFixedSize(16, 16)
-            self.warning_label.setAlignment(Qt.AlignCenter)
+            self.warning_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self.warning_label.setStyleSheet(f"""
                 color: {colors.get('error', '#FF5252')};
                 background-color: transparent;
@@ -144,14 +145,14 @@ class TemplateListItem(QFrame):
         # Name label
         template_name = template.get('name', 'Untitled Template') if isinstance(template, dict) else str(template)
         self.name_label = QLabel(template_name)
-        self.name_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        self.name_label.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
         self.name_label.setFixedWidth(300)  # Set initial width
         layout.addWidget(self.name_label)
         
         # Category label - new field
         category_text = template.get('category', '') if isinstance(template, dict) else ''
         self.category_label = QLabel(category_text)
-        self.category_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.category_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.category_label.setFixedWidth(150)  # Set initial width to match header
         layout.addWidget(self.category_label)
         
@@ -164,13 +165,13 @@ class TemplateListItem(QFrame):
         
         # Created date
         self.created_date_label = QLabel(created_date_str)
-        self.created_date_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.created_date_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.created_date_label.setFixedWidth(150)  # Set initial width to match header
         layout.addWidget(self.created_date_label)
         
         # Modified date
         self.modified_date_label = QLabel(modified_date_str)
-        self.modified_date_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.modified_date_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         self.modified_date_label.setFixedWidth(150)  # Set initial width to match header
         layout.addWidget(self.modified_date_label)
         
@@ -231,7 +232,7 @@ class TemplateListItem(QFrame):
             if gallery and not is_in_multi_selection:
                 # Check if we have modifiers pressed (ctrl/cmd)
                 modifiers = QApplication.keyboardModifiers()
-                is_modifier_pressed = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.ShiftModifier))
+                is_modifier_pressed = bool(modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier | Qt.KeyboardModifier.ShiftModifier))
                 
                 # If no modifiers, set this as primary but preserve multi-selection
                 if not is_modifier_pressed:
@@ -391,7 +392,7 @@ class TemplateListItem(QFrame):
             duplicate_action.triggered.connect(lambda: self._duplicate_template(template_name))
             
         # Show the menu at the requested position
-        menu.exec_(self.mapToGlobal(position))
+        menu.exec(self.mapToGlobal(position))
     
     def _move_template_out_of_folder(self, current_folder):
         """Move the template out of its current folder to root"""
@@ -481,7 +482,7 @@ class TemplateListItem(QFrame):
         from app.core.import_export_manager import export_template
         
         # Show dialog to ask if files should be included
-        from PyQt5.QtWidgets import QMessageBox
+        from PyQt6.QtWidgets import QMessageBox
         
         include_files = QMessageBox.question(
             self,
@@ -598,7 +599,7 @@ class TemplateListItem(QFrame):
                 message = f"Are you sure you want to delete these {len(template_names)} templates?"
             
             # Create confirmation dialog
-            from PyQt5.QtWidgets import QMessageBox
+            from PyQt6.QtWidgets import QMessageBox
             confirm = QMessageBox.question(
                 self,
                 "Confirm Delete",
@@ -798,13 +799,13 @@ class TemplateListItem(QFrame):
     
     def mousePressEvent(self, event):
         """Handle mouse press events to initiate selection, dragging, or context menu"""
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             # Store press position for potential drag
             self.mouse_press_pos = event.pos()
             
             # Get modifiers for multi-select
             modifiers = event.modifiers()
-            is_multi_select = bool(modifiers & (Qt.ControlModifier | Qt.ShiftModifier))
+            is_multi_select = bool(modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier))
             
             # Find gallery parent
             gallery = self.gallery
@@ -826,8 +827,8 @@ class TemplateListItem(QFrame):
             
             if gallery:
                 # Determine modifier state for the unified handler
-                is_ctrl_or_cmd = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier))
-                is_shift = bool(modifiers & Qt.ShiftModifier)
+                is_ctrl_or_cmd = bool(modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier))
+                is_shift = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
                 is_modifier_click = is_ctrl_or_cmd or is_shift
                 
                 # Track if we used the unified handler
@@ -856,7 +857,7 @@ class TemplateListItem(QFrame):
             # Accept the event to prevent propagation
             event.accept()
             
-        elif event.button() == Qt.RightButton:
+        elif event.button() == Qt.MouseButton.RightButton:
             self._show_context_menu(event.pos())
             event.accept()
             
@@ -883,7 +884,7 @@ class TemplateListItem(QFrame):
 
     def mouseMoveEvent(self, event):
         """Handle mouse movement for drag operations"""
-        if not (event.buttons() & Qt.LeftButton):
+        if not (event.buttons() & Qt.MouseButton.LeftButton):
             return
             
         if not self.mouse_press_pos:
@@ -989,7 +990,7 @@ class TemplateListItem(QFrame):
         self.dragStarted.emit(self.template)
         
         # Execute drag
-        result = drag.exec_(Qt.MoveAction)
+        result = drag.exec_(Qt.DropAction.MoveAction)
         
         # Reset drag state
         self.dragging = False
@@ -1138,7 +1139,7 @@ class TemplateListItem(QFrame):
     
     def mouseReleaseEvent(self, event):
         """Handle mouse release after click or drag"""
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             # Skip if we were dragging
             if self.dragging:
                 self.dragging = False
@@ -1165,7 +1166,7 @@ class TemplateListItem(QFrame):
                 
                 # Get keyboard modifiers - maintain multi-selection if modifier is still pressed
                 modifiers = QApplication.keyboardModifiers()
-                is_modifier_pressed = bool(modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.ShiftModifier))
+                is_modifier_pressed = bool(modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier | Qt.KeyboardModifier.ShiftModifier))
                 
                 # Only clear multi-selection on release if no modifiers are pressed
                 if not is_modifier_pressed and gallery:
@@ -1188,7 +1189,7 @@ class TemplateListItem(QFrame):
     
     def mouseDoubleClickEvent(self, event):
         """Handle mouse double click event"""
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             template_name = self.template.get('name', '') if isinstance(self.template, dict) else str(self.template)
             print(f"🔍 LISTENER: Double-click on template: {template_name}")
             self.doubleClicked.emit(self.template)
@@ -1210,7 +1211,7 @@ class TemplateListItem(QFrame):
     def keyPressEvent(self, event):
         """Handle key press events for template operations"""
         # Handle both Delete and Backspace (for Mac) for template deletion when selected
-        if (event.key() == Qt.Key_Delete or event.key() == Qt.Key_Backspace) and self.selected:
+        if (event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace) and self.selected:
             # If we have a gallery reference and it has multi-selection, handle accordingly
             has_multi = (self.gallery and hasattr(self.gallery, 'multi_selected_templates') and 
                         self.gallery.multi_selected_templates and 
@@ -1312,7 +1313,7 @@ class TemplateListItem(QFrame):
             success = app.template_manager.recache_template(template_name)
             
             # Show feedback to user
-            from PyQt5.QtWidgets import QMessageBox
+            from PyQt6.QtWidgets import QMessageBox
             if success:
                 QMessageBox.information(None, "Recache Complete", 
                     f"Template '{template_name}' has been recached successfully.")
@@ -1351,7 +1352,7 @@ class TemplateListItem(QFrame):
             success = app.template_manager.safe_clear_template_cache(template_name)
             
             # Show feedback to user
-            from PyQt5.QtWidgets import QMessageBox
+            from PyQt6.QtWidgets import QMessageBox
             if success:
                 QMessageBox.information(None, "Cache Cleared", 
                     f"Cache for template '{template_name}' has been cleared successfully.")

@@ -6,8 +6,8 @@ import sys
 import json
 import tempfile
 import shutil
-from PyQt5.QtWidgets import QApplication, QDialog, QVBoxLayout, QPushButton, QLabel, QTextEdit, QComboBox, QGroupBox, QRadioButton, QGridLayout, QHBoxLayout
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QDialog, QVBoxLayout, QPushButton, QLabel, QTextEdit, QComboBox, QGroupBox, QRadioButton, QGridLayout, QHBoxLayout
+from PyQt6.QtCore import Qt
 
 # Import required modules
 from app.core.project_builder import ProjectBuilder
@@ -278,7 +278,7 @@ def run_test():
     app = QApplication(sys.argv)
     dialog = JsonStructureTestDialog()
     dialog.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     run_test() 

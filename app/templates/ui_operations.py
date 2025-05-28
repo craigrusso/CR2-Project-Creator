@@ -12,19 +12,19 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple, Union
 
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QPushButton, 
     QLabel, QFileDialog, QMessageBox, QDialog
 )
-from PyQt5.QtCore import Qt, QSize, QTimer, pyqtSignal
-from PyQt5.QtGui import QPixmap, QPainter, QIcon, QFont
+from PyQt6.QtCore import Qt, QSize, QTimer, pyqtSignal
+from PyQt6.QtGui import QPixmap, QPainter, QIcon, QFont
 
 # Import QtWidgets conditionally - for compatibility with different PyQt versions
 try:
-    from PyQt5.QtWidgets import QLineEdit, QComboBox
+    from PyQt6.QtWidgets import QLineEdit, QComboBox
 except ImportError:
     # Fallback for older PyQt versions
-    from PyQt5.QtGui import QLineEdit, QComboBox
+    from PyQt6.QtGui import QLineEdit, QComboBox
 
 from app.ui.ui_components_pyqt import ScrollableFrame
 from app.templates.components import TemplateCard
@@ -104,7 +104,7 @@ class UIOperations:
         except Exception as e:
             print(f"Error creating new template: {e}")
             if parent:
-                from PyQt5.QtWidgets import QMessageBox
+                from PyQt6.QtWidgets import QMessageBox
                 QMessageBox.warning(parent, "Error", f"Failed to create template: {str(e)}")
             return False
     
@@ -260,7 +260,7 @@ class UIOperations:
                     editor.set_initial_structure(structure)
                     
                 # Show the editor dialog
-                if editor.exec_() == QDialog.Accepted:
+                if editor.exec() == QDialog.Accepted:
                     # Get updated data
                     updated_structure = editor.get_structure()
                     updated_name = editor.get_template_name()
@@ -340,7 +340,7 @@ class UIOperations:
 
         if icon_path and os.path.exists(icon_path):
             try:
-                from PyQt5.QtSvg import QSvgWidget
+                from PyQt6.QtSvg import QSvgWidget
                 icon_widget = QSvgWidget(icon_path)
                 icon_widget.setFixedSize(24, 24) # Or desired size
             except ImportError:
@@ -376,7 +376,7 @@ class UIOperations:
         name_label.setFont(name_font)
         name_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
         name_label.setWordWrap(True)
-        name_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        name_label.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignLeft | Qt.AlignmentFlagFlagFlagFlagFlag.AlignTop)
         info_layout.addWidget(name_label)
         
         # Category
@@ -385,7 +385,7 @@ class UIOperations:
         category_font = QFont(SYSTEM_FONT, 9)
         category_label.setFont(category_font)
         category_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
-        category_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        category_label.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignLeft | Qt.AlignmentFlagFlagFlagFlagFlag.AlignTop)
         info_layout.addWidget(category_label)
         
         # Description
@@ -395,7 +395,7 @@ class UIOperations:
         desc_label.setFont(desc_font)
         desc_label.setStyleSheet(f"color: {colors['text']}; background: transparent;")
         desc_label.setWordWrap(True)
-        desc_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        desc_label.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignLeft | Qt.AlignmentFlagFlagFlagFlagFlag.AlignTop)
         info_layout.addWidget(desc_label, 1)
 
         # Add info frame to hbox layout
@@ -441,7 +441,7 @@ class UIOperations:
 
     def _handle_card_click(self, event, template, card, select_callback):
          """Centralized handler for card clicks."""
-         if event.button() == Qt.LeftButton:
+         if event.button() == Qt.MouseButton.LeftButton:
              select_callback(template)
              # We don't need to explicitly call hover enter/leave here usually
              # Selection change should trigger style updates
@@ -455,7 +455,7 @@ class UIOperations:
         # Apply hover style using the style sheet for consistency
         card.setProperty("hovering", True)
         self._refresh_style(card)
-        card.setCursor(Qt.PointingHandCursor)
+        card.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def _on_card_hover_leave(self, card):
         """Handle hover leave for template card"""
@@ -469,7 +469,7 @@ class UIOperations:
         # Apply normal style
         card.setProperty("hovering", False)
         self._refresh_style(card)
-        card.setCursor(Qt.ArrowCursor)
+        card.setCursor(Qt.CursorShape.ArrowCursor)
 
     def _refresh_style(self, card):
          """Refreshes the stylesheet of the card based on its state."""
@@ -513,9 +513,9 @@ class UIOperations:
     
     def save_template_ui(self, app):
         """Show UI for saving a template"""
-        from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+        from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                                     QLineEdit, QPushButton, QComboBox, QMessageBox)
-        from PyQt5.QtCore import Qt
+        from PyQt6.QtCore import Qt
         
         # Check if we should prompt for a template file
         template_file_path = getattr(app, 'template_file_path', None)
@@ -653,11 +653,11 @@ class UIOperations:
         name_field.setFocus()
         
         # Execute the dialog
-        dialog.exec_()
+        dialog.exec()
     
     def import_template_ui(self, app):
         """Show UI for importing a template"""
-        from PyQt5.QtWidgets import QFileDialog, QMessageBox, QInputDialog, QDialog, QVBoxLayout, QLabel, QLineEdit, QComboBox, QPushButton, QHBoxLayout
+        from PyQt6.QtWidgets import QFileDialog, QMessageBox, QInputDialog, QDialog, QVBoxLayout, QLabel, QLineEdit, QComboBox, QPushButton, QHBoxLayout
         
         # Open file dialog
         file_path, _ = QFileDialog.getOpenFileName(
@@ -740,18 +740,18 @@ class UIOperations:
         name_field.setFocus()
         
         # Execute the dialog
-        if dialog.exec_() == QDialog.Accepted:
+        if dialog.exec() == QDialog.Accepted:
             # If dialog accepted, trigger updates
             if hasattr(app, 'template_updated') and app.template_updated is not None:
                 app.template_updated.emit()
     
     def manage_templates_ui(self, app):
         """Show UI for managing templates"""
-        from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+        from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                                    QPushButton, QListWidget, QFrame,
                                    QSizePolicy, QMessageBox, QInputDialog)
-        from PyQt5.QtCore import Qt, QSize
-        from PyQt5.QtGui import QFont
+        from PyQt6.QtCore import Qt, QSize
+        from PyQt6.QtGui import QFont
         
         # Create dialog
         dialog = QDialog(app)
@@ -867,7 +867,7 @@ class UIOperations:
         main_layout.addLayout(button_layout)
         
         # Execute dialog
-        dialog.exec_()
+        dialog.exec()
     
     def save_template(self, template):
         """Save a template object from the UI"""
@@ -921,7 +921,7 @@ class UIOperations:
         try:
             # Import here to avoid circular imports
             from app.dialogs.dialog_windows_pyqt import show_manage_templates
-            from PyQt5.QtWidgets import QApplication
+            from PyQt6.QtWidgets import QApplication
             
             # Parent must be a QWidget, not TemplateManager
             # If no proper parent provided, use the active window or None

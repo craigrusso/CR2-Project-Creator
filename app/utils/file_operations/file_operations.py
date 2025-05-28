@@ -8,8 +8,8 @@ Provides utilities for handling file operations in the application
 
 import os
 import json
-from PyQt5.QtWidgets import QFileDialog, QMessageBox
-from PyQt5.QtCore import QObject, pyqtSignal
+from PyQt6.QtWidgets import QFileDialog, QMessageBox
+from PyQt6.QtCore import QObject, pyqtSignal
 
 
 class FileOperationsHandler(QObject):

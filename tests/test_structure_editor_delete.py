@@ -8,10 +8,10 @@ Test file for structure editor delete functionality and context menus
 import sys
 import os
 import unittest
-from PyQt5.QtWidgets import QApplication, QTreeWidgetItem
-from PyQt5.QtCore import Qt, QEvent
-from PyQt5.QtTest import QTest
-from PyQt5.QtGui import QKeyEvent
+from PyQt6.QtWidgets import QApplication, QTreeWidgetItem
+from PyQt6.QtCore import Qt, QEvent
+from PyQt6.QtTest import QTest
+from PyQt6.QtGui import QKeyEvent
 
 # Add parent directory to path to allow imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -40,11 +40,11 @@ class TestStructureEditorDelete(unittest.TestCase):
         self.root_item = self.editor.tree_widget.invisibleRootItem()
         self.folder_item = QTreeWidgetItem(self.root_item)
         self.folder_item.setText(0, "Test Folder")
-        self.folder_item.setData(0, Qt.UserRole, {"type": "folder"})
+        self.folder_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder"})
         
         self.file_item = QTreeWidgetItem(self.folder_item)
         self.file_item.setText(0, "test_file.txt")
-        self.file_item.setData(0, Qt.UserRole, {"type": "file", "name": "test_file.txt"})
+        self.file_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "name": "test_file.txt"})
         
     def tearDown(self):
         """Clean up after each test"""
@@ -63,7 +63,7 @@ class TestStructureEditorDelete(unittest.TestCase):
         self.assertEqual(initial_count, 1)
         
         # Create a delete key event
-        delete_event = QKeyEvent(QEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier)
+        delete_event = QKeyEvent(QEvent.KeyPress, Qt.Key.Key_Delete, Qt.KeyboardModifier.NoModifier)
         
         # Send the event to the tree widget
         self.editor.tree_widget.keyPressEvent(delete_event)
@@ -81,7 +81,7 @@ class TestStructureEditorDelete(unittest.TestCase):
         self.editor._use_project_name_for_file(self.file_item)
         
         # Check that the file now uses the project name
-        file_data = self.file_item.data(0, Qt.UserRole)
+        file_data = self.file_item.data(0, Qt.ItemDataRole.UserRole)
         self.assertTrue(file_data.get('uses_project_name', False))
         
         # Check that the file name was updated

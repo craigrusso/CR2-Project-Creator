@@ -2,7 +2,7 @@
 # Test script to check for app crashes
 
 import sys
-from PyQt5.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication
 from app.core.app_module_pyqt import ProjectCreatorApp
 
 def main():
@@ -17,7 +17,7 @@ def main():
     main_window.show()
     
     # Start the application main loop
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main() 

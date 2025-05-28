@@ -9,9 +9,9 @@ import os
 import sys
 import tempfile
 import shutil
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QLabel
-from PyQt5.QtCore import Qt, QMimeData, QUrl, QPoint
-from PyQt5.QtGui import QDropEvent
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QLabel
+from PyQt6.QtCore import Qt, QMimeData, QUrl, QPoint
+from PyQt6.QtGui import QDropEvent
 
 # Create application instance
 app = QApplication(sys.argv)
@@ -35,7 +35,7 @@ class DragDropFixTester(QMainWindow):
         
         # Instructions
         title = QLabel("<h1>Drag & Drop Fix Test</h1>")
-        title.setAlignment(Qt.AlignCenter)
+        title.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
         layout.addWidget(title)
         
         instructions = QLabel("""
@@ -46,7 +46,7 @@ class DragDropFixTester(QMainWindow):
         </ol>
         <p>Click the button below to start the test.</p>
         """)
-        instructions.setAlignment(Qt.AlignCenter)
+        instructions.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
         layout.addWidget(instructions)
         
         # Test button
@@ -56,7 +56,7 @@ class DragDropFixTester(QMainWindow):
         
         # Status label
         self.status_label = QLabel("Ready to test")
-        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
         layout.addWidget(self.status_label)
         
         # Create test directory structure
@@ -124,10 +124,10 @@ class DragDropFixTester(QMainWindow):
         # Create the drop event
         drop_event = QDropEvent(
             pos,
-            Qt.CopyAction,
+            Qt.DropAction.CopyAction,
             mime_data,
-            Qt.LeftButton,
-            Qt.NoModifier,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
             QDropEvent.Drop
         )
         
@@ -231,7 +231,7 @@ def main():
     """Main function to run the test"""
     window = DragDropFixTester()
     window.show()
-    return app.exec_()
+    return app.exec()
 
 if __name__ == "__main__":
     sys.exit(main()) 

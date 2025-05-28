@@ -11,7 +11,7 @@ from unittest.mock import patch, MagicMock
 # Add parent directory to path to allow imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from PyQt5.QtWidgets import QApplication, QFileDialog
+from PyQt6.QtWidgets import QApplication, QFileDialog
 from app.core.app_module_pyqt import ProjectCreatorApp
 from app.core.project_operations import create_project
 

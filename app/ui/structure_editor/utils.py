@@ -6,8 +6,8 @@ Utility functions for the structure editor
 """
 
 import os
-from PyQt5.QtWidgets import QStyle, QFileIconProvider
-from PyQt5.QtCore import QFileInfo
+from PyQt6.QtWidgets import QStyle, QFileIconProvider
+from PyQt6.QtCore import QFileInfo
 import mimetypes
 
 def _count_structure_items(structure):
@@ -51,7 +51,7 @@ def get_file_icon_for_type(file_path):
     Returns:
         QIcon: Icon for the file type
     """
-    from PyQt5.QtWidgets import QApplication
+    from PyQt6.QtWidgets import QApplication
     
     # Initialize mime types if not already initialized
     if not mimetypes.inited:
@@ -62,15 +62,15 @@ def get_file_icon_for_type(file_path):
     
     # Handle special file types
     if ext in ['.prproj', '.aep', '.aepx']:
-        return QApplication.style().standardIcon(QStyle.SP_FileLinkIcon)
+        return QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileLinkIcon)
     elif ext in ['.mp4', '.mov', '.avi', '.mxf']:
-        return QApplication.style().standardIcon(QStyle.SP_MediaPlay)
+        return QApplication.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)
     elif ext in ['.psd', '.ai', '.png', '.jpg', '.jpeg', '.tif', '.tiff']:
-        return QApplication.style().standardIcon(QStyle.SP_FileDialogContentsView)
+        return QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogContentsView)
     elif ext in ['.wav', '.mp3', '.aac', '.m4a']:
-        return QApplication.style().standardIcon(QStyle.SP_MediaVolume)
+        return QApplication.style().standardIcon(QStyle.StandardPixmap.SP_MediaVolume)
     elif ext in ['.txt', '.md', '.rtf']:
-        return QApplication.style().standardIcon(QStyle.SP_FileDialogDetailedView)
+        return QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
     
     # Use system file icon provider for other types
     try:
@@ -79,7 +79,7 @@ def get_file_icon_for_type(file_path):
         return provider.icon(file_info)
     except:
         # Fallback to generic file icon
-        return QApplication.style().standardIcon(QStyle.SP_FileIcon)
+        return QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon)
 
 def is_built_in_structure(structure_name):
     """

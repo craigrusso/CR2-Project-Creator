@@ -3,8 +3,8 @@
 import sys
 import os
 import unittest
-from PyQt5.QtWidgets import QApplication, QTreeWidgetItem
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QTreeWidgetItem
+from PyQt6.QtCore import Qt
 
 # Add the parent directory to the path to import the app modules
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -31,17 +31,17 @@ class TestSaveStructureMethod(unittest.TestCase):
         # Add Project Root item
         project_root = QTreeWidgetItem(root)
         project_root.setText(0, "Project Root")
-        project_root.setData(0, Qt.UserRole, "folder")
+        project_root.setData(0, Qt.ItemDataRole.UserRole, "folder")
         
         # Add a folder item
         folder_item = QTreeWidgetItem(project_root)
         folder_item.setText(0, "Test Folder")
-        folder_item.setData(0, Qt.UserRole, "folder")
+        folder_item.setData(0, Qt.ItemDataRole.UserRole, "folder")
         
         # Add a file item
         file_item = QTreeWidgetItem(project_root)
         file_item.setText(0, "Test File")
-        file_item.setData(0, Qt.UserRole, "file")
+        file_item.setData(0, Qt.ItemDataRole.UserRole, "file")
         
         # Create temporary directory for test output
         self.test_dir = os.path.join(parent_dir, "tests/temp")

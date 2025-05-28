@@ -7,8 +7,8 @@ Test script for the refactored Enhanced Structure Editor
 
 import sys
 import os
-from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt
 
 # Import the editor
 from app.ui.structure_editor_enhanced import EnhancedStructureEditor, show_enhanced_structure_editor
@@ -56,7 +56,7 @@ class TestWindow(QMainWindow):
     def test_empty_editor(self):
         """Test the editor with no structure"""
         editor = EnhancedStructureEditor(self)
-        result = editor.exec_()
+        result = editor.exec()
         
         if result:
             print("Editor accepted")
@@ -72,7 +72,7 @@ class TestWindow(QMainWindow):
             structure_name="Test Structure",
             structure=self.test_structure
         )
-        result = editor.exec_()
+        result = editor.exec()
         
         if result:
             print("Editor accepted")
@@ -111,7 +111,7 @@ def main():
     window.show()
     
     # Start the application main loop
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     main() 

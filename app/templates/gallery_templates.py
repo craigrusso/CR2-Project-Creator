@@ -12,16 +12,16 @@ import re
 import copy
 from datetime import datetime
 from functools import partial
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QGridLayout, 
     QLabel, QPushButton, QComboBox, QSizePolicy, QApplication,
-    QFrame, QMenu, QMessageBox, QAction, QButtonGroup, QToolButton, QTableWidget, 
+    QFrame, QMenu, QMessageBox, QButtonGroup, QToolButton, QTableWidget, 
     QTableWidgetItem, QAbstractItemView, QHeaderView, QSpacerItem, QLineEdit, QCompleter,
     QListWidget, QListWidgetItem, QStyle, QStyledItemDelegate, QStyleOptionViewItem,
     QStyleOptionFrame, QCheckBox, QDialog, QTreeWidget, QTreeWidgetItem, QSplitter
 )
-from PyQt5.QtGui import QIcon, QColor, QFont, QPixmap, QCursor, QPainter, QPalette, QPen, QBrush
-from PyQt5.QtCore import Qt, pyqtSignal, QSize, QPoint, QRect, QBuffer, QTimer, QEvent, QItemSelectionModel
+from PyQt6.QtGui import QIcon, QColor, QFont, QPixmap, QCursor, QPainter, QPalette, QPen, QBrush, QAction
+from PyQt6.QtCore import Qt, pyqtSignal, QSize, QPoint, QRect, QBuffer, QTimer, QEvent, QItemSelectionModel
 import traceback # Import the traceback module
 
 from app.ui.color_scheme_pyqt import colors, ACCENT_BUTTON_STYLE
@@ -276,7 +276,7 @@ def select_template_after_rename(gallery, new_name, old_name):
     # Force a reload of templates and structures if we have access to template_manager
     if hasattr(gallery, 'app') and hasattr(gallery.app, 'template_manager'):
         # Wait a moment to ensure files are written to disk
-        from PyQt5.QtCore import QTimer, QApplication
+        from PyQt6.QtCore import QTimer, QApplication
         QTimer.singleShot(200, lambda: QApplication.processEvents())
         
         # Force complete reloads
@@ -479,19 +479,20 @@ class GalleryTemplatesSetup:
         # Scrollable container for templates (Grid and List/Table View)
         gallery.templates_scroll = QScrollArea()
         gallery.templates_scroll.setWidgetResizable(True)
-        gallery.templates_scroll.setFrameShape(QFrame.NoFrame)
-        gallery.templates_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff) # No horizontal scroll for grid
+        gallery.templates_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        gallery.templates_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        gallery.templates_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        gallery.templates_scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         gallery.templates_scroll.setStyleSheet("background: transparent; border: none;")
-        gallery.templates_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
         gallery.templates_container = QWidget()
-        gallery.templates_container.setStyleSheet("background: transparent;")
-        gallery.templates_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        gallery.templates_container.setStyleSheet("background: transparent; border: none;")
+        gallery.templates_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         
         gallery.templates_grid = QGridLayout(gallery.templates_container)
         gallery.templates_grid.setContentsMargins(0, 0, 0, 0)
         gallery.templates_grid.setSpacing(15)
-        gallery.templates_grid.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        gallery.templates_grid.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         
         # Create template_list_container with its own layout to hold the table view
         gallery.templates_list_container = QWidget()
@@ -528,11 +529,10 @@ class GalleryTemplatesSetup:
         gallery.templates_header_layout.setContentsMargins(15, 10, 15, 10)
         gallery.templates_header_layout.setSpacing(10)
 
-        gallery.templates_label = QLabel("Templates")
-        gallery.templates_label.setFont(QFont(SYSTEM_FONT, 14, QFont.Bold))
-        gallery.templates_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold; background: transparent;")
-        gallery.templates_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        gallery.templates_header_layout.addWidget(gallery.templates_label, 1)
+        gallery.templates_label = QLabel("TEMPLATES")
+        gallery.templates_label.setStyleSheet(f"color: {colors['accent']}; padding-left: 5px;")
+        gallery.templates_label.setFont(QFont(SYSTEM_FONT, 14, QFont.Weight.Bold))
+        gallery.templates_header_layout.addWidget(gallery.templates_label, 1) # Give stretch factor of 1
 
         gallery.templates_header_layout.addStretch(1) # Push buttons to the right
 
@@ -896,141 +896,82 @@ class GalleryTemplatesSetup:
 
     @staticmethod
     def update_template_selection_state(gallery):
-        """Update the selection state of all templates in the gallery"""
-        print(f"🔍 LISTENER: Updating template selection UI")
+        """Update the template selection state after view mode change or other updates
         
-        # Debug output
-        print(f"🔍 LISTENER: In multi-selection mode: {hasattr(gallery, 'is_multi_selecting') and gallery.is_multi_selecting}")
-        print(f"🔍 LISTENER: Primary selection: {gallery.selected_template if hasattr(gallery, 'selected_template') else None}")
-        print(f"🔍 LISTENER: Multi-selection count: {len(gallery.multi_selected_templates) if hasattr(gallery, 'multi_selected_templates') else 0}")
+        Args:
+            gallery: The gallery widget instance
+        """
+        print("🔍 LISTENER: Updating template selection UI")
         
-        # Helper function to determine if a template is selected
-        def is_template_selected(template_name, selected_template):
-            if not selected_template:
-                return False
+        # Get selection information
+        has_multi_selection = False
+        primary_template = None
+        multi_selected = []
+        
+        # Get selection from SelectionManager
+        if hasattr(gallery, 'selection_manager'):
+            primary_template = gallery.selection_manager.selected_template
+            multi_selected = gallery.selection_manager.multi_selected_templates
+            
+            # Determine if multi-selection is active by checking the length of multi_selected
+            has_multi_selection = len(multi_selected) > 1
+            
+            print(f"🔍 LISTENER: In multi-selection mode: {has_multi_selection}")
+            print(f"🔍 LISTENER: Primary selection: {primary_template.get('name') if primary_template else 'None'}")
+            print(f"🔍 LISTENER: Multi-selection count: {len(multi_selected)}")
+        
+        # Update the correct view's selection based on view mode
+        if gallery.view_mode == "grid":
+            # Use helper methods to update card selection
+            if hasattr(gallery, '_update_template_card_selection'):
+                gallery._update_template_card_selection()
+        else:  # list view
+            # For template table view
+            if gallery.template_table_view and gallery.template_table_view.isVisible():
+                # Block signals during selection changes
+                gallery.template_table_view.selectionModel().blockSignals(True)
                 
-            if isinstance(selected_template, dict):
-                return selected_template.get('name', '') == template_name
-            return selected_template == template_name
-            
-        # Helper function to determine if a template is multi-selected
-        def is_template_multi_selected(template_name, multi_selected_templates):
-            if not multi_selected_templates:
-                return False
+                # Clear current selection
+                gallery.template_table_view.selectionModel().clear()
                 
-            for t in multi_selected_templates:
-                if isinstance(t, dict) and t.get('name', '') == template_name:
-                    return True
-                elif t == template_name:
-                    return True
-            return False
-            
-        # Helper function to set template item selection state and update UI
-        def update_item_selection(item, is_selected, is_multi_selected):
-            # Store current state to see if we actually need to update
-            needs_update = False
-            
-            current_selected = getattr(item, 'selected', False)
-            current_multi = getattr(item, 'multi_selected', False)
-            
-            # Update selection state if changed
-            if hasattr(item, 'setSelected') and current_selected != is_selected:
-                item.setSelected(is_selected)
-                needs_update = True
-                
-            # Update multi-selection state if changed
-            if hasattr(item, 'setMultiSelected') and current_multi != is_multi_selected:
-                item.setMultiSelected(is_multi_selected)
-                needs_update = True
-            
-            # If state changed, trigger styling update
-            if needs_update and hasattr(item, '_update_styling'):
-                try:
-                    item._update_styling()
-                except Exception as style_e:
-                     print(f"Error updating item style: {style_e}")
-
-        # --- Update Table View Selection ---
-        if gallery.view_mode == "list" and hasattr(gallery, 'template_table_view'):
-            table_view = gallery.template_table_view
-            proxy_model = table_view.model()
-            # Get the source model for itemFromIndex operations
-            source_model = proxy_model.sourceModel()
-            selection_model = table_view.selectionModel()
-            
-            if not selection_model or not source_model:
-                 print("[WARNING] No selection model or source model found for TableView, skipping update.")
-                 return
-
-            # Block signals temporarily to avoid triggering handlers during update
-            selection_model.blockSignals(True)
-            selection_model.clear() # Clear previous selection first
-
-            selected_indices = []
-            
-            # Get selected template name(s)
-            selected_name = None
-            if hasattr(gallery, 'selected_template') and gallery.selected_template:
-                 selected_name = gallery.selected_template.get('name', '') if isinstance(gallery.selected_template, dict) else str(gallery.selected_template)
-
-            multi_selected_names = set()
-            if hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
-                multi_selected_names = {
-                    t.get('name', '') if isinstance(t, dict) else str(t) 
-                    for t in gallery.multi_selected_templates
-                }
-
-            # Iterate through rows in the model to find matches
-            name_column = 0 # Assuming 'Name' is the first column
-            for row in range(proxy_model.rowCount()):
-                proxy_index = proxy_model.index(row, name_column)
-                # Map the proxy index to a source index
-                source_index = proxy_model.mapToSource(proxy_index)
-                # Get the item from the source model
-                item = source_model.itemFromIndex(source_index)
-                
-                if item:
-                    template_name = item.text()
+                # Find and select appropriate rows for template(s)
+                model = gallery.template_table_view.model()
+                if not model:
+                    print("🔍 LISTENER: No model found for template table view")
+                else:
+                    # If we have a primary selection, find and select it
+                    if primary_template:
+                        # Select row(s) in table
+                        for row in range(model.rowCount()):
+                            index = model.index(row, 0)  # Assuming first column has the template name
+                            if index.isValid():
+                                name = model.data(index, Qt.ItemDataRole.DisplayRole)
+                                if name == primary_template.get('name'):
+                                    # Select the row for primary selection
+                                    select_flags = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
+                                    gallery.template_table_view.selectionModel().select(index, select_flags)
+                                    gallery.template_table_view.setCurrentIndex(index)
+                                    
+                                    print(f"🔍 LISTENER: Selected primary template: {name}")
+                                    break
                     
-                    select_flags = QItemSelectionModel.Select | QItemSelectionModel.Rows
-                    
-                    # Check for primary selection
-                    if template_name == selected_name:
-                        # Select the entire row in the proxy model view
-                        selection_model.select(proxy_index, select_flags)
-                        # Ensure this row is visible if needed
-                        # table_view.scrollTo(proxy_index, QAbstractItemView.EnsureVisible)
-                        
-                    # Check for multi-selection (only if different from primary selection)
-                    elif template_name in multi_selected_names:
-                         selection_model.select(proxy_index, select_flags)
-
-            # Unblock signals
-            selection_model.blockSignals(False)
-            
-            # Force UI refresh if needed (usually selection updates automatically)
-            # table_view.update()
-            # QApplication.processEvents()
-
-
-        # --- Existing Grid View Update Logic ---
-        # For grid view - update template cards
-        if gallery.view_mode == "grid" and hasattr(gallery, 'template_cards'):
-             for card in gallery.template_cards:
-                 if not card or not hasattr(card, 'template'):
-                     continue
-                     
-                 template_name = card.template.get('name', '') if isinstance(card.template, dict) else str(card.template)
-                 
-                 # Determine selection state
-                 is_selected = is_template_selected(template_name, getattr(gallery, 'selected_template', None))
-                 is_multi = is_template_multi_selected(template_name, getattr(gallery, 'multi_selected_templates', []))
-                 
-                 # Update card state
-                 update_item_selection(card, is_selected, is_multi)
-
+                    # If we have multi-selection, add additional rows
+                    if has_multi_selection:
+                        multi_names = [t.get('name') for t in multi_selected if t != primary_template]
+                        if multi_names:
+                            for row in range(model.rowCount()):
+                                index = model.index(row, 0)
+                                if index.isValid():
+                                    name = model.data(index, Qt.ItemDataRole.DisplayRole)
+                                    if name in multi_names:
+                                        # Add to the selection (don't replace)
+                                        select_flags = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
+                                        gallery.template_table_view.selectionModel().select(index, select_flags)
+                
+                # Unblock signals
+                gallery.template_table_view.selectionModel().blockSignals(False)
+        
         # Force immediate UI refresh for the active view container
-        # This might need adjustment based on the container used
         active_container = None
         if gallery.view_mode == "list" and hasattr(gallery, 'templates_list_container'):
              active_container = gallery.templates_list_container
@@ -1317,7 +1258,7 @@ def test_template_rename(gallery, template_name, new_name):
     Returns:
         dict: Test results with success, error details, and status
     """
-    from PyQt5.QtCore import QTimer
+    from PyQt6.QtCore import QTimer
     results = {
         'success': False,
         'errors': [],
@@ -1591,8 +1532,8 @@ def test_template_rename_workflow(gallery, template_name, new_name):
         gallery.populate_gallery(force_refresh=True)
         
         # Wait a moment for UI to update
-        from PyQt5.QtCore import QTimer
-        from PyQt5.QtWidgets import QApplication
+        from PyQt6.QtCore import QTimer
+        from PyQt6.QtWidgets import QApplication
         
         # Process events to ensure UI updates
         QApplication.processEvents()

@@ -12,9 +12,9 @@ import os
 import json
 import tempfile
 import shutil
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QTreeWidget
-from PyQt5.QtCore import Qt, QMimeData, QUrl, QPoint
-from PyQt5.QtGui import QDropEvent
+from PyQt6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QPushButton, QTreeWidget
+from PyQt6.QtCore import Qt, QMimeData, QUrl, QPoint
+from PyQt6.QtGui import QDropEvent
 
 # Create application instance before importing UI components
 app = QApplication(sys.argv)
@@ -125,10 +125,10 @@ class DragDropTester(QMainWindow):
         # Create the drop event
         drop_event = QDropEvent(
             pos,
-            Qt.CopyAction,
+            Qt.DropAction.CopyAction,
             mime_data,
-            Qt.LeftButton,
-            Qt.NoModifier,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
             QDropEvent.Drop
         )
         
@@ -249,7 +249,7 @@ if __name__ == "__main__":
     try:
         window = DragDropTester()
         window.show()
-        sys.exit(app.exec_())
+        sys.exit(app.exec())
     except Exception as e:
         print(f"Test failed: {e}")
         import traceback

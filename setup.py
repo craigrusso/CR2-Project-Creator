@@ -47,9 +47,9 @@ OPTIONS = {
     'packages': ['app', 'requests'], 
     'includes': [ 
         # Explicitly include modules that might be missed but are imported in main.py or dependencies
-        'PyQt5.QtWidgets', 
-        'PyQt5.QtCore', 
-        'PyQt5.QtGui',
+        'PyQt6.QtWidgets', 
+        'PyQt6.QtCore', 
+        'PyQt6.QtGui',
         'app.core.app_module_pyqt',
         'app.config.app_config',
         'app.ui.app_theme_pyqt',
@@ -78,20 +78,20 @@ OPTIONS = {
         # 'PyQt5', # Reverted: Add PyQt5 to general excludes
         
         # Aggressively exclude specific PyQt5 modules NOT directly used in main.py or known dependencies
-        'PyQt5.Qsci',
+        'PyQt6.Qsci',
         'PyQt5.QtDesigner',
         'PyQt5.QtHelp',
-        'PyQt5.QtNetwork', # Excluded as requests should handle networking
-        'PyQt5.QtMultimedia',
-        'PyQt5.QtMultimediaWidgets',
-        'PyQt5.QtOpenGL', # Assuming no direct OpenGL usage
-        'PyQt5.QtPrintSupport', # Assuming no printing
-        'PyQt5.QtSql', # Assuming no SQL usage
-        'PyQt5.QtSvg', # Include via qt_plugins instead
-        'PyQt5.QtTest',
-        'PyQt5.QtWebChannel',
+        'PyQt6.QtNetwork', # Excluded as requests should handle networking
+        'PyQt6.QtMultimedia',
+        'PyQt6.QtMultimediaWidgets',
+        'PyQt6.QtOpenGL', # Assuming no direct OpenGL usage
+        'PyQt6.QtPrintSupport', # Assuming no printing
+        'PyQt6.QtSql', # Assuming no SQL usage
+        'PyQt6.QtSvg', # Include via qt_plugins instead
+        'PyQt6.QtTest',
+        'PyQt6.QtWebChannel',
         'PyQt5.QtWebEngineCore',
-        'PyQt5.QtWebEngineWidgets',
+        'PyQt6.QtWebEngineWidgets',
         'PyQt5.QtWebKit',
         'PyQt5.QtWebKitWidgets',
         'PyQt5.QtXml',

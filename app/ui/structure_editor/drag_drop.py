@@ -7,9 +7,10 @@ Handles drag and drop operations for files and folders
 """
 
 import os
-from PyQt5.QtWidgets import QTreeWidgetItem, QMessageBox, QApplication, QStyle
-from PyQt5.QtCore import Qt, QMimeData, QUrl
-from PyQt5.QtGui import QDrag, QIcon, QBrush, QColor, QPixmap, QPainter
+import json
+from PyQt6.QtWidgets import QTreeWidgetItem, QMessageBox, QApplication, QStyle, QAbstractItemView, QStyleOptionViewItem
+from PyQt6.QtCore import Qt, QMimeData, QUrl, QPoint, QRect
+from PyQt6.QtGui import QDrag, QIcon, QBrush, QColor, QPixmap, QPainter, QCursor
 
 from .utils import get_file_icon_for_type
 
@@ -42,6 +43,7 @@ class DragDropHandler:
         """
         self.editor = editor
         self.tree = tree_widget
+        self.dragged_item_instance = None # To store the item being dragged
         
         # Configure the tree for drag and drop if available
         if self.tree:
@@ -53,7 +55,7 @@ class DragDropHandler:
         self.tree.setDragEnabled(True)
         self.tree.setAcceptDrops(True)
         self.tree.setDropIndicatorShown(True)
-        self.tree.setDragDropMode(self.tree.InternalMove)
+        self.tree.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         
         # Style the drag indicator
         self.tree.setStyleSheet(self.tree.styleSheet() + """
@@ -98,11 +100,15 @@ class DragDropHandler:
         Args:
             event: Drag enter event
         """
-        # Accept local files or URL drags
-        if event.mimeData().hasUrls() or event.mimeData().hasFormat("application/x-qabstractitemmodeldatalist"):
+        if event.mimeData().hasFormat("application/x-echelon-template-item"):
+            # Handle internal drag of our custom items
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
+        elif event.mimeData().hasUrls():
+            # Handle external file drops
             event.acceptProposedAction()
         else:
-            # Fall back to default handler
+            # Fall back to default handler for other types
             self.tree._old_dragEnterEvent(event)
     
     def _drag_move_event(self, event):
@@ -112,11 +118,12 @@ class DragDropHandler:
         Args:
             event: Drag move event
         """
-        # Accept local files or URL drags
-        if event.mimeData().hasUrls() or event.mimeData().hasFormat("application/x-qabstractitemmodeldatalist"):
+        if event.mimeData().hasFormat("application/x-echelon-template-item"):
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
+        elif event.mimeData().hasUrls():
             event.acceptProposedAction()
         else:
-            # Fall back to default handler
             self.tree._old_dragMoveEvent(event)
     
     def _drop_event(self, event):
@@ -126,12 +133,111 @@ class DragDropHandler:
         Args:
             event: Drop event
         """
-        # Handle URL drops (files from file system)
-        if event.mimeData().hasUrls():
+        if event.mimeData().hasFormat("application/x-echelon-template-item") and self.dragged_item_instance:
+            source_item = self.dragged_item_instance
+            # In PyQt6, event.position() returns QPointF. itemAt expects QPoint.
+            drop_point = event.position().toPoint() 
+            target_item_at_drop = self.tree.itemAt(drop_point)
+
+            if not source_item:
+                event.ignore()
+                self.dragged_item_instance = None # Clean up
+                return
+
+            target_parent_item = None
+            insert_index = -1 # Default to append
+
+            # Determine the actual target parent and insertion index based on drop position
+            if target_item_at_drop:
+                drop_indicator_pos = self.tree.dropIndicatorPosition()
+
+                if drop_indicator_pos == QAbstractItemView.DropIndicatorPosition.OnItem:
+                    # Dropped ON an item. If it's a folder, make source_item a child.
+                    # Otherwise (file or non-folder), treat as dropping BELOW the item.
+                    item_data = target_item_at_drop.data(0, Qt.ItemDataRole.UserRole)
+                    if isinstance(item_data, dict) and item_data.get('type') == 'folder':
+                        target_parent_item = target_item_at_drop
+                        insert_index = target_parent_item.childCount() # Append to folder
+                    else: # Dropped on a file or non-expandable item, treat as BelowItem
+                        target_parent_item = target_item_at_drop.parent() or self.tree.invisibleRootItem()
+                        insert_index = target_parent_item.indexOfChild(target_item_at_drop) + 1
+                
+                elif drop_indicator_pos == QAbstractItemView.DropIndicatorPosition.AboveItem:
+                    target_parent_item = target_item_at_drop.parent() or self.tree.invisibleRootItem()
+                    insert_index = target_parent_item.indexOfChild(target_item_at_drop)
+                
+                elif drop_indicator_pos == QAbstractItemView.DropIndicatorPosition.BelowItem:
+                    target_parent_item = target_item_at_drop.parent() or self.tree.invisibleRootItem()
+                    insert_index = target_parent_item.indexOfChild(target_item_at_drop) + 1
+                
+                else: # Should not happen with valid drop indicator
+                    event.ignore()
+                    self.dragged_item_instance = None # Clean up
+                    return
+            else:
+                # Dropped in an empty area of the tree, append to the invisible root item
+                target_parent_item = self.tree.invisibleRootItem()
+                insert_index = target_parent_item.childCount()
+
+            # Prevent dropping an item onto itself or into its own children
+            check_item = target_parent_item
+            while check_item and check_item != self.tree.invisibleRootItem():
+                if check_item == source_item:
+                    event.ignore()
+                    self.dragged_item_instance = None # Clean up
+                    return
+                check_item = check_item.parent()
+            
+            # If target_parent_item ended up being source_item itself (e.g. dropping "on" a folder that is the source_item)
+            if target_parent_item == source_item:
+                event.ignore()
+                self.dragged_item_instance = None # Clean up
+                return
+
+            # Perform the move
+            original_parent = source_item.parent() or self.tree.invisibleRootItem()
+            original_index = original_parent.indexOfChild(source_item)
+
+            if original_parent == target_parent_item and original_index == insert_index:
+                # No actual move needed (dropped in the same place)
+                event.ignore()
+                self.dragged_item_instance = None # Clean up
+                return
+
+            # Take the item from its original position
+            # takeChild returns the item, so we use source_item directly
+            original_parent.takeChild(original_index)
+
+            # Adjust insert_index if moving within the same parent and item was taken from before the insert position
+            if original_parent == target_parent_item and original_index < insert_index:
+                insert_index -= 1
+            
+            # Add or insert the item into the new parent
+            if insert_index < 0 or insert_index > target_parent_item.childCount(): # Safety check for index
+                target_parent_item.addChild(source_item)
+            else:
+                target_parent_item.insertChild(insert_index, source_item)
+
+            # Ensure the moved item is selected and visible
+            source_item.setSelected(True)
+            self.tree.setCurrentItem(source_item)
+            self.tree.scrollToItem(source_item)
+
+            event.setDropAction(Qt.DropAction.MoveAction)
+            event.accept()
+            # self.dragged_item_instance = None # Done in start_drag finally
+
+        elif event.mimeData().hasUrls():
             self._handle_url_drop(event)
         else:
-            # Fall back to default handler for internal drags
+            # Fall back to default handler for other types of internal drags
             self.tree._old_dropEvent(event)
+        
+        # Clean up dragged_item_instance if drop not handled by our logic or if an error occurred
+        # This is primarily handled in start_drag's finally block if drag.exec() completes
+        # but good to be defensive. However, start_drag should be the sole clearer.
+        # If _drop_event is called, drag.exec() is still in progress.
+        # self.dragged_item_instance = None
     
     def _handle_url_drop(self, event):
         """
@@ -140,15 +246,15 @@ class DragDropHandler:
         Args:
             event: Drop event containing URLs
         """
-        from PyQt5.QtWidgets import QMessageBox
+        from PyQt6.QtWidgets import QMessageBox
         
         # Determine the drop target item
-        drop_item = self.tree.itemAt(event.pos())
+        drop_item = self.tree.itemAt(event.position().toPoint())
         if not drop_item:
             drop_item = self.tree.invisibleRootItem()
             
         # Check if drop target is a file (can only drop into folders)
-        item_data = drop_item.data(0, Qt.UserRole)
+        item_data = drop_item.data(0, Qt.ItemDataRole.UserRole)
         if isinstance(item_data, dict) and item_data.get('type') == 'file':
             # Get the parent (can't drop onto a file)
             parent = drop_item.parent()
@@ -249,7 +355,7 @@ class DragDropHandler:
             file_item.setIcon(0, get_file_icon_for_type(file_name))
             
             # Make the item editable
-            file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+            file_item.setFlags(file_item.flags() | Qt.ItemFlag.ItemIsEditable)
             
             # Get template name from the editor if available
             template_name = "Unknown Template"
@@ -285,7 +391,7 @@ class DragDropHandler:
                 file_item.setForeground(0, QBrush(QColor('#88AADD')))  # Light blue
             
             # Store the data in the tree item
-            file_item.setData(0, Qt.UserRole, file_data)
+            file_item.setData(0, Qt.ItemDataRole.UserRole, file_data)
             
             # Store reference to the file in the editor's cache tracking if available
             if hasattr(self.editor, 'files_to_cache'):
@@ -324,7 +430,7 @@ class DragDropHandler:
         # Create a file item
         file_item = QTreeWidgetItem(parent_item)
         file_item.setText(0, file_name)
-        file_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_FileIcon))
+        file_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
         
         # Check if it's a binary file
         is_binary = BinaryFileHandler.is_binary_file(file_path)
@@ -363,7 +469,7 @@ class DragDropHandler:
             'relative_path': relative_path,
             'template_name': template_name
         }
-        file_item.setData(0, Qt.UserRole, file_data)
+        file_item.setData(0, Qt.ItemDataRole.UserRole, file_data)
         
         # Set visual indicator
         if is_binary:
@@ -374,7 +480,7 @@ class DragDropHandler:
             file_item.setForeground(0, QBrush(QColor('#88AADD')))
         
         # Make the item editable
-        file_item.setFlags(file_item.flags() | Qt.ItemIsEditable)
+        file_item.setFlags(file_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
         # Store reference to the file in the editor's cache tracking if available
         if hasattr(self.editor, 'files_to_cache'):
@@ -409,7 +515,7 @@ class DragDropHandler:
         # Create a folder item
         folder_item = QTreeWidgetItem(parent_item)
         folder_item.setText(0, folder_name)
-        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.SP_DirIcon))
+        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
         
         # Store folder data
         folder_data = {
@@ -418,10 +524,10 @@ class DragDropHandler:
             'path': dir_path,
             'children': []  # Initialize empty children array
         }
-        folder_item.setData(0, Qt.UserRole, folder_data)
+        folder_item.setData(0, Qt.ItemDataRole.UserRole, folder_data)
         
         # Make the item editable
-        folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+        folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
         # Process all the contents
         try:
@@ -478,7 +584,7 @@ class DragDropHandler:
             event: Mouse press event
         """
         # Store the position for drag detection
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             self.tree._drag_start_position = event.pos()
         
         # Call the original handler
@@ -493,7 +599,7 @@ class DragDropHandler:
         """
         # Check if we should start a drag
         if (hasattr(self.tree, '_drag_start_position') and
-                event.buttons() & Qt.LeftButton and
+                event.buttons() & Qt.MouseButton.LeftButton and
                 (event.pos() - self.tree._drag_start_position).manhattanLength() >= 10):
             
             # Get the item at the drag start position
@@ -507,55 +613,81 @@ class DragDropHandler:
         self.tree._old_mouseMoveEvent(event)
     
     def start_drag(self, item):
-        """
-        Start dragging an item from the tree
-        
-        Args:
-            item: The item to drag
-            
-        Returns:
-            bool: True if drag was started, False otherwise
-        """
-        if not self.tree or not item:
-            return False
+        """Start a drag operation"""
+        if not item:
+            return
+
+        # Store the item instance being dragged
+        self.dragged_item_instance = item
             
         # Get item data
-        item_data = item.data(0, Qt.UserRole)
-        if not isinstance(item_data, dict):
-            return False
+        item_name = item.text(0)
+        item_type = item.data(0, Qt.ItemDataRole.UserRole).get('type', 'unknown')
             
         # Create mime data
         mime_data = QMimeData()
-        
-        # Add item text
-        mime_data.setText(item.text(0))
-        
-        # Include item data in format that internal drop can use
-        tree_data = self.tree.model().mimeData([self.tree.indexFromItem(item)])
-        if tree_data:
-            for format_name in tree_data.formats():
-                mime_data.setData(format_name, tree_data.data(format_name))
+        drag_data = {
+            'name': item_name,
+            'type': item_type,
+            'source_widget': self.tree.objectName() # Store source widget id
+        }
+        mime_data.setData("application/x-echelon-template-item", json.dumps(drag_data).encode('utf-8'))
         
         # Create drag object
         drag = QDrag(self.tree)
         drag.setMimeData(mime_data)
         
-        # Set drag pixmap for visual feedback
-        font = self.tree.font()
-        font.setBold(True)
-        
-        # Set a decorative item icon in the drag pixmap if available
-        if item_data.get('type') == 'folder':
-            icon = QIcon.fromTheme("folder")
+        # Create a simple pixmap for the drag preview (e.g., from the item itself)
+        item_rect = item.treeWidget().visualItemRect(item)
+        pixmap = QPixmap(item_rect.size())
+        if not pixmap.isNull():
+            pixmap.fill(Qt.GlobalColor.transparent) # Fill with transparent to handle item background
+            painter = QPainter(pixmap)
+            painter.setOpacity(0.7) # Make it slightly transparent
+            
+            # Setup style options for drawing the item
+            option = QStyleOptionViewItem()
+            option.rect = QRect(QPoint(0,0), item_rect.size()) # Draw at the pixmap's origin
+            option.state = QStyle.StateFlag.State_Enabled # Basic state
+            # If the item is selected, you might want to reflect that in the drag pixmap
+            if item.isSelected():
+                option.state |= QStyle.StateFlag.State_Selected
+            # Add other relevant states if necessary, e.g., State_HasFocus
+            
+            # Get the model index for the item
+            model_index = self.tree.indexFromItem(item)
+            
+            # Ensure the tree has a style before calling initFrom
+            if self.tree.style():
+                option.initFrom(self.tree) # Initialize with tree's style options
+
+            item.treeWidget().drawRow(painter, option, model_index)
+            painter.end()
+            drag.setPixmap(pixmap)
+            # Set hotspot to the mouse cursor position relative to the pixmap's top-left
+            drag.setHotSpot(self.tree.viewport().mapFromGlobal(QCursor.pos()) - item_rect.topLeft())
         else:
-            file_name = item_data.get('name', '')
-            icon = get_file_icon_for_type(file_name)
+            # Fallback if pixmap creation failed (e.g. item not visible)
+            # A small default pixmap can be used or just proceed without one
+            pass # Or create a default small icon
+
+        print(f"DEBUG: Starting drag for '{item_name}' ('{item_type}')")
         
-        # Start the drag operation
-        result = drag.exec_(Qt.MoveAction | Qt.CopyAction)
+        # Execute drag operation
+        # In PyQt6, these are Qt.DropAction.MoveAction and Qt.DropAction.CopyAction
+        try:
+            result = drag.exec(Qt.DropAction.MoveAction | Qt.DropAction.CopyAction)
+        finally:
+            # Clear the stored dragged item instance regardless of drag outcome
+            self.dragged_item_instance = None
         
-        # Return success if the drag was accepted
-        return result == Qt.MoveAction or result == Qt.CopyAction
+        if result == Qt.DropAction.MoveAction:
+            print(f"DEBUG: Drag operation resulted in MoveAction for '{item_name}'")
+            # Handle move (e.g., remove from original position if not handled by drop event)
+        elif result == Qt.DropAction.CopyAction:
+            print(f"DEBUG: Drag operation resulted in CopyAction for '{item_name}'")
+        else:
+            print(f"DEBUG: Drag operation cancelled or failed for '{item_name}'")
     
     def enable_external_drops(self, enabled=True):
         """
@@ -708,7 +840,7 @@ class DragDropHandler:
             return
             
         # Get item data
-        item_data = item.data(0, Qt.UserRole)
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
         
         # Validate data
         if not isinstance(item_data, dict) or 'type' not in item_data:
@@ -887,14 +1019,14 @@ class DragDropHandler:
                 root = self.tree.invisibleRootItem()
                 for i in range(root.childCount()):
                     child = root.child(i)
-                    child_data = child.data(0, Qt.UserRole)
+                    child_data = child.data(0, Qt.ItemDataRole.UserRole)
                     
                     if (isinstance(child_data, dict) and 
                         child_data.get('type') == 'folder' and 
                         child.text(0) == dir_name):
                         
                         # Ask if the user wants to replace or add
-                        from PyQt5.QtWidgets import QMessageBox
+                        from PyQt6.QtWidgets import QMessageBox
                         reply = QMessageBox.question(
                             self.tree,
                             "Duplicate Folder",
@@ -921,12 +1053,12 @@ class DragDropHandler:
             folder_icon = QIcon.fromTheme("folder")
             if folder_icon.isNull():
                 # Fallback to standard icon if available
-                folder_icon = QApplication.style().standardIcon(QStyle.SP_DirIcon)
+                folder_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
             
             folder_item.setIcon(0, folder_icon)
             
             # Make the folder editable
-            folder_item.setFlags(folder_item.flags() | Qt.ItemIsEditable)
+            folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
             
             # Store folder data
             folder_data = {
@@ -934,7 +1066,7 @@ class DragDropHandler:
                 'name': dir_name,
                 'path': dir_path
             }
-            folder_item.setData(0, Qt.UserRole, folder_data)
+            folder_item.setData(0, Qt.ItemDataRole.UserRole, folder_data)
             
             # Process directory contents
             try:

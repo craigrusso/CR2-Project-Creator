@@ -9,12 +9,13 @@ Provides UI for managing folder structure templates
 import os
 import json
 import shutil
-from PyQt5.QtWidgets import (
+from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTreeWidget, QTreeWidgetItem, QHeaderView, QMenu, QAction,
+    QTreeWidget, QTreeWidgetItem, QHeaderView, QMenu,
     QMessageBox, QInputDialog, QCheckBox, QSplitter
 )
-from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QAction
 
 # Define colors for consistency
 colors = {

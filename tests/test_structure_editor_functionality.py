@@ -9,10 +9,10 @@ Tests the delete and Use Project Name functionality
 import sys
 import os
 import unittest
-from PyQt5.QtWidgets import QApplication, QTreeWidgetItem, QMenu, QAction
-from PyQt5.QtCore import Qt, QEvent, QPoint
-from PyQt5.QtTest import QTest
-from PyQt5.QtGui import QKeyEvent, QContextMenuEvent
+from PyQt6.QtWidgets import QApplication, QTreeWidgetItem, QMenu, QAction
+from PyQt6.QtCore import Qt, QEvent, QPoint
+from PyQt6.QtTest import QTest
+from PyQt6.QtGui import QKeyEvent, QContextMenuEvent
 
 # Add parent directory to path to allow imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -44,21 +44,21 @@ class TestStructureEditorFunctionality(unittest.TestCase):
         # Create a folder
         self.folder_item = QTreeWidgetItem(self.root_item)
         self.folder_item.setText(0, "Test Folder")
-        self.folder_item.setData(0, Qt.UserRole, {"type": "folder", "name": "Test Folder"})
+        self.folder_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Test Folder"})
         
         # Add files to the folder
         self.file_item1 = QTreeWidgetItem(self.folder_item)
         self.file_item1.setText(0, "test_file1.txt")
-        self.file_item1.setData(0, Qt.UserRole, {"type": "file", "name": "test_file1.txt"})
+        self.file_item1.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "name": "test_file1.txt"})
         
         self.file_item2 = QTreeWidgetItem(self.folder_item)
         self.file_item2.setText(0, "test_file2.txt")
-        self.file_item2.setData(0, Qt.UserRole, {"type": "file", "name": "test_file2.txt"})
+        self.file_item2.setData(0, Qt.ItemDataRole.UserRole, {"type": "file", "name": "test_file2.txt"})
         
         # Add a folder in the folder
         self.subfolder_item = QTreeWidgetItem(self.folder_item)
         self.subfolder_item.setText(0, "Subfolder")
-        self.subfolder_item.setData(0, Qt.UserRole, {"type": "folder", "name": "Subfolder"})
+        self.subfolder_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Subfolder"})
         
         # Expand the folder
         self.folder_item.setExpanded(True)
@@ -92,7 +92,7 @@ class TestStructureEditorFunctionality(unittest.TestCase):
         self.assertEqual(initial_count, 3, "Folder should have 3 children initially")
         
         # Create a delete key event
-        delete_event = QKeyEvent(QEvent.KeyPress, Qt.Key_Delete, Qt.NoModifier)
+        delete_event = QKeyEvent(QEvent.KeyPress, Qt.Key.Key_Delete, Qt.KeyboardModifier.NoModifier)
         
         # Send the event
         self.editor._handle_key_press(delete_event)
@@ -110,7 +110,7 @@ class TestStructureEditorFunctionality(unittest.TestCase):
         self.editor._use_project_name_for_file(self.file_item2)
         
         # Check that the file now uses the project name
-        file_data = self.file_item2.data(0, Qt.UserRole)
+        file_data = self.file_item2.data(0, Qt.ItemDataRole.UserRole)
         self.assertTrue(file_data.get('uses_project_name', False), "File should be marked to use project name")
         
         # Check the file name has been updated
@@ -146,7 +146,7 @@ class TestStructureEditorFunctionality(unittest.TestCase):
         self.assertTrue(result, "FileOperations._use_project_name_for_file should return True when successful")
         
         # Check that the file now uses the project name
-        file_data = self.file_item2.data(0, Qt.UserRole)
+        file_data = self.file_item2.data(0, Qt.ItemDataRole.UserRole)
         self.assertTrue(file_data.get('uses_project_name', False), "File should be marked to use project name")
         
         # Check the file name has been updated

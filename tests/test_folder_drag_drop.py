@@ -10,10 +10,10 @@ import sys
 import os
 import tempfile
 import shutil
-from PyQt5.QtWidgets import QApplication, QDialog, QVBoxLayout, QPushButton, QLabel
-from PyQt5.QtCore import Qt, QMimeData, QUrl, QPoint
-from PyQt5.QtTest import QTest
-from PyQt5.QtGui import QDragEnterEvent, QDropEvent
+from PyQt6.QtWidgets import QApplication, QDialog, QVBoxLayout, QPushButton, QLabel
+from PyQt6.QtCore import Qt, QMimeData, QUrl, QPoint
+from PyQt6.QtTest import QTest
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent
 
 # Create application instance before importing UI components
 app = QApplication(sys.argv)
@@ -121,7 +121,7 @@ class FolderDragDropTest(QDialog):
                 self.status_label.setText(f"{self.status_label.text()}\nERROR: No expected subfolders found. Got: {', '.join(subfolder_names)}")
                 
             # Verify folder data in UserRole
-            folder_data = result.data(0, Qt.UserRole)
+            folder_data = result.data(0, Qt.ItemDataRole.UserRole)
             if isinstance(folder_data, dict):
                 print(f"Folder data: {folder_data}")
                 if folder_data.get("name") == expected_name:
@@ -146,7 +146,7 @@ if __name__ == "__main__":
     try:
         test_window = FolderDragDropTest()
         test_window.show()
-        sys.exit(app.exec_())
+        sys.exit(app.exec())
     except Exception as e:
         print(f"Test failed: {e}")
         import traceback

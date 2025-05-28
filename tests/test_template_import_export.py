@@ -263,7 +263,7 @@ class TestTemplateImportExport(unittest.TestCase):
             self.assertTrue("files" in exported_template, "Files array missing in exported template")
     
     @patch('app.core.import_export_manager.QFileDialog.getOpenFileName')
-    @patch('PyQt5.QtWidgets.QInputDialog.getText')
+    @patch('PyQt6.QtWidgets.QInputDialog.getText')
     def test_import_template_with_files(self, mock_input_dialog, mock_get_open_file_name):
         """Test importing a template with files"""
         # First export a template to get a valid ZIP file
@@ -325,7 +325,7 @@ class TestTemplateImportExport(unittest.TestCase):
         os.makedirs(import_app.template_manager.paths["cache_dir"], exist_ok=True)
         
         # Import the template
-        with patch('PyQt5.QtWidgets.QFileDialog.getOpenFileName', return_value=(export_zip_path, "ZIP Files (*.zip)")):
+        with patch('PyQt6.QtWidgets.QFileDialog.getOpenFileName', return_value=(export_zip_path, "ZIP Files (*.zip)")):
             import_template(import_app, export_zip_path)
         
         # Verify the import succeeded

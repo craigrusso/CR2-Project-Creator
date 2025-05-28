@@ -8,8 +8,8 @@ Test for UIBuilder without Structure Contents section
 import sys
 import os
 import unittest
-from PyQt5.QtWidgets import QApplication, QDialog, QPushButton, QLabel, QSplitter
-from PyQt5.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QDialog, QPushButton, QLabel, QSplitter
+from PyQt6.QtCore import Qt
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -79,7 +79,7 @@ class TestUIBuilderNoStructureContents(unittest.TestCase):
         # Check that there's no splitter for separating the structure section
         splitter_exists = False
         for widget in self.editor.findChildren(QSplitter):
-            if widget.orientation() == Qt.Vertical:
+            if widget.orientation() == Qt.Orientation.Vertical:
                 splitter_exists = True
                 break
                 

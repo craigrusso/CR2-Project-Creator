@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
-from PyQt5.QtWidgets import QDesktopWidget, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QComboBox, \
-     QPushButton, QLineEdit, QFrame, QGridLayout, QMessageBox, QApplication, QSizePolicy, QTabWidget, QMainWindow, QDockWidget, QToolButton, QButtonGroup, QMenu, QAction, QShortcut, QInputDialog, QAbstractItemView
-from PyQt5.QtCore import Qt, QTimer, QSize, pyqtSignal, QPoint, QModelIndex, QItemSelectionModel, QItemSelection
-from PyQt5.QtGui import QKeySequence, QDrag, QPixmap, QPainter, QColor, QPalette
+from PyQt6.QtGui import QScreen, QAction, QShortcut
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea, QComboBox, \
+     QPushButton, QLineEdit, QFrame, QGridLayout, QMessageBox, QApplication, QSizePolicy, QTabWidget, QMainWindow, QDockWidget, QToolButton, QButtonGroup, QMenu, QInputDialog, QAbstractItemView
+from PyQt6.QtCore import Qt, QTimer, QSize, pyqtSignal, QPoint, QModelIndex, QItemSelectionModel, QItemSelection
+from PyQt6.QtGui import QKeySequence, QDrag, QPixmap, QPainter, QColor, QPalette
 import re
 import os
 import json
@@ -60,7 +61,7 @@ class TemplateGallery(QWidget):
         self.setMinimumSize(800, 400)
         
         # Configure size policy to always expand
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         
         # Initialize grid layouts to avoid AttributeError
         self.folders_grid = None
@@ -80,7 +81,7 @@ class TemplateGallery(QWidget):
             print("DEBUG: Connecting TemplateTableView signals...")
             self.template_table_view.clicked.connect(self._on_table_item_clicked)
             self.template_table_view.doubleClicked.connect(self._on_table_item_double_clicked)
-            self.template_table_view.setContextMenuPolicy(Qt.CustomContextMenu)
+            self.template_table_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             self.template_table_view.customContextMenuRequested.connect(self._show_table_context_menu)
             self.template_table_view.horizontalHeader().sectionClicked.connect(self._on_table_header_clicked)
             self.template_table_view.selectionModel().selectionChanged.connect(self._on_table_selection_changed)
@@ -89,7 +90,7 @@ class TemplateGallery(QWidget):
         # ---------------------------------
         
         # Set up the main gallery context menu (for blank space)
-        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_gallery_context_menu)
         
         # Populate the gallery initially - do this after UI setup and signal connection
@@ -442,7 +443,7 @@ class TemplateGallery(QWidget):
         template_names = [t.get('name', 'Unknown') for t in self.selection_manager.multi_selected_templates]
         
         # Confirm deletion
-        from PyQt5.QtWidgets import QMessageBox
+        from PyQt6.QtWidgets import QMessageBox
         confirm = QMessageBox.question(
             self,
             "Delete Templates",
@@ -727,7 +728,7 @@ class TemplateGallery(QWidget):
                 structure=structure,
                 template_name=template_name
             )
-            editor.exec_()
+            editor.exec()
         else:
             QMessageBox.warning(self, "Error", "Could not access application context.")
     
@@ -888,7 +889,7 @@ class TemplateGallery(QWidget):
         
     def mouseReleaseEvent(self, event):
         """Handle mouse release in the gallery without interfering with card selections"""
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.MouseButton.LeftButton:
             # Check if we clicked on a template or folder card
             widget_at_pos = self.childAt(event.pos())
             
@@ -1035,7 +1036,7 @@ class TemplateGallery(QWidget):
                  export_action.triggered.connect(lambda: GalleryEvents.on_export_template(self, primary_name))
 
             # --- Show Menu --- 
-            menu.exec_(global_position)
+            menu.exec(self.template_table_view.viewport().mapToGlobal(position))
 
         # --- Folder Card Context Menu ---
         elif folder_card and folder_name:
@@ -1052,7 +1053,7 @@ class TemplateGallery(QWidget):
                 GalleryEvents.on_delete_folder(self, folder_name) # Pass name
             menu.addRedDeleteAction(self, callback=delete_this_folder, text="Delete Folder")
 
-            menu.exec_(global_position)
+            menu.exec(global_position)
 
         # --- Background Context Menu ---
         else:
@@ -1073,7 +1074,7 @@ class TemplateGallery(QWidget):
                 add_folder_action.setEnabled(False)
                 add_template_action.setEnabled(False)
             
-            menu.exec_(global_position)
+            menu.exec(global_position)
 
     def _on_sort_column(self, field):
         """Sort the templates list by the given field"""
@@ -1249,7 +1250,7 @@ class TemplateGallery(QWidget):
                 self.populate_gallery(force_refresh=True)
                 
                 # Process events to ensure refresh completes
-                from PyQt5.QtWidgets import QApplication
+                from PyQt6.QtWidgets import QApplication
                 QApplication.processEvents()
                 
                 # Try selection one more time with all cards
@@ -1412,7 +1413,7 @@ class TemplateGallery(QWidget):
         """Handle click on a table header section to trigger sorting."""
         header_view = self.template_table_view.horizontalHeader()
         model = header_view.model() # Get the model associated with the header
-        sort_field = model.headerData(logicalIndex, Qt.Horizontal, Qt.DisplayRole)
+        sort_field = model.headerData(logicalIndex, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole)
         
         if sort_field:
             print(f"DEBUG: Table header clicked: Index={logicalIndex}, Field='{sort_field}'")
@@ -1475,7 +1476,7 @@ class TemplateGallery(QWidget):
                 add_folder_action.setEnabled(False)
                 add_template_action.setEnabled(False)
             
-            menu.exec_(self.template_table_view.viewport().mapToGlobal(position))
+            menu.exec(self.template_table_view.viewport().mapToGlobal(position))
             return
         
         # If no items are selected, don't show the item context menu
@@ -1601,7 +1602,7 @@ class TemplateGallery(QWidget):
              export_action.triggered.connect(lambda: GalleryEvents.on_export_template(self, primary_name))
         
         # --- Show Menu --- 
-        menu.exec_(self.template_table_view.viewport().mapToGlobal(position))
+        menu.exec(self.template_table_view.viewport().mapToGlobal(position))
 
     # --- Unified Selection Handler (Restored) ---
     def handle_template_item_press(self, template, is_modifier_click):
@@ -1625,8 +1626,8 @@ class TemplateGallery(QWidget):
     # --- Update Selection UI (Restored) ---
     def _update_selection_ui(self):
         """Updates the visual selection state of all items (cards/rows)."""
-        from PyQt5.QtCore import QModelIndex, QItemSelectionModel, Qt
-        from PyQt5.QtWidgets import QAbstractItemView
+        from PyQt6.QtCore import QModelIndex, QItemSelectionModel, Qt
+        from PyQt6.QtWidgets import QAbstractItemView
         
         print(f"[DEBUG _update_selection_ui] START")
         # Access selection state through the selection_manager
@@ -1672,7 +1673,7 @@ class TemplateGallery(QWidget):
                 # Find the row for the primary_selected_name
                 for row in range(model.rowCount()):
                     index = model.index(row, 0)
-                    if index.isValid() and model.data(index, Qt.DisplayRole) == primary_selected_name:
+                    if index.isValid() and model.data(index, Qt.ItemDataRole.DisplayRole) == primary_selected_name:
                         primary_model_index_to_set = index
                         break
             
@@ -1681,7 +1682,7 @@ class TemplateGallery(QWidget):
                 # --- MODIFIED SECTION START ---
                 # Only explicitly select if not already selected by the table's model
                 if not selection_model.isSelected(primary_model_index_to_set):
-                    selection_model.select(primary_model_index_to_set, QItemSelectionModel.Select | QItemSelectionModel.Rows)
+                    selection_model.select(primary_model_index_to_set, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
                     print(f"[DEBUG _update_selection_ui] Table: Explicitly selected primary index r{primary_model_index_to_set.row()} ({primary_selected_name}) because it wasn't selected in the view's model.")
                 else:
                     print(f"[DEBUG _update_selection_ui] Table: Primary index r{primary_model_index_to_set.row()} ({primary_selected_name}) already selected in view's model. Not re-selecting.")
@@ -1693,13 +1694,13 @@ class TemplateGallery(QWidget):
                     print(f"[DEBUG _update_selection_ui] Table: Synced current table index to row {primary_model_index_to_set.row()} ({primary_selected_name}).")
                     # RE-ASSERT SELECTION for the new current index if it should be selected
                     if primary_selected_name in multi_selected_names: # Check against the manager's state
-                        selection_model.select(primary_model_index_to_set, QItemSelectionModel.Select | QItemSelectionModel.Rows)
+                        selection_model.select(primary_model_index_to_set, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
                         print(f"[DEBUG _update_selection_ui] Table: Re-asserted selection for newly set current index r{primary_model_index_to_set.row()} ({primary_selected_name}).")
                 else:
                     print(f"[DEBUG _update_selection_ui] Table: Primary index r{primary_model_index_to_set.row()} ({primary_selected_name}) is already current. Not resetting currentIndex.")
                     # EVEN IF ALREADY CURRENT, RE-ASSERT SELECTION if it should be selected according to manager
                     if primary_selected_name in multi_selected_names and not selection_model.isSelected(primary_model_index_to_set):
-                        selection_model.select(primary_model_index_to_set, QItemSelectionModel.Select | QItemSelectionModel.Rows)
+                        selection_model.select(primary_model_index_to_set, QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows)
                         print(f"[DEBUG _update_selection_ui] Table: Re-asserted selection for already current index r{primary_model_index_to_set.row()} ({primary_selected_name}) as it was not selected in view.")
 
                  # Optional: scroll to it if it was set by other means (e.g. card click)
@@ -1739,8 +1740,8 @@ class TemplateGallery(QWidget):
             return
 
         current_modifiers = QApplication.keyboardModifiers()
-        is_ctrl_cmd_click = (current_modifiers & Qt.ControlModifier) or (current_modifiers & Qt.MetaModifier)
-        is_shift_click = bool(current_modifiers & Qt.ShiftModifier)
+        is_ctrl_cmd_click = (current_modifiers & Qt.KeyboardModifier.ControlModifier) or (current_modifiers & Qt.KeyboardModifier.MetaModifier)
+        is_shift_click = bool(current_modifiers & Qt.KeyboardModifier.ShiftModifier)
 
         # --- Helper to get template data from a QModelIndex (proxy) ---
         def get_template_data_from_proxy_index(proxy_idx):
@@ -1919,12 +1920,103 @@ class TemplateGallery(QWidget):
     # --- Shortcut Setup and Handling (Restored) ---
     def _setup_shortcuts(self):
         """Sets up keyboard shortcuts for the gallery."""
-        from PyQt5.QtWidgets import QShortcut
-        from PyQt5.QtGui import QKeySequence
-        duplicate_shortcut = QShortcut(QKeySequence("Ctrl+D"), self)
-        duplicate_shortcut.activated.connect(self._handle_duplicate_shortcut)
-        print("[DEBUG] Duplicate shortcut (Ctrl+D / Cmd+D) connected.")
+        from PyQt6.QtGui import QShortcut, QKeySequence
         
+        # Delete shortcut (Ctrl+D)
+        delete_shortcut = QShortcut(QKeySequence("Ctrl+D"), self)
+        delete_shortcut.activated.connect(self._handle_duplicate_shortcut)
+        print("[DEBUG] Delete shortcut (Ctrl+D / Cmd+D) connected.")
+        
+        # Clear multi-selection shortcut (Ctrl+Shift+D)
+        clear_shortcut = QShortcut(QKeySequence("Ctrl+Shift+D"), self)
+        clear_shortcut.activated.connect(self._clear_multi_selection)
+        print("[DEBUG] Clear multi-selection shortcut (Ctrl+Shift+D / Cmd+Shift+D) connected.")
+        
+        # Add new template shortcut (Ctrl+N)
+        add_shortcut = QShortcut(QKeySequence("Ctrl+N"), self)
+        add_shortcut.activated.connect(self._on_add_template)
+        print("[DEBUG] Add template shortcut (Ctrl+N / Cmd+N) connected.")
+        
+        # Edit template shortcut (Ctrl+E)
+        edit_shortcut = QShortcut(QKeySequence("Ctrl+E"), self)
+        edit_shortcut.activated.connect(lambda: self._on_edit_template())
+        print("[DEBUG] Edit template shortcut (Ctrl+E / Cmd+E) connected.")
+        
+        # Manage templates shortcut (Ctrl+T)
+        manage_shortcut = QShortcut(QKeySequence("Ctrl+T"), self)
+        manage_shortcut.activated.connect(self._on_manage_templates)
+        print("[DEBUG] Manage templates shortcut (Ctrl+T / Cmd+T) connected.")
+        
+        # Add folder shortcut (Ctrl+F)
+        add_folder_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
+        add_folder_shortcut.activated.connect(self._on_add_folder)
+        print("[DEBUG] Add folder shortcut (Ctrl+F / Cmd+F) connected.")
+        
+        # Rename folder shortcut (Ctrl+R)
+        rename_folder_shortcut = QShortcut(QKeySequence("Ctrl+R"), self)
+        rename_folder_shortcut.activated.connect(self._on_rename_folder)
+        print("[DEBUG] Rename folder shortcut (Ctrl+R / Cmd+R) connected.")
+        
+        # Delete folder shortcut (Ctrl+Delete)
+        delete_folder_shortcut = QShortcut(QKeySequence("Ctrl+Delete"), self)
+        delete_folder_shortcut.activated.connect(self._on_delete_folder)
+        print("[DEBUG] Delete folder shortcut (Ctrl+Delete / Cmd+Delete) connected.")
+        
+        # All templates shortcut (Ctrl+1)
+        all_templates_shortcut = QShortcut(QKeySequence("Ctrl+1"), self)
+        all_templates_shortcut.activated.connect(self._on_back_to_all)
+        print("[DEBUG] All templates shortcut (Ctrl+1 / Cmd+1) connected.")
+        
+        # All folders shortcut (Ctrl+2)
+        all_folders_shortcut = QShortcut(QKeySequence("Ctrl+2"), self)
+        all_folders_shortcut.activated.connect(lambda: self._on_back_to_all())
+        print("[DEBUG] All folders shortcut (Ctrl+2 / Cmd+2) connected.")
+        
+        # Templates section shortcut (Ctrl+3)
+        templates_section_shortcut = QShortcut(QKeySequence("Ctrl+3"), self)
+        templates_section_shortcut.activated.connect(lambda: self._on_back_to_all())
+        print("[DEBUG] Templates section shortcut (Ctrl+3 / Cmd+3) connected.")
+        
+        # Folders section shortcut (Ctrl+4)
+        folders_section_shortcut = QShortcut(QKeySequence("Ctrl+4"), self)
+        folders_section_shortcut.activated.connect(lambda: self._on_back_to_all())
+        print("[DEBUG] Folders section shortcut (Ctrl+4 / Cmd+4) connected.")
+        
+        # Grid view shortcut (Ctrl+5)
+        grid_view_shortcut = QShortcut(QKeySequence("Ctrl+5"), self)
+        grid_view_shortcut.activated.connect(lambda: self._set_template_view_mode("grid"))
+        print("[DEBUG] Grid view shortcut (Ctrl+5 / Cmd+5) connected.")
+        
+        # List view shortcut (Ctrl+6)
+        list_view_shortcut = QShortcut(QKeySequence("Ctrl+6"), self)
+        list_view_shortcut.activated.connect(lambda: self._set_template_view_mode("list"))
+        print("[DEBUG] List view shortcut (Ctrl+6 / Cmd+6) connected.")
+        
+        # Sort by name shortcut (Ctrl+7)
+        sort_name_shortcut = QShortcut(QKeySequence("Ctrl+7"), self)
+        sort_name_shortcut.activated.connect(lambda: self._on_sort_column("name"))
+        print("[DEBUG] Sort name shortcut (Ctrl+7 / Cmd+7) connected.")
+        
+        # Sort by category shortcut (Ctrl+8)
+        sort_category_shortcut = QShortcut(QKeySequence("Ctrl+8"), self)
+        sort_category_shortcut.activated.connect(lambda: self._on_sort_column("category"))
+        print("[DEBUG] Sort category shortcut (Ctrl+8 / Cmd+8) connected.")
+        
+        # Sort by date created shortcut (Ctrl+9)
+        sort_created_shortcut = QShortcut(QKeySequence("Ctrl+9"), self)
+        sort_created_shortcut.activated.connect(lambda: self._on_sort_column("created"))
+        print("[DEBUG] Sort date created shortcut (Ctrl+9 / Cmd+9) connected.")
+        
+        # Sort by date modified shortcut (Ctrl+0)
+        sort_modified_shortcut = QShortcut(QKeySequence("Ctrl+0"), self)
+        sort_modified_shortcut.activated.connect(lambda: self._on_sort_column("modified"))
+        print("[DEBUG] Sort date modified shortcut (Ctrl+0 / Cmd+0) connected.")
+        
+        # Filter by name shortcut (Ctrl+Shift+N)
+        filter_name_shortcut = QShortcut(QKeySequence("Ctrl+Shift+N"), self)
+        filter_name_shortcut.activated.connect(lambda: self._filter_templates())
+        print("[DEBUG] Filter name shortcut (Ctrl+Shift+N / Cmd+Shift+N) connected.")
+    
     def _handle_duplicate_shortcut(self):
         """Handles the activation of the duplicate keyboard shortcut."""
         print("[DEBUG] Duplicate shortcut activated.")
@@ -2046,7 +2138,7 @@ class TemplateGallery(QWidget):
             success = self.template_manager.recache_template(template_name)
             
             # Show feedback to user
-            from PyQt5.QtWidgets import QMessageBox
+            from PyQt6.QtWidgets import QMessageBox
             if success:
                 QMessageBox.information(self, "Recache Complete", 
                     f"Template '{template_name}' has been recached successfully.")
@@ -2065,9 +2157,10 @@ class TemplateGallery(QWidget):
             success = self.template_manager.safe_clear_template_cache(template_name)
             
             # Show feedback to user (only on success, since the safe method shows its own warnings)
-            from PyQt5.QtWidgets import QMessageBox
+            from PyQt6.QtWidgets import QMessageBox
             if success:
                 QMessageBox.information(self, "Cache Cleared", 
-                    f"Cache for template '{template_name}' has been cleared successfully.")
+                    f"Cache for template \'{template_name}\' has been cleared successfully.")
         else:
             print(f"[ERROR] Template manager does not support safe cache clearing")
+
