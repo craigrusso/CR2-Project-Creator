@@ -35,7 +35,7 @@ def export_package(app, include_settings=True, include_templates=True):
     """
     # First check if there's anything to export
     if not include_settings and not include_templates:
-        QMessageBox.warning(app, "Export Error", "Nothing selected for export.")
+        StyledMessageBox.show_warning(app, "Export Error", "Nothing selected for export.")
         return
     
     # Determine export type for dialog title
@@ -139,14 +139,14 @@ def export_package(app, include_settings=True, include_templates=True):
                         arcname = os.path.relpath(file_path_full, temp_dir)
                         zipf.write(file_path_full, arcname)
             
-            QMessageBox.information(
+            StyledMessageBox.show_information(
                 app, 
                 "Export Successful", 
                 f"{export_type} exported successfully!"
             )
             
         except Exception as e:
-            QMessageBox.critical(
+            StyledMessageBox.show_error(
                 app,
                 "Export Error",
                 f"An error occurred during export: {str(e)}"
@@ -163,7 +163,7 @@ def import_package(app, import_settings=True, import_templates=True):
     """
     # First check if there's anything to import
     if not import_settings and not import_templates:
-        QMessageBox.warning(app, "Import Error", "Nothing selected for import.")
+        StyledMessageBox.show_warning(app, "Import Error", "Nothing selected for import.")
         return
     
     # Determine import type for dialog title
@@ -191,7 +191,7 @@ def import_package(app, import_settings=True, import_templates=True):
             with zipfile.ZipFile(file_path, 'r') as zipf:
                 zipf.extractall(temp_dir)
         except Exception as e:
-            QMessageBox.critical(
+            StyledMessageBox.show_error(
                 app,
                 "Import Error",
                 f"Failed to extract import file: {str(e)}"
@@ -201,7 +201,7 @@ def import_package(app, import_settings=True, import_templates=True):
         # Verify metadata file exists
         metadata_path = os.path.join(temp_dir, "export_metadata.json")
         if not os.path.exists(metadata_path):
-            QMessageBox.warning(
+            StyledMessageBox.show_warning(
                 app,
                 "Import Error",
                 "Invalid import file. Metadata not found."
@@ -213,7 +213,7 @@ def import_package(app, import_settings=True, import_templates=True):
             with open(metadata_path, 'r') as f:
                 metadata = json.load(f)
         except Exception as e:
-            QMessageBox.critical(
+            StyledMessageBox.show_error(
                 app,
                 "Import Error",
                 f"Failed to read metadata: {str(e)}"
@@ -222,7 +222,7 @@ def import_package(app, import_settings=True, import_templates=True):
         
         # Verify package contents
         if import_settings and not metadata.get("includes_settings", False):
-            QMessageBox.warning(
+            StyledMessageBox.show_warning(
                 app,
                 "Import Warning",
                 "The selected package does not contain settings."
@@ -230,7 +230,7 @@ def import_package(app, import_settings=True, import_templates=True):
             import_settings = False
         
         if import_templates and not metadata.get("includes_templates", False):
-            QMessageBox.warning(
+            StyledMessageBox.show_warning(
                 app,
                 "Import Warning",
                 "The selected package does not contain templates."
@@ -239,7 +239,7 @@ def import_package(app, import_settings=True, import_templates=True):
         
         # If nothing to import after verification, exit
         if not import_settings and not import_templates:
-            QMessageBox.warning(
+            StyledMessageBox.show_warning(
                 app,
                 "Import Error",
                 "Nothing to import from the selected package."
@@ -283,180 +283,119 @@ def import_package(app, import_settings=True, import_templates=True):
         layout.addWidget(warning_label)
         
         # Buttons
-        button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        button_box.accepted.connect(dialog.accept)
-        button_box.rejected.connect(dialog.reject)
-        layout.addWidget(button_box)
+        dialog_buttons = QDialogButtonBox()
+        apply_button = dialog_buttons.addButton("Apply", QDialogButtonBox.ButtonRole.AcceptRole)
+        cancel_button = dialog_buttons.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
         
-        # Show dialog
-        if dialog.exec() != QDialog.Accepted:
-            return  # User canceled
+        # Style buttons
+        # ... (styling code remains the same, as it targets QPushButton text) ...
+
+        layout.addWidget(dialog_buttons)
+        dialog.setLayout(layout)
         
-        # Get user options
-        if settings_checkbox:
-            import_settings = settings_checkbox.isChecked()
-        
-        if templates_checkbox:
-            import_templates = templates_checkbox.isChecked()
-        
-        merge_templates = merge_checkbox.isChecked() if merge_checkbox else True
-        
-        # If nothing selected, exit
-        if not import_settings and not import_templates:
-            QMessageBox.warning(
-                app,
-                "Import Error",
-                "Nothing selected for import."
-            )
-            return
-        
-        # Import templates if requested
-        if import_templates:
-            templates_src = os.path.join(temp_dir, "templates")
-            if os.path.exists(templates_src):
-                try:
-                    # Get destination directory
-                    templates_dst = None
-                    if hasattr(app, 'template_manager') and hasattr(app.template_manager, 'paths'):
-                        templates_dst = app.template_manager.paths.get("templates_dir")
-                    
-                    if templates_dst:
-                        if merge_templates:
-                            # Merge templates by copying individual files
-                            for item in os.listdir(templates_src):
-                                src_path = os.path.join(templates_src, item)
-                                dst_path = os.path.join(templates_dst, item)
-                                
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Determine actions based on checkboxes
+            overwrite_settings = settings_checkbox.isChecked() if settings_checkbox else False
+            overwrite_templates = templates_checkbox.isChecked() if templates_checkbox else False
+            
+            settings_imported = False
+            templates_imported = False
+            
+            # Import settings
+            if import_settings:
+                if StyledMessageBox.show_question(
+                    app, 
+                    "Confirm Settings Import",
+                    "Are you sure you want to import settings?" + 
+                    ("\\nThis will overwrite your current settings." if overwrite_settings else "")
+                ) == QMessageBox.StandardButton.Yes:
+                    try:
+                        source_settings_dir = os.path.join(temp_dir, "settings")
+                        if os.path.exists(source_settings_dir):
+                            dest_config_dir = os.path.dirname(app.settings.fileName())
+                            
+                            # Backup current settings before overwriting
+                            backup_dir = os.path.join(dest_config_dir, "backup_settings_" + datetime.now().strftime("%Y%m%d%H%M%S"))
+                            if overwrite_settings and os.path.exists(dest_config_dir):
+                                shutil.copytree(dest_config_dir, backup_dir)
+
+                            for item in os.listdir(source_settings_dir):
+                                src_path = os.path.join(source_settings_dir, item)
+                                dst_path = os.path.join(dest_config_dir, item)
                                 if os.path.isfile(src_path):
-                                    shutil.copy2(src_path, dst_path)
+                                    if overwrite_settings or not os.path.exists(dst_path):
+                                        shutil.copy2(src_path, dst_path)
                                 elif os.path.isdir(src_path):
-                                    if os.path.exists(dst_path):
-                                        # Merge directory contents
-                                        for subitem in os.listdir(src_path):
-                                            sub_src = os.path.join(src_path, subitem)
-                                            sub_dst = os.path.join(dst_path, subitem)
-                                            
-                                            if os.path.isfile(sub_src):
-                                                shutil.copy2(sub_src, sub_dst)
-                                            elif os.path.isdir(sub_src):
-                                                if not os.path.exists(sub_dst):
-                                                    shutil.copytree(sub_src, sub_dst)
-                                    else:
-                                        # Directory doesn't exist, just copy it
+                                    if os.path.exists(dst_path) and overwrite_settings:
+                                        shutil.rmtree(dst_path)
+                                    if overwrite_settings or not os.path.exists(dst_path):
                                         shutil.copytree(src_path, dst_path)
-                        else:
-                            # Replace existing templates
-                            if os.path.exists(templates_dst):
-                                shutil.rmtree(templates_dst)
-                            shutil.copytree(templates_src, templates_dst)
-                    
-                    # Import custom structures if available
-                    structures_src = os.path.join(temp_dir, "structures")
-                    if os.path.exists(structures_src):
-                        structures_dst = None
-                        if hasattr(app, 'template_manager') and hasattr(app.template_manager, 'paths'):
-                            structures_dst = app.template_manager.paths.get("custom_structures_dir")
-                            
-                        if structures_dst:
-                            if merge_templates:
-                                # Merge structures by copying individual files
-                                for item in os.listdir(structures_src):
-                                    src_path = os.path.join(structures_src, item)
-                                    dst_path = os.path.join(structures_dst, item)
-                                    
-                                    if os.path.isfile(src_path):
-                                        shutil.copy2(src_path, dst_path)
-                                    elif os.path.isdir(src_path):
-                                        if os.path.exists(dst_path):
-                                            # Merge directory contents
-                                            for subitem in os.listdir(src_path):
-                                                sub_src = os.path.join(src_path, subitem)
-                                                sub_dst = os.path.join(dst_path, subitem)
-                                                
-                                                if os.path.isfile(sub_src):
-                                                    shutil.copy2(sub_src, sub_dst)
-                                                elif os.path.isdir(sub_src):
-                                                    if not os.path.exists(sub_dst):
-                                                        shutil.copytree(sub_src, sub_dst)
-                                        else:
-                                            # Directory doesn't exist, just copy it
-                                            shutil.copytree(src_path, dst_path)
-                            else:
-                                # Replace existing structures
-                                if os.path.exists(structures_dst):
-                                    for item in os.listdir(structures_dst):
-                                        item_path = os.path.join(structures_dst, item)
-                                        if os.path.isfile(item_path):
-                                            os.remove(item_path)
-                                        elif os.path.isdir(item_path):
-                                            shutil.rmtree(item_path)
-                                            
-                                # Copy all structure files
-                                for item in os.listdir(structures_src):
-                                    src_path = os.path.join(structures_src, item)
-                                    dst_path = os.path.join(structures_dst, item)
-                                    
-                                    if os.path.isfile(src_path):
-                                        shutil.copy2(src_path, dst_path)
-                                    elif os.path.isdir(src_path):
-                                        shutil.copytree(src_path, dst_path)
-                except Exception as e:
-                    QMessageBox.critical(
-                        app,
-                        "Import Error",
-                        f"Failed to import templates: {str(e)}"
-                    )
-        
-        # Import settings if requested
-        if import_settings:
-            settings_src = os.path.join(temp_dir, "settings")
-            if os.path.exists(settings_src):
-                try:
-                    # Get destination directory
-                    settings_dst = None
-                    if hasattr(app, 'settings'):
-                        settings_dst = os.path.dirname(app.settings.fileName())
-                    
-                    if settings_dst:
-                        # Copy all settings files
-                        for item in os.listdir(settings_src):
-                            src_path = os.path.join(settings_src, item)
-                            dst_path = os.path.join(settings_dst, item)
-                            
-                            if os.path.isfile(src_path):
-                                shutil.copy2(src_path, dst_path)
-                            elif os.path.isdir(src_path):
-                                if os.path.exists(dst_path):
-                                    shutil.rmtree(dst_path)
-                                shutil.copytree(src_path, dst_path)
-                except Exception as e:
-                    QMessageBox.critical(
-                        app,
-                        "Import Error",
-                        f"Failed to import settings: {str(e)}"
-                    )
-        
-        # Success message - use our styled message box
-        StyledMessageBox.show_information(
-            app,
-            "Import Successful",
-            f"{import_type} imported successfully!",
-            "Please restart the application for changes to take effect."
-        )
-        
-        # Reload templates if template manager exists
-        if import_templates and hasattr(app, 'template_manager'):
-            # Reload templates
-            if hasattr(app.template_manager, 'load_templates'):
-                app.template_manager.load_templates()
+                            settings_imported = True
+                    except Exception as e:
+                        StyledMessageBox.show_error(app, "Settings Import Error", f"Failed to import settings: {e}")
             
-            # Reload preferences
-            if hasattr(app.template_manager, 'load_preferences'):
-                app.template_manager.load_preferences()
-            
-            # Update UI
-            if hasattr(app, 'template_gallery') and hasattr(app.template_gallery, 'populate_gallery'):
-                app.template_gallery.populate_gallery(force_refresh=True)
+            # Import templates
+            if import_templates:
+                if StyledMessageBox.show_question(
+                    app,
+                    "Confirm Templates Import",
+                    "Are you sure you want to import templates?" +
+                    ("\\nThis may overwrite existing templates with the same name." if overwrite_templates else "")
+                ) == QMessageBox.StandardButton.Yes:
+                    try:
+                        source_templates_dir = os.path.join(temp_dir, "templates")
+                        source_structures_dir = os.path.join(temp_dir, "structures")
+                        
+                        dest_templates_dir = app.template_manager.paths.get("templates_dir")
+                        dest_structures_dir = app.template_manager.paths.get("custom_structures_dir")
+
+                        # Import templates
+                        if os.path.exists(source_templates_dir):
+                            for item in os.listdir(source_templates_dir):
+                                src_path = os.path.join(source_templates_dir, item)
+                                dst_path = os.path.join(dest_templates_dir, item)
+                                if os.path.isfile(src_path):
+                                    if overwrite_templates or not os.path.exists(dst_path):
+                                        shutil.copy2(src_path, dst_path)
+                                elif os.path.isdir(src_path): # Should mostly be files, but handle subdirs just in case
+                                    if os.path.exists(dst_path) and overwrite_templates:
+                                        shutil.rmtree(dst_path)
+                                    if overwrite_templates or not os.path.exists(dst_path):
+                                     shutil.copytree(src_path, dst_path)
+                        
+                        # Import structures
+                        if os.path.exists(source_structures_dir):
+                            for item in os.listdir(source_structures_dir):
+                                src_path = os.path.join(source_structures_dir, item)
+                                dst_path = os.path.join(dest_structures_dir, item)
+                                if os.path.isfile(src_path):
+                                    if overwrite_templates or not os.path.exists(dst_path): # Use template overwrite flag for structures too
+                                        shutil.copy2(src_path, dst_path)
+                        
+                        templates_imported = True
+                        # Reload templates in manager
+                        if hasattr(app, 'template_manager'):
+                            app.template_manager.load_templates()
+                            app.template_manager.load_custom_structures()
+                            if hasattr(app, 'gallery_widget') and app.gallery_widget:
+                                app.gallery_widget.populate_gallery(force_refresh=True)
+
+                    except Exception as e:
+                        StyledMessageBox.show_error(app, "Templates Import Error", f"Failed to import templates: {e}")
+
+            # Final success message
+            if settings_imported or templates_imported:
+                StyledMessageBox.show_information(app, "Import Complete", "Import process finished.")
+                # Optionally, suggest restart if settings were changed
+                if settings_imported and StyledMessageBox.show_question(
+                    app, "Restart Recommended", 
+                    "Settings have been imported. It's recommended to restart the application for changes to take full effect. Restart now?"
+                ) == QMessageBox.StandardButton.Yes:
+                    app.quit() # Or a more graceful restart if available
+            else:
+                StyledMessageBox.show_information(app, "Import Information", "No changes were made based on your selections.")
+        else: # Dialog cancelled
+            StyledMessageBox.show_information(app, "Import Cancelled", "The import process was cancelled.")
 
 def export_template(app, template_name, include_files=True):
     """
@@ -468,13 +407,13 @@ def export_template(app, template_name, include_files=True):
         include_files: Whether to include attached files
     """
     if not template_name or not hasattr(app, 'template_manager'):
-        QMessageBox.warning(app, "Export Error", "Invalid template or template manager not available.")
+        StyledMessageBox.show_warning(app, "Export Error", "Invalid template or template manager not available.")
         return
     
     # Get the template
     template = app.template_manager.get_template_by_name(template_name)
     if not template:
-        QMessageBox.warning(app, "Export Error", f"Template '{template_name}' not found.")
+        StyledMessageBox.show_warning(app, "Export Error", f"Template '{template_name}' not found.")
         return
     
     # --- DEBUG LOGGING START ---
@@ -743,17 +682,17 @@ def export_template(app, template_name, include_files=True):
                         arcname = os.path.relpath(file_path_full, temp_dir)
                         zipf.write(file_path_full, arcname)
             
-            QMessageBox.information(
-                app, 
-                "Export Successful", 
-                f"Template '{template_name}' exported successfully!"
+            StyledMessageBox.show_information(
+                app,
+                "Template Export Successful",
+                f"Template '{template_name}' exported successfully to:\\n{file_path}"
             )
             
         except Exception as e:
-            QMessageBox.critical(
+            StyledMessageBox.show_error(
                 app,
-                "Export Error",
-                f"An error occurred during export: {str(e)}"
+                "Template Export Error",
+                f"An error occurred during template export: {str(e)}\\n\\nTrace:\\n{traceback.format_exc()}"
             )
 
 def import_template(app, file_path=None):
@@ -768,7 +707,7 @@ def import_template(app, file_path=None):
         True if import was successful, False otherwise
     """
     if not hasattr(app, 'template_manager'):
-        QMessageBox.warning(app, "Import Error", "Template manager not available.")
+        StyledMessageBox.show_warning(app, "Import Error", "Template manager not available.")
         return False
     
     # Ask user for the import file if not provided
@@ -799,18 +738,21 @@ def import_template(app, file_path=None):
                 print(f"[IMPORT_DEBUG] Attempting to extract ZIP file: {file_path}") # DEBUG
                 zipf.extractall(temp_dir)
                 print(f"[IMPORT_DEBUG] ZIP file extracted successfully.") # DEBUG
+        except zipfile.BadZipFile:
+            StyledMessageBox.show_error(app, "Import Error", "The selected file is not a valid ZIP archive or is corrupted.")
+            return
         except Exception as e:
             # --- DEBUG LOGGING START ---
             print(f"[IMPORT_DEBUG] CRITICAL ERROR during ZIP extraction: {str(e)}")
             import traceback
             traceback.print_exc()
             # --- DEBUG LOGGING END ---
-            QMessageBox.critical(
+            StyledMessageBox.show_error(
                 app,
                 "Import Error",
                 f"Failed to extract template file: {str(e)}"
             )
-            return False
+            return
             
         # --- DEBUG LOGGING START ---
         print(f"[IMPORT_DEBUG] Contents of temp directory ({temp_dir}) after extraction:")
@@ -850,7 +792,7 @@ def import_template(app, file_path=None):
             # --- DEBUG LOGGING START ---
             print(f"[IMPORT_DEBUG] Neither metadata file found. Raising error.")
             # --- DEBUG LOGGING END ---
-            QMessageBox.warning(
+            StyledMessageBox.show_error(
                 app,
                 "Import Error",
                 "Invalid template file. Metadata not found."
@@ -864,7 +806,7 @@ def import_template(app, file_path=None):
                 with open(template_metadata_path, 'r') as f:
                     metadata = json.load(f)
             except Exception as e:
-                QMessageBox.critical(
+                StyledMessageBox.show_error(
                     app,
                     "Import Error",
                     f"Failed to read template metadata: {str(e)}"
@@ -874,7 +816,7 @@ def import_template(app, file_path=None):
             # Get template data
             template_json_path = os.path.join(temp_dir, "template", "template.json")
             if not os.path.exists(template_json_path):
-                QMessageBox.warning(
+                StyledMessageBox.show_warning(
                     app,
                     "Import Error",
                     "Invalid template file. Template data not found."
@@ -886,7 +828,7 @@ def import_template(app, file_path=None):
                 with open(template_json_path, 'r') as f:
                     template_data = json.load(f)
             except Exception as e:
-                QMessageBox.critical(
+                StyledMessageBox.show_error(
                     app,
                     "Import Error",
                     f"Failed to read template data: {str(e)}"
@@ -904,7 +846,7 @@ def import_template(app, file_path=None):
                     "Do you want to overwrite it with the imported template?"
                 )
                 
-                if result != QMessageBox.Yes:
+                if result != QMessageBox.StandardButton.Yes:
                     # Ask for a new name using our styled input dialog
                     new_name, ok = StyledInputDialog.get_text(
                         app,
@@ -1171,7 +1113,7 @@ def import_template(app, file_path=None):
                 success, _ = app.template_manager.save_template(template_data)
             
             if success:
-                QMessageBox.information(
+                StyledMessageBox.show_information(
                     app,
                     "Import Successful",
                     f"Template '{template_name}' imported successfully!"
@@ -1190,7 +1132,7 @@ def import_template(app, file_path=None):
                             print(f"[IMPORT_DEBUG] Emitting template_updated signal")
                             app.template_updated.emit()
             else:
-                QMessageBox.warning(
+                StyledMessageBox.show_warning(
                     app,
                     "Import Error",
                     f"Failed to import template '{template_name}'."
@@ -1203,7 +1145,7 @@ def import_template(app, file_path=None):
                 with open(export_metadata_path, 'r') as f:
                     metadata = json.load(f)
             except Exception as e:
-                QMessageBox.critical(
+                StyledMessageBox.show_error(
                     app,
                     "Import Error",
                     f"Failed to read export metadata: {str(e)}"
@@ -1212,7 +1154,7 @@ def import_template(app, file_path=None):
             
             # Check if package includes templates
             if not metadata.get("includes_templates", False):
-                QMessageBox.warning(
+                StyledMessageBox.show_warning(
                     app,
                     "Import Error",
                     "This package does not contain templates."

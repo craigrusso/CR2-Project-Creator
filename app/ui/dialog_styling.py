@@ -19,7 +19,10 @@ class StyledMessageBox(QMessageBox):
     def __init__(self, parent=None):
         super().__init__(parent)
         # Set window flag to ensure proper styling
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        flags = self.windowFlags()
+        if hasattr(Qt, 'WindowContextHelpButtonHint'):
+            flags &= ~Qt.WindowContextHelpButtonHint
+        self.setWindowFlags(flags)
         
         # Schedule this to run after the dialog is created but before it's shown
         QTimer.singleShot(0, self.style_buttons)
@@ -85,9 +88,9 @@ class StyledMessageBox(QMessageBox):
         msgbox.setText(text)
         if informative_text:
             msgbox.setInformativeText(informative_text)
-        msgbox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        msgbox.setDefaultButton(QMessageBox.No)
-        msgbox.setIcon(QMessageBox.Question)
+        msgbox.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msgbox.setDefaultButton(QMessageBox.StandardButton.No)
+        msgbox.setIcon(QMessageBox.Icon.Question)
         return msgbox.exec()
     
     @staticmethod
@@ -98,8 +101,8 @@ class StyledMessageBox(QMessageBox):
         msgbox.setText(text)
         if informative_text:
             msgbox.setInformativeText(informative_text)
-        msgbox.setStandardButtons(QMessageBox.Ok)
-        msgbox.setIcon(QMessageBox.Information)
+        msgbox.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msgbox.setIcon(QMessageBox.Icon.Information)
         return msgbox.exec()
     
     @staticmethod
@@ -110,8 +113,8 @@ class StyledMessageBox(QMessageBox):
         msgbox.setText(text)
         if informative_text:
             msgbox.setInformativeText(informative_text)
-        msgbox.setStandardButtons(QMessageBox.Ok)
-        msgbox.setIcon(QMessageBox.Warning)
+        msgbox.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msgbox.setIcon(QMessageBox.Icon.Warning)
         return msgbox.exec()
     
     @staticmethod
@@ -122,8 +125,8 @@ class StyledMessageBox(QMessageBox):
         msgbox.setText(text)
         if informative_text:
             msgbox.setInformativeText(informative_text)
-        msgbox.setStandardButtons(QMessageBox.Ok)
-        msgbox.setIcon(QMessageBox.Critical)
+        msgbox.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msgbox.setIcon(QMessageBox.Icon.Critical)
         return msgbox.exec()
 
 class StyledInputDialog:
