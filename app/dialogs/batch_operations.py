@@ -167,7 +167,7 @@ def show_batch_results(app, results):
         # Show detailed results only if there are items to display
         results_display = QTextEdit(dialog)
         results_display.setReadOnly(True)
-        results_display.setLineWrapMode(QTextEdit.WidgetWidth)
+        results_display.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         results_display.setStyleSheet("""
             QTextEdit {
                 background-color: #1E1E1E;

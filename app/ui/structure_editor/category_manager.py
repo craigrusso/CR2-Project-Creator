@@ -157,15 +157,15 @@ class CategoryManager(QDialog):
         self.divider_item = None # Store reference to the divider item
         if custom_categories:
             divider = QListWidgetItem("─────── Custom Categories ───────")
-            divider.setFlags(Qt.NoItemFlags)  # Make non-selectable
-            divider.setTextAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
+            divider.setFlags(Qt.ItemFlag(0))  # Make non-selectable
+            divider.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             divider.setData(DIVIDER_ROLE, True) # Mark as divider
             
             # Apply styling to the divider
             divider_font = divider.font()
             divider_font.setBold(True)
             divider.setFont(divider_font)
-            divider.setForeground(Qt.darkGray)
+            divider.setForeground(QColor(Qt.GlobalColor.darkGray))
             
             self.category_list.addItem(divider)
             self.divider_item = divider # Store reference
@@ -213,7 +213,15 @@ class CategoryManager(QDialog):
         
     def _add_category(self):
         """Add a new category to the list and save"""
-        category_name, ok = QInputDialog.getText(self, "Add Category", "Category Name:")
+        category_name_from_input = self.new_category_input.text().strip()
+
+        if category_name_from_input:
+            category_name = category_name_from_input
+            ok = True # Assume ok if text was present in the input field
+        else:
+            # If the input field was empty, then show the dialog
+            category_name, ok = QInputDialog.getText(self, "Add Category", "Category Name:")
+
         if ok and category_name:
             category_name = category_name.strip()
             if not category_name:
@@ -224,7 +232,7 @@ class CategoryManager(QDialog):
             existing_categories = [
                 self.category_list.item(i).text().lower()
                 for i in range(self.category_list.count())
-                if self.category_list.item(i).flags() & Qt.ItemFlag.ItemIsSelectable # Corrected here
+                if self.category_list.item(i).flags() & Qt.ItemFlag.ItemIsSelectable 
             ]
             if category_name.lower() in existing_categories:
                 QMessageBox.warning(self, "Duplicate Category", f"The category '{category_name}' already exists.")
@@ -232,14 +240,17 @@ class CategoryManager(QDialog):
 
             # Add to list widget
             item = QListWidgetItem(category_name)
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsSelectable) # Corrected here
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsSelectable) 
             self.category_list.addItem(item)
             self.category_list.setCurrentItem(item)
             self.category_list.sortItems() # Keep the list sorted
             
+            # Clear the input field after successful addition
+            self.new_category_input.clear()
+
             # Save and refresh
-            self._save_categories()
-            self._refresh_ui_components() 
+            self._save_to_category_manager()
+            self._update_ui_dropdowns()
             print(f"DEBUG (CategoryManager): Added category '{category_name}'")
         
     def _remove_category(self):
@@ -323,15 +334,15 @@ class CategoryManager(QDialog):
         # Add a divider if there are custom categories
         if custom_categories:
             divider = QListWidgetItem("─────── Custom Categories ───────")
-            divider.setFlags(Qt.NoItemFlags)  # Make non-selectable
-            divider.setTextAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
+            divider.setFlags(Qt.ItemFlag(0))  # Make non-selectable
+            divider.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             divider.setData(DIVIDER_ROLE, True) # Mark as divider
             
             # Apply styling to the divider
             divider_font = divider.font()
             divider_font.setBold(True)
             divider.setFont(divider_font)
-            divider.setForeground(Qt.darkGray)
+            divider.setForeground(QColor(Qt.GlobalColor.darkGray))
             
             self.category_list.addItem(divider)
             self.divider_item = divider # Store reference

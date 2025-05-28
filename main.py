@@ -254,6 +254,8 @@ def log_system_info():
 
 def main():
     """Main entry point for the Echelon application"""
+    import faulthandler # Add import here
+    faulthandler.enable() # Enable it immediately
     try:
         # Initialize logging system
         initialize_logging()
@@ -350,7 +352,6 @@ def main():
         # --- Trial Logic Enhancement ---
         # Check if a license was ever activated on this installation
         settings = QSettings() # This is the QSettings instance used by main.py's logic
-        was_ever_licensed_val = settings.value("license/was_ever_licensed", "NOT FOUND (using default False next)")
         was_ever_licensed = settings.value("license/was_ever_licensed", False, type=bool)
 
         # Determine if we can proceed based on license status

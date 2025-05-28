@@ -36,7 +36,7 @@ class GalleryFoldersSetup:
         
         # Folders section header - should stretch
         gallery.folders_label = QLabel("PROJECT FOLDERS")
-        gallery.folders_label.setStyleSheet(f"color: {colors['accent']}; padding-left: 5px;")
+        gallery.folders_label.setProperty("class", "section-header")
         gallery.folders_label.setFont(QFont(SYSTEM_FONT, 14, QFont.Weight.Bold))
         gallery.folders_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)  # Changed back to Expanding
         gallery.folders_header_layout.addWidget(gallery.folders_label, 1)  # Give stretch factor of 1

@@ -801,7 +801,7 @@ class ProjectCreatorApp(QMainWindow):
         """Displays a message box when an update is found."""
         latest_version_str = version_info.get('versionNumber', 'Unknown')
         download_url = version_info.get('downloadUrl', "https://www.cr2creative.com/downloads.html") # Fallback URL
-        release_notes = version_info.get('releaseNotes', 'No release notes available.')
+        release_notes = version_info.get('releaseNotes', 'No release notes provided.')
         
         # Show current version with build number for clarity
         from app.constants import APP_VERSION, APP_BUILD_NUMBER
@@ -809,9 +809,12 @@ class ProjectCreatorApp(QMainWindow):
 
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle("Update Available")
-        msg_box.setTextFormat(Qt.RichText) # Allow basic HTML like bold
+        msg_box.setDetailedText(release_notes)
+        
+        # Allow rich text for bolding
+        msg_box.setTextFormat(Qt.TextFormat.RichText) # Allow basic HTML like bold
+        
         msg_box.setText(f"<b>Version {latest_version_str} is available!</b><br><br>You are currently using version {current_version_str}.<br><br>Would you like to go to the download page?")
-        # msg_box.setInformativeText(f"Release Notes:\n{release_notes}") # Optional: Add release notes if desired
         msg_box.setIcon(QMessageBox.Information)
         download_button = msg_box.addButton("Download", QMessageBox.AcceptRole)
         later_button = msg_box.addButton("Later", QMessageBox.RejectRole)
@@ -1160,21 +1163,40 @@ class ProjectCreatorApp(QMainWindow):
         
         # Check for a template
         has_template = False
-        
-        # Check for selected template from gallery first
-        if hasattr(self, 'selected_template') and self.selected_template:
-            has_template = True
-        # Then check for template file path as fallback
-        elif hasattr(self, 'template_file_path') and self.template_file_path:
-            has_template = True
-        # Finally check if there's a template gallery with selected template
-        elif hasattr(self, 'template_gallery') and hasattr(self.template_gallery, 'get_selected_template'):
+        current_selected_template_data = None # To store the actual template data
+
+        # PRIORITY 1: Use the TemplateGallery's unified selection access
+        if hasattr(self, 'template_gallery') and hasattr(self.template_gallery, 'get_primary_selected_template'):
             try:
-                selected_template = self.template_gallery.get_selected_template()
-                if selected_template:
+                selected_template_from_gallery = self.template_gallery.get_primary_selected_template()
+                if selected_template_from_gallery:
+                    current_selected_template_data = selected_template_from_gallery
                     has_template = True
+                    print(f"DEBUG: Got template from gallery.get_primary_selected_template: {selected_template_from_gallery.get('name')}")
             except Exception as e:
-                print(f"Error checking gallery template: {e}")
+                print(f"Error checking gallery.get_primary_selected_template: {e}")
+
+        # Fallback (Legacy): Check direct attribute on ProjectCreatorApp if gallery method failed
+        if not has_template and hasattr(self, 'selected_template') and self.selected_template:
+            current_selected_template_data = self.selected_template
+            has_template = True
+            print(f"DEBUG: Got template from self.selected_template (legacy): {self.selected_template.get('name') if isinstance(self.selected_template, dict) else self.selected_template}")
+            
+        # Fallback (Legacy for single item in multi-select, less likely for primary selection)
+        if not has_template and hasattr(self, 'multi_selected_templates') and self.multi_selected_templates and len(self.multi_selected_templates) == 1:
+            current_selected_template_data = self.multi_selected_templates[0]
+            has_template = True
+            print(f"DEBUG: Got template from self.multi_selected_templates (legacy): {self.multi_selected_templates[0].get('name') if isinstance(self.multi_selected_templates[0], dict) else self.multi_selected_templates[0]}")
+
+        # Fallback (template_file_path - for non-gallery selection)
+        if not has_template and hasattr(self, 'template_file_path') and self.template_file_path:
+            # This path might need to load full template data if it's just a path string.
+            # For now, assuming if this path is set, it implies a valid template source for creation.
+            # `current_selected_template_data` might remain None or be just a path here if not loaded.
+            # This part of logic might need more refinement if `template_file_path` is critical
+            # and doesn't provide a full data dict needed by `handle_batch_create`.
+            has_template = True 
+            print(f"DEBUG: Using template from self.template_file_path (legacy): {self.template_file_path}")
         
         if not has_template:
             missing_requirements.append("No template selected")
@@ -1206,7 +1228,13 @@ class ProjectCreatorApp(QMainWindow):
         # Start the batch check timer when we initiate batch creation
         self.batch_check_timer.start(500)  # Check every 500ms
         
-        # Execute batch creation
+        # Execute batch creation - It would be best if handle_batch_create could take current_selected_template_data
+        # For now, we assume it will pick up the selection correctly if ProjectCreatorApp.selected_template is set,
+        # or if it also calls template_gallery.get_primary_selected_template().
+        # If ProjectCreatorApp.selected_template is the main way it gets it, we should set it here:
+        if current_selected_template_data:
+            self.selected_template = current_selected_template_data # Ensure legacy attribute is also updated if used downstream
+
         results = handle_batch_create(self, projects_text)
         
         # Store results and check them - dialog will be shown by check_batch_results

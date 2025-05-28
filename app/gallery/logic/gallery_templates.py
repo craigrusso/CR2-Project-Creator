@@ -563,15 +563,25 @@ class GalleryTemplatesSetup:
     def setup_templates_header(gallery):
         """Setup the header for the templates section"""
         gallery.templates_header = QWidget()
-        gallery.templates_header.setStyleSheet(f"background-color: {colors['card_bg']}; border: none;")
         gallery.templates_header_layout = QHBoxLayout(gallery.templates_header)
         gallery.templates_header_layout.setContentsMargins(15, 10, 15, 10)
 
         # Templates section header
         gallery.header_label = QLabel("Templates")
+        gallery.header_label.setTextFormat(Qt.PlainText)
+        gallery.header_label.setTextInteractionFlags(Qt.NoTextInteraction)
         gallery.header_label.setFont(QFont(get_system_font(), 14, QFont.Weight.Bold))
-        gallery.header_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold; background: transparent;")
+        gallery.header_label.setProperty("class", "section-header")
+        gallery.header_label.style().unpolish(gallery.header_label)
+        gallery.header_label.style().polish(gallery.header_label)
+        gallery.header_label.setStyleSheet(f"color: {colors['text']} !important;")
         gallery.templates_header_layout.addWidget(gallery.header_label)
+
+        # --- DIAGNOSTIC: Explicitly set palette color ---
+        palette = gallery.header_label.palette()
+        palette.setColor(gallery.header_label.foregroundRole(), QColor(colors['text'])) # QColor from main theme
+        gallery.header_label.setPalette(palette)
+        # --- END DIAGNOSTIC ---
 
         # Search bar
         gallery.search_bar = QLineEdit()

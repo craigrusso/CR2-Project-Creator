@@ -735,7 +735,7 @@ class UIBuilder(QObject):
         structure_layout.addLayout(structure_header_layout)
         
         # Create the structure tree widget
-        self.tree = StructureEditorTree(context_menu_handler=self._show_context_menu)
+        self.tree = StructureEditorTree(context_menu_handler=None)
         
         # Set a placeholder message for empty tree
         self.tree.setPlaceholderText("Drop Files and Folders Here")

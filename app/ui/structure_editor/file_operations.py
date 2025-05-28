@@ -845,10 +845,20 @@ class FileOperations:
 
                 # Add Custom Pattern and Custom Separator actions
                 pattern_action = project_name_menu.addAction("Use Custom Pattern...")
-                pattern_action.triggered.connect(lambda bound_item=item: self._configure_naming_pattern(bound_item))
+                pattern_action.triggered.connect(
+                    lambda checked=False, bound_item=item: (
+                        print(f"DEBUG: Lambda for 'Use Custom Pattern...' triggered for item: {bound_item.text(0) if bound_item else 'None'}"),
+                        self._configure_naming_pattern(bound_item)
+                    )
+                )
 
                 separator_action = project_name_menu.addAction("Use Custom Separator...")
-                separator_action.triggered.connect(lambda bound_item=item: self._configure_custom_separator(bound_item))
+                separator_action.triggered.connect(
+                    lambda checked=False, bound_item=item: (
+                        print(f"DEBUG: Lambda for 'Use Custom Separator...' triggered for item: {bound_item.text(0) if bound_item else 'None'}"),
+                        self._configure_custom_separator(bound_item)
+                    )
+                )
 
                 project_name_menu.addSeparator() # Add another separator before Revert
 
@@ -856,6 +866,7 @@ class FileOperations:
                 revert_action = project_name_menu.addAction(f'Revert to "{original_name}"')
                 # Enable only if current name differs from original due to project name usage
                 revert_action.setEnabled(uses_project_name or name_mode != 'none') 
+                revert_action.triggered.connect(lambda bound_item=item: self._reset_file_name(bound_item))
             else:
                 # If not editable or a folder, add a disabled placeholder
                 disabled_action = project_name_menu.addAction("(Options N/A for folders)")

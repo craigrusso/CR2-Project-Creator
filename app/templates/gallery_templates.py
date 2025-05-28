@@ -530,7 +530,7 @@ class GalleryTemplatesSetup:
         gallery.templates_header_layout.setSpacing(10)
 
         gallery.templates_label = QLabel("TEMPLATES")
-        gallery.templates_label.setStyleSheet(f"color: {colors['accent']}; padding-left: 5px;")
+        gallery.templates_label.setStyleSheet(f"color: {colors['text']}; padding-left: 5px;")
         gallery.templates_label.setFont(QFont(SYSTEM_FONT, 14, QFont.Weight.Bold))
         gallery.templates_header_layout.addWidget(gallery.templates_label, 1) # Give stretch factor of 1
 

@@ -177,32 +177,48 @@ def handle_batch_create(app, project_names_text):
     # Get the selected template
     template_name = None
     template_data = None
-    
-    if hasattr(app, 'template_file_path') and app.template_file_path:
-        # Using a standalone template file
+
+    # PRIORITY 1: Use the TemplateGallery's unified selection access via get_primary_selected_template
+    if hasattr(app, 'template_gallery') and hasattr(app.template_gallery, 'get_primary_selected_template'):
+        try:
+            selected_template_from_gallery = app.template_gallery.get_primary_selected_template()
+            if selected_template_from_gallery:
+                template_data = selected_template_from_gallery
+                template_name = template_data.get('name')
+                print(f"DEBUG (handle_batch_create): Got template from gallery.get_primary_selected_template: {template_name}")
+        except Exception as e:
+            print(f"Error (handle_batch_create) checking gallery.get_primary_selected_template: {e}")
+
+    # Fallback 1: Legacy direct file path
+    if not template_data and hasattr(app, 'template_file_path') and app.template_file_path:
         template_path = app.template_file_path
         try:
             with open(template_path, 'r') as f:
                 template_data = json.load(f)
             template_name = template_data.get('name', os.path.basename(template_path))
+            print(f"DEBUG (handle_batch_create): Got template from app.template_file_path: {template_name}")
         except Exception as e:
-            print(f"ERROR loading template file: {e}")
+            print(f"ERROR (handle_batch_create) loading template file: {e}")
             return {"error": f"Error loading template file: {e}"}
     
-    elif hasattr(app, 'selected_template') and app.selected_template:
-        # Using a template from the gallery
+    # Fallback 2: Legacy direct attribute on app (app.selected_template)
+    if not template_data and hasattr(app, 'selected_template') and app.selected_template:
         template_data = app.selected_template
         template_name = template_data.get('name')
+        print(f"DEBUG (handle_batch_create): Got template from app.selected_template (legacy): {template_name}")
     
-    elif hasattr(app, 'template_gallery') and app.template_gallery:
-        # Try to get selected template from the gallery
-        if hasattr(app.template_gallery, 'get_selected_template'):
+    # Fallback 3: Gallery's older get_selected_template (less specific than get_primary_selected_template)
+    if not template_data and hasattr(app, 'template_gallery') and app.template_gallery and hasattr(app.template_gallery, 'get_selected_template'):
+        try:
             template_info = app.template_gallery.get_selected_template()
             if template_info:
-                template_name = template_info.get('name')
                 template_data = template_info
-    
-    if not template_name:
+                template_name = template_info.get('name')
+                print(f"DEBUG (handle_batch_create): Got template from gallery.get_selected_template (legacy gallery method): {template_name}")
+        except Exception as e:
+            print(f"Error (handle_batch_create) checking gallery.get_selected_template: {e}")
+
+    if not template_name or not template_data:
         print("ERROR: No template selected!")
         return {"error": "No template selected. Please select a template first."}
 

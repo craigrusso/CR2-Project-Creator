@@ -404,6 +404,27 @@ LINEEDIT_STYLE = f"""
 LABEL_STYLE = f"""
     QLabel {{
         color: {colors['text']};
+        background-color: transparent; /* Ensure no background color is set */
+        padding: 2px; /* Add small padding for better spacing */
+    }}
+
+    /* Specific styling for labels used as section headers */
+    QLabel[class="section-header"] {{
+        color: {colors['text']}; /* Use text color for section headers */
+        font-size: 10pt; /* Slightly larger font */
+        font-weight: bold;
+        padding-top: 8px;
+        padding-bottom: 4px;
+        border-bottom: 1px solid {colors['border']}; /* Optional: add a separator line */
+        margin-bottom: 5px; /* Space below the header */
+    }}
+
+    /* Styling for labels in status bars */
+    QStatusBar QLabel {{
+        color: {colors['secondary_text']}; /* Use secondary text color for status bar */
+        font-size: 8pt; /* Smaller font for status bar */
+        padding: 0px; /* No padding for status bar labels */
+        margin: 0px; /* No margin */
     }}
 """
 
