@@ -367,7 +367,8 @@ def main():
             # --- Check if trial should be bypassed ---
             if was_ever_licensed:
                 # Force activation dialog - treat as if trial expired
-                trial_dialog = TrialNagDialog(None, license_manager, 0) # 0 days forces activation
+                time_parts = {'days': 0, 'hours': 0, 'minutes': 0}  # Correct format for time_parts
+                trial_dialog = TrialNagDialog(None, license_manager, time_parts=time_parts)  # Pass as named parameter
                 dialog_result = trial_dialog.exec()
                 if dialog_result == QDialog.DialogCode.Accepted and license_manager.is_licensed():
                     can_proceed = True

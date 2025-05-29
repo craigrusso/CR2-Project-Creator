@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGroupBox, QFormLayout, QTabWidget, QWidget, QMessageBox
 )
-from PyQt6.QtCore import Qt, QSettings
+from PyQt6.QtCore import Qt, QSettings, QTimer
 
 from app.utils.security.license_manager import (
     LicenseManager, LicenseActivationDialog,
@@ -76,7 +76,7 @@ class LicenseManagementDialog(QDialog):
         status_group = QGroupBox("License Status")
         status_layout = QFormLayout()  # Use QFormLayout for key-value pairs
         status_layout.setSpacing(10)  # Add spacing between rows
-        status_layout.setLabelAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignRight) # Align labels to the right
+        status_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight) # Align labels to the right
         
         self.status_label = QLabel("Checking...")
         self.license_type_label = QLabel("--")
@@ -99,7 +99,7 @@ class LicenseManagementDialog(QDialog):
         trial_group = QGroupBox("Trial Information")
         trial_layout = QFormLayout()
         trial_layout.setSpacing(10)
-        trial_layout.setLabelAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignRight)
+        trial_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         
         self.trial_status_label = QLabel("Checking...")
         self.trial_days_label = QLabel("--")
@@ -277,24 +277,69 @@ class LicenseManagementDialog(QDialog):
             self.trial_days_label.setText("0")
         
     def deactivate_license(self):
-        """Deactivate the current license"""
-        confirm = QMessageBox.question(
+        """Deactivate the license"""
+        # Ask for confirmation
+        result = QMessageBox.question(
             self,
-            "Confirm Deactivation",
-            "Are you sure you want to deactivate this license? "
-            "The application will revert to trial mode if the trial period is still active.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
+            "Deactivate License",
+            "Are you sure you want to deactivate this license?\n\n"
+            "This will allow you to use the license on another machine.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
         )
         
-        if confirm == QMessageBox.Yes:
+        # If confirmed, deactivate the license
+        if result == QMessageBox.StandardButton.Yes:
+            # Success is a boolean, message is a string
             success, message = self.license_manager.deactivate_license()
             
             if success:
-                QMessageBox.information(self, "Deactivation Successful", message)
+                QMessageBox.information(
+                    self,
+                    "License Deactivated",
+                    "Your license has been successfully deactivated."
+                )
+                # Reload the license info in the dialog
                 self.load_license_info()
+                
+                # Check if trial is still active
+                is_trial_active = self.license_manager.is_trial_active()
+                days_left = self.license_manager.get_trial_days_remaining()
+                
+                # If trial is expired, show activation dialog or close app
+                if not is_trial_active or days_left <= 0:
+                    QMessageBox.warning(
+                        self,
+                        "Trial Expired",
+                        "Your trial period has expired. The application will close.\n\n"
+                        "Please restart the application to activate a license."
+                    )
+                    
+                    # Close the license management dialog
+                    self.close()
+                    
+                    # Force application to exit (parent is the main window)
+                    if self.parent():
+                        # Using QTimer to ensure the message box is closed first
+                        QTimer.singleShot(100, lambda: self.parent().close())
+                    else:
+                        # If no parent, use QApplication
+                        from PyQt6.QtWidgets import QApplication
+                        QTimer.singleShot(100, lambda: QApplication.quit())
+                
+                # If trial is still active, just show informational message
+                else:
+                    QMessageBox.information(
+                        self,
+                        "Trial Mode Activated",
+                        f"Your license has been deactivated. The application will continue in trial mode with {days_left} days remaining."
+                    )
             else:
-                QMessageBox.warning(self, "Deactivation Failed", message)
+                QMessageBox.warning(
+                    self,
+                    "Deactivation Failed",
+                    f"Failed to deactivate the license: {message}"
+                )
     
     def open_purchase_website(self):
         """Open the license purchase website"""
@@ -305,5 +350,5 @@ class LicenseManagementDialog(QDialog):
         dialog = LicenseActivationDialog(self, self.license_manager)
         result = dialog.exec()
         
-        if result == QDialog.Accepted:
+        if result == QDialog.DialogCode.Accepted:
             self.load_license_info() 

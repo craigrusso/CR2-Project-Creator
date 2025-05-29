@@ -527,4 +527,21 @@ CARD_SELECTED = {
     "border": APP_COLORS["highlight_border"],
     "text": APP_COLORS["highlight_text"],
     "secondary_text": APP_COLORS["highlight_text"]
-} 
+}
+
+ACTION_LINK_STYLE = f"""
+    QPushButton {{
+        background-color: transparent;
+        color: {colors['accent']};
+        border: none;
+        padding: 5px;
+        text-align: left; /* Align text to the left like a link */
+    }}
+    QPushButton:hover {{
+        color: {colors['accent_hover']};
+        text-decoration: underline;
+    }}
+    QPushButton:pressed {{
+        color: {colors['highlight_darker']};
+    }}
+""" 

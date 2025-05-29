@@ -409,7 +409,6 @@ class LicenseManager:
             
             # --- Updated: Clear local data if successful OR if backend says 'not found' --- 
             if is_explicit_success or is_already_inactive:
-            # --- End Updated ---
                 # Clear license information
                 self.settings.remove("license/key")
                 self.settings.remove("license/email")
@@ -426,10 +425,13 @@ class LicenseManager:
                 self.settings.remove("license/last_name")
                 self.settings.remove("license/company")
                 
-                # Return True only on explicit success, but pass the message along
-                return is_explicit_success, message or "License deactivated successfully"
+                # FIX: If we get "not found" message, consider it a success because the license is effectively deactivated
+                if is_already_inactive:
+                    return True, "License deactivated successfully"
+                else:
+                    return True, message or "License deactivated successfully"
             else:
-                 # Log failure details even if status was 200 but status field wasn't "success" and message didn't say 'not found'
+                # Log failure details even if status was 200 but status field wasn't "success" and message didn't say 'not found'
                 # print(f"ERROR: Deactivation successful status code (200) but failed status/message in body. Response: {data}")
                 return False, message or "License deactivation failed"
         except requests.RequestException as e:

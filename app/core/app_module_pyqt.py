@@ -7,12 +7,12 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QLabel, QPushButton, QComboBox, QLineEdit, 
                            QFileDialog, QMessageBox, QMenu,
                            QStatusBar, QFrame, QSplitter, QScrollArea, QSizePolicy,
-                           QApplication, QGroupBox, QListView, QTextEdit, QLayout)
+                           QApplication, QGroupBox, QListView, QTextEdit, QLayout, QGridLayout)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex, QPoint, QUrl, QMimeData, QSettings, QObject, QThread
 from PyQt6.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, QPixmap, QDesktopServices, QCursor, QDragEnterEvent, QDropEvent, QFontMetrics, QStandardItemModel, QStandardItem, QAction
 
 from app.core.app_config import APP_NAME, APP_VERSION, RECENT_TEMPLATES_MAX
-from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE, LISTVIEW_POPUP_STYLE, APP_COLORS
+from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE, LISTVIEW_POPUP_STYLE, APP_COLORS, ACTION_LINK_STYLE
 from app.utils.utils import load_config, save_config, truncate_path, normalize_path_for_storage
 from app.ui.ui_components_pyqt import ToolTip, CardFrame, SearchBox, TemplateFileCard, ScrollableFrame, UI_FONT, UpdateNotificationBanner
 from app.templates.template_manager import TemplateManager
@@ -800,36 +800,126 @@ class ProjectCreatorApp(QMainWindow):
     def handle_update_available(self, version_info):
         """Displays a message box when an update is found."""
         latest_version_str = version_info.get('versionNumber', 'Unknown')
-        download_url = version_info.get('downloadUrl', "https://www.cr2creative.com/downloads.html") # Fallback URL
-        release_notes = version_info.get('releaseNotes', 'No release notes provided.')
+        actual_download_url = "https://www.cr2creative.com/downloads.html"
+        release_notes_text = version_info.get('releaseNotes', 'No release notes provided.')
         
-        # Show current version with build number for clarity
+        # DEBUG: Print release notes content
+        print(f"DEBUG Update Dialog: Release notes content: '{release_notes_text[:100]}...' if release_notes_text else 'None'")
+
         from app.constants import APP_VERSION, APP_BUILD_NUMBER
         current_version_str = f"{APP_VERSION}.{APP_BUILD_NUMBER}"
 
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("Update Available")
-        msg_box.setDetailedText(release_notes)
+        # Create a custom dialog instead of QMessageBox for better control
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, QLabel, QFrame
         
-        # Allow rich text for bolding
-        msg_box.setTextFormat(Qt.TextFormat.RichText) # Allow basic HTML like bold
+        custom_dialog = QDialog(self)
+        custom_dialog.setWindowTitle("Update Available")
+        custom_dialog.setMinimumWidth(500)
+        custom_dialog.setMinimumHeight(200)  # Set minimum height for dialog
         
-        msg_box.setText(f"<b>Version {latest_version_str} is available!</b><br><br>You are currently using version {current_version_str}.<br><br>Would you like to go to the download page?")
-        msg_box.setIcon(QMessageBox.Information)
-        download_button = msg_box.addButton("Download", QMessageBox.AcceptRole)
-        later_button = msg_box.addButton("Later", QMessageBox.RejectRole)
-        msg_box.setDefaultButton(download_button)
+        main_layout = QVBoxLayout(custom_dialog)
+        main_layout.setContentsMargins(20, 20, 20, 20)  # Add some padding
+        main_layout.setSpacing(15)  # Space between elements
         
-        msg_box.exec()
-
-        if msg_box.clickedButton() == download_button:
-            # print(f"DEBUG: Opening download URL: {download_url}")
-            # Use the fallback for now as API URL format isn't confirmed usable
-            QDesktopServices.openUrl(QUrl("https://www.cr2creative.com/downloads.html")) 
-        else:
-            # print("DEBUG: User chose 'Later' for update.")
-            pass # User chose later
+        # Main message area - put in a fixed container
+        info_container = QFrame()
+        info_layout = QVBoxLayout(info_container)
+        info_layout.setContentsMargins(0, 0, 0, 0)
+        info_layout.setSpacing(8)
+        
+        info_label = QLabel(
+            f"<p>You are currently running version <b>{current_version_str}</b>.<br>"
+            f"Version <b>{latest_version_str}</b> is available.</p>"
+            f"<p>Would you like to visit the download page now?</p>"
+        )
+        info_label.setTextFormat(Qt.TextFormat.RichText)
+        info_label.setWordWrap(True)
+        info_layout.addWidget(info_label)
+        
+        main_layout.addWidget(info_container)
+        
+        # Separator line
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setFrameShadow(QFrame.Shadow.Sunken)
+        separator.setStyleSheet(f"background-color: {colors['border']}; margin: 5px 0px;")
+        separator.setFixedHeight(1)
+        
+        # Create a text edit for release notes (initially hidden)
+        notes_container = QFrame()
+        notes_container.setVisible(False)  # Initially hidden
+        notes_layout = QVBoxLayout(notes_container)
+        notes_layout.setContentsMargins(0, 0, 0, 0)
+        notes_layout.setSpacing(8)
+        
+        # Add title for release notes
+        notes_title = QLabel("## Release Notes")
+        notes_title.setStyleSheet(f"font-weight: bold; color: {colors['accent']};")
+        notes_layout.addWidget(notes_title)
+        
+        notes_edit = QTextEdit()
+        notes_edit.setReadOnly(True)
+        notes_edit.setPlainText(release_notes_text if release_notes_text and release_notes_text.strip() and release_notes_text != 'No release notes provided.' else "No release notes available.")
+        notes_edit.setMinimumHeight(200)  # Minimum height for notes
+        notes_edit.setMaximumHeight(400)  # Maximum height to prevent excessive expansion
+        notes_edit.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {colors['card_bg_alt']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 4px;
+                padding: 8px;
+            }}
+        """)
+        notes_layout.addWidget(notes_edit)
+        
+        # Add separator and notes container to main layout
+        main_layout.addWidget(separator)
+        main_layout.addWidget(notes_container)
+        
+        # Buttons row
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setContentsMargins(0, 10, 0, 0)  # Add top margin
+        
+        # Show/Hide Notes button with toggle behavior
+        toggle_notes_btn = QPushButton("Show Release Notes")
+        toggle_notes_btn.setStyleSheet(ACTION_LINK_STYLE)
+        toggle_notes_btn.clicked.connect(lambda: toggle_notes())
+        buttons_layout.addWidget(toggle_notes_btn, 1, Qt.AlignmentFlag.AlignLeft)  # Left-aligned
+        
+        # No button
+        no_button = QPushButton("No")
+        no_button.setStyleSheet(BUTTON_STYLE)
+        no_button.clicked.connect(custom_dialog.reject)
+        buttons_layout.addWidget(no_button)
+        
+        # Download button
+        download_button = QPushButton("Download")
+        download_button.setStyleSheet(ACCENT_BUTTON_STYLE)
+        download_button.clicked.connect(lambda: download_clicked())
+        buttons_layout.addWidget(download_button)
+        
+        main_layout.addLayout(buttons_layout)
+        
+        # Function to toggle notes visibility
+        def toggle_notes():
+            current_visibility = notes_container.isVisible()
+            notes_container.setVisible(not current_visibility)
+            toggle_notes_btn.setText("Hide Release Notes" if not current_visibility else "Show Release Notes")
             
+            # No need to resize the dialog - let the scrollbars handle overflow
+        
+        # Function to handle download button click
+        def download_clicked():
+            QDesktopServices.openUrl(QUrl(actual_download_url))
+            custom_dialog.accept()
+        
+        # Set download as default button
+        download_button.setDefault(True)
+        
+        # Show the dialog
+        return custom_dialog.exec()
+
     def handle_check_error(self, error_message):
         """Handles errors during the update check (Called by handle_check_complete)."""
         print(f"ERROR: Update check failed: {error_message}")

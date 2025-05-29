@@ -319,7 +319,7 @@ Marketing Video; Promo Spot</code></pre>
         
         # Use QLabel with RichText format for basic Markdown support
         content = QLabel(tutorial_text)
-        content.setTextFormat(Qt.RichText) # Allow rich text like bold, lists
+        content.setTextFormat(Qt.TextFormat.RichText) # Allow rich text like bold, lists
         content.setWordWrap(True)
         content.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         # Link color needs to be set explicitly for RichText
