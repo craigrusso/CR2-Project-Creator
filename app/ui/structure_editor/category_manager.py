@@ -539,6 +539,7 @@ class CategoryManager(QDialog):
 
         # Use findChildren on the main app window to be more targeted than allWidgets
         from PyQt6.QtWidgets import QComboBox
+        from PyQt6.QtCore import Qt
         project_type_combos = self.app.findChildren(QComboBox, "project_type_combo_box")
         template_category_combos = self.app.findChildren(QComboBox, "template_category_combo_box")
         
@@ -573,9 +574,18 @@ class CategoryManager(QDialog):
                 
                 # Add default categories section if we have any
                 if default_cats:
+                    # Add the header item
+                    header_index = combo_box.count()
                     combo_box.addItem("Default Categories")
-                    combo_box.setItemData(0, False, Qt.ItemDataRole.UserRole)  # Not selectable
-                    combo_box.setItemData(0, QColor(colors['secondary_text']), Qt.ItemDataRole.ForegroundRole)
+                    combo_box.setItemData(header_index, False, Qt.ItemDataRole.UserRole)
+                    combo_box.setItemData(header_index, QColor(colors['secondary_text']), Qt.ItemDataRole.ForegroundRole)
+                    
+                    # Explicitly make the header non-selectable by setting its flags
+                    model = combo_box.model()
+                    if model:
+                        item = model.item(header_index)
+                        if item:
+                            item.setFlags(Qt.ItemFlag.NoItemFlags)
                     
                     # Add default categories
                     for cat in sorted(default_cats):
@@ -587,9 +597,18 @@ class CategoryManager(QDialog):
                     if default_cats:
                         combo_box.insertSeparator(combo_box.count())
                     
+                    # Add the header item
+                    header_index = combo_box.count()
                     combo_box.addItem("Custom Categories")
-                    combo_box.setItemData(combo_box.count()-1, False, Qt.ItemDataRole.UserRole)  # Not selectable
-                    combo_box.setItemData(combo_box.count()-1, QColor(colors['secondary_text']), Qt.ItemDataRole.ForegroundRole)
+                    combo_box.setItemData(header_index, False, Qt.ItemDataRole.UserRole)
+                    combo_box.setItemData(header_index, QColor(colors['secondary_text']), Qt.ItemDataRole.ForegroundRole)
+                    
+                    # Explicitly make the header non-selectable by setting its flags
+                    model = combo_box.model()
+                    if model:
+                        item = model.item(header_index)
+                        if item:
+                            item.setFlags(Qt.ItemFlag.NoItemFlags)
                     
                     # Add custom categories
                     for cat in sorted(custom_cats):
@@ -601,13 +620,12 @@ class CategoryManager(QDialog):
             
             # Try to restore selection or select first selectable item
             index = combo_box.findText(current_text)
-            if index != -1:
+            if index != -1 and combo_box.itemData(index, Qt.ItemDataRole.UserRole) != False:
                 combo_box.setCurrentIndex(index)
             else:
                 # Find first selectable item
                 for i in range(combo_box.count()):
-                    item_data = combo_box.itemData(i, Qt.ItemDataRole.UserRole)
-                    if item_data is None or item_data:  # None or True means selectable
+                    if combo_box.itemData(i, Qt.ItemDataRole.UserRole) != False:
                         combo_box.setCurrentIndex(i)
                         break
             
@@ -700,13 +718,12 @@ class CategoryManager(QDialog):
         # Update all UI dropdowns before closing
         self._update_ui_dropdowns()
         
-        # Add a short delay to ensure UI updates complete
-        from PyQt6.QtCore import QTimer
-        QTimer.singleShot(50, lambda: super().accept())
-        
         # Process events to handle any pending UI updates
         from PyQt6.QtWidgets import QApplication
         QApplication.processEvents()
+        
+        # Call super's accept method directly - don't use a timer/lambda which loses 'self' context
+        super().accept()
 
 def manage_categories(parent=None, categories=None):
     """
