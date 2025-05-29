@@ -66,51 +66,22 @@ class TemplateFolderListItem(QFrame):
         self.installEventFilter(self)
 
     def _create_folder_icon(self, width, height):
-        """Create a system folder icon for list view that exactly matches the grid view macOS icons"""
+        """Create a system folder icon for list view that exactly matches the grid view"""
         try:
-            # Get standard system folder icon
+            # Get standard system directory icon
             style = QApplication.style()
             icon = style.standardIcon(QStyle.StandardPixmap.SP_DirIcon)
-            original_pixmap = icon.pixmap(width, height)
+            pixmap = icon.pixmap(width, height)
             
-            if not original_pixmap.isNull():
-                # Create a copy of the pixmap that we can modify
-                pixmap = QPixmap(original_pixmap)
-                
-                # Create a mask from non-transparent pixels
-                # This ensures we only color the actual folder shape
-                mask = pixmap.createMaskFromColor(Qt.GlobalColor.transparent, Qt.MaskMode.MaskOutColor)
-                
-                # Create painter to modify the pixmap
-                painter = QPainter(pixmap)
-                
-                # Get the system macOS folder color from our color scheme
-                # Using the exact same color key as used in grid view
-                folder_color = QColor(colors.get('macos_folder_icon', '#3897F0'))
-                
-                # Use CompositionMode_SourceIn to preserve transparency
-                painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
-                painter.fillRect(pixmap.rect(), folder_color)
-                painter.end()
-                
-                # Set the icon with our consistent color
+            if not pixmap.isNull():
                 self.icon_label.setPixmap(pixmap)
-                
-                # Remove any styling that could affect appearance
-                self.icon_label.setStyleSheet("background-color: transparent;")
-                
-                # Set fixed size to match pixmap dimensions
                 self.icon_label.setFixedSize(width, height)
             else:
-                print(f"ERROR (FolderListItem): Failed to get standard system folder icon pixmap.")
-                # Use identical fallback as in the card implementation
-                self.icon_label.setText("??")
-                self.icon_label.setStyleSheet("background-color: transparent;")
+                print("ERROR (FolderListItem): Failed to get standard system folder icon pixmap.")
+                self.icon_label.setText("??") # Fallback
         except Exception as e:
             print(f"ERROR (FolderListItem): Exception getting system icon: {e}")
-            # Use identical fallback as in the card implementation
-            self.icon_label.setText("SYSERR")
-            self.icon_label.setStyleSheet("background-color: transparent;")
+            self.icon_label.setText("SYSERR") # Fallback for exception
 
     def _update_styling(self):
         """Update styling based on state (hover, selected)"""
