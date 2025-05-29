@@ -290,9 +290,16 @@ class LicenseManager:
                     data = response.json()
                     # print(f"DEBUG [activate_license]: Successful response data = {data}")
                     
+                    # Verify email matches the one associated with license in the database
+                    license_email = data.get("email", "")
+                    if license_email and license_email.lower() != email.lower():
+                        # Create a redacted version of the email for security
+                        redacted_email = self._redact_email(license_email)
+                        return False, f"Email address does not match the one registered with this license. Try with the email that looks like: {redacted_email}"
+                    
                     # Store license information regardless of new/existing
                     self.settings.setValue("license/key", license_key)
-                    self.settings.setValue("license/email", data.get("email", email)) # Use response email if available
+                    self.settings.setValue("license/email", license_email or email) # Use response email if available
                     self.settings.setValue("license/type", data.get("licenseType", ""))
                     # Expiry date might not be returned on 'already registered', keep existing if not present
                     if "expiryDate" in data:
@@ -460,6 +467,9 @@ class LicenseManager:
         if not license_key:
             # print("DEBUG: validate_license - No license key found.")
             return False
+        
+        # Get the stored email for comparison
+        stored_email = self.settings.value("license/email", "")
             
         try:
             # Construct the specific validation URL
@@ -506,6 +516,14 @@ class LicenseManager:
             
             # Check the 'isValid' field specifically
             is_valid = data.get("isValid", False)
+            
+            # Additional check: verify email matches the one associated with the license
+            if is_valid and stored_email:
+                license_email = data.get("email", "")
+                if license_email and license_email.lower() != stored_email.lower():
+                    # print(f"ERROR: Email mismatch during validation. Stored: {stored_email}, Server: {license_email}")
+                    self.settings.setValue("license/is_valid", False)
+                    return False
             
             # Store the validation status
             self.settings.setValue("license/is_valid", is_valid)
@@ -577,6 +595,37 @@ class LicenseManager:
         
         for key in keys:
             self.settings.remove(key)
+
+    def _redact_email(self, email):
+        """Redact the email address for security purposes"""
+        if not email or '@' not in email:
+            return "****@****.***"  # Default redacted format
+            
+        # Split the email into local part and domain
+        local_part, domain = email.split('@', 1)
+            
+        # Redact the local part
+        if len(local_part) <= 2:
+            redacted_local = local_part[0] + '*' * (len(local_part) - 1) if local_part else '*'
+        else:
+            redacted_local = local_part[0] + '*' * (len(local_part) - 2) + local_part[-1]
+            
+        # Redact the domain, but keep the domain extension visible
+        domain_parts = domain.split('.')
+        if len(domain_parts) > 1:
+            domain_name = '.'.join(domain_parts[:-1])
+            extension = domain_parts[-1]
+            
+            if len(domain_name) <= 2:
+                redacted_domain = domain_name[0] + '*' * (len(domain_name) - 1) if domain_name else '*'
+            else:
+                redacted_domain = domain_name[0] + '*' * (len(domain_name) - 2) + domain_name[-1]
+                
+            redacted_domain = redacted_domain + '.' + extension
+        else:
+            redacted_domain = '*' * len(domain)
+            
+        return redacted_local + '@' + redacted_domain
 
 class LicenseActivationDialog(QDialog):
     """Dialog for license activation"""
