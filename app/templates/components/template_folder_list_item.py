@@ -516,4 +516,19 @@ class TemplateFolderListItem(QFrame):
             import traceback
             traceback.print_exc()
             QMessageBox.warning(self, "Error", f"Failed to delete folder '{self.folder_name}' due to an exception: {str(e)}")
-            return False 
+            return False
+            
+    def set_selected(self, selected):
+        """Set the selected state of the list item"""
+        self.selected = selected
+        self._update_styling()
+        
+    def enterEvent(self, event):
+        """Handle mouse enter event to show hover state"""
+        self.hover = True
+        self._update_styling()
+        
+    def leaveEvent(self, event):
+        """Handle mouse leave event to remove hover state"""
+        self.hover = False
+        self._update_styling() 
