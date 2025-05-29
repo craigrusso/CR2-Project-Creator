@@ -7,7 +7,8 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QLabel, QPushButton, QComboBox, QLineEdit, 
                            QFileDialog, QMessageBox, QMenu,
                            QStatusBar, QFrame, QSplitter, QScrollArea, QSizePolicy,
-                           QApplication, QGroupBox, QListView, QTextEdit, QLayout, QGridLayout)
+                           QApplication, QGroupBox, QListView, QTextEdit, QLayout, QGridLayout,
+                           QWIDGETSIZE_MAX)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex, QPoint, QUrl, QMimeData, QSettings, QObject, QThread
 from PyQt6.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, QPixmap, QDesktopServices, QCursor, QDragEnterEvent, QDropEvent, QFontMetrics, QStandardItemModel, QStandardItem, QAction
 
@@ -815,13 +816,13 @@ class ProjectCreatorApp(QMainWindow):
         custom_dialog = QDialog(self)
         custom_dialog.setWindowTitle("Update Available")
         custom_dialog.setMinimumWidth(500)
-        custom_dialog.setMinimumHeight(200)  # Set minimum height for dialog
         
+        # Use vertical layout with proper spacing and margins
         main_layout = QVBoxLayout(custom_dialog)
-        main_layout.setContentsMargins(20, 20, 20, 20)  # Add some padding
-        main_layout.setSpacing(15)  # Space between elements
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(15)
         
-        # Main message area - put in a fixed container
+        # Main message area in a container with fixed content
         info_container = QFrame()
         info_layout = QVBoxLayout(info_container)
         info_layout.setContentsMargins(0, 0, 0, 0)
@@ -836,6 +837,7 @@ class ProjectCreatorApp(QMainWindow):
         info_label.setWordWrap(True)
         info_layout.addWidget(info_label)
         
+        # Add info container to main layout
         main_layout.addWidget(info_container)
         
         # Separator line
@@ -844,6 +846,7 @@ class ProjectCreatorApp(QMainWindow):
         separator.setFrameShadow(QFrame.Shadow.Sunken)
         separator.setStyleSheet(f"background-color: {colors['border']}; margin: 5px 0px;")
         separator.setFixedHeight(1)
+        main_layout.addWidget(separator)
         
         # Create a text edit for release notes (initially hidden)
         notes_container = QFrame()
@@ -873,41 +876,59 @@ class ProjectCreatorApp(QMainWindow):
         """)
         notes_layout.addWidget(notes_edit)
         
-        # Add separator and notes container to main layout
-        main_layout.addWidget(separator)
+        # Add notes container to main layout
         main_layout.addWidget(notes_container)
         
         # Buttons row
         buttons_layout = QHBoxLayout()
         buttons_layout.setContentsMargins(0, 10, 0, 0)  # Add top margin
+        buttons_layout.setSpacing(10)  # Add spacing between buttons
         
         # Show/Hide Notes button with toggle behavior
         toggle_notes_btn = QPushButton("Show Release Notes")
         toggle_notes_btn.setStyleSheet(ACTION_LINK_STYLE)
         toggle_notes_btn.clicked.connect(lambda: toggle_notes())
-        buttons_layout.addWidget(toggle_notes_btn, 1, Qt.AlignmentFlag.AlignLeft)  # Left-aligned
+        toggle_notes_btn.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+        buttons_layout.addWidget(toggle_notes_btn, 1, Qt.AlignmentFlag.AlignLeft)  # Left-aligned with stretch
         
         # No button
         no_button = QPushButton("No")
         no_button.setStyleSheet(BUTTON_STYLE)
         no_button.clicked.connect(custom_dialog.reject)
-        buttons_layout.addWidget(no_button)
+        no_button.setFixedWidth(80)  # Set fixed width for consistent button size
+        buttons_layout.addWidget(no_button, 0, Qt.AlignmentFlag.AlignRight)  # Right-aligned without stretch
         
         # Download button
         download_button = QPushButton("Download")
         download_button.setStyleSheet(ACCENT_BUTTON_STYLE)
         download_button.clicked.connect(lambda: download_clicked())
-        buttons_layout.addWidget(download_button)
+        download_button.setFixedWidth(100)  # Set fixed width for consistent button size
+        buttons_layout.addWidget(download_button, 0, Qt.AlignmentFlag.AlignRight)  # Right-aligned without stretch
         
         main_layout.addLayout(buttons_layout)
         
         # Function to toggle notes visibility
         def toggle_notes():
             current_visibility = notes_container.isVisible()
-            notes_container.setVisible(not current_visibility)
-            toggle_notes_btn.setText("Hide Release Notes" if not current_visibility else "Show Release Notes")
             
-            # No need to resize the dialog - let the scrollbars handle overflow
+            if not current_visibility:  # Going to show notes
+                # First make it visible, then resize the dialog
+                notes_container.setVisible(True)
+                toggle_notes_btn.setText("Hide Release Notes")
+                
+                # Resize the dialog to fit the content
+                custom_dialog.adjustSize()
+            else:  # Going to hide notes
+                # First set a fixed height to current compact size, then hide notes
+                compact_height = info_container.sizeHint().height() + buttons_layout.sizeHint().height() + 80
+                custom_dialog.setFixedHeight(compact_height)
+                
+                # Now hide the notes
+                notes_container.setVisible(False)
+                toggle_notes_btn.setText("Show Release Notes")
+                
+                # Reset the fixed height constraint after a short delay to allow normal resizing again
+                QTimer.singleShot(100, lambda: custom_dialog.setFixedHeight(QWIDGETSIZE_MAX))
         
         # Function to handle download button click
         def download_clicked():
@@ -918,6 +939,7 @@ class ProjectCreatorApp(QMainWindow):
         download_button.setDefault(True)
         
         # Show the dialog
+        custom_dialog.adjustSize()  # Make sure dialog sizes to fit content initially
         return custom_dialog.exec()
 
     def handle_check_error(self, error_message):
