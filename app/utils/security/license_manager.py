@@ -293,9 +293,7 @@ class LicenseManager:
                     # Verify email matches the one associated with license in the database
                     license_email = data.get("email", "")
                     if license_email and license_email.lower() != email.lower():
-                        # Create a redacted version of the email for security
-                        redacted_email = self._redact_email(license_email)
-                        return False, f"Email address does not match the one registered with this license. Try with the email that looks like: {redacted_email}"
+                        return False, f"Email address does not match the one registered with this license. Please try again or contact support at https://www.cr2creative.com/support.html"
                     
                     # Store license information regardless of new/existing
                     self.settings.setValue("license/key", license_key)
