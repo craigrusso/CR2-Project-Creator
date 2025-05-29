@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
-from PyQt6.QtWidgets import QInputDialog, QMessageBox, QFileDialog, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QTextEdit, QApplication
+from PyQt6.QtWidgets import QInputDialog, QMessageBox, QFileDialog, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QTextEdit, QApplication, QLineEdit
 from PyQt6.QtCore import Qt, QTimer
 import os
 from PyQt6.QtGui import QIcon, QFont, QPixmap
@@ -58,6 +58,60 @@ class StyledItemDialog(QDialog):
     def selectedItem(self):
         """Get the selected item"""
         return self.combo.currentText()
+
+# Custom styled dialog for adding folders
+class StyledFolderDialog(QDialog):
+    """A custom styled dialog for adding folders"""
+    
+    def __init__(self, parent, title, label_text):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumWidth(300)
+        
+        # Create layout
+        layout = QVBoxLayout(self)
+        
+        # Add label (not in an outlined container)
+        label = QLabel(label_text)
+        layout.addWidget(label)
+        
+        # Add text field
+        self.text_field = QLineEdit()
+        self.text_field.setMinimumWidth(250)
+        layout.addWidget(self.text_field)
+        
+        # Create buttons
+        button_layout = QHBoxLayout()
+        
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.reject)
+        self.cancel_btn.setStyleSheet(BUTTON_STYLE)
+        
+        self.ok_btn = QPushButton("OK")
+        self.ok_btn.clicked.connect(self.accept)
+        self.ok_btn.setDefault(True)
+        self.ok_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(self.cancel_btn)
+        button_layout.addWidget(self.ok_btn)
+        
+        layout.addLayout(button_layout)
+    
+    def getText(self):
+        """Get the entered text"""
+        return self.text_field.text()
+    
+    @staticmethod
+    def get_folder_name(parent, title, label_text):
+        """Static method to create and show the dialog and return the result"""
+        dialog = StyledFolderDialog(parent, title, label_text)
+        result = dialog.exec()
+        
+        if result == QDialog.DialogCode.Accepted:
+            return dialog.getText(), True
+        else:
+            return "", False
 
 class GalleryEvents:
     """Event handlers for the Template Gallery"""
@@ -205,8 +259,8 @@ class GalleryEvents:
         """Handle adding a new folder"""
         print(f"🔍 LISTENER: Adding a new folder")
         
-        # Use QInputDialog to get the folder name
-        folder_name, ok = QInputDialog.getText(gallery, "Add Folder", "Enter folder name:")
+        # Use custom styled dialog instead of QInputDialog
+        folder_name, ok = StyledFolderDialog.get_folder_name(gallery, "Add Folder", "Enter folder name:")
         
         if ok and folder_name:
             # Validate the folder name (allow letters, numbers, underscores, hyphens, and spaces)
