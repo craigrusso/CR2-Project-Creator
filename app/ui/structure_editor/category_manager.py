@@ -18,7 +18,7 @@ import json
 DIVIDER_ROLE = Qt.ItemDataRole.UserRole + 1
 
 # Import necessary modules
-from app.ui.color_scheme_pyqt import APP_COLORS
+from app.ui.color_scheme_pyqt import APP_COLORS, colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
 
 class CategoryManager(QDialog):
     """Dialog for managing template categories"""
@@ -99,6 +99,14 @@ class CategoryManager(QDialog):
         
     def _init_ui(self):
         """Initialize the user interface"""
+        # Apply dialog styling to match app theme
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {colors['bg']};
+                color: {colors['text']};
+            }}
+        """)
+        
         # Main layout
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
@@ -106,22 +114,74 @@ class CategoryManager(QDialog):
         
         # Add title
         title = QLabel("Template Categories")
-        title.setStyleSheet("font-size: 16px; font-weight: bold;")
+        title.setStyleSheet(f"""
+            font-size: 16px; 
+            font-weight: bold;
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+        """)
         layout.addWidget(title)
         
         # Add description
         description = QLabel("Add, edit, or remove template categories.")
         description.setWordWrap(True)
+        description.setStyleSheet(f"""
+            color: {colors['secondary_text']};
+            background-color: transparent;
+            border: none;
+        """)
         layout.addWidget(description)
         
         # Add checkbox to hide default categories
         self.hide_defaults_checkbox = QCheckBox("Hide Default Categories")
         self.hide_defaults_checkbox.stateChanged.connect(self._toggle_default_categories_visibility)
         self.hide_defaults_checkbox.stateChanged.connect(self._save_hide_defaults_setting)
+        self.hide_defaults_checkbox.setStyleSheet(f"""
+            QCheckBox {{
+                color: {colors['text']};
+                background-color: transparent;
+                spacing: 5px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px;
+                height: 16px;
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                background-color: {colors['card_bg']};
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {colors['accent']};
+                border-color: {colors['accent']};
+            }}
+            QCheckBox::indicator:hover {{
+                border-color: {colors['highlight_border']};
+            }}
+        """)
         layout.addWidget(self.hide_defaults_checkbox)
         
         # Add list of categories
         self.category_list = QListWidget()
+        self.category_list.setStyleSheet(f"""
+            QListWidget {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                padding: 5px;
+            }}
+            QListWidget::item {{
+                padding: 5px;
+                border-radius: 2px;
+            }}
+            QListWidget::item:selected {{
+                background-color: {colors['highlight_bg']};
+                color: {colors['highlight_text']};
+            }}
+            QListWidget::item:hover {{
+                background-color: {colors['hover_bg']};
+            }}
+        """)
         
         # Import default categories
         from app.constants import DEFAULT_TEMPLATE_CATEGORIES
@@ -180,8 +240,24 @@ class CategoryManager(QDialog):
         input_layout = QHBoxLayout()
         self.new_category_input = QLineEdit()
         self.new_category_input.setPlaceholderText("New category name")
+        self.new_category_input.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                padding: 5px;
+                min-height: 25px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {colors['accent']};
+            }}
+        """)
+        
         self.add_btn = QPushButton("Add")
         self.add_btn.clicked.connect(self._add_category)
+        self.add_btn.setStyleSheet(BUTTON_STYLE)
+        
         input_layout.addWidget(self.new_category_input, 3)
         input_layout.addWidget(self.add_btn, 1)
         layout.addLayout(input_layout)
@@ -192,12 +268,11 @@ class CategoryManager(QDialog):
         
         self.remove_btn = QPushButton("Remove")
         self.remove_btn.clicked.connect(self._remove_category)
+        self.remove_btn.setStyleSheet(BUTTON_STYLE)
         
         self.close_btn = QPushButton("Close")
         self.close_btn.clicked.connect(self.accept)
         self.close_btn.setObjectName("closeButtonAccent") # Set object name for styling
-        # Also apply style directly for higher specificity
-        from app.ui.color_scheme_pyqt import ACCENT_BUTTON_STYLE
         self.close_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
         
         button_layout.addWidget(self.remove_btn)
