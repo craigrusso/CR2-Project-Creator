@@ -842,7 +842,7 @@ class TemplateGallery(QWidget):
         if hasattr(self, 'view_mode') and self.view_mode == "list":
             # Find the scroll area in the templates section
             if hasattr(self, 'templates_scroll'):
-                self.templates_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+                self.templates_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     
     def _update_grid_columns(self):
         """Update the number of columns in the grid layouts based on container width"""
