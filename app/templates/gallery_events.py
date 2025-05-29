@@ -68,17 +68,52 @@ class StyledFolderDialog(QDialog):
         self.setWindowTitle(title)
         self.setMinimumWidth(300)
         
+        # Set dialog styling to match app theme
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {colors['bg']};
+                color: {colors['text']};
+            }}
+        """)
+        
         # Create layout
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(8)
         
         # Add label (not in an outlined container)
         label = QLabel(label_text)
+        label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['text']};
+                background-color: transparent;
+                border: none;
+                padding: 0px 0px 5px 0px;
+                font-size: 14px;
+            }}
+        """)
         layout.addWidget(label)
         
         # Add text field
         self.text_field = QLineEdit()
         self.text_field.setMinimumWidth(250)
+        self.text_field.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                padding: 5px;
+                min-height: 25px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {colors['accent']};
+            }}
+        """)
         layout.addWidget(self.text_field)
+        
+        # Add spacing before buttons
+        layout.addSpacing(15)
         
         # Create buttons
         button_layout = QHBoxLayout()
@@ -106,6 +141,7 @@ class StyledFolderDialog(QDialog):
     def get_folder_name(parent, title, label_text):
         """Static method to create and show the dialog and return the result"""
         dialog = StyledFolderDialog(parent, title, label_text)
+        dialog.text_field.setFocus() # Set focus to the text field
         result = dialog.exec()
         
         if result == QDialog.DialogCode.Accepted:
