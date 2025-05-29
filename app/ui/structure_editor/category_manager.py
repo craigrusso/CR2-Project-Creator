@@ -551,111 +551,74 @@ class CategoryManager(QDialog):
         print(f"Total target dropdowns: {len(all_target_combos)}")
         
         for combo_box in all_target_combos:
-            if combo_box:
-                current_text = combo_box.currentText()
-                print(f"Updating dropdown: {combo_box.objectName()}, current selection: {current_text}")
+            if not combo_box:
+                continue
                 
-                # Block signals to prevent unwanted side effects during update
-                combo_box.blockSignals(True)
+            # Remember current selection
+            current_text = combo_box.currentText()
+            print(f"Updating dropdown: {combo_box.objectName()}, current selection: {current_text}")
+            
+            # Block signals during update
+            combo_box.blockSignals(True)
+            
+            # Clear the combobox
+            combo_box.clear()
+            
+            # Simple approach - just add all categories directly
+            if not hide_defaults:
+                # Separate into default and custom
+                from app.constants import DEFAULT_TEMPLATE_CATEGORIES
+                default_cats = [cat for cat in all_categories if cat in DEFAULT_TEMPLATE_CATEGORIES]
+                custom_cats = [cat for cat in all_categories if cat not in DEFAULT_TEMPLATE_CATEGORIES]
                 
-                # Clear and repopulate
-                combo_box.clear()
-                
-                if not hide_defaults:
-                    # Separate default and custom
-                    from app.constants import DEFAULT_TEMPLATE_CATEGORIES
-                    default_cats = sorted([cat for cat in categories_to_show if cat in DEFAULT_TEMPLATE_CATEGORIES])
-                    custom_cats = sorted([cat for cat in categories_to_show if cat not in DEFAULT_TEMPLATE_CATEGORIES])
+                # Add default categories section if we have any
+                if default_cats:
+                    combo_box.addItem("Default Categories")
+                    combo_box.setItemData(0, False, Qt.ItemDataRole.UserRole)  # Not selectable
+                    combo_box.setItemData(0, QColor(colors['secondary_text']), Qt.ItemDataRole.ForegroundRole)
                     
-                    # Create a new model for the combobox
-                    model = QStandardItemModel(combo_box)
-                    
-                    # Add Default categories
-                    if default_cats:
-                        # Add Default Label
-                        default_label = "Default Categories"
-                        default_label_item = QStandardItem(default_label)
-                        default_label_item.setEnabled(False)
-                        default_label_item.setForeground(QColor(colors['secondary_text']))
-                        model.appendRow(default_label_item)
-                        
-                        # Add default categories
-                        for cat in default_cats:
-                            item = QStandardItem(cat)
-                            model.appendRow(item)
-                    
-                    # Add Custom categories if they exist
-                    if custom_cats:
-                        # Add separator if we have default categories
-                        if default_cats:
-                            separator = QStandardItem()
-                            separator.setEnabled(False)
-                            separator.setData("separator", Qt.ItemDataRole.UserRole)
-                            model.appendRow(separator)
-                        
-                        # Add Custom Label
-                        custom_label = "Custom Categories"
-                        custom_label_item = QStandardItem(custom_label)
-                        custom_label_item.setEnabled(False)
-                        custom_label_item.setForeground(QColor(colors['secondary_text']))
-                        model.appendRow(custom_label_item)
-                        
-                        # Add custom categories
-                        for cat in custom_cats:
-                            item = QStandardItem(cat)
-                            model.appendRow(item)
-                    
-                    # Set the model to the combobox
-                    combo_box.setModel(model)
-                    
-                    # Set view properties to handle separators
-                    view = QListView()
-                    view.setStyleSheet(f"""
-                        QListView {{
-                            background-color: {colors['card_bg']};
-                            color: {colors['text']};
-                            border: 1px solid {colors['border']};
-                            border-radius: 3px;
-                            padding: 5px;
-                        }}
-                        QListView::item {{
-                            padding: 5px;
-                            border-radius: 2px;
-                        }}
-                        QListView::item:selected {{
-                            background-color: {colors['highlight_bg']};
-                            color: {colors['highlight_text']};
-                        }}
-                        QListView::item:hover {{
-                            background-color: {colors['hover_bg']};
-                        }}
-                    """)
-                    
-                    class SeparatorDelegate(QStyledItemDelegate):
-                        def paint(self, painter, option, index):
-                            if index.data(Qt.ItemDataRole.UserRole) == "separator":
-                                painter.fillRect(option.rect, QColor(colors['border']))
-                            else:
-                                super().paint(painter, option, index)
-                    
-                    view.setItemDelegate(SeparatorDelegate())
-                    combo_box.setView(view)
-                else:
-                    # Only custom categories, add them sorted
-                    for cat in sorted(categories_to_show):
+                    # Add default categories
+                    for cat in sorted(default_cats):
                         combo_box.addItem(cat)
                 
-                # Try to restore selection or select first item
-                index = combo_box.findText(current_text)
-                if index != -1:
-                    combo_box.setCurrentIndex(index)
-                elif combo_box.count() > 0:
-                    combo_box.setCurrentIndex(0)
-                
-                combo_box.setEnabled(combo_box.count() > 0)
-                combo_box.blockSignals(False)  # Re-enable signals
-                updated_widgets += 1
-                print(f"Dropdown {combo_box.objectName()} updated with {combo_box.count()} items.")
+                # Add custom categories section if we have any
+                if custom_cats:
+                    # Add separator if we have default categories
+                    if default_cats:
+                        combo_box.insertSeparator(combo_box.count())
+                    
+                    combo_box.addItem("Custom Categories")
+                    combo_box.setItemData(combo_box.count()-1, False, Qt.ItemDataRole.UserRole)  # Not selectable
+                    combo_box.setItemData(combo_box.count()-1, QColor(colors['secondary_text']), Qt.ItemDataRole.ForegroundRole)
+                    
+                    # Add custom categories
+                    for cat in sorted(custom_cats):
+                        combo_box.addItem(cat)
+            else:
+                # Simple flat list of categories when hiding defaults
+                for cat in sorted(categories_to_show):
+                    combo_box.addItem(cat)
+            
+            # Try to restore selection or select first selectable item
+            index = combo_box.findText(current_text)
+            if index != -1:
+                combo_box.setCurrentIndex(index)
+            else:
+                # Find first selectable item
+                for i in range(combo_box.count()):
+                    item_data = combo_box.itemData(i, Qt.ItemDataRole.UserRole)
+                    if item_data is None or item_data:  # None or True means selectable
+                        combo_box.setCurrentIndex(i)
+                        break
+            
+            # Enable if we have items
+            combo_box.setEnabled(combo_box.count() > 0)
+            
+            # Re-enable signals
+            combo_box.blockSignals(False)
+            
+            updated_widgets += 1
+            print(f"Dropdown {combo_box.objectName()} updated with {combo_box.count()} items.")
         
         print(f"CategoryManager: Finished updating {updated_widgets} dropdown widgets.")
         
@@ -729,9 +692,21 @@ class CategoryManager(QDialog):
     def accept(self):
         """Save changes when closing"""
         print("Category Manager: Accepting changes (Close clicked)")
-        # Make sure we update dropdowns before closing
+        
+        # Ensure categories are saved
+        self._update_result()
+        self._save_to_category_manager()
+        
+        # Update all UI dropdowns before closing
         self._update_ui_dropdowns()
-        super().accept()
+        
+        # Add a short delay to ensure UI updates complete
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(50, lambda: super().accept())
+        
+        # Process events to handle any pending UI updates
+        from PyQt6.QtWidgets import QApplication
+        QApplication.processEvents()
 
 def manage_categories(parent=None, categories=None):
     """
