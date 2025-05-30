@@ -424,6 +424,37 @@ def main():
         # Store the instance for future reference
         ProjectCreatorApp._instance = main_window
         
+        # Initialize the CategoryUpdateManager with the app instance
+        from app.templates.category_update_manager import get_instance #, test_category_update_manager
+        category_manager = get_instance(main_window)
+        # print(f"Initialized CategoryUpdateManager for the application")
+        
+        # Register CategoryUpdateManager with all template forms
+        # def ensure_template_forms_have_category_manager():
+        #     """Make sure all template forms have access to the CategoryUpdateManager"""
+        #     from PyQt6.QtWidgets import QApplication, QDialog
+            
+        #     # Find all dialogs that might be template forms
+        #     template_forms = []
+        #     for widget in QApplication.topLevelWidgets():
+        #         if isinstance(widget, QDialog) and ("template" in widget.windowTitle().lower() or "edit" in widget.windowTitle().lower()):
+        #             template_forms.append(widget)
+            
+        #     # Update each form with CategoryUpdateManager
+        #     for form in template_forms:
+        #         if not hasattr(form, 'category_update_manager'):
+        #             form.category_update_manager = category_manager
+        #             print(f"Added CategoryUpdateManager to {form.windowTitle()}")
+            
+        #     # Schedule test of the CategoryUpdateManager
+        #     # test_category_update_manager(main_window)
+            
+        #     # Schedule another check later
+        #     QTimer.singleShot(5000, ensure_template_forms_have_category_manager)
+            
+        # # Schedule registration and test after a short delay to let UI initialize
+        # QTimer.singleShot(2000, ensure_template_forms_have_category_manager)
+        
         # Add license management to the help menu
         if hasattr(main_window, 'help_menu'):
             from app.dialogs.license_management import LicenseManagementDialog
@@ -436,6 +467,9 @@ def main():
             main_window.help_menu.insertSeparator(license_action)
         
         main_window.show()
+        
+        # Schedule initial category update after main window is shown and UI is likely stable
+        QTimer.singleShot(1000, category_manager.force_update_all_category_combos)
         
         # Apply template migration if needed
         try:

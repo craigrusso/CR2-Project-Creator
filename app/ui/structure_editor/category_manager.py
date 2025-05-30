@@ -37,6 +37,10 @@ class CategoryManager(QDialog):
         self.app = self._get_app_instance(parent)
         self.template_manager = self._get_template_manager()
         
+        # Get the category update manager
+        from app.templates.category_update_manager import get_instance
+        self.category_update_manager = get_instance(self.app)
+        
         # Store categories - use project_type_manager as source of truth
         if self.template_manager and hasattr(self.template_manager, 'get_categories'):
             self.categories = self.template_manager.get_categories()
@@ -316,16 +320,64 @@ class CategoryManager(QDialog):
             # Add to list widget
             item = QListWidgetItem(category_name)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsSelectable) 
-            self.category_list.addItem(item)
+            
+            # Add item to the correct location - after default categories but before the divider
+            # or at the end if no divider exists
+            divider_index = -1
+            for i in range(self.category_list.count()):
+                if self.category_list.item(i).data(DIVIDER_ROLE):
+                    divider_index = i
+                    break
+            
+            if divider_index >= 0:
+                # Add after the divider
+                self.category_list.insertItem(divider_index + 1, item)
+            else:
+                # No divider, add to the end
+                self.category_list.addItem(item)
+                
             self.category_list.setCurrentItem(item)
-            self.category_list.sortItems() # Keep the list sorted
             
             # Clear the input field after successful addition
             self.new_category_input.clear()
 
-            # Save and refresh
-            self._save_to_category_manager()
-            self._update_ui_dropdowns()
+            # Update the internal result categories
+            self._update_result()
+            
+            # Save the category using the project_type_manager
+            if self.template_manager and hasattr(self.template_manager, 'project_type_manager'):
+                # Choose an appropriate default structure based on category name
+                default_structure = "Video Editing - Standard"  # Default fallback
+                
+                # Map to appropriate structures based on category name
+                category_lower = category_name.lower()
+                if "video" in category_lower:
+                    default_structure = "Video Editing - Standard"
+                elif "motion" in category_lower or "graphics" in category_lower:
+                    default_structure = "Motion Graphics - Standard"
+                elif "vfx" in category_lower or "visual effects" in category_lower:
+                    default_structure = "VFX - Standard"
+                elif "audio" in category_lower or "sound" in category_lower:
+                    default_structure = "Video Editing - Standard"  # No specific audio structure yet
+                
+                # Save the new category to the project_type_manager
+                success = self.template_manager.project_type_manager.create_project_type(category_name, default_structure)
+                if success:
+                    print(f"DEBUG (CategoryManager): Successfully added category '{category_name}' to project_type_manager")
+                    # Make sure our categories list is updated
+                    if category_name not in self.categories:
+                        self.categories.append(category_name)
+                else:
+                    print(f"DEBUG (CategoryManager): Failed to add category '{category_name}' to project_type_manager")
+            
+            # Force reload the list to ensure correct ordering and display
+            self._reload_category_list()
+            
+            # Notify CategoryUpdateManager about the category change
+            if hasattr(self, 'category_update_manager'):
+                self.category_update_manager.notify_categories_changed(self.result_categories)
+                print(f"DEBUG (CategoryManager): Notified CategoryUpdateManager about adding category '{category_name}'")
+            
             print(f"DEBUG (CategoryManager): Added category '{category_name}'")
         
     def _remove_category(self):
@@ -359,14 +411,9 @@ class CategoryManager(QDialog):
                 if category_name in self.categories:
                     self.categories.remove(category_name)
                 # Update UI dropdowns immediately
-                self._update_ui_dropdowns()
+                # self._update_ui_dropdowns() # REMOVED - Redundant due to notify_categories_changed later
             else:
-                print(f"Failed to delete project type '{category_name}' via manager (might be default or already removed)")
-                # Optionally show a message if deletion fails unexpectedly
-                # QMessageBox.warning(self, "Deletion Failed", f"Could not delete category '{category_name}'.")
-                # Re-add item to list if deletion failed?
-                # self.category_list.insertItem(row, category_name)
-                # self._update_result() # Re-update result if re-added
+                print(f"Failed to delete project type '{category_name}' via manager (might be a default or already removed)")
         else:
             print("Project type manager not found, cannot delete from backend.")
             # If no manager, just update internal lists
@@ -376,6 +423,15 @@ class CategoryManager(QDialog):
         
         # Reload the list to reflect the changes (including divider removal if needed)
         self._reload_category_list()
+        
+        # Notify CategoryUpdateManager about the category change
+        if hasattr(self, 'category_update_manager'):
+            self.category_update_manager.notify_categories_changed(self.result_categories)
+            print(f"DEBUG (CategoryManager): Notified CategoryUpdateManager about removing category '{category_name}'")
+            
+        # Process events to ensure UI updates
+        from PyQt6.QtWidgets import QApplication
+        QApplication.processEvents()
         
     def _reload_category_list(self):
         """Reloads the category list preserving the hide defaults state"""
@@ -515,9 +571,12 @@ class CategoryManager(QDialog):
             print("CategoryManager: App instance not found, cannot update dropdowns.")
             return
             
-        # Get the latest categories
-        all_categories = []
+        # Get the latest categories from the template manager to ensure we have the most recent list
         if hasattr(self.app, 'template_manager') and hasattr(self.app.template_manager, 'get_categories'):
+            # Force reload categories from project_type_manager first to ensure we have fresh data
+            if hasattr(self.app.template_manager, 'project_type_manager'):
+                self.app.template_manager.project_type_manager.load_custom_project_types()
+            
             all_categories = self.app.template_manager.get_categories()
             print(f"Using categories from template_manager: {all_categories}")
         else:
@@ -538,17 +597,36 @@ class CategoryManager(QDialog):
             print(f"Showing all categories (hide defaults is off): {categories_to_show}")
 
         # Use findChildren on the main app window to be more targeted than allWidgets
-        from PyQt6.QtWidgets import QComboBox
+        from PyQt6.QtWidgets import QComboBox, QWidget, QDialog, QApplication
         from PyQt6.QtCore import Qt
+        
+        # Find all relevant comboboxes in the application
+        # Search for named comboboxes first
         project_type_combos = self.app.findChildren(QComboBox, "project_type_combo_box")
         template_category_combos = self.app.findChildren(QComboBox, "template_category_combo_box")
         
+        # Additionally, find template editor comboboxes that might be in dialogs
+        # Try to find open dialogs that might have category comboboxes
+        open_dialogs = [w for w in QApplication.topLevelWidgets() if isinstance(w, QDialog)]
+        additional_combos = []
+        
+        for dialog in open_dialogs:
+            # Find category comboboxes in dialogs
+            dialog_combos = dialog.findChildren(QComboBox)
+            for combo in dialog_combos:
+                # Check if this looks like a category combobox based on object name or parent widget name
+                if (combo.objectName() and ("category" in combo.objectName().lower() or 
+                                           "type" in combo.objectName().lower())):
+                    additional_combos.append(combo)
+                    print(f"Found additional combobox in dialog: {combo.objectName()}")
+        
         # Combine the lists
-        all_target_combos = project_type_combos + template_category_combos
+        all_target_combos = project_type_combos + template_category_combos + additional_combos
         updated_widgets = 0
         
         print(f"Found {len(project_type_combos)} widgets with name 'project_type_combo_box'.")
         print(f"Found {len(template_category_combos)} widgets with name 'template_category_combo_box'.")
+        print(f"Found {len(additional_combos)} additional comboboxes in dialogs.")
         print(f"Total target dropdowns: {len(all_target_combos)}")
         
         for combo_box in all_target_combos:
@@ -641,7 +719,6 @@ class CategoryManager(QDialog):
         print(f"CategoryManager: Finished updating {updated_widgets} dropdown widgets.")
         
         # Force UI refresh
-        from PyQt6.QtWidgets import QApplication
         QApplication.processEvents()
         
     def _find_associated_label(self, widget):
@@ -672,12 +749,12 @@ class CategoryManager(QDialog):
         print(f"Loaded hideDefaultCategories setting: {hide_defaults}")
         
     def _save_hide_defaults_setting(self):
-        """Save the hide default categories setting to QSettings"""
+        """Save the hide default categories setting"""
         state = self.hide_defaults_checkbox.isChecked()
         self.settings.setValue("CategoryManager/hideDefaultCategories", state)
         print(f"Saved hideDefaultCategories setting: {state}")
         # Immediately trigger dropdown updates when the setting changes
-        self._update_ui_dropdowns()
+        # self._update_ui_dropdowns() # REMOVED - Setting change should not force app-wide UI update directly
 
     def _toggle_default_categories_visibility(self):
         """Hide or show default categories and the divider in the list"""
@@ -713,17 +790,288 @@ class CategoryManager(QDialog):
         
         # Ensure categories are saved
         self._update_result()
-        self._save_to_category_manager()
         
-        # Update all UI dropdowns before closing
-        self._update_ui_dropdowns()
+        # Instead of just calling _save_to_category_manager, make sure any
+        # missing categories are explicitly created in the project_type_manager
+        if self.template_manager and hasattr(self.template_manager, 'project_type_manager'):
+            existing_types = self.template_manager.project_type_manager.get_all_project_types()
+            
+            # Add any missing categories
+            for category in self.result_categories:
+                if category not in existing_types:
+                    # Choose an appropriate default structure
+                    default_structure = "Video Editing - Standard"  # Default fallback
+                    
+                    # Map to appropriate structures based on category name
+                    category_lower = category.lower()
+                    if "video" in category_lower:
+                        default_structure = "Video Editing - Standard"
+                    elif "motion" in category_lower or "graphics" in category_lower:
+                        default_structure = "Motion Graphics - Standard"
+                    elif "vfx" in category_lower or "visual effects" in category_lower:
+                        default_structure = "VFX - Standard"
+                    elif "audio" in category_lower or "sound" in category_lower:
+                        default_structure = "Video Editing - Standard"  # No specific audio structure yet
+                    
+                    # Save the category to project_type_manager
+                    success = self.template_manager.project_type_manager.create_project_type(category, default_structure)
+                    print(f"Adding missing category '{category}' with structure '{default_structure}': {'Success' if success else 'Failed'}")
         
-        # Process events to handle any pending UI updates
+        # Notify the category update manager that categories have changed
+        if hasattr(self, 'category_update_manager'):
+            self.category_update_manager.notify_categories_changed(self.result_categories)
+            print("Category Manager: Notified CategoryUpdateManager of category changes")
+        
+        # Directly find and update all template forms that are currently open
+        # self._directly_update_template_forms() # REMOVED
+        
+        # Update all UI dropdowns before closing - for backwards compatibility
+        # self._update_ui_dropdowns() # REMOVED
+        
+        # More comprehensive update of all possible category dropdowns - for backwards compatibility
+        # self._update_all_category_combos() # REMOVED
+        
+        # Force immediate UI refresh before closing
         from PyQt6.QtWidgets import QApplication
         QApplication.processEvents()
         
         # Call super's accept method directly - don't use a timer/lambda which loses 'self' context
         super().accept()
+
+    def _update_all_category_combos(self):
+        """Update all combo boxes in the application that might contain categories"""
+        from PyQt6.QtWidgets import QComboBox, QApplication
+        
+        # Get all widgets in the application
+        all_widgets = QApplication.allWidgets()
+        
+        # Get all categories
+        all_categories = []
+        if self.template_manager and hasattr(self.template_manager, 'get_categories'):
+            # Force reload categories first
+            if hasattr(self.template_manager, 'project_type_manager'):
+                self.template_manager.project_type_manager.load_custom_project_types()
+            
+            all_categories = self.template_manager.get_categories()
+            print(f"Updating all combos with {len(all_categories)} categories from template_manager")
+        else:
+            # Fallback to our internal list
+            self._update_result()
+            all_categories = self.result_categories
+            print(f"Updating all combos with {len(all_categories)} categories from internal list")
+        
+        # Count how many were updated
+        updated_count = 0
+        
+        # Check each widget
+        for widget in all_widgets:
+            if isinstance(widget, QComboBox):
+                # Skip if this is our own category list widget
+                if widget == self.category_list:
+                    continue
+                    
+                # Check if this looks like a category combo box
+                name = widget.objectName().lower()
+                if "category" in name or "type" in name or name.endswith("combo"):
+                    # Remember current selection
+                    current_text = widget.currentText()
+                    
+                    # Block signals during update
+                    widget.blockSignals(True)
+                    
+                    # Check if this combo already has at least one category item
+                    has_categories = False
+                    for i in range(widget.count()):
+                        item_text = widget.itemText(i)
+                        if item_text in all_categories:
+                            has_categories = True
+                            break
+                    
+                    # If it's empty or contains categories, update it
+                    if widget.count() == 0 or has_categories:
+                        # Clear and repopulate
+                        widget.clear()
+                        
+                        # Add all categories
+                        for category in sorted(all_categories):
+                            widget.addItem(category)
+                        
+                        # Try to restore previous selection or select first item
+                        index = widget.findText(current_text)
+                        if index != -1:
+                            widget.setCurrentIndex(index)
+                        elif widget.count() > 0:
+                            widget.setCurrentIndex(0)
+                        
+                        updated_count += 1
+                    
+                    # Re-enable signals
+                    widget.blockSignals(False)
+        
+        print(f"Updated {updated_count} combo boxes with categories")
+        
+        # Force UI refresh
+        QApplication.processEvents()
+
+    def _directly_update_template_forms(self):
+        """Directly find and update all template forms that are currently open"""
+        print("Category Manager: Directly updating all open template forms")
+        
+        # Get the updated categories
+        categories = self.result_categories
+        print(f"Category Manager: Using {len(categories)} categories for update: {categories}")
+        
+        # Find all open dialogs that might be template creation forms
+        from PyQt6.QtWidgets import QApplication, QDialog, QComboBox
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtGui import QColor
+        from app.ui.color_scheme_pyqt import colors
+        
+        # Import necessary modules for formatted dropdowns
+        from app.constants import DEFAULT_TEMPLATE_CATEGORIES
+        
+        # Split categories into default and custom
+        default_cats = [cat for cat in categories if cat in DEFAULT_TEMPLATE_CATEGORIES]
+        custom_cats = [cat for cat in categories if cat not in DEFAULT_TEMPLATE_CATEGORIES]
+        
+        # Get all top-level widgets
+        all_top_widgets = QApplication.topLevelWidgets()
+        updated_forms = 0
+        
+        for widget in all_top_widgets:
+            # Check if it's a dialog and has a title related to templates
+            if isinstance(widget, QDialog) and ("template" in widget.windowTitle().lower() or "edit" in widget.windowTitle().lower()):
+                print(f"Category Manager: Found template form dialog: {widget.windowTitle()}")
+                
+                # Try to find the type_combo directly
+                type_combos = []
+                
+                # First, look for combobox with specific object name
+                combos = widget.findChildren(QComboBox, "template_category_combo_box")
+                if combos:
+                    type_combos.extend(combos)
+                
+                # Also look for any combobox that might contain categories
+                all_combos = widget.findChildren(QComboBox)
+                for combo in all_combos:
+                    # Skip if already added
+                    if combo in type_combos:
+                        continue
+                    
+                    # Check if object name suggests it's a category combobox
+                    obj_name = combo.objectName().lower()
+                    if "category" in obj_name or "type" in obj_name:
+                        type_combos.append(combo)
+                        continue
+                    
+                    # Check if current items match any of our categories
+                    for i in range(combo.count()):
+                        if combo.itemText(i) in categories:
+                            type_combos.append(combo)
+                            break
+                
+                # Update all found category comboboxes
+                for combo in type_combos:
+                    # Check if this dropdown uses the special format with headers
+                    has_headers = False
+                    for i in range(combo.count()):
+                        if combo.itemData(i, Qt.ItemDataRole.UserRole) == False:  # Headers have UserRole=False
+                            has_headers = True
+                            break
+                    
+                    # Remember current selection
+                    current_selection = combo.currentText()
+                    print(f"Category Manager: Updating combobox in {widget.windowTitle()}, current selection: '{current_selection}'")
+                    
+                    # Block signals during update
+                    combo.blockSignals(True)
+                    
+                    # Use the special formatted update if needed
+                    if has_headers:
+                        print(f"Category Manager: Using formatted update with headers for {combo.objectName()}")
+                        
+                        # Clear and rebuild
+                        combo.clear()
+                        
+                        # Add default categories section if we have any
+                        if default_cats:
+                            # Add the header item
+                            header_index = combo.count()
+                            combo.addItem("Default Categories")
+                            combo.setItemData(header_index, False, Qt.ItemDataRole.UserRole)
+                            combo.setItemData(header_index, QColor(colors['secondary_text']), Qt.ItemDataRole.ForegroundRole)
+                            
+                            # Explicitly make the header non-selectable by setting its flags
+                            model = combo.model()
+                            if model:
+                                item = model.item(header_index)
+                                if item:
+                                    item.setFlags(Qt.ItemFlag.NoItemFlags)
+                            
+                            # Add default categories
+                            for cat in sorted(default_cats):
+                                combo.addItem(cat)
+                        
+                        # Add custom categories section if we have any
+                        if custom_cats:
+                            # Add separator if we have default categories
+                            if default_cats:
+                                combo.insertSeparator(combo.count())
+                            
+                            # Add the header item
+                            header_index = combo.count()
+                            combo.addItem("Custom Categories")
+                            combo.setItemData(header_index, False, Qt.ItemDataRole.UserRole)
+                            combo.setItemData(header_index, QColor(colors['secondary_text']), Qt.ItemDataRole.ForegroundRole)
+                            
+                            # Explicitly make the header non-selectable by setting its flags
+                            model = combo.model()
+                            if model:
+                                item = model.item(header_index)
+                                if item:
+                                    item.setFlags(Qt.ItemFlag.NoItemFlags)
+                            
+                            # Add custom categories
+                            for cat in sorted(custom_cats):
+                                combo.addItem(cat)
+                        
+                        # Try to restore selection or select first selectable item
+                        index = combo.findText(current_selection)
+                        if index != -1 and combo.itemData(index, Qt.ItemDataRole.UserRole) != False:
+                            combo.setCurrentIndex(index)
+                        else:
+                            # Find first selectable item
+                            for i in range(combo.count()):
+                                if combo.itemData(i, Qt.ItemDataRole.UserRole) != False:
+                                    combo.setCurrentIndex(i)
+                                    break
+                    else:
+                        print(f"Category Manager: Using standard update for {combo.objectName()}")
+                        
+                        # Clear and repopulate
+                        combo.clear()
+                        
+                        # Add categories
+                        for category in sorted(categories):
+                            combo.addItem(category)
+                        
+                        # Try to restore selection
+                        index = combo.findText(current_selection)
+                        if index >= 0:
+                            combo.setCurrentIndex(index)
+                        elif combo.count() > 0:
+                            combo.setCurrentIndex(0)
+                    
+                    # Re-enable signals
+                    combo.blockSignals(False)
+                    
+                    updated_forms += 1
+                    print(f"Category Manager: Updated combobox with {combo.count()} items, current selection: '{combo.currentText()}'")
+        
+        # Process events to ensure UI updates
+        QApplication.processEvents()
+        
+        print(f"Category Manager: Updated {updated_forms} comboboxes in template forms")
 
 def manage_categories(parent=None, categories=None):
     """
@@ -742,7 +1090,162 @@ def manage_categories(parent=None, categories=None):
     
     # Return categories if accepted
     if result == QDialog.Accepted:
-        return dialog.get_categories()
+        # Get the updated categories
+        updated_categories = dialog.get_categories()
+        
+        # Make sure the CategoryUpdateManager gets notified after the dialog is fully closed
+        from app.templates.category_update_manager import get_instance
+        
+        # Get app instance from parent if available
+        app = None
+        if parent and hasattr(parent, 'app'):
+            app = parent.app
+        elif parent and hasattr(parent, 'parent') and callable(parent.parent):
+            parent_obj = parent.parent()
+            if parent_obj and hasattr(parent_obj, 'app'):
+                app = parent_obj.app
+        
+        # Get category update manager with app instance
+        category_manager = get_instance(app)
+        
+        # Schedule multiple notifications with increasing delays to ensure all UI components are updated
+        from PyQt6.QtCore import QTimer
+        
+        def notify_categories_changed():
+            category_manager.notify_categories_changed(updated_categories)
+            print(f"Delayed notification: CategoryUpdateManager notified of {len(updated_categories)} categories")
+        
+        # Directly update any open template forms right after dialog closes
+        from PyQt6.QtWidgets import QApplication, QDialog, QComboBox
+        
+        def directly_update_template_forms():
+            """Helper function to update template forms directly"""
+            print("manage_categories: Directly updating all template forms after dialog close")
+            
+            # Find all dialogs that might be template forms
+            all_top_widgets = QApplication.topLevelWidgets()
+            for widget in all_top_widgets:
+                if isinstance(widget, QDialog) and ("template" in widget.windowTitle().lower() or "edit" in widget.windowTitle().lower()):
+                    print(f"manage_categories: Found template dialog: {widget.windowTitle()}")
+                    
+                    # Look for comboboxes that might contain categories
+                    category_combos = []
+                    
+                    # First, look for combobox with specific object name
+                    combos = widget.findChildren(QComboBox, "template_category_combo_box")
+                    if combos:
+                        category_combos.extend(combos)
+                    
+                    # Also look for other comboboxes by name or content
+                    all_combos = widget.findChildren(QComboBox)
+                    for combo in all_combos:
+                        if combo in category_combos:
+                            continue
+                            
+                        obj_name = combo.objectName().lower()
+                        if "category" in obj_name or "type" in obj_name:
+                            category_combos.append(combo)
+                    
+                    # Import necessary modules for formatted dropdowns
+                    from app.constants import DEFAULT_TEMPLATE_CATEGORIES
+                    from PyQt6.QtGui import QColor
+                    from app.ui.color_scheme_pyqt import colors
+                    
+                    # Split categories into default and custom
+                    default_cats = [cat for cat in updated_categories if cat in DEFAULT_TEMPLATE_CATEGORIES]
+                    custom_cats = [cat for cat in updated_categories if cat not in DEFAULT_TEMPLATE_CATEGORIES]
+                    
+                    # Update all found comboboxes
+                    for combo in category_combos:
+                        current_text = combo.currentText()
+                        
+                        # Check if this dropdown uses the special format with headers
+                        has_headers = False
+                        for i in range(combo.count()):
+                            if combo.itemData(i, Qt.ItemDataRole.UserRole) == False:  # Headers have UserRole=False
+                                has_headers = True
+                                break
+                        
+                        # Block signals during update
+                        combo.blockSignals(True)
+                        combo.clear()
+                        
+                        # Use the formatted update for all comboboxes to ensure consistency
+                        # Add default categories section if we have any
+                        if default_cats:
+                            # Add the header item
+                            header_index = combo.count()
+                            combo.addItem("Default Categories")
+                            combo.setItemData(header_index, False, Qt.ItemDataRole.UserRole)
+                            combo.setItemData(header_index, QColor(colors['secondary_text']), Qt.ItemDataRole.ForegroundRole)
+                            
+                            # Explicitly make the header non-selectable by setting its flags
+                            model = combo.model()
+                            if model:
+                                item = model.item(header_index)
+                                if item:
+                                    item.setFlags(Qt.ItemFlag.NoItemFlags)
+                            
+                            # Add default categories
+                            for cat in sorted(default_cats):
+                                combo.addItem(cat)
+                        
+                        # Add custom categories section if we have any
+                        if custom_cats:
+                            # Add separator if we have default categories
+                            if default_cats:
+                                combo.insertSeparator(combo.count())
+                            
+                            # Add the header item
+                            header_index = combo.count()
+                            combo.addItem("Custom Categories")
+                            combo.setItemData(header_index, False, Qt.ItemDataRole.UserRole)
+                            combo.setItemData(header_index, QColor(colors['secondary_text']), Qt.ItemDataRole.ForegroundRole)
+                            
+                            # Explicitly make the header non-selectable by setting its flags
+                            model = combo.model()
+                            if model:
+                                item = model.item(header_index)
+                                if item:
+                                    item.setFlags(Qt.ItemFlag.NoItemFlags)
+                            
+                            # Add custom categories
+                            for cat in sorted(custom_cats):
+                                combo.addItem(cat)
+                        
+                        # Try to restore previous selection or select first selectable item
+                        index = combo.findText(current_text)
+                        if index >= 0 and combo.itemData(index, Qt.ItemDataRole.UserRole) != False:
+                            combo.setCurrentIndex(index)
+                        else:
+                            # Find first selectable item
+                            for i in range(combo.count()):
+                                if combo.itemData(i, Qt.ItemDataRole.UserRole) != False:
+                                    combo.setCurrentIndex(i)
+                                    break
+                        
+                        combo.blockSignals(False)
+                        print(f"manage_categories: Updated combobox in {widget.windowTitle()} with {combo.count()} items, current: '{combo.currentText()}'")
+            
+            # Process events to ensure UI updates
+            QApplication.processEvents()
+        
+        # Run direct update immediately
+        directly_update_template_forms()
+        
+        # Notify immediately
+        notify_categories_changed()
+        
+        # Schedule additional notifications to catch all UI states
+        QTimer.singleShot(100, notify_categories_changed)
+        QTimer.singleShot(300, notify_categories_changed)
+        QTimer.singleShot(500, notify_categories_changed)
+        
+        # Schedule additional direct updates as well
+        QTimer.singleShot(200, directly_update_template_forms)
+        QTimer.singleShot(400, directly_update_template_forms)
+        
+        return updated_categories
     
     # Return None if canceled
     return None 
