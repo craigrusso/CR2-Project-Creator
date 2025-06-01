@@ -248,16 +248,70 @@ class IconProvider:
     
     def _init_platform_specific_folder_icons(self):
         """Initialize folder icons using QApplication.style().standardIcon"""
-        # Directly use Qt's standard icons, which should provide a native look.
-        self._folder_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
-        self._folder_open_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon)
+        if self._system == "Windows" and USE_NATIVE_PLATFORM_ICONS and self._shell:
+            try:
+                # On Windows, use shell32.dll folder icons directly
+                # This provides more native-looking folder icons compared to Qt's SP_DirIcon
+                import win32gui
+                import win32con
+                import win32ui
+                
+                # Get system folder icon (SHGFI_SMALLICON = 0x1, SHGFI_ICON = 0x100)
+                SHGFI_ICON = 0x100
+                SHGFI_SMALLICON = 0x1
+                SHGFI_LARGEICON = 0x0
+                SHGFI_SHELLICONSIZE = 0x4
+                
+                # Get closed folder icon
+                folder_info = win32gui.SHGetFileInfo("C:\\", 0, SHGFI_ICON | SHGFI_SMALLICON)
+                folder_icon_handle = folder_info[0]
+                if folder_icon_handle:
+                    # Convert the icon handle to QIcon
+                    folder_pixmap = QPixmap.fromWinHICON(folder_icon_handle)
+                    self._folder_icon = QIcon(folder_pixmap)
+                    # Clean up the icon handle
+                    win32gui.DestroyIcon(folder_icon_handle)
+                else:
+                    # Fallback to Qt's standard icon
+                    self._folder_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
+                
+                # Get open folder icon (if possible)
+                # Try to get shell32.dll's open folder icon
+                open_folder_info = win32gui.SHGetFileInfo("C:\\", 0, SHGFI_ICON | SHGFI_SMALLICON | win32con.FILE_ATTRIBUTE_DIRECTORY)
+                open_folder_icon_handle = open_folder_info[0]
+                if open_folder_icon_handle:
+                    # Convert the icon handle to QIcon
+                    open_folder_pixmap = QPixmap.fromWinHICON(open_folder_icon_handle)
+                    self._folder_open_icon = QIcon(open_folder_pixmap)
+                    # Clean up the icon handle
+                    win32gui.DestroyIcon(open_folder_icon_handle)
+                else:
+                    # Fallback to the closed folder icon
+                    self._folder_open_icon = self._folder_icon
+                
+                debug(f"Windows folder icons initialized using shell32.dll")
+            except Exception as e:
+                warning(f"Error initializing Windows folder icons: {e}")
+                # Fallback to Qt's standard icons
+                self._folder_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
+                self._folder_open_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon)
+                
+                # If SP_DirOpenIcon is null, fallback to SP_DirIcon
+                if self._folder_open_icon.isNull():
+                    warning("SP_DirOpenIcon is null, using SP_DirIcon for open folder state as well.")
+                    self._folder_open_icon = self._folder_icon
+        else:
+            # For non-Windows platforms, use Qt's standard icons
+            # Directly use Qt's standard icons, which should provide a native look.
+            self._folder_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
+            self._folder_open_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon)
 
-        # If SP_DirOpenIcon is null (e.g., on some styles/platforms), fallback to SP_DirIcon for the open state.
-        if self._folder_open_icon.isNull():
-            warning("SP_DirOpenIcon is null, using SP_DirIcon for open folder state as well.")
-            self._folder_open_icon = self._folder_icon # Fallback to the closed icon if open one isn't available
+            # If SP_DirOpenIcon is null (e.g., on some styles/platforms), fallback to SP_DirIcon for the open state.
+            if self._folder_open_icon.isNull():
+                warning("SP_DirOpenIcon is null, using SP_DirIcon for open folder state as well.")
+                self._folder_open_icon = self._folder_icon # Fallback to the closed icon if open one isn't available
 
-        debug(f"Folder icon set to SP_DirIcon (name: {self._folder_icon.name()}), Open folder icon set to SP_DirOpenIcon (name: {self._folder_open_icon.name()})")
+        debug(f"Folder icon initialized for {self._system}")
     
     def get_folder_icon(self, is_open=False):
         """Get platform-specific folder icon"""

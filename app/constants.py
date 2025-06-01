@@ -17,6 +17,9 @@ def get_resource_path(relative_path):
     print(f"[DEBUG] Current working directory: {os.getcwd()}")
     
     try:
+        # Normalize path separators in the input path (handle both forward and backslashes)
+        relative_path = relative_path.replace('\\', '/') 
+        
         # Get base path for bundled app or development
         if getattr(sys, 'frozen', False):
             # PyInstaller creates a temp folder and stores path in _MEIPASS
@@ -51,22 +54,28 @@ def get_resource_path(relative_path):
                         break
                     current_dir = parent_dir
         
-        # Try both paths to see which one works
-        resource_path = os.path.join(base_path, relative_path)
+        # Normalize the base path for consistency
+        base_path = os.path.normpath(base_path)
+        
+        # Construct the resource path with proper path separators for the OS
+        resource_path = os.path.normpath(os.path.join(base_path, relative_path))
+        
+        # Check if the path exists
         if not os.path.exists(resource_path) and relative_path.startswith("app/"):
             # Try without app/ prefix
-            alt_path = os.path.join(base_path, relative_path[4:])
+            alt_path = os.path.normpath(os.path.join(base_path, relative_path[4:]))
             if os.path.exists(alt_path):
                 resource_path = alt_path
                 print(f"[DEBUG] Using alternative resource path: {resource_path}")
         
         print(f"[DEBUG] Final resource path: {resource_path}")
         print(f"[DEBUG] Path exists: {os.path.exists(resource_path)}")
+        
         return resource_path
     except Exception as e:
         print(f"[ERROR] Error in get_resource_path: {str(e)}")
         # Fallback to simple path resolution
-        return os.path.join(os.path.abspath(os.path.dirname(__file__)), relative_path)
+        return os.path.normpath(os.path.join(os.path.abspath(os.path.dirname(__file__)), relative_path))
 
 # App constants
 APP_NAME = "Echelon"

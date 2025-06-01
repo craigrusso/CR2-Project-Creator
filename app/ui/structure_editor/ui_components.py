@@ -29,6 +29,9 @@ from app.constants import DEFAULT_TEMPLATE_CATEGORIES, get_resource_path
 # Import the centralized updater function
 from app.templates.category_combobox_updater import update_single_combobox
 
+# Import folder icon utilities - added for proper Windows folder icons
+from app.ui.icon_utilities import get_folder_icon, get_file_icon
+
 class StructureEditorTree(QTreeWidget):
     """Enhanced QTreeWidget for structure editing with improved styling"""
     
@@ -46,13 +49,17 @@ class StructureEditorTree(QTreeWidget):
             self.customContextMenuRequested.connect(self.context_menu_handler)
         # self.setAttribute(Qt.WA_MacShowFocusRect, False) # Commented out for Qt6 compatibility
         
+        # Import folder icon utilities - added for proper Windows folder icons
+        self.get_folder_icon = get_folder_icon  # Store reference to the function
+        self.get_file_icon = get_file_icon  # Store reference to the function
+        
+        # Connect item expanded/collapsed signals to update folder icons
+        self.itemExpanded.connect(self._update_folder_icon)
+        self.itemCollapsed.connect(self._update_folder_icon)
+        
         # Add placeholder text attribute
         self.placeholder_text = "Drop Files and Folders Here"
         self.placeholder_visible = True
-        
-        # Get branch indicator resources
-        branch_closed_path = get_resource_path('app/assets/css/branch-closed.svg')
-        branch_open_path = get_resource_path('app/assets/css/branch-open.svg')
         
         # Apply enhanced styling while ensuring branch indicators remain visible
         self.setStyleSheet(f"""
@@ -88,14 +95,14 @@ class StructureEditorTree(QTreeWidget):
             /* Style branch indicators to ensure they're visible */
             QTreeWidget::branch:has-children:!has-siblings:closed,
             QTreeWidget::branch:closed:has-children:has-siblings {{
-                image: url({branch_closed_path});
+                image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24'><path fill='%23666666' d='M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z'/></svg>");
                 width: 15px;
                 height: 15px;
             }}
             
             QTreeWidget::branch:open:has-children:!has-siblings,
             QTreeWidget::branch:open:has-children:has-siblings {{
-                image: url({branch_open_path});
+                image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24'><path fill='%23666666' d='M7 10l5 5 5-5z'/></svg>");
                 width: 15px;
                 height: 15px;
             }}
@@ -144,6 +151,30 @@ class StructureEditorTree(QTreeWidget):
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self.placeholder_text)
             
             painter.restore()
+
+    def _update_folder_icon(self, item):
+        """Update folder icon based on item state"""
+        # Get the item data to determine its type
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
+        item_type = None
+        
+        # Extract type information from item data
+        if isinstance(item_data, dict) and 'type' in item_data:
+            item_type = item_data.get('type')
+        
+        # If it's explicitly a folder or has children, use folder icon
+        if item_type == 'folder' or item.childCount() > 0:
+            is_expanded = item.isExpanded()
+            item.setIcon(0, self.get_folder_icon(is_expanded))
+        else:
+            # For files, use the file icon based on filename
+            filename = item.text(0)
+            item.setIcon(0, self.get_file_icon(filename))
+        
+        # Also update child items recursively
+        for i in range(item.childCount()):
+            child = item.child(i)
+            self._update_folder_icon(child)
 
 class StructureEditor(QDialog):
     """Dialog for editing project structure"""
@@ -873,8 +904,32 @@ class UIBuilder(QObject):
             """)
         
         # Get SVG icon paths for dropdown arrows
-        dropdown_arrow_path = get_resource_path('app/assets/css/dropdown_arrow.svg')
-        dropdown_arrow_up_path = get_resource_path('app/assets/css/dropdown_arrow_up.svg')
+        import platform
+        
+        # Use platform-specific dropdown arrow SVGs
+        system = platform.system()
+        if system == "Windows":
+            # For Windows, use the Windows-specific SVGs with darker color for better contrast
+            dropdown_arrow_path = "app/assets/css/dropdown_arrow_windows.svg"
+            dropdown_arrow_up_path = "app/assets/css/dropdown_arrow_up_windows.svg"
+        else:
+            # Default arrows for macOS/Linux
+            dropdown_arrow_path = "app/assets/css/dropdown_arrow.svg"
+            dropdown_arrow_up_path = "app/assets/css/dropdown_arrow_up.svg"
+        
+        # Get the full paths using get_resource_path
+        arrow_path = get_resource_path(dropdown_arrow_path)
+        arrow_up_path = get_resource_path(dropdown_arrow_up_path)
+        
+        # For Qt stylesheets, always use forward slashes regardless of platform
+        arrow_path = arrow_path.replace('\\', '/')
+        arrow_up_path = arrow_up_path.replace('\\', '/')
+        
+        # Debug output
+        print(f"[DEBUG] {system} dropdown arrow path: {arrow_path}")
+        print(f"[DEBUG] {system} dropdown arrow up path: {arrow_up_path}")
+        print(f"[DEBUG] Path exists (arrow): {os.path.exists(arrow_path)}")
+        print(f"[DEBUG] Path exists (arrow up): {os.path.exists(arrow_up_path)}")
         
         if self.template_category_field:
             self.template_category_field.setStyleSheet(f"""
@@ -897,12 +952,12 @@ class UIBuilder(QObject):
                     border-left: 1px solid {colors['border']};
                 }}
                 QComboBox::down-arrow {{
-                    image: url({dropdown_arrow_path});
+                    image: url("{arrow_path}");
                     width: 16px;
                     height: 16px;
                 }}
                 QComboBox::down-arrow:on {{
-                    image: url({dropdown_arrow_up_path});
+                    image: url("{arrow_up_path}");
                 }}
                 QComboBox QAbstractItemView {{
                     background-color: {colors['card_bg']};

@@ -199,18 +199,10 @@ def update_item_icon(item):
     
     # Set appropriate icon
     if is_folder:
-        # For folders, use open folder icon if expanded
-        # is_expanded = item.isExpanded()
-        # item.setIcon(0, get_folder_icon(is_expanded))
-
-        # Directly use QApplication.style().standardIcon like in TemplateDirectoryEditor
-        if item.isExpanded():
-            folder_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon)
-            if folder_icon.isNull(): # Fallback if SP_DirOpenIcon is not available
-                folder_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
-        else:
-            folder_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
-        item.setIcon(0, folder_icon)
+        # For folders, use the centralized folder icon provider
+        # This ensures consistent icons across Windows/Mac/Linux
+        is_expanded = item.isExpanded()
+        item.setIcon(0, get_folder_icon(is_expanded))
         
         # Store folder type in data
         if not item_type:
@@ -356,16 +348,23 @@ def setup_tree_for_structure_editing(tree_widget):
     debug("Applied enhanced tree styling with folder/file icons")
 
 def update_folder_icon_on_expand(item, expanded):
-    """Update folder icon when item is expanded or collapsed"""
+    """
+    Update folder icon when expanded/collapsed
+    
+    Args:
+        item: The QTreeWidgetItem to update
+        expanded: True if expanded, False if collapsed
+    """
     if not item:
         return
         
-    # Check if this is a folder item
+    # Only update icons for folder items
     item_type = item.data(0, Qt.ItemDataRole.UserRole)
     if item_type == "folder" or item.childCount() > 0:
-        # Update icon based on expanded state
+        # Use the centralized folder icon provider
+        # This ensures consistent folder icons across platforms
         item.setIcon(0, get_folder_icon(expanded))
-        
+
 def ensure_item_editable(item):
     """Make sure an item and all its children are editable"""
     if not item:

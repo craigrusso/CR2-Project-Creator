@@ -231,105 +231,139 @@ class FileOperations:
     
     def _add_file_item(self, parent_item, file_name, file_type=None, original_path=None):
         """
-        Create a tree item for a file
+        Add a file item to the structure tree with appropriate icon and data
         
         Args:
-            parent_item: Parent item for the file
+            parent_item: Parent tree item
             file_name: Name of the file
             file_type: Type of file (optional)
-            original_path: Original path to the file (optional)
-            
+            original_path: Original path of the file (optional)
+        
         Returns:
             QTreeWidgetItem: The created file item
         """
-        print(f"🔹 _ADD_FILE_ITEM: Creating file item: {file_name}, parent: {parent_item.text(0) if parent_item else 'None'}")
+        print(f"🔹 _ADD_FILE_ITEM: Called with parent={parent_item.text(0) if parent_item else 'None'}, file_name={file_name}")
         
-        # Make sure we have a parent
-        if not parent_item:
-            parent_item = self.tree.invisibleRootItem()
+        # Ensure tree widget reference is available
+        if not self.tree:
+            print("🔹 _ADD_FILE_ITEM: No tree widget available")
+            return None
             
-        # Create the item
+        # Create file item
         file_item = QTreeWidgetItem(parent_item)
         file_item.setText(0, file_name)
-        
-        # Set the icon based on file extension
-        from .utils import get_file_icon_for_type
-        file_item.setIcon(0, get_file_icon_for_type(file_name))
-        
-        # Ensure the item is editable
         file_item.setFlags(file_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
-        # Store item data
-        is_binary = False
+        # Determine file type based on extension if not provided
+        if not file_type:
+            _, ext = os.path.splitext(file_name.lower())
+            # Match extension to known file types
+            for category, extensions in FILE_EXTENSIONS.items():
+                if ext in extensions:
+                    file_type = category
+                    break
+            if not file_type:
+                # Use more comprehensive mapping
+                file_type = COMMON_EXTENSIONS.get(ext, "Unknown")
         
-        # Check if it's a binary file if we have a path
-        if original_path and os.path.exists(original_path):
-            from app.utils.binary_file_handler import BinaryFileHandler
-            is_binary = BinaryFileHandler.is_binary_file(original_path)
-        
-        # Create file data entry
-        file_data = {
-            'name': file_name,
-            'type': 'file',
-            'path': original_path or ""
+        # Create item data with file type
+        item_data = {
+            "type": "file",
+            "name": file_name,
+            "file_type": file_type,
+            "original_path": original_path
         }
         
-        # Add original_path explicitly in the file data
-        if original_path:
-            file_data['original_path'] = original_path
+        # Set item data
+        file_item.setData(0, Qt.ItemDataRole.UserRole, item_data)
         
-        # Add file type if specified
-        if file_type:
-            file_data['file_type'] = file_type
+        # Set appropriate icon based on file type - use icon_utilities for consistency
+        try:
+            from app.ui.icon_utilities import get_file_icon
+            icon = get_file_icon(file_name)
+            file_item.setIcon(0, icon)
+        except ImportError:
+            # Fallback to local icon function if import fails
+            icon = get_file_icon_for_type(file_type, file_name)
+            file_item.setIcon(0, icon)
         
-        # Set binary flag if known
-        if is_binary:
-            file_data['is_binary'] = True
-        
-        # Store file data in the item
-        file_item.setData(0, Qt.ItemDataRole.UserRole, file_data)
-        
-        print(f"🔹 _ADD_FILE_ITEM: Set file data: {file_data}")
-        
+        print(f"🔹 _ADD_FILE_ITEM: Added file item {file_name} with type {file_type}")
         return file_item
     
-    def add_folder(self, parent_item=None):
-        """Add a new folder to the tree under the given parent"""
-        folder_name, ok = QInputDialog.getText(
-            self.tree, 
-            "Add Folder", 
-            "Enter folder name:"
-        )
+    def add_folder(self, parent_item=None, folder_name=None):
+        """
+        Add a folder to the structure tree
         
-        if not ok or not folder_name:
+        Args:
+            parent_item: Parent tree item to add the folder to
+            folder_name: Name of the folder (optional)
+        
+        Returns:
+            QTreeWidgetItem: The created folder item
+        """
+        print(f"🔹 ADD_FOLDER: Called with parent_item={parent_item}, folder_name={folder_name}")
+        
+        # Get reference to the tree widget
+        if not hasattr(self, 'tree'):
+            if hasattr(self.editor, 'tree'):
+                self.tree = self.editor.tree
+            elif hasattr(self.editor, 'structure_tree'):
+                self.tree = self.editor.structure_tree
+                
+        if not self.tree:
+            print("ERROR: No tree widget available for file operations")
             return None
         
+        # If parent is not specified, use root item
+        if not parent_item:
+            if self.tree.topLevelItemCount() > 0:
+                parent_item = self.tree.topLevelItem(0)
+                print(f"🔹 ADD_FOLDER: Using first top level item as parent: {parent_item.text(0)}")
+            else:
+                parent_item = QTreeWidgetItem(self.tree)
+                parent_item.setText(0, "Project Root")
+                parent_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Project Root"})
+                print(f"🔹 ADD_FOLDER: Created new root item as parent: Project Root")
+        
+        # If folder_name is not specified, show input dialog
+        if not folder_name:
+            # Get folder name from user
+            folder_name, ok = QInputDialog.getText(
+                self.tree, "New Folder", "Enter folder name:", 
+                text="New Folder"
+            )
+            
+            if not ok or not folder_name:
+                print("🔹 ADD_FOLDER: User cancelled folder creation")
+                return None
+        
         # Create folder item
-        if parent_item is None:
-            folder_item = QTreeWidgetItem(self.tree)
-        else:
-            folder_item = QTreeWidgetItem(parent_item)
-        
-        # Set name and mark as folder
+        folder_item = QTreeWidgetItem(parent_item)
         folder_item.setText(0, folder_name)
-        folder_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder"})
-        
-        # Make the folder editable
         folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
         
-        # Set folder icon - use app standard icon instead of theme
-        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        # Set folder data
+        folder_data = {
+            "type": "folder",
+            "name": folder_name
+        }
+        folder_item.setData(0, Qt.ItemDataRole.UserRole, folder_data)
         
-        # Apply styles for folders - use bold instead of color
-        font = folder_item.font(0)
-        font.setBold(True)
-        folder_item.setFont(0, font)
+        # Set folder icon - use icon_utilities for Windows folder icons
+        try:
+            from app.ui.icon_utilities import get_folder_icon
+            icon = get_folder_icon(False)  # False = folder is closed initially
+            folder_item.setIcon(0, icon)
+        except ImportError:
+            # Fallback to standard icon if import fails
+            folder_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
+            folder_item.setIcon(0, folder_icon)
         
-        # Expand parent to show new folder
-        if parent_item:
-            parent_item.setExpanded(True)
+        print(f"🔹 ADD_FOLDER: Added folder item: {folder_name}")
         
-        # Return the created folder item
+        # Make the new folder visible
+        self.tree.scrollToItem(folder_item)
+        
         return folder_item
     
     def delete_selected(self):
