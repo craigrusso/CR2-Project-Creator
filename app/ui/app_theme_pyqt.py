@@ -110,11 +110,6 @@ class ComboBoxItemDelegate(QStyledItemDelegate):
             border_rect = QRect(rect.left(), rect.top(), 5, rect.height())
             painter.fillRect(border_rect, border_color)
             
-            # Draw top and bottom borders
-            painter.setPen(QPen(border_color, 1))
-            painter.drawLine(rect.left() + 5, rect.top(), rect.right(), rect.top())
-            painter.drawLine(rect.left() + 5, rect.bottom(), rect.right(), rect.bottom())
-            
         elif is_selected:
             # Selected state
             bg_color = QColor(colors['highlight_bg'])
@@ -152,21 +147,22 @@ class ComboBoxPopupFilter(QObject):
     
     def eventFilter(self, obj, event):
         """Filter events to catch and style combo box popups"""
-        # When a widget is shown, check if it's a combobox popup
-        if event.type() == QEvent.Show:
-            # Check if it's a ListView (typical for combo box popups)
+        if event.type() == QEvent.Show: # Log ALL Show events
+            obj_name = obj.objectName() if hasattr(obj, 'objectName') else 'N/A'
+            parent_obj_name = obj.parent().objectName() if obj.parent() and hasattr(obj.parent(), 'objectName') else 'N/A'
+            print(f"DEBUG POPUP FILTER (BROAD): Show event for obj: {obj_name}, type: {type(obj)}, parent: {parent_obj_name}")
+
+            # Original logic for QListView remains
             if isinstance(obj, QListView) or (hasattr(obj, 'objectName') and obj.objectName() == "QComboBoxListView"):
-                # Apply our specialized popup style directly
+                print(f"DEBUG POPUP FILTER (TARGETED): QListView detected: {obj.objectName() if hasattr(obj, 'objectName') else 'N/A'}, Parent: {obj.parent().objectName() if obj.parent() and hasattr(obj.parent(), 'objectName') else 'N/A'}")
                 obj.setStyleSheet(LISTVIEW_POPUP_STYLE)
                 
-                # Make sure the viewport has mouse tracking enabled
                 if hasattr(obj, 'viewport'):
                     obj.viewport().setMouseTracking(True)
-                
-                # Set the hover mode explicitly
+                    print(f"DEBUG POPUP FILTER (TARGETED): Viewport mouseTracking for {obj.objectName()}: {obj.viewport().hasMouseTracking()}")
                 obj.setMouseTracking(True)
+                print(f"DEBUG POPUP FILTER (TARGETED): QListView mouseTracking for {obj.objectName()}: {obj.hasMouseTracking()}")
                 
-                # Set selection behavior and mode for better hover effects
                 obj.setSelectionMode(QAbstractItemView.SingleSelection)
                 obj.setSelectionBehavior(QAbstractItemView.SelectRows)
                 
@@ -328,8 +324,6 @@ def configure_styles(app):
             color: white;
             font-weight: bold;
             border-left: 5px solid white;
-            border-top: 1px solid white;
-            border-bottom: 1px solid white;
         }}
         
         QComboBox QAbstractItemView::item:selected {{
@@ -482,8 +476,9 @@ def configure_styles(app):
     app.setStyle(CheckboxStyle())
     
     # Install a global event filter to catch combo box popups
-    popup_filter = ComboBoxPopupFilter()
-    QApplication.instance().installEventFilter(popup_filter)
+    # popup_filter = ComboBoxPopupFilter() # TEMPORARILY COMMENTED OUT
+    # QApplication.instance().installEventFilter(popup_filter) # TEMPORARILY COMMENTED OUT
+    # print("DEBUG THEME: ComboBoxPopupFilter installation commented out for testing.") # TEMPORARILY COMMENTED OUT
 
 def apply_theme_to_widgets(widget_or_app):
     """Apply theme to all widgets in the application"""

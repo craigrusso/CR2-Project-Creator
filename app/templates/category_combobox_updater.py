@@ -12,6 +12,7 @@ from PyQt6.QtGui import QStandardItem, QStandardItemModel, QColor
 
 from app.ui.color_scheme_pyqt import colors, COMBOBOX_STYLE, LISTVIEW_POPUP_STYLE
 from app.ui.custom_delegates import apply_hover_delegate
+from app.ui.app_theme_pyqt import ComboBoxItemDelegate
 from app.constants import DEFAULT_TEMPLATE_CATEGORIES
 
 # Debug flag
@@ -152,6 +153,36 @@ def update_single_combobox(combo: QComboBox, categories: list, current_category:
             log_updater(f"UPDATE_SINGLE_COMBO: Applied COMBOBOX_STYLE to '{obj_name}'.")
 
     log_updater(f"UPDATE_SINGLE_COMBO: Finished updating '{obj_name}'. Items: {combo.count()}, Current: '{combo.currentText()}'")
+
+    # --- NEW DIRECT VIEW CONFIGURATION ---
+    view = combo.view()
+    if view and isinstance(view, QListView):
+        log_updater(f"UPDATE_SINGLE_COMBO: Configuring view for '{obj_name}'")
+        
+        view.setStyleSheet(LISTVIEW_POPUP_STYLE)
+        log_updater(f"UPDATE_SINGLE_COMBO: Applied LISTVIEW_POPUP_STYLE to view of '{obj_name}'")
+
+        # Set Item Delegate
+        current_delegate = view.itemDelegate()
+        if not isinstance(current_delegate, ComboBoxItemDelegate):
+            delegate = ComboBoxItemDelegate(view) # Pass view as parent
+            view.setItemDelegate(delegate)
+            log_updater(f"UPDATE_SINGLE_COMBO: Applied ComboBoxItemDelegate to view of '{obj_name}'")
+        else:
+            log_updater(f"UPDATE_SINGLE_COMBO: View of '{obj_name}' already has ComboBoxItemDelegate.")
+
+        # Set Mouse Tracking
+        view.setMouseTracking(True)
+        log_updater(f"UPDATE_SINGLE_COMBO: View mouseTracking for '{obj_name}': {view.hasMouseTracking()}")
+        if hasattr(view, 'viewport'):
+            view.viewport().setMouseTracking(True)
+            log_updater(f"UPDATE_SINGLE_COMBO: Viewport mouseTracking for '{obj_name}': {view.viewport().hasMouseTracking()}")
+    elif view:
+        log_updater(f"UPDATE_SINGLE_COMBO: View for '{obj_name}' is not QListView, it is {type(view)}. Skipping delegate/mouseTracking setup.")
+    else:
+        log_updater(f"UPDATE_SINGLE_COMBO: No view found for '{obj_name}'.")
+    # --- END NEW DIRECT VIEW CONFIGURATION ---
+
     QApplication.processEvents() # Process events to ensure UI updates if called mid-operation
 
 
