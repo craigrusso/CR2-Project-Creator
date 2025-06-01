@@ -642,16 +642,39 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
         Returns:
             list: List of all categories (default + custom)
         """
+        print(f"[DEBUG] TemplateManager.get_categories() START")
+        
         # Get from project_type_manager if available (preferred source of truth)
         if hasattr(self, 'project_type_manager'):
-            categories = self.project_type_manager.get_all_project_types()
-            print(f"TemplateManager.get_categories: Retrieved {len(categories)} categories from project_type_manager: {categories}")
-            return categories
+            print(f"[DEBUG] project_type_manager exists, calling get_all_project_types()")
+            try:
+                categories = self.project_type_manager.get_all_project_types()
+                print(f"[DEBUG] Retrieved {len(categories)} categories from project_type_manager: {categories}")
+                return categories
+            except Exception as e:
+                print(f"[DEBUG] Error getting categories from project_type_manager: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"[DEBUG] No project_type_manager attribute found")
             
         # Fallback to default categories
         from app.constants import DEFAULT_TEMPLATE_CATEGORIES
-        print("TemplateManager.get_categories: Using default categories from constants")
-        return list(DEFAULT_TEMPLATE_CATEGORIES)
+        fallback_categories = list(DEFAULT_TEMPLATE_CATEGORIES)
+        print(f"[DEBUG] Using default categories from constants: {fallback_categories}")
+        
+        # Make sure we have at least "Custom" category
+        if "Custom" not in fallback_categories:
+            fallback_categories.append("Custom")
+            print(f"[DEBUG] Added 'Custom' to fallback categories")
+            
+        # Add 'No Category' for templates without a category
+        if "No Category" not in fallback_categories:
+            fallback_categories.append("No Category")
+            print(f"[DEBUG] Added 'No Category' to fallback categories")
+            
+        print(f"[DEBUG] TemplateManager.get_categories() END, returning: {fallback_categories}")
+        return fallback_categories
 
     def safe_clear_template_cache(self, template_name):
         """

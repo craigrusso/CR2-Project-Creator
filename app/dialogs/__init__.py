@@ -21,6 +21,9 @@ from app.dialogs.dialog_windows_pyqt import (
 # License management dialogs
 from app.dialogs.license_management import LicenseManagementDialog
 
+# Category management dialog is imported directly by modules that need it.
+# from app.dialogs.category_management_dialog import CategoryManagementDialog, manage_categories_dialog
+
 __all__ = [
     'preview_structure',
     'show_batch_results',
@@ -29,4 +32,6 @@ __all__ = [
     'show_preferences_dialog',
     'show_edit_template',
     'LicenseManagementDialog'
+    # 'CategoryManagementDialog', # Removed to break circular import
+    # 'manage_categories_dialog'  # Removed to break circular import
 ]

@@ -25,6 +25,15 @@ from PyQt6.QtGui import QFont, QColor, QIcon, QDrag, QBrush, QKeySequence, QPixm
 # Import from app modules
 from app.ui.color_scheme_pyqt import colors, APP_COLORS, ACCENT_BUTTON_STYLE
 from app.ui.structure_editor.ui_components import UIBuilder
+from app.ui.tree_styling import apply_enhanced_tree_styling
+from app.utils.utils import load_json_file, save_json_file
+from app.templates.template_manager import TemplateManager # Ensure this is imported
+
+# Updated import for CategoryManagementDialog
+# from app.dialogs.category_management_dialog import manage_categories_dialog # Moved import
+
+# Import the project type manager
+from app.templates.project_type_manager import ProjectTypeManager
 
 class EnhancedStructureEditor(QDialog):
     """Enhanced structure editor for project templates"""
@@ -728,20 +737,20 @@ class EnhancedStructureEditor(QDialog):
         
         return True
 
-    def _on_template_name_changed(self, new_name):
+    def _on_template_name_changed(self, new_name_full):
         """Handle template name changed event"""
-        if not new_name:
+        if not new_name_full:
             return
         
         # Debug logging for rename tracking
         old_template_name = self.template_name if hasattr(self, 'template_name') else "None"
         old_structure_name = self.structure_name if hasattr(self, 'structure_name') else "None"
         
-        print(f"🔶 TEMPLATE NAME LISTENER: Name changing from '{old_template_name}' to '{new_name}'")
+        print(f"🔶 TEMPLATE NAME LISTENER: Name changing from '{old_template_name}' to '{new_name_full}'")
         print(f"🔶 TEMPLATE NAME LISTENER: Original structure name: '{self.original_structure_name}'")
         
         # Remove any Template_ prefix from display name
-        clean_name = new_name
+        clean_name = new_name_full
         if clean_name.startswith("Template_"):
             clean_name = clean_name[9:]  # Remove prefix
         
@@ -1131,34 +1140,82 @@ class EnhancedStructureEditor(QDialog):
             return [] 
 
     def _open_category_manager(self):
-        """Opens the category manager dialog."""
-        # Try accessing template_manager through self.app, fallback to parent's app
-        template_manager = None
-        if hasattr(self, 'app') and self.app and hasattr(self.app, 'template_manager'):
-            template_manager = self.app.template_manager
-        elif self.parent() and hasattr(self.parent(), 'app') and self.parent().app and hasattr(self.parent().app, 'template_manager'):
-             print("DEBUG: Accessing template_manager via parent widget.")
-             template_manager = self.parent().app.template_manager
-        
-        if not template_manager:
-            print("ERROR: Template manager not available via self.app or parent().app")
-            # Optionally, show an error message to the user
-            QMessageBox.critical(self, "Error", "Could not access category data.")
+        """Open the category management dialog"""
+        import app.dialogs.category_management_dialog # Import the module
+        # Pass self (the editor dialog) as the parent
+        # The manage_categories_dialog function expects a parent to ensure modality and proper context
+        # It also handles its own execution (e.g., dialog.exec())
+        app.dialogs.category_management_dialog.manage_categories_dialog(self) 
+
+    # --- Template Name, Type, and Category Management ---
+    def _on_template_name_changed(self, new_name_full):
+        """Handle template name changed event"""
+        if not new_name_full:
             return
-
-        # Get current categories from the reliable source
-        current_categories = template_manager.get_categories()
-
-        # Create and execute the category manager dialog
-        from app.ui.structure_editor.category_manager import CategoryManager
-        manager = CategoryManager(parent=self, categories=current_categories)
-        result = manager.exec()
-
-        if result == QDialog.DialogCode.Accepted:
-            self.ui_builder.template_category_field.clear()
-            # Repopulate with potentially updated categories after manager is done
-            # Updates are handled dynamically by the CategoryManager itself now.
-            # No explicit update needed here, but we could refresh internal state if necessary.
-            # self.ui_builder.categories = template_manager.get_categories()
+        
+        # Debug logging for rename tracking
+        old_template_name = self.template_name if hasattr(self, 'template_name') else "None"
+        old_structure_name = self.structure_name if hasattr(self, 'structure_name') else "None"
+        
+        print(f"🔶 TEMPLATE NAME LISTENER: Name changing from '{old_template_name}' to '{new_name_full}'")
+        print(f"🔶 TEMPLATE NAME LISTENER: Original structure name: '{self.original_structure_name}'")
+        
+        # Remove any Template_ prefix from display name
+        clean_name = new_name_full
+        if clean_name.startswith("Template_"):
+            clean_name = clean_name[9:]  # Remove prefix
+        
+        # Update template name attribute - storing the clean name without prefix
+        self.template_name = clean_name
+        
+        # Update window title
+        self.setWindowTitle(f"{'Add New' if self.is_new else 'Edit'} Template - {clean_name}")
+        
+        # For structure_name, preserve Template_ prefix for existing templates
+        if not self.is_new and self.original_structure_name.startswith("Template_"):
+            # Structure name should include Template_ prefix
+            self.structure_name = f"Template_{clean_name}"
         else:
-            print("DEBUG: Category Manager cancelled.") 
+            # For new templates or templates without prefix, set structure name to match template name
+            # The prefix will be added when saving if needed
+            self.structure_name = clean_name
+        
+        print(f"🔶 TEMPLATE NAME LISTENER: Template name changed to '{clean_name}', structure_name='{self.structure_name}'")
+        print(f"🔶 TEMPLATE NAME LISTENER: Will be stored as '{self.structure_name}' in template manager")
+        
+        # Update UI builder if available
+        if hasattr(self, 'ui_builder') and hasattr(self.ui_builder, 'template_name_field'):
+            # Only update if the text has actually changed to avoid recursion
+            current_text = self.ui_builder.template_name_field.text()
+            if current_text != clean_name:
+                print(f"🔶 TEMPLATE NAME LISTENER: Updated template name field to '{clean_name}'")
+                self.ui_builder.template_name_field.setText(clean_name)
+        
+        # If we have access to the template manager, check if this name already exists
+        template_manager = None
+        if hasattr(self, 'parent') and self.parent and hasattr(self.parent, 'template_manager'):
+            template_manager = self.parent.template_manager
+        elif hasattr(self, 'parent') and self.parent and hasattr(self.parent, 'app') and hasattr(self.parent.app, 'template_manager'):
+            template_manager = self.parent.app.template_manager
+        
+        # Check if we need to update the UI or notify listeners of the name change
+        if not self.is_new and old_template_name != clean_name:
+            # This is a rename operation - store the information for later use during save
+            print(f"🔶 TEMPLATE NAME LISTENER: Detected template rename from '{old_template_name}' to '{clean_name}'")
+            
+            # Store the rename information for the accept method
+            self.is_rename_operation = True
+            self.old_template_name = old_template_name
+            self.new_template_name = clean_name
+            
+            # Emit a signal if this editor has one
+            if hasattr(self, 'template_renamed') and callable(getattr(self, 'template_renamed', None)):
+                print(f"🔶 TEMPLATE NAME LISTENER: Emitting template_renamed signal")
+                self.template_renamed.emit(old_template_name, clean_name)
+        
+        if template_manager and hasattr(template_manager, 'get_template_by_name'):
+            existing_template = template_manager.get_template_by_name(clean_name)
+            if existing_template and (not hasattr(self, 'original_structure_name') or 
+                                     (self.original_structure_name != clean_name and
+                                      f"Template_{self.original_structure_name}" != self.original_structure_name)):
+                print(f"🔶 TEMPLATE NAME LISTENER: WARNING: Template name '{clean_name}' already exists. This may overwrite an existing template.") 

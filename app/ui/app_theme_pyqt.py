@@ -77,11 +77,6 @@ class ComboBoxItemDelegate(QStyledItemDelegate):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.hovered_index = None
-        
-    def set_hovered_index(self, index):
-        """Set the index that is currently being hovered"""
-        self.hovered_index = index
         
     def paint(self, painter, option, index):
         """Custom painting for combo box items"""
@@ -89,8 +84,8 @@ class ComboBoxItemDelegate(QStyledItemDelegate):
         rect = option.rect
         
         # Determine if this item is selected or hovered
-        is_selected = option.state & QStyledItemDelegate.State_Selected
-        is_hovered = (option.state & QStyle.State_MouseOver) or (self.hovered_index is not None and self.hovered_index == index)
+        is_selected = option.state & QStyle.State_Selected
+        is_hovered = bool(option.state & QStyle.State_MouseOver)
         
         # Setup the painter
         painter.save()
@@ -147,7 +142,7 @@ class ComboBoxItemDelegate(QStyledItemDelegate):
             painter.setFont(font)
         
         # Text padding - leave space for left border
-        text_rect = rect.adjusted(10, 0, -5, 0)
+        text_rect = rect.adjusted(5, 0, -5, 0)
         painter.drawText(text_rect, Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft, text)
         
         painter.restore()
@@ -687,6 +682,9 @@ def apply_dark_theme_to_template_section(app):
                 child.setStyleSheet(BUTTON_STYLE)
             elif isinstance(child, QComboBox):
                 child.setStyleSheet(COMBOBOX_STYLE)
+                # Apply hover delegate to comboboxes for better hover effects
+                from app.ui.custom_delegates import apply_hover_delegate
+                apply_hover_delegate(child)
             elif isinstance(child, QLineEdit):
                 child.setStyleSheet(LINEEDIT_STYLE)
     
@@ -709,6 +707,9 @@ def apply_dark_theme_to_template_section(app):
                     child.setStyleSheet(BUTTON_STYLE)
                 elif isinstance(child, QComboBox):
                     child.setStyleSheet(COMBOBOX_STYLE)
+                    # Apply hover delegate to comboboxes for better hover effects
+                    from app.ui.custom_delegates import apply_hover_delegate
+                    apply_hover_delegate(child)
                 elif isinstance(child, QLineEdit):
                     child.setStyleSheet(LINEEDIT_STYLE)
     
@@ -761,65 +762,66 @@ class GlobalMouseEventFilter(QObject):
         # Important: always return False to allow event propagation
         return False
 
-class ComboBoxItemHoverFilter(QObject):
-    """Event filter specifically for handling hover events in combo box popups"""
+# ComboBoxItemHoverFilter class removed as part of hover simplification.
+
+def apply_dark_theme_to_template_section(app):
+    """Apply dark grey theme to template file section"""
+    # Find the template file frame in PyQt version
+    template_frame = None
     
-    def __init__(self, parent=None, delegate=None):
-        super().__init__(parent)
-        self.delegate = delegate
-        print("DEBUG: ComboBoxItemHoverFilter initialized")
+    if hasattr(app, 'template_file_frame'):
+        template_frame = app.template_file_frame
+    elif hasattr(app, 'template_section'):
+        template_frame = app.template_section
     
-    def eventFilter(self, obj, event):
-        """Handle mouse events to create hover effects"""
-        # Track all mouse-related events
-        event_names = {
-            QEvent.MouseMove: "MouseMove",
-            QEvent.MouseButtonPress: "MouseButtonPress", 
-            QEvent.MouseButtonRelease: "MouseButtonRelease",
-            QEvent.Enter: "Enter",
-            QEvent.Leave: "Leave"
-        }
+    if template_frame:
+        # Apply darker background to the template section
+        template_frame.setStyleSheet(f"""
+            background-color: #282828;
+            color: {colors['text']};
+            border: none;
+            border-radius: 0px;
+        """)
         
-        if event.type() in event_names:
-            print(f"DEBUG: {event_names[event.type()]} event on {obj}")
+        # Update all child widgets
+        for child in template_frame.findChildren(QWidget):
+            if isinstance(child, QLabel) or isinstance(child, QFrame):
+                child.setStyleSheet(f"background-color: #282828; color: {colors['text']};")
+            elif isinstance(child, QPushButton):
+                child.setStyleSheet(BUTTON_STYLE)
+            elif isinstance(child, QComboBox):
+                child.setStyleSheet(COMBOBOX_STYLE)
+                # Apply hover delegate to comboboxes for better hover effects
+                from app.ui.custom_delegates import apply_hover_delegate
+                apply_hover_delegate(child)
+            elif isinstance(child, QLineEdit):
+                child.setStyleSheet(LINEEDIT_STYLE)
+    
+    # Update other template container elements if they exist
+    for widget_name in ['template_file_container', 'recent_templates_frame']:
+        if hasattr(app, widget_name):
+            widget = getattr(app, widget_name)
+            widget.setStyleSheet(f"""
+                background-color: #282828; 
+                color: {colors['text']};
+                border: none;
+                border-radius: 0px;
+            """)
             
-        if event.type() == QEvent.MouseMove and self.delegate:
-            print(f"DEBUG: Mouse move at position: {event.pos().x()}, {event.pos().y()}")
-            
-            # Get the list view this viewport belongs to
-            list_view = self.parent()
-            if isinstance(list_view, QListView):
-                # Convert mouse position to index
-                index = list_view.indexAt(event.pos())
-                
-                # Print debug info about the index
-                if index.isValid():
-                    print(f"DEBUG: Mouse over item at row {index.row()}, data: {index.data()}")
-                else:
-                    print("DEBUG: Mouse not over a valid item")
-                
-                # If we have a valid index, set it as hovered in the delegate
-                if index.isValid():
-                    self.delegate.set_hovered_index(index)
-                    list_view.viewport().update()  # Force repaint
-                    print("DEBUG: Forced repaint of viewport")
-                else:
-                    # Clear hover state
-                    self.delegate.set_hovered_index(None)
-                    list_view.viewport().update()  # Force repaint
-                    print("DEBUG: Cleared hover state and forced repaint")
-        
-        # When mouse leaves the viewport
-        elif event.type() == QEvent.Leave and self.delegate:
-            print("DEBUG: Mouse left the viewport/widget")
-            # Clear hover state
-            self.delegate.set_hovered_index(None)
-            
-            # Force redraw
-            list_view = self.parent()
-            if isinstance(list_view, QListView):
-                list_view.viewport().update()
-                print("DEBUG: Forced repaint after mouse leave")
-        
-        # Let the event continue propagation
-        return False 
+            # Also update all child widgets
+            for child in widget.findChildren(QWidget):
+                if isinstance(child, QLabel) or isinstance(child, QFrame):
+                    child.setStyleSheet(f"background-color: #282828; color: {colors['text']};")
+                elif isinstance(child, QPushButton):
+                    child.setStyleSheet(BUTTON_STYLE)
+                elif isinstance(child, QComboBox):
+                    child.setStyleSheet(COMBOBOX_STYLE)
+                    # Apply hover delegate to comboboxes for better hover effects
+                    from app.ui.custom_delegates import apply_hover_delegate
+                    apply_hover_delegate(child)
+                elif isinstance(child, QLineEdit):
+                    child.setStyleSheet(LINEEDIT_STYLE)
+    
+    # Force a repaint to ensure changes take effect
+    if template_frame:
+        template_frame.update() 

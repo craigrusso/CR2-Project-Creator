@@ -23,6 +23,10 @@ from app.templates.components.template_folder_list_item import TemplateFolderLis
 from app.templates.components.menu_actions import ContextMenu
 from app.gallery.selection_manager import GallerySelectionManager # Add this import
 
+# Import the new combobox updater utility
+from app.templates.category_combobox_updater import update_single_combobox
+from app.templates.category_update_manager import get_instance as get_category_update_manager_instance
+
 class TemplateGallery(QWidget):
     """Main widget for displaying and managing templates"""
     
@@ -34,6 +38,14 @@ class TemplateGallery(QWidget):
         self.app = app
         self.parent = parent
         self.template_manager = app.template_manager if app else None
+        
+        # Get CategoryUpdateManager instance
+        self.category_update_manager = get_category_update_manager_instance(app)
+        if self.category_update_manager:
+            self.category_update_manager.categories_changed_signal.connect(self._update_categories)
+            print("[GalleryWidget] Connected to CategoryUpdateManager categories_changed_signal.")
+        else:
+            print("[GalleryWidget] WARNING: Could not get CategoryUpdateManager instance.")
         
         # Initialize selection manager
         self.selection_manager = GallerySelectionManager(self)
@@ -95,6 +107,7 @@ class TemplateGallery(QWidget):
         
         # Populate the gallery initially - do this after UI setup and signal connection
         self.populate_gallery()
+        self._update_categories() # Initial call to populate category filter
         self._setup_shortcuts()
     
     def _handle_selection_manager_update(self, primary_selected, multi_selected_list):
@@ -753,63 +766,76 @@ class TemplateGallery(QWidget):
 
     # UI update methods
     def _update_categories(self):
-        """Update the categories dropdown"""
-        if not hasattr(self, 'category_combo'):
+        """Update the categories dropdown using the centralized utility."""
+        if not hasattr(self, 'category_filter') or not self.category_filter:
+            print("[GalleryWidget _update_categories] category_filter combobox not found.")
             return
             
-        # Remember current category
-        current = self.category_combo.currentText()
+        current_text_to_restore = self.category_filter.currentText()
+        if not current_text_to_restore: # If empty, default to "All"
+            current_text_to_restore = "All"
+
+        # Start with "All"
+        collected_categories = ["All"]
         
-        # Clear existing items
-        self.category_combo.clear()
+        # Get categories from various sources
+        categories_set = set()
         
-        # Always add "All" as the first option
-        self.category_combo.addItem("All")
+        if hasattr(self, 'app') and self.app and hasattr(self.app, 'template_manager'):
+            tm = self.app.template_manager
+            # Attempt to get from CategoryUpdateManager first if available and has a direct method
+            if self.category_update_manager and hasattr(self.category_update_manager, 'get_current_categories'):
+                 # This method might not exist on CategoryUpdateManager, it usually gets from TemplateManager
+                 # For now, let's assume direct access or fallback
+                try:
+                    current_cats_from_manager = self.category_update_manager.get_current_categories()
+                    if current_cats_from_manager:
+                        categories_set.update(current_cats_from_manager)
+                        print(f"[GalleryWidget _update_categories] Got {len(current_cats_from_manager)} categories from CategoryUpdateManager.")
+                except AttributeError:
+                    print("[GalleryWidget _update_categories] CategoryUpdateManager does not have get_current_categories, falling back.")
+
+
+            if not categories_set: # If CUM didn't provide or method doesn't exist
+                # Get categories from project_type_manager (preferred way within TemplateManager)
+                if hasattr(tm, 'project_type_manager') and tm.project_type_manager:
+                    project_types = tm.project_type_manager.get_all_project_types()
+                    categories_set.update(project_types)
+                    print(f"[GalleryWidget _update_categories] Found {len(project_types)} project types via project_type_manager: {project_types}")
+                # Fallback to get_categories method from TemplateManager
+                elif hasattr(tm, 'get_categories'):
+                    category_list = tm.get_categories()
+                    categories_set.update(category_list)
+                    print(f"[GalleryWidget _update_categories] Found {len(category_list)} categories from template_manager.get_categories()")
         
-        # Get categories from project_type_manager (preferred way)
-        categories = set()
-        
-        if hasattr(self, 'app') and hasattr(self.app, 'template_manager'):
-            # Get categories from project type manager if available
-            if hasattr(self.app.template_manager, 'project_type_manager'):
-                project_types = self.app.template_manager.project_type_manager.get_all_project_types()
-                categories.update(project_types)
-                print(f"Found {len(project_types)} project types: {project_types}")
-            # Fallback to get_categories method
-            elif hasattr(self.app.template_manager, 'get_categories'):
-                category_list = self.app.template_manager.get_categories()
-                categories.update(category_list)
-                print(f"Found {len(category_list)} categories from get_categories")
-                
-        # If no categories found yet, extract from templates as last resort
-        if not categories and hasattr(self, 'app') and hasattr(self.app, 'template_manager') and hasattr(self.app.template_manager, 'templates'):
+        # If no categories found yet, extract from templates as last resort (should be rare now)
+        if not categories_set and hasattr(self, 'app') and self.app and hasattr(self.app, 'template_manager') and hasattr(self.app.template_manager, 'templates'):
             templates = self.app.template_manager.templates
-            
-            # Handle templates as dict or list
             if isinstance(templates, dict):
                 for name, data in templates.items():
-                    if isinstance(data, dict) and 'category' in data and data['category']:
-                        categories.add(data['category'])
+                    if isinstance(data, dict) and 'category' in data and data['category'] and data['category'] != "Folder": # Exclude "Folder" pseudo-category
+                        categories_set.add(data['category'])
             elif isinstance(templates, list):
                 for template in templates:
-                    if isinstance(template, dict) and 'category' in template and template['category']:
-                        categories.add(template['category'])
-            
-            print(f"Found {len(categories)} categories from templates")
+                    if isinstance(template, dict) and 'category' in template and template['category'] and data['category'] != "Folder":
+                        categories_set.add(template['category'])
+            print(f"[GalleryWidget _update_categories] Found {len(categories_set)} categories by scanning templates (fallback).")
         
-        # Add categories to combo box
-        for category in sorted(categories):
-            self.category_combo.addItem(category)
+        # Add sorted unique categories to the "All" option
+        collected_categories.extend(sorted(list(categories_set)))
         
-        print(f"Updated category dropdown with {self.category_combo.count()} items")
+        print(f"[GalleryWidget _update_categories] Populating 'category_filter' with {len(collected_categories)} items. Current to restore: '{current_text_to_restore}'")
         
-        # Try to restore the previous selection or default to "All"
-        index = self.category_combo.findText(current)
-        if index >= 0:
-            self.category_combo.setCurrentIndex(index)
-        else:
-            self.category_combo.setCurrentIndex(0)
-    
+        # Use the centralized utility
+        update_single_combobox(
+            combo=self.category_filter, 
+            categories=collected_categories, 
+            current_category=current_text_to_restore, 
+            force_default_style=True # Ensures consistent styling
+        )
+        
+        print(f"[GalleryWidget _update_categories] Finished updating 'category_filter'. Current selection: '{self.category_filter.currentText()}'")
+
     def _update_button_state(self):
         """Update the state of action buttons based on selection"""
         # Template buttons - edit and delete buttons removed, now using context menu

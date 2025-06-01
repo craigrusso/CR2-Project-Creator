@@ -36,6 +36,11 @@ from app.utils.logging_utils import (
     exception, detect_and_set_environment, set_production_mode, set_log_level, enable_console_logging, enable_file_logging
 )
 
+# Import the refactored category update manager getter
+from app.templates.category_update_manager import get_instance as get_category_update_manager_instance
+from app.templates.category_update_manager import ensure_all_combos_have_hover_delegates # For direct call if needed
+from app.templates.category_update_manager import diagnose_category_dropdown_issue as deprecated_diagnose_dropdown_issue
+
 # This is the PyQt version of the application
 UI_FRAMEWORK = 'pyqt6'
 
@@ -425,51 +430,21 @@ def main():
         ProjectCreatorApp._instance = main_window
         
         # Initialize the CategoryUpdateManager with the app instance
-        from app.templates.category_update_manager import get_instance #, test_category_update_manager
-        category_manager = get_instance(main_window)
-        # print(f"Initialized CategoryUpdateManager for the application")
+        # from app.templates.category_update_manager import get_instance #, test_category_update_manager # Old import
+        category_manager = get_category_update_manager_instance(main_window)
+        info(f"Initialized CategoryUpdateManager for the application: {category_manager}")
         
         # Register CategoryUpdateManager with all template forms
+        # This logic for finding template forms was previously commented out and can remain so,
+        # as the new CategoryUpdateManager updates comboboxes globally.
         # def ensure_template_forms_have_category_manager():
-        #     """Make sure all template forms have access to the CategoryUpdateManager"""
-        #     from PyQt6.QtWidgets import QApplication, QDialog
-            
-        #     # Find all dialogs that might be template forms
-        #     template_forms = []
-        #     for widget in QApplication.topLevelWidgets():
-        #         if isinstance(widget, QDialog) and ("template" in widget.windowTitle().lower() or "edit" in widget.windowTitle().lower()):
-        #             template_forms.append(widget)
-            
-        #     # Update each form with CategoryUpdateManager
-        #     for form in template_forms:
-        #         if not hasattr(form, 'category_update_manager'):
-        #             form.category_update_manager = category_manager
-        #             print(f"Added CategoryUpdateManager to {form.windowTitle()}")
-            
-        #     # Schedule test of the CategoryUpdateManager
-        #     # test_category_update_manager(main_window)
-            
-        #     # Schedule another check later
-        #     QTimer.singleShot(5000, ensure_template_forms_have_category_manager)
-            
-        # # Schedule registration and test after a short delay to let UI initialize
-        # QTimer.singleShot(2000, ensure_template_forms_have_category_manager)
-        
-        # Add license management to the help menu
-        if hasattr(main_window, 'help_menu'):
-            from app.dialogs.license_management import LicenseManagementDialog
-            
-            # Create the license action
-            license_action = main_window.help_menu.addAction("License Management...")
-            license_action.triggered.connect(lambda: LicenseManagementDialog(main_window, license_manager).exec())
-            
-            # Add a separator before the action
-            main_window.help_menu.insertSeparator(license_action)
         
         main_window.show()
         
         # Schedule initial category update after main window is shown and UI is likely stable
-        QTimer.singleShot(1000, category_manager.force_update_all_category_combos)
+        # The new manager handles its own logic, but an initial explicit call can be good.
+        QTimer.singleShot(1000, category_manager.force_immediate_global_update)
+        info("Scheduled initial force_immediate_global_update for categories.")
         
         # Apply template migration if needed
         try:
@@ -496,6 +471,51 @@ def main():
         
         # Schedule another refresh after a short delay to ensure everything is loaded
         QTimer.singleShot(1000, lambda: refresh_all_tree_icons())
+        
+        # Schedule the category manager's force update (this is the line at 472)
+        # This is likely redundant if force_immediate_global_update is called above,
+        # but we can ensure delegates are applied after a delay if needed.
+        # QTimer.singleShot(1000, category_manager.force_immediate_global_update) # Changed from force_update_all_category_combos
+         # QTimer.singleShot(1500, lambda: ensure_all_combos_have_hover_delegates(main_window)) # Explicit delegate check - Call is now commented out
+        # info("Scheduled ensure_all_combos_have_hover_delegates after UI stabilization. (Call is now commented out, relying on global theme)")
+        
+        # Schedule diagnostic run
+        # from app.templates.category_update_manager import diagnose_category_dropdown_issue # Old import
+        # The diagnose function is now deprecated, logging should be used instead.
+        # QTimer.singleShot(2000, lambda: deprecated_diagnose_dropdown_issue(main_window))
+        # info("Note: diagnose_category_dropdown_issue is deprecated.")
+        
+        # Apply hover delegates to ensure category dropdowns have proper hover effects
+        # This function is now removed from main.py as its logic is centralized in
+        # category_combobox_updater.ensure_all_combos_have_hover_delegates,
+        # which is called by the CategoryUpdateManager.
+        # def apply_hover_delegates_to_category_dropdowns():
+        #     \"\"\"Apply hover delegates to all category dropdown menus for proper hover effects\"\"\"
+        #     from app.ui.custom_delegates import apply_hover_delegate
+        #     from PyQt6.QtWidgets import QComboBox, QApplication
+            
+        #     all_widgets = QApplication.allWidgets()
+        #     delegate_count = 0
+            
+        #     # Known category-related combo box names
+        #     category_names = ["template_category_combo_box", "project_type_combo_box", "category_combo"]
+            
+        #     for widget in all_widgets:
+        #         if isinstance(widget, QComboBox):
+        #             # Check if this is a known category combo
+        #             obj_name = widget.objectName().lower()
+        #             is_category_combo = any(name in obj_name for name in category_names)
+                    
+        #             if is_category_combo:
+        #                 apply_hover_delegate(widget)
+        #                 delegate_count += 1
+            
+        #     print(f"Applied hover delegates to {delegate_count} category combo boxes")
+        
+        # Schedule application of hover delegates after UI initialization
+        # This is now handled by the CategoryUpdateManager calls like force_immediate_global_update
+        # and the explicit ensure_all_combos_have_hover_delegates call scheduled above.
+        # QTimer.singleShot(1500, apply_hover_delegates_to_category_dropdowns) 
         
         # --- Connect state saving for TableView --- 
         def save_table_view_state():

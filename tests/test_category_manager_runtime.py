@@ -13,10 +13,15 @@ import time
 # Add the project directory to the path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from PyQt6.QtWidgets import QApplication, QMainWindow, QPushButton, QVBoxLayout, QWidget, QMessageBox, QDialog
+from PyQt6.QtCore import QTimer
+
+# Updated import for the category management dialog
+from app.dialogs.category_management_dialog import CategoryManagementDialog, manage_categories_dialog 
+
 def test_project_type_manager(app):
     """Test the project type manager functionality with the running application"""
     from app.templates.project_type_manager import ProjectTypeManager
-    from app.ui.structure_editor.category_manager import CategoryManager, manage_categories
     
     # Check if we have the app instance
     if not app:
@@ -35,16 +40,27 @@ def test_project_type_manager(app):
     # Get current categories
     template_manager = app.template_manager
     current_categories = template_manager.get_categories()
-    print(f"Current categories: {current_categories}")
+    print(f"Current categories before dialog: {current_categories}")
     
     # Test the category manager dialog
     print("Opening category manager dialog...")
-    updated_categories = manage_categories(app, current_categories)
+    dialog_result = manage_categories_dialog(app)
     
-    if updated_categories:
-        print(f"Updated categories: {updated_categories}")
+    # Initialize updated_categories with current_categories to handle dialog cancellation
+    updated_categories = current_categories 
+
+    if dialog_result == QDialog.DialogCode.Accepted:
+        print("Category management dialog was accepted. Changes should have been saved and propagated.")
+        # To verify, we re-fetch categories from the source
+        # A brief delay might be needed if category saving/notification is asynchronous
+        # For this test, assume synchronous or fast enough for immediate re-fetch.
+        QApplication.processEvents() # Allow signals to process
+        updated_categories = template_manager.get_categories()
+        print(f"Categories after dialog accepted: {updated_categories}")
     else:
-        print("Dialog was canceled or failed")
+        print("Category management dialog was canceled or failed.")
+        # updated_categories remains as current_categories (no changes)
+        print(f"Categories after dialog canceled: {updated_categories}")
     
     # Verify project_type_manager was initialized
     if hasattr(template_manager, 'project_type_manager') and template_manager.project_type_manager:

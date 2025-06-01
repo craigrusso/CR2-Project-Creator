@@ -26,6 +26,9 @@ colors = APP_COLORS
 # Import default categories constant
 from app.constants import DEFAULT_TEMPLATE_CATEGORIES, get_resource_path
 
+# Import the centralized updater function
+from app.templates.category_combobox_updater import update_single_combobox
+
 class StructureEditorTree(QTreeWidget):
     """Enhanced QTreeWidget for structure editing with improved styling"""
     
@@ -582,60 +585,8 @@ class UIBuilder(QObject):
         self.template_category_field.setEditable(False) # Typically non-editable
         self.template_category_field.setObjectName("template_category_combo_box")
 
-        # Read the setting here
-        hide_defaults = self.settings.value("CategoryManager/hideDefaultCategories", False, type=bool)
-        self.template_category_field.clear() # Ensure it's empty
-
-        categories_to_display = self.categories # Use the full list initially
-        if hide_defaults:
-            categories_to_display = [cat for cat in self.categories if cat not in DEFAULT_TEMPLATE_CATEGORIES]
-
-        # Separate default and custom based on the potentially filtered list
-        default_cats = sorted([cat for cat in categories_to_display if cat in DEFAULT_TEMPLATE_CATEGORIES])
-        custom_cats = sorted([cat for cat in categories_to_display if cat not in DEFAULT_TEMPLATE_CATEGORIES])
-
-        # Define labels
-        default_label = "Default Categories"
-        custom_label = "Custom Categories"
-
-        # --- Add Items with Labels and Separator ---
-        self.template_category_field.blockSignals(True)
-
-        # Ensure a standard item model is used to allow disabling items
-        if not isinstance(self.template_category_field.model(), QStandardItemModel):
-             self.template_category_field.setModel(QStandardItemModel(self.template_category_field))
-
-        # Add Default Label and Items (only if not hiding defaults)
-        if not hide_defaults and default_cats:
-            default_label_item = QStandardItem(default_label)
-            default_label_item.setEnabled(False)
-            # Set grey color for the label text
-            default_label_item.setForeground(QColor(APP_COLORS['secondary_text']))
-            self.template_category_field.model().appendRow(default_label_item)
-
-            for cat in default_cats:
-                self.template_category_field.addItem(cat)
-
-        # Add Separator and Custom Section (if needed)
-        if custom_cats:
-            # Add separator only if default categories were previously added (and we are not hiding them)
-            if not hide_defaults and default_cats:
-                self.template_category_field.insertSeparator(self.template_category_field.count())
-
-            # Add Custom Label (always add if custom cats exist)
-            custom_label_item = QStandardItem(custom_label)
-            custom_label_item.setEnabled(False)
-            # Set grey color for the label text
-            custom_label_item.setForeground(QColor(APP_COLORS['secondary_text']))
-            self.template_category_field.model().appendRow(custom_label_item)
-
-
-            # Add Custom Categories
-            for cat in custom_cats:
-                self.template_category_field.addItem(cat)
-
-        # --- End Add Items ---
-        self.template_category_field.blockSignals(False)
+        # Call the refactored _init_category_dropdown to populate the combo box
+        self._init_category_dropdown()
         # --- End Category Dropdown Population ---
 
         # Manage Categories Button
@@ -1314,41 +1265,61 @@ class UIBuilder(QObject):
             self.stats_label.setText(f"Total: {total_items} items ({folders} folders, {files} files)")
 
     def _init_category_dropdown(self):
-        """Initialize the category dropdown with project types"""
-        # print(f"[INIT DROPDOWN DEBUG] Running _init_category_dropdown") # Removed debug print
-        # Always get fresh categories from the template manager
-        self.categories = self._get_categories()
-        print(f"UIBuilder: Initializing category dropdown with {len(self.categories)} categories: {self.categories}")
+        """Initialize the category dropdown with project types using the centralized updater"""
+        print(f"[DEBUG] _init_category_dropdown START - (UIBuilder will use update_single_combobox)")
         
-        # Create and configure the combo box
-        self.template_category_field = QComboBox()
-        self.template_category_field.setObjectName("template_category_combo_box")  # Give it a name to identify later
-        
-        # Add "No Category" as the first option
-        self.template_category_field.addItem("No Category")
-        
-        # Add other categories to dropdown
-        for category in self.categories:
-            if category != "No Category": # Avoid duplicates if it exists in the list
-                self.template_category_field.addItem(category)
-        
-        # Set the default index to 'No Category' after adding all items
-        no_cat_index = self.template_category_field.findText("No Category")
-        if no_cat_index >= 0:
-            # print(f"[INIT DROPDOWN DEBUG] Setting default index to {no_cat_index} ('No Category')") # Removed debug print
-            self.template_category_field.setCurrentIndex(no_cat_index)
+        # Ensure self.template_category_field exists (it should be created in init_ui before this call)
+        if not hasattr(self, 'template_category_field') or self.template_category_field is None:
+            print(f"[ERROR] _init_category_dropdown: self.template_category_field is not initialized.")
+            # As a fallback, create it, though this indicates a logic flow issue.
+            self.template_category_field = QComboBox()
+            self.template_category_field.setObjectName("template_category_combo_box_fallback")
+            print(f"[WARNING] UIBuilder: Created FALLBACK QComboBox with ID: {self.template_category_field.objectName()}")
         else:
-            # Fallback to index 0 if 'No Category' isn't found (shouldn't happen)
-            # print(f"[INIT DROPDOWN DEBUG] 'No Category' not found, setting default index to 0") # Removed debug print
-            self.template_category_field.setCurrentIndex(0)
+            print(f"[DEBUG] UIBuilder: Using existing QComboBox with ID: {self.template_category_field.objectName()}")
+
+
+        self.categories = self._get_categories()
+        print(f"[DEBUG] Categories retrieved for UIBuilder: {len(self.categories)} categories: {self.categories}")
+        
+        # self.template_category_field = QComboBox() # REMOVE THIS LINE - use the one from init_ui
+        # self.template_category_field.setObjectName("template_category_combo_box")
+        # print(f"[DEBUG] UIBuilder: Created new QComboBox with ID: {self.template_category_field.objectName()}")
+
+        # Use the centralized updater
+        # Initially select "No Category" if possible, or the first available actual category.
+        initial_selection = "No Category"
+        if not self.categories or "No Category" not in self.categories:
+            # If "No Category" isn't in the fetched list (it should be added by manager ideally)
+            # or if categories are empty, this ensures robust handling by update_single_combobox
+            pass # update_single_combobox handles empty or specific No Category logic
+
+        update_single_combobox(
+            combo=self.template_category_field,             categories=self.categories,             current_category=initial_selection,             force_default_style=True        )
+        
+        print(f"[DEBUG] _init_category_dropdown COMPLETE (UIBuilder) - Items in dropdown: {self.template_category_field.count()}")
+        print(f"[DEBUG] Current selection (UIBuilder): '{self.template_category_field.currentText()}'")
 
     def set_ui_values(self, template_data):
         """Set UI values based on template data"""
-        # print(f"[SET UI DEBUG] Setting UI values with data: {template_data}") # Removed debug print
+        print(f"[DEBUG] set_ui_values START with data: {template_data}")
+        
+        # Debug: Check if dropdown exists before setting values
+        dropdown_exists = hasattr(self, 'template_category_field') and self.template_category_field is not None
+        print(f"[DEBUG] Dropdown exists: {dropdown_exists}")
+        
+        if dropdown_exists:
+            print(f"[DEBUG] Current dropdown state BEFORE changes:")
+            print(f"[DEBUG] - Items count: {self.template_category_field.count()}")
+            print(f"[DEBUG] - Current index: {self.template_category_field.currentIndex()}")
+            print(f"[DEBUG] - Current text: '{self.template_category_field.currentText()}'")
+            all_items = [self.template_category_field.itemText(i) for i in range(self.template_category_field.count())]
+            print(f"[DEBUG] - All items: {all_items}")
         
         # Set template name
         if 'template_name' in template_data and self.template_name_field:
             self.template_name_field.setText(template_data['template_name'])
+            print(f"[DEBUG] Set template name to: '{template_data['template_name']}'")
             
         # Set template category
         if self.template_category_field:
@@ -1357,61 +1328,78 @@ class UIBuilder(QObject):
             # Check various possible keys for category information
             if 'template_category' in template_data:
                 category = template_data['template_category']
+                print(f"[DEBUG] Found category in 'template_category': '{category}'")
             elif 'category' in template_data:
                 category = template_data['category']
+                print(f"[DEBUG] Found category in 'category': '{category}'")
             elif 'type' in template_data:  # Some templates use "type" for category
                 category = template_data['type']
+                print(f"[DEBUG] Found category in 'type': '{category}'")
+            else:
+                print(f"[DEBUG] No category found in template data")
                 
             # If category is None or empty, select "No Category"
             if not category:
                 category_to_select = "No Category"
+                print(f"[DEBUG] Empty category, will select 'No Category'")
             else:
                 category_to_select = category.strip()
+                print(f"[DEBUG] Will try to select: '{category_to_select}'")
             
             dropdown_items = [self.template_category_field.itemText(i) for i in range(self.template_category_field.count())]
-            print(f"[SET UI DEBUG] Attempting to select category: '{category_to_select}'")
-            print(f"[SET UI DEBUG] Dropdown items: {dropdown_items}")
+            print(f"[DEBUG] Dropdown items: {dropdown_items}")
             
             # Find and select the matching category
             # Use Qt.MatchFlag.MatchFixedString for exact match
             index = self.template_category_field.findText(category_to_select, Qt.MatchFlag.MatchFixedString)
             
-            print(f"[SET UI DEBUG] Found index for '{category_to_select}': {index}")
+            print(f"[DEBUG] Found index for '{category_to_select}': {index}")
             
             if index >= 0:
+                print(f"[DEBUG] BEFORE setCurrentIndex({index}): currentIndex={self.template_category_field.currentIndex()}, currentText='{self.template_category_field.currentText()}'")
                 self.template_category_field.setCurrentIndex(index)
-                print(f"[SET UI DEBUG] Set dropdown index to {index} ('{category_to_select}')")
+                print(f"[DEBUG] AFTER setCurrentIndex({index}): currentIndex={self.template_category_field.currentIndex()}, currentText='{self.template_category_field.currentText()}'")
                 self.template_category_field.update()
                 self.template_category_field.repaint()
                 QApplication.processEvents()
-                print(f"[SET UI DEBUG] Forced UI update after setting index {index}")
+                print(f"[DEBUG] After UI update: currentIndex={self.template_category_field.currentIndex()}, currentText='{self.template_category_field.currentText()}'")
             else:
                 # If the specific category isn't found, fallback to "No Category"
                 index_no_category = self.template_category_field.findText("No Category")
-                print(f"[SET UI DEBUG] Fallback: Index for 'No Category': {index_no_category}")
+                print(f"[DEBUG] Fallback: Index for 'No Category': {index_no_category}")
                 if index_no_category >= 0:
+                    print(f"[DEBUG] BEFORE fallback setCurrentIndex({index_no_category}): currentIndex={self.template_category_field.currentIndex()}, currentText='{self.template_category_field.currentText()}'")
                     self.template_category_field.setCurrentIndex(index_no_category)
-                    print(f"[SET UI DEBUG] Set dropdown index to fallback {index_no_category} ('No Category')")
+                    print(f"[DEBUG] AFTER fallback setCurrentIndex({index_no_category}): currentIndex={self.template_category_field.currentIndex()}, currentText='{self.template_category_field.currentText()}'")
                     self.template_category_field.update()
                     self.template_category_field.repaint()
                     QApplication.processEvents()
-                    print(f"[SET UI DEBUG] Forced UI update after setting fallback index {index_no_category}")
+                    print(f"[DEBUG] After fallback UI update: currentIndex={self.template_category_field.currentIndex()}, currentText='{self.template_category_field.currentText()}'")
                 else:
+                    print(f"[DEBUG] BEFORE absolute fallback setCurrentIndex(0): currentIndex={self.template_category_field.currentIndex()}, currentText='{self.template_category_field.currentText()}'")
                     self.template_category_field.setCurrentIndex(0) # Absolute fallback
-                    print(f"[SET UI DEBUG] Set dropdown index to absolute fallback 0 ('{self.template_category_field.itemText(0)}')")
+                    print(f"[DEBUG] AFTER absolute fallback setCurrentIndex(0): currentIndex={self.template_category_field.currentIndex()}, currentText='{self.template_category_field.currentText()}'")
                     self.template_category_field.update()
                     self.template_category_field.repaint()
                     QApplication.processEvents()
-                    print(f"[SET UI DEBUG] Forced UI update after setting absolute fallback index 0")
+                    print(f"[DEBUG] After absolute fallback UI update: currentIndex={self.template_category_field.currentIndex()}, currentText='{self.template_category_field.currentText()}'")
             
         # Set template description
         if ('template_info' in template_data or 'description' in template_data) and self.template_info_field:
             description = template_data.get('template_info', template_data.get('description', ''))
             self.template_info_field.setText(description)
+            print(f"[DEBUG] Set description: {description[:50]}{'...' if len(description) > 50 else ''}")
 
-        # Log the final index after setting everything
-        # final_category_index = self.template_category_field.currentIndex()
-        # print(f"[SET UI DEBUG] Final category index at end of set_ui_values: {final_category_index} ('{self.template_category_field.currentText()}')") # Removed final check
+        # Final state check
+        if dropdown_exists:
+            print(f"[DEBUG] Final dropdown state AFTER all changes:")
+            print(f"[DEBUG] - Items count: {self.template_category_field.count()}")
+            print(f"[DEBUG] - Current index: {self.template_category_field.currentIndex()}")
+            print(f"[DEBUG] - Current text: '{self.template_category_field.currentText()}'")
+            all_items = [self.template_category_field.itemText(i) for i in range(self.template_category_field.count())]
+            print(f"[DEBUG] - All items: {all_items}")
+        
+        print(f"[DEBUG] set_ui_values END")
 
     def get_ui_values(self):
         """Retrieve values from the UI fields"""
@@ -1439,3 +1427,67 @@ class UIBuilder(QObject):
             template_info['description'] = template_info['template_info']
             
         return template_info 
+
+    def _get_categories(self):
+        """
+        Get available template categories from the template manager
+        
+        Returns:
+            list: List of categories
+        """
+        print(f"[DEBUG] _get_categories START")
+        
+        categories = []
+        
+        # Try to get from template manager (primary source)
+        if hasattr(self, 'template_manager') and self.template_manager:
+            # Check if the template manager has get_categories method
+            if hasattr(self.template_manager, 'get_categories'):
+                try:
+                    categories = self.template_manager.get_categories()
+                    print(f"[DEBUG] Retrieved {len(categories)} categories from template_manager: {categories}")
+                except Exception as e:
+                    print(f"[DEBUG] Error getting categories from template_manager: {e}")
+            else:
+                print(f"[DEBUG] template_manager doesn't have get_categories method")
+        else:
+            print(f"[DEBUG] No template_manager available in UIBuilder")
+            
+        # If we still don't have categories, check alternate sources
+        if not categories:
+            # Try to get from editor.app
+            if hasattr(self, 'editor') and hasattr(self.editor, 'app'):
+                if hasattr(self.editor.app, 'template_manager'):
+                    try:
+                        categories = self.editor.app.template_manager.get_categories()
+                        print(f"[DEBUG] Retrieved {len(categories)} categories from editor.app.template_manager: {categories}")
+                    except Exception as e:
+                        print(f"[DEBUG] Error getting categories from editor.app.template_manager: {e}")
+            
+            # If still no categories, use default
+            if not categories:
+                # Import default categories from constants
+                from app.constants import DEFAULT_TEMPLATE_CATEGORIES
+                categories = list(DEFAULT_TEMPLATE_CATEGORIES)
+                print(f"[DEBUG] Using DEFAULT_TEMPLATE_CATEGORIES: {categories}")
+                
+                # Make sure we have at least "Custom" category
+                if "Custom" not in categories:
+                    categories.append("Custom")
+                    print(f"[DEBUG] Added 'Custom' to categories")
+                    
+                # Add 'No Category' for templates without a category
+                if "No Category" not in categories:
+                    categories.append("No Category")
+                    print(f"[DEBUG] Added 'No Category' to categories")
+        
+        # Check for category filtering settings
+        hide_defaults = QSettings().value("CategoryManager/hideDefaultCategories", False, type=bool)
+        if hide_defaults:
+            from app.constants import DEFAULT_TEMPLATE_CATEGORIES
+            original_count = len(categories)
+            categories = [cat for cat in categories if cat not in DEFAULT_TEMPLATE_CATEGORIES]
+            print(f"[DEBUG] Hide defaults setting is ON - filtered from {original_count} to {len(categories)} categories")
+        
+        print(f"[DEBUG] _get_categories FINAL result: {categories}")
+        return categories 

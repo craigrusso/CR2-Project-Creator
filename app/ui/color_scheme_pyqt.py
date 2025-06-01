@@ -224,13 +224,12 @@ COMBOBOX_STYLE = f"""
     
     /* Main combobox hover */
     QComboBox:hover {{
-        border: 1px solid {colors['accent']};
+        border: 1px solid {colors['highlight_border']}; /* Use highlight_border for consistency */
         background-color: {colors['hover_bg']};
-        color: {colors['highlight_text']};
     }}
     
     QComboBox:focus {{
-        border: 1px solid {colors['accent']};
+        border: 1px solid {colors['highlight_border']};
         background-color: {colors['highlight_bg_transparent']};
     }}
     
@@ -266,32 +265,50 @@ COMBOBOX_STYLE = f"""
     
     /* Popup widget styling */
     QComboBox QAbstractItemView {{
-        border: 1px solid {colors['accent']};
+        border: 1px solid {colors['highlight_border']};
         background-color: {colors['card_bg']};
         color: {colors['text']};
         outline: none; /* Remove focus outline */
+        selection-background-color: {colors['highlight_bg']}; /* Set selection background */
+        selection-color: {colors['highlight_text']}; /* Set selection text color */
+        padding: 2px;
     }}
     
     /* Default item styling in popup */
     QComboBox QAbstractItemView::item {{
         border-left: 3px solid transparent;
-        padding: 6px;
-        min-height: 24px;
+        padding: 2px;
+        min-height: 20px;
+        margin: 0px;
+        border-radius: 2px;
     }}
     
     /* Very direct styling for hover state */
     QComboBox QAbstractItemView::item:hover {{
         background-color: {colors['accent']};
-        color: white;  /* White text on hover for maximum contrast */
-        font-weight: bold;  /* Bold text on hover */
-        border-left: 5px solid white;  /* White left border for emphasis */
+        color: white;
+        border-left: 3px solid white;
     }}
     
     /* Selected item (when dropdown is closed) */
     QComboBox QAbstractItemView::item:selected {{
         background-color: {colors['highlight_bg']};
         color: {colors['highlight_text']};
-        border-left: 3px solid {colors['accent']};
+        border-left: 3px solid {colors['highlight_border']};
+    }}
+    
+    /* Make sure hover works even for QListView */
+    QComboBox QListView::item:hover {{
+        background-color: {colors['accent']};
+        color: white;
+        border-left: 3px solid white;
+    }}
+    
+    /* Make sure hover works even for QListView when selected */
+    QComboBox QListView::item:hover:selected {{
+        background-color: {colors['accent_hover']};
+        color: white;
+        border-left: 3px solid white;
     }}
 """
 
@@ -300,42 +317,39 @@ LISTVIEW_POPUP_STYLE = f"""
     QListView {{
         background-color: {colors['card_bg']};
         color: {colors['text']};
-        border: 1px solid {colors['accent']};
+        border: 1px solid {colors['highlight_border']};
         outline: none;
         border-radius: 3px;
-        padding: 1px;
-        selection-background-color: transparent;
+        padding: 2px;
+        selection-background-color: {colors['highlight_bg']};
+        selection-color: {colors['highlight_text']};
     }}
     
     QListView::item {{
         border-left: 3px solid transparent;
-        padding: 6px;
-        min-height: 24px;
-        margin: 2px;
+        padding: 2px;
+        min-height: 20px;
+        margin: 0px;
         border-radius: 2px;
     }}
     
     QListView::item:hover {{
         background-color: {colors['accent']};
         color: white;
-        font-weight: bold;
-        border-left: 5px solid white;
-        border-bottom: 1px solid white;
-        border-top: 1px solid white;
+        border-left: 3px solid white;
     }}
     
     QListView::item:selected {{
         background-color: {colors['highlight_bg']};
         color: {colors['highlight_text']};
-        border-left: 3px solid {colors['accent']};
+        border-left: 3px solid {colors['highlight_border']};
     }}
 
-    /* Force immediate hover response */
-    QListView::item:hover:!selected {{
-        background-color: {colors['accent']};
+    /* Force immediate hover response even when selected */
+    QListView::item:hover:selected {{
+        background-color: {colors['accent_hover']};
         color: white;
-        font-weight: bold;
-        border-left: 5px solid white;
+        border-left: 3px solid white;
     }}
 """
 

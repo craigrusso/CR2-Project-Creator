@@ -54,24 +54,54 @@ class ProjectTypeManager:
     
     def get_all_project_types(self):
         """Get all available project types (including default categories)"""
+        print(f"[DEBUG] ProjectTypeManager.get_all_project_types() START")
+        
         # Force reload from disk to ensure we have the latest
         self.load_custom_project_types()
         
         # Combine default categories with any used in templates
         project_types = set(DEFAULT_TEMPLATE_CATEGORIES)
-        print(f"ProjectTypeManager: Loading default categories: {project_types}")
+        print(f"[DEBUG] Default categories from constants: {project_types}")
         
         # Add custom project types
         if hasattr(self, 'custom_project_types') and self.custom_project_types:
+            print(f"[DEBUG] Found {len(self.custom_project_types)} custom project types: {list(self.custom_project_types.keys())}")
             # Add custom types
             for project_type in self.custom_project_types.keys():
                 # Validate it's a string and not empty
                 if project_type and isinstance(project_type, str):
+                    print(f"[DEBUG] Adding custom project type: '{project_type}'")
                     project_types.add(project_type)
+                else:
+                    print(f"[DEBUG] Skipping invalid project type: {project_type}, type: {type(project_type)}")
+        else:
+            print(f"[DEBUG] No custom project types found")
+        
+        # Check template type data if available
+        if hasattr(self, 'template_manager') and hasattr(self.template_manager, 'templates'):
+            print(f"[DEBUG] Checking {len(self.template_manager.templates)} templates for additional categories")
+            template_categories = set()
+            for template in self.template_manager.templates:
+                if isinstance(template, dict):
+                    # Check 'type' field first (preferred), then 'category'
+                    template_type = template.get('type', template.get('category', None))
+                    if template_type and isinstance(template_type, str) and template_type.strip():
+                        template_categories.add(template_type.strip())
+                        print(f"[DEBUG] Found category '{template_type}' in template '{template.get('name', 'unknown')}'")
+            
+            # Add template categories to project types
+            if template_categories:
+                print(f"[DEBUG] Adding {len(template_categories)} categories from templates: {template_categories}")
+                project_types.update(template_categories)
+        
+        # Add 'No Category' for templates without a category if not present
+        if "No Category" not in project_types:
+            print(f"[DEBUG] Adding 'No Category' to project types")
+            project_types.add("No Category")
         
         # Convert to list, sort and return
         project_types_list = sorted(list(project_types))
-        print(f"ProjectTypeManager: Final project types ({len(project_types_list)} types): {project_types_list}")
+        print(f"[DEBUG] ProjectTypeManager.get_all_project_types() END - Returning {len(project_types_list)} types: {project_types_list}")
         return project_types_list
     
     def create_project_type(self, name, structure_name):

@@ -7,14 +7,15 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                            QFrame, QWidget, QTabWidget, QScrollArea, QFormLayout,
                            QSizePolicy, QTreeWidget, QTreeWidgetItem, QStyle)
 from PyQt6.QtCore import Qt, pyqtSignal, QSize
-from PyQt6.QtGui import QIcon, QFont, QFontMetrics, QColor
+from PyQt6.QtGui import QIcon, QFont, QFontMetrics, QColor, QStandardItemModel, QStandardItem
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE
 from app.templates.template_manager import TemplateManager
 from app.templates.components import get_system_font, SYSTEM_FONT
 from app.utils.template_validator import TemplateValidator
 from PyQt6.QtWidgets import QApplication
 from app.constants import get_resource_path, DEFAULT_TEMPLATE_CATEGORIES
-from app.templates.category_update_manager import get_instance
+from app.templates.category_update_manager import get_instance as get_category_update_manager_instance
+from app.templates.category_combobox_updater import update_single_combobox
 
 class TemplateCreationForm(QDialog):
     """
@@ -40,7 +41,7 @@ class TemplateCreationForm(QDialog):
             self.app = parent.app
         
         # Get the category update manager
-        self.category_update_manager = get_instance(self.app)
+        self.category_update_manager = get_category_update_manager_instance(self.app)
         
         # Track when the dialog was last updated
         self.last_category_update = 0
@@ -67,9 +68,9 @@ class TemplateCreationForm(QDialog):
         super().showEvent(event)
         
         # Request an update from CategoryUpdateManager if available
-        if hasattr(self, 'category_update_manager'):
+        if hasattr(self, 'category_update_manager') and self.category_update_manager:
             print("[Template Form] Dialog shown - requesting CategoryUpdateManager refresh")
-            self.category_update_manager.force_update_all_category_combos()
+            self.category_update_manager.force_immediate_global_update()
         
         # Ensure type combo is populated with the latest categories
         if hasattr(self, 'type_combo'):
@@ -181,40 +182,8 @@ class TemplateCreationForm(QDialog):
         # Project Type (formerly Category)
         self.type_combo = QComboBox()
         self.type_combo.setObjectName("template_category_combo_box")  # Set object name for identification
+        self.type_combo.setModel(QStandardItemModel(self.type_combo))  # Explicitly set QStandardItemModel
         self.type_combo.setMinimumHeight(30)
-        
-        # Get the path to the down arrow icon
-        down_arrow_path = get_resource_path('app/assets/icons/down_arrow.png')
-        
-        self.type_combo.setStyleSheet(f"""
-            QComboBox {{
-                border: 1px solid #555;
-                border-radius: 4px;
-                padding: 5px;
-                background-color: #444;
-                color: white;
-                selection-background-color: #666;
-            }}
-            QComboBox::drop-down {{
-                subcontrol-origin: padding;
-                subcontrol-position: top right;
-                width: 20px;
-                border-left-width: 1px;
-                border-left-color: #555;
-                border-left-style: solid;
-            }}
-            QComboBox::down-arrow {{
-                image: url({down_arrow_path});
-                width: 14px;
-                height: 14px;
-            }}
-            QComboBox QAbstractItemView {{
-                border: 1px solid #555;
-                selection-background-color: #666;
-                background-color: #444;
-                color: white;
-            }}
-        """)
         
         # Add project types - FIXED: ensure we get the latest categories
         self.populate_type_combo()
@@ -266,122 +235,53 @@ class TemplateCreationForm(QDialog):
         layout.addRow("Source File/Folder:", self.path_layout)
         
     def populate_type_combo(self):
-        """Populate the type combo box with the latest categories"""
-        # Remember current selection before clearing
-        current_selection = self.type_combo.currentText() if self.type_combo.count() > 0 else ""
-        
-        # Clear existing items
-        self.type_combo.clear()
-        
-        # Get all available categories/project types
+        """Populate the type_combo (category) dropdown using the centralized updater."""
+        log_prefix = "[TemplateForm PopulateTypeCombo]"
+        print(f"{log_prefix} Populating category combobox (type_combo). ObjectName: {self.type_combo.objectName()}")
+
         categories = []
-        if self.template_manager:
-            # Force reload of categories if project_type_manager is available
-            if hasattr(self.template_manager, 'project_type_manager'):
-                self.template_manager.project_type_manager.load_custom_project_types()
-            
-            # Try to get categories from get_categories() method first (preferred)
-            if hasattr(self.template_manager, 'get_categories'):
-                categories = self.template_manager.get_categories()
-                print(f"[Template Form] Using {len(categories)} categories from get_categories()")
-            
-            # Fallback to get_structure_types() if get_categories() not available or returns empty list
-            elif hasattr(self.template_manager, 'get_structure_types'):
-                categories = self.template_manager.get_structure_types()
-                print(f"[Template Form] Using {len(categories)} types from get_structure_types()")
+        if self.template_manager and hasattr(self.template_manager, 'get_categories'):
+            categories = self.template_manager.get_categories()
+            print(f"{log_prefix} Fetched {len(categories)} categories from template_manager: {categories}")
+        else:
+            categories = list(DEFAULT_TEMPLATE_CATEGORIES)
+            print(f"{log_prefix} Using default categories: {categories}")
+
+        # Ensure "No Category" is an option if not already present
+        if "No Category" not in categories:
+            categories.append("No Category")
+            print(f"{log_prefix} Added 'No Category' to list.")
         
-        # Double-check we have categories
-        if not categories:
-            print("[WARNING] No categories found, adding default 'General' category")
-            categories = ["General", "Custom"]
-        
-        # Format the dropdown with headers for default and custom categories
-        from PyQt6.QtCore import Qt
-        from PyQt6.QtGui import QColor
-        from app.ui.color_scheme_pyqt import colors
-        from app.constants import DEFAULT_TEMPLATE_CATEGORIES
-        
-        # Split categories into default and custom
-        default_cats = [cat for cat in categories if cat in DEFAULT_TEMPLATE_CATEGORIES]
-        custom_cats = [cat for cat in categories if cat not in DEFAULT_TEMPLATE_CATEGORIES]
-        
-        # Block signals during update
-        self.type_combo.blockSignals(True)
-        
-        # Add default categories section if we have any
-        if default_cats:
-            # Add the header item
-            header_index = self.type_combo.count()
-            self.type_combo.addItem("Default Categories")
-            self.type_combo.setItemData(header_index, False, Qt.ItemDataRole.UserRole)
-            self.type_combo.setItemData(header_index, QColor(colors['secondary_text']), Qt.ItemDataRole.ForegroundRole)
-            
-            # Explicitly make the header non-selectable by setting its flags
-            model = self.type_combo.model()
-            if model:
-                item = model.item(header_index)
-                if item:
-                    item.setFlags(Qt.ItemFlag.NoItemFlags)
-            
-            # Add default categories
-            for cat in sorted(default_cats):
-                self.type_combo.addItem(cat)
-        
-        # Add custom categories section if we have any
-        if custom_cats:
-            # Add separator if we have default categories
-            if default_cats:
-                self.type_combo.insertSeparator(self.type_combo.count())
-            
-            # Add the header item
-            header_index = self.type_combo.count()
-            self.type_combo.addItem("Custom Categories")
-            self.type_combo.setItemData(header_index, False, Qt.ItemDataRole.UserRole)
-            self.type_combo.setItemData(header_index, QColor(colors['secondary_text']), Qt.ItemDataRole.ForegroundRole)
-            
-            # Explicitly make the header non-selectable by setting its flags
-            model = self.type_combo.model()
-            if model:
-                item = model.item(header_index)
-                if item:
-                    item.setFlags(Qt.ItemFlag.NoItemFlags)
-            
-            # Add custom categories
-            for cat in sorted(custom_cats):
-                self.type_combo.addItem(cat)
-        
-        # Try to restore selection or select first selectable item
-        if current_selection:
-            index = self.type_combo.findText(current_selection)
-            if index != -1 and self.type_combo.itemData(index, Qt.ItemDataRole.UserRole) != False:
-                self.type_combo.setCurrentIndex(index)
-                print(f"[Template Form] Restored selection to '{current_selection}'")
-        
-        # If we couldn't restore the previous selection, select the first selectable item
-        if current_selection == "" or self.type_combo.currentText() == "":
-            # Find first selectable item
-            for i in range(self.type_combo.count()):
-                if self.type_combo.itemData(i, Qt.ItemDataRole.UserRole) != False:
-                    self.type_combo.setCurrentIndex(i)
-                    print(f"[Template Form] Set selection to first selectable item: '{self.type_combo.itemText(i)}'")
-                    break
-        
-        # If editing, make sure the correct category is selected
-        if self.is_editing:
-            template_type = self.template.get("type", self.template.get("structure_type", ""))
-            if template_type:
-                index = self.type_combo.findText(template_type)
-                if index >= 0 and self.type_combo.itemData(index, Qt.ItemDataRole.UserRole) != False:
-                    self.type_combo.setCurrentIndex(index)
-                    print(f"[Template Form] Set editing selection to '{template_type}'")
-        
-        # Re-enable signals
-        self.type_combo.blockSignals(False)
-        
-        print(f"[Template Form] Populated combobox with {self.type_combo.count()} items, current selection: '{self.type_combo.currentText()}'")
-        
-        # Process events to ensure UI updates
-        QApplication.processEvents()
+        current_selection = None
+        if self.is_editing and self.template:
+            # Prioritize 'category' field, then 'type', then 'structure_type' for backward compatibility
+            current_selection = self.template.get("category", self.template.get("type", self.template.get("structure_type")))
+            if not current_selection:
+                 current_selection = "No Category" # Default if editing but no category saved
+            print(f"{log_prefix} Editing mode. Current selection to restore: '{current_selection}'")
+        elif not self.is_editing:
+            current_selection = "No Category" # Default for new templates
+            print(f"{log_prefix} New template mode. Default selection: '{current_selection}'")
+
+        # Use the centralized function to update the combobox
+        # This will handle model, items, selection, and styling (including hover delegate)
+        update_single_combobox(self.type_combo, categories, current_category=current_selection, force_default_style=True)
+        print(f"{log_prefix} Called update_single_combobox. Current text: {self.type_combo.currentText()}")
+
+        # Verify that the model is QStandardItemModel after update
+        if not isinstance(self.type_combo.model(), QStandardItemModel):
+            print(f"{log_prefix} WARNING: Model is {type(self.type_combo.model())} NOT QStandardItemModel after update_single_combobox. This might break delegate styling.")
+            # Force it again if necessary, though update_single_combobox should handle this
+            # self.type_combo.setModel(QStandardItemModel(self.type_combo))
+            # update_single_combobox(self.type_combo, categories, current_category=current_selection, force_default_style=True) # Re-populate if model was reset
+        else:
+            print(f"{log_prefix} Model is QStandardItemModel, as expected.")
+
+        # Ensure item view has correct styling (delegate handles hover, but popup style might be global)
+        # This is mostly handled by global theme and apply_hover_delegate in update_single_combobox
+        # view = self.type_combo.view()
+        # if view:
+        #     view.setStyleSheet(LISTVIEW_POPUP_STYLE) # Example from color_scheme
 
     def browse_for_path(self):
         """Open file dialog to browse for source file or folder"""

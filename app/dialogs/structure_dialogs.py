@@ -9,11 +9,11 @@ import os
 import json
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                            QPushButton, QTreeWidget, QTreeWidgetItem,
-                           QApplication, QStyle)
+                           QApplication, QStyle, QMessageBox)
 from PyQt6.QtCore import Qt
 
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE
-from app.ui.structure_editor_enhanced import EnhancedStructureEditor
+# from app.ui.structure_editor_enhanced import EnhancedStructureEditor # Import will be moved into function
 from app.ui.structure_editor_functions import show_enhanced_structure_editor
 
 def preview_structure(app, structure):
@@ -249,22 +249,14 @@ def preview_structure(app, structure):
 
 def edit_template_structure(parent, template, structure_tab):
     """Open enhanced structure editor for the template"""
-    # print("DEBUG: edit_template_structure called")
-    
-    # Extract the template name from the template
+    # Import moved here to break circular dependency
+    from app.ui.structure_editor_enhanced import EnhancedStructureEditor 
+
     template_name = template.get('name', '')
-    if not template_name and hasattr(template, '_name_input'):
-        template_name = template._name_input.text()
-    
     # Determine structure name
     structure_name = template.get('structure_name', '')
     if not structure_name and template_name:
         structure_name = f"Template_{template_name}"
-    
-    # print(f"DEBUG: edit_template_structure - template_name={template_name}, structure_name={structure_name}")
-    
-    # Import needed modules
-    from app.ui.structure_editor_functions import show_enhanced_structure_editor
     
     # Get template manager
     template_manager = None
@@ -273,74 +265,66 @@ def edit_template_structure(parent, template, structure_tab):
     elif hasattr(parent, 'app') and hasattr(parent.app, 'template_manager'):
         template_manager = parent.app.template_manager
     else:
+        # This fallback might be problematic if TemplateManager expects app context
         from app.templates.template_manager import TemplateManager
-        template_manager = TemplateManager()
+        template_manager = TemplateManager() 
     
-    # Get structure items
     structure_items = template.get('structure', [])
-    
-    # Dialog reference - store this for access by the callback
-    dialog = None
-    if hasattr(structure_tab, 'window'):
-        dialog = structure_tab.window()
-    elif hasattr(parent, 'window'):
-        if callable(parent.window):
-            dialog = parent.window()
-        else:
-            dialog = parent.window
-    
-    # Get tree widget
-    tree = None
-    if hasattr(structure_tab, 'structure_tree'):
-        tree = structure_tab.structure_tree
-    
-    # Create a callback function to update the template
-    def structure_edited_callback(result):
-        """Callback for when structure is updated in the editor"""
-        # print(f"DEBUG: Structure editor callback received result: {result}")
-        
-        if not result:
-            # print("DEBUG: Structure editor was cancelled")
-            return
-        
-        success, updated_structure, updated_structure_name = result
-        
-        if not success:
-            # print("DEBUG: Structure edit was not successful")
-            return
-        
-        # Update template with new structure
-        template['structure'] = updated_structure
-        template['structure_name'] = updated_structure_name
-        
-        # print(f"DEBUG: Updated template with new structure. Name: {updated_structure_name}")
-        
-        # Update the structure tree if available
-        if tree and hasattr(template, '_root_item'):
-            root_item = template._root_item
-            # Clear existing items
-            for i in range(root_item.childCount()-1, -1, -1):
-                root_item.removeChild(root_item.child(i))
-            # Add new items
-            populate_structure_tree(root_item, updated_structure)
-            # print("DEBUG: Updated structure tree view")
-    
-    # Set focus_name_field if this is a new template
-    focus_name_field = template_name == ''
-    
-    # Open the enhanced structure editor for editing
+    project_type = template.get('category', template.get('type')) # For project_type argument
+
+    # Define a callback to handle the result
+    def structure_edited_callback(result_data):
+        if isinstance(result_data, dict):
+            # New callback format from show_enhanced_structure_editor
+            name = result_data.get('name')
+            original_name = result_data.get('original_name')
+            updated_structure_name = result_data.get('structure_name')
+            updated_structure = result_data.get('structure')
+            category = result_data.get('category')
+            description = result_data.get('description')
+            is_new_template = result_data.get('is_new')
+            was_renamed = result_data.get('is_rename')
+
+            if updated_structure is not None: # Check if dialog was accepted
+                template['structure'] = updated_structure
+                template['structure_name'] = updated_structure_name
+                template['name'] = name
+                template['category'] = category
+                template['description'] = description
+                
+                # If parent has an update_template_data method (like GalleryWidget)
+                if hasattr(parent, 'update_template_data') and original_name:
+                    # Create the updated template dictionary
+                    updated_template_data = template.copy() # Start with current template data
+                    updated_template_data.update({
+                        'name': name,
+                        'category': category,
+                        'description': description,
+                        'structure': updated_structure,
+                        'structure_name': updated_structure_name,
+                    })
+                    # Need original template data for comparison/lookup
+                    original_template_for_update = template_manager.get_template_by_name(original_name) if template_manager else None
+                    if not original_template_for_update:
+                         original_template_for_update = template # Fallback to current if not found
+                    parent.update_template_data(original_template_for_update, updated_template_data)
+                
+                if hasattr(parent, 'populate_gallery'):
+                    parent.populate_gallery(force_refresh=True)
+                    if hasattr(parent, 'select_template'):
+                        parent.select_template(name) # Select the (potentially new) named template
+
+    # Call the centralized function to show the editor
     show_enhanced_structure_editor(
         parent=parent,
         structure_name=structure_name,
         structure=structure_items,
-        is_new=template_name == '',
+        is_new=(not template_name), # is_new if template_name is empty
+        project_type=project_type,
         template_name=template_name,
-        focus_name_field=focus_name_field,
         template_manager=template_manager,
         callback=structure_edited_callback
     )
-    
-    # print("DEBUG: Structure editor opened successfully")
 
 def populate_structure_tree(parent_item, structure_items):
     """Populate a QTreeWidget with structure items"""
