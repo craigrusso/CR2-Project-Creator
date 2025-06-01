@@ -821,66 +821,74 @@ class EnhancedStructureEditor(QDialog):
                   is passed to the superclass or default handler.
                   It returns True if a custom action handles the event.
         """
-        # Check if we have file operations
-        have_file_ops = hasattr(self, 'file_operations') and self.file_operations
+        try:
+            # Check if we have file operations
+            have_file_ops = hasattr(self, 'file_operations') and self.file_operations
 
-        # Initialize handled_by_custom_logic to False
-        handled_by_custom_logic = False
+            # Initialize handled_by_custom_logic to False
+            handled_by_custom_logic = False
 
-        # Custom key handling
-        # Note: Qt.Key.Key_Delete is now handled by QShortcut.
-        
-        # Ctrl+A for select all
-        if event.key() == Qt.Key.Key_A and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            if hasattr(self, 'tree_widget') and self.tree_widget:
-                self.tree_widget.selectAll()
-                event.accept()
-                handled_by_custom_logic = True
-        
-        # Ctrl+C for copy
-        elif event.key() == Qt.Key.Key_C and event.modifiers() & Qt.KeyboardModifier.ControlModifier and have_file_ops:
-            selected = self.tree_widget.selectedItems()
-            if selected and hasattr(self.file_operations, '_copy_item'):
-                self.file_operations._copy_item(selected[0])
-                event.accept()
-                handled_by_custom_logic = True
+            # Custom key handling
+            # Note: Qt.Key.Key_Delete is now handled by QShortcut.
             
-        # Ctrl+V for paste
-        elif event.key() == Qt.Key.Key_V and event.modifiers() & Qt.KeyboardModifier.ControlModifier and have_file_ops:
-            selected = self.tree_widget.selectedItems()
-            parent = selected[0] if selected else self.tree_widget.invisibleRootItem() 
-            if hasattr(self.file_operations, '_paste_item'):
-                self.file_operations._paste_item(parent)
-                event.accept()
-                handled_by_custom_logic = True
-        
-        # F2 for rename
-        elif event.key() == Qt.Key.Key_F2 and have_file_ops:
-            selected = self.tree_widget.selectedItems()
-            if selected and hasattr(self.file_operations, 'rename_item'):
-                self.file_operations.rename_item(selected[0])
-                event.accept()
-                handled_by_custom_logic = True
+            # Ctrl+A for select all
+            if event.key() == Qt.Key.Key_A and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+                if hasattr(self, 'tree_widget') and self.tree_widget:
+                    self.tree_widget.selectAll()
+                    event.accept()
+                    handled_by_custom_logic = True
+            
+            # Ctrl+C for copy
+            elif event.key() == Qt.Key.Key_C and event.modifiers() & Qt.KeyboardModifier.ControlModifier and have_file_ops:
+                selected = self.tree_widget.selectedItems()
+                if selected and hasattr(self.file_operations, '_copy_item'):
+                    self.file_operations._copy_item(selected[0])
+                    event.accept()
+                    handled_by_custom_logic = True
+                
+            # Ctrl+V for paste
+            elif event.key() == Qt.Key.Key_V and event.modifiers() & Qt.KeyboardModifier.ControlModifier and have_file_ops:
+                selected = self.tree_widget.selectedItems()
+                parent = selected[0] if selected else self.tree_widget.invisibleRootItem() 
+                if hasattr(self.file_operations, '_paste_item'):
+                    self.file_operations._paste_item(parent)
+                    event.accept()
+                    handled_by_custom_logic = True
+            
+            # F2 for rename
+            elif event.key() == Qt.Key.Key_F2 and have_file_ops:
+                selected = self.tree_widget.selectedItems()
+                if selected and hasattr(self.file_operations, 'rename_item'):
+                    self.file_operations.rename_item(selected[0])
+                    event.accept()
+                    handled_by_custom_logic = True
 
-        # If custom logic handled the event, return True
-        if handled_by_custom_logic:
+            # If custom logic handled the event, return True
+            if handled_by_custom_logic:
+                return True
+
+            # If the event was not handled by custom logic,
+            # pass it to the original event handler.
+            if hasattr(self.tree_widget, '_old_keyPressEvent') and self.tree_widget._old_keyPressEvent is not None:
+                # _old_keyPressEvent (which is QTreeWidget.keyPressEvent) doesn't return a value.
+                # It modifies the event object (e.g., by calling event.accept() or event.ignore()).
+                self.tree_widget._old_keyPressEvent(event)
+            else:
+                # Fallback if _old_keyPressEvent isn't there for some reason
+                # QWidget.keyPressEvent (superclass of QTreeWidget) also doesn't return a value.
+                super(QTreeWidget, self.tree_widget).keyPressEvent(event)
+            
+            # The Qt event system checks event.isAccepted(). We don't need to explicitly return it.
+            # If our custom handlers didn't handle it, and the base class didn't accept it,
+            # it will propagate further or be ignored as per Qt's rules.
+            # Implicitly returns None.
+        except Exception as e:
+            print(f"ERROR: Exception in _handle_key_press: {e}")
+            import traceback
+            traceback.print_exc()
+            # Accept the event to prevent further propagation
+            event.accept()
             return True
-
-        # If the event was not handled by custom logic,
-        # pass it to the original event handler.
-        if hasattr(self.tree_widget, '_old_keyPressEvent') and self.tree_widget._old_keyPressEvent is not None:
-            # _old_keyPressEvent (which is QTreeWidget.keyPressEvent) doesn't return a value.
-            # It modifies the event object (e.g., by calling event.accept() or event.ignore()).
-            self.tree_widget._old_keyPressEvent(event)
-        else:
-            # Fallback if _old_keyPressEvent isn't there for some reason
-            # QWidget.keyPressEvent (superclass of QTreeWidget) also doesn't return a value.
-            super(QTreeWidget, self.tree_widget).keyPressEvent(event)
-        
-        # The Qt event system checks event.isAccepted(). We don't need to explicitly return it.
-        # If our custom handlers didn't handle it, and the base class didn't accept it,
-        # it will propagate further or be ignored as per Qt's rules.
-        # Implicitly returns None.
 
     def _schedule_delete_operation(self):
         """Schedules the delete operation to run after the current event processing."""
@@ -888,11 +896,17 @@ class EnhancedStructureEditor(QDialog):
 
     def _perform_delete_operation(self):
         """Performs the actual deletion of selected items."""
-        if hasattr(self, 'file_operations') and self.file_operations:
-            print("DEBUG: Performing scheduled delete operation via file_operations.delete_selected()")
-            self.file_operations.delete_selected()
-        else:
-            print("DEBUG: Scheduled delete operation: file_operations not available.")
+        try:
+            if hasattr(self, 'file_operations') and self.file_operations:
+                print("DEBUG: Performing scheduled delete operation via file_operations.delete_selected()")
+                self.file_operations.delete_selected()
+            else:
+                print("DEBUG: Scheduled delete operation: file_operations not available.")
+        except Exception as e:
+            print(f"ERROR: Exception during delete operation: {e}")
+            # Prevent the exception from propagating up
+            import traceback
+            traceback.print_exc()
 
     def closeEvent(self, event):
         """

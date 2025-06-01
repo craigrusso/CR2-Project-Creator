@@ -339,80 +339,91 @@ class FileOperations:
         Returns:
             bool: True if items were deleted, False otherwise
         """
-        if not self.tree:
-            print("DEBUG: delete_selected - tree widget not available")
-            return False
+        try:
+            if not self.tree:
+                print("DEBUG: delete_selected - tree widget not available")
+                return False
             
-        # Get selected items
-        selected_items = self.tree.selectedItems()
-        if not selected_items:
-            print("DEBUG: delete_selected - no items selected")
-            return False
+            # Get selected items
+            selected_items = self.tree.selectedItems()
+            if not selected_items:
+                print("DEBUG: delete_selected - no items selected")
+                return False
             
-        # Confirm deletion
-        count = len(selected_items)
-        print(f"DEBUG: delete_selected - {count} items selected for deletion")
-        confirm_msg = f"Delete {count} selected item{'s' if count > 1 else ''}?"
-        confirm_title = "Confirm Delete"
-        
-        # Add details about what's being deleted
-        if count == 1:
-            item = selected_items[0]
-            item_data = item.data(0, Qt.ItemDataRole.UserRole)
-            if isinstance(item_data, dict):
-                item_type = item_data.get('type', 'item')
-                item_name = item.text(0)
-                confirm_msg = f"Delete {item_type} '{item_name}'?"
-        
-        # Show confirmation dialog
-        reply = QMessageBox.question(
-            self.editor, 
-            confirm_title,
-            confirm_msg, 
-            QMessageBox.Yes | QMessageBox.No, 
-            QMessageBox.No
-        )
-        
-        if reply != QMessageBox.Yes:
-            print("DEBUG: delete_selected - user cancelled deletion")
-            return False
+            # Confirm deletion
+            count = len(selected_items)
+            print(f"DEBUG: delete_selected - {count} items selected for deletion")
+            confirm_msg = f"Delete {count} selected item{'s' if count > 1 else ''}?"
+            confirm_title = "Confirm Delete"
             
-        # Delete items
-        deleted_count = 0
-        root = self.tree.invisibleRootItem()
-        
-        for item in selected_items:
-            # Get the parent of the item
-            parent = item.parent()
+            # Add details about what's being deleted
+            if count == 1:
+                item = selected_items[0]
+                item_data = item.data(0, Qt.ItemDataRole.UserRole)
+                if isinstance(item_data, dict):
+                    item_type = item_data.get('type', 'item')
+                    item_name = item.text(0)
+                    confirm_msg = f"Delete {item_type} '{item_name}'?"
             
-            if parent:
-                # Handle child items (non-top-level)
-                print(f"DEBUG: delete_selected - removing child item '{item.text(0)}' from parent '{parent.text(0)}'")
-                index = parent.indexOfChild(item)
-                if index >= 0:
-                    parent.takeChild(index)
-                    deleted_count += 1
-                    print(f"DEBUG: delete_selected - child item removed successfully")
-                else:
-                    print(f"ERROR: delete_selected - failed to find index of child item")
+            # Show confirmation dialog
+            reply = QMessageBox.question(
+                self.editor, 
+                confirm_title,
+                confirm_msg, 
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+                QMessageBox.StandardButton.No
+            )
+            
+            if reply != QMessageBox.StandardButton.Yes:
+                print("DEBUG: delete_selected - user cancelled deletion")
+                return False
+            
+            # Delete items
+            deleted_count = 0
+            root = self.tree.invisibleRootItem()
+            
+            for item in selected_items:
+                try:
+                    # Get the parent of the item
+                    parent = item.parent()
+                    
+                    if parent:
+                        # Handle child items (non-top-level)
+                        print(f"DEBUG: delete_selected - removing child item '{item.text(0)}' from parent '{parent.text(0)}'")
+                        index = parent.indexOfChild(item)
+                        if index >= 0:
+                            parent.takeChild(index)
+                            deleted_count += 1
+                            print(f"DEBUG: delete_selected - child item removed successfully")
+                        else:
+                            print(f"ERROR: delete_selected - failed to find index of child item")
+                    else:
+                        # Handle top-level items
+                        print(f"DEBUG: delete_selected - removing top-level item '{item.text(0)}'")
+                        index = root.indexOfChild(item)
+                        if index >= 0:
+                            root.takeChild(index)
+                            deleted_count += 1
+                            print(f"DEBUG: delete_selected - top-level item removed successfully")
+                        else:
+                            print(f"ERROR: delete_selected - failed to find index of top-level item")
+                except Exception as item_ex:
+                    print(f"ERROR: Exception deleting individual item: {item_ex}")
+                    import traceback
+                    traceback.print_exc()
+            
+            # Refresh the tree view
+            if deleted_count > 0:
+                self.tree.update()
+                print(f"DEBUG: delete_selected - {deleted_count} items deleted successfully")
+                return True
             else:
-                # Handle top-level items
-                print(f"DEBUG: delete_selected - removing top-level item '{item.text(0)}'")
-                index = root.indexOfChild(item)
-                if index >= 0:
-                    root.takeChild(index)
-                    deleted_count += 1
-                    print(f"DEBUG: delete_selected - top-level item removed successfully")
-                else:
-                    print(f"ERROR: delete_selected - failed to find index of top-level item")
-        
-        # Refresh the tree view
-        if deleted_count > 0:
-            self.tree.update()
-            print(f"DEBUG: delete_selected - {deleted_count} items deleted successfully")
-            return True
-        else:
-            print(f"DEBUG: delete_selected - no items were deleted")
+                print(f"DEBUG: delete_selected - no items were deleted")
+                return False
+        except Exception as e:
+            print(f"ERROR: Exception in delete_selected: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     def rename_item(self, item):

@@ -713,18 +713,26 @@ class EnhancedStructureEditor(QDialog):
         # Handle Delete key press
         if event.key() == Qt.Key.Key_Delete:
             print("DEBUG: Delete key pressed, calling delete_selected()")
-            self.delete_selected()
-            # Don't pass to parent class
-            event.accept()
-            return True
-            
+            try:
+                self.delete_selected()
+                # Don't pass to parent class
+                event.accept()
+                return True
+            except Exception as e:
+                print(f"ERROR: Exception during delete_selected call: {e}")
+                import traceback
+                traceback.print_exc()
+                # Still accept the event to prevent further propagation
+                event.accept()
+                return True
+        
         # Handle Escape key
         elif event.key() == Qt.Key.Key_Escape:
             print("DEBUG: Escape key pressed, rejecting dialog")
             self.reject()  # Close dialog without saving
             event.accept()
             return
-            
+        
         # Handle Return/Enter key in special cases
         elif event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             # Only handle Return key if the focus is not in a text field
