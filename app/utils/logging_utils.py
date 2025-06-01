@@ -75,7 +75,7 @@ def set_production_mode():
             handler.setLevel(logging.INFO)
         info("Production logging mode enabled")
 
-def initialize_logging(logger_name='echelon', log_level=None, 
+def initialize_logging(logger_name='echelon', log_level_param=None, 
                       console_logging=DEFAULT_CONSOLE_LOGGING,
                       file_logging=DEFAULT_FILE_LOGGING,
                       log_format=DEFAULT_LOG_FORMAT,
@@ -86,7 +86,7 @@ def initialize_logging(logger_name='echelon', log_level=None,
     
     Args:
         logger_name (str): Name of the logger
-        log_level (int): Logging level (DEBUG, INFO, etc.)
+        log_level_param (int): Logging level (DEBUG, INFO, etc.)
         console_logging (bool): Whether to log to console
         file_logging (bool): Whether to log to file
         log_format (str): Format string for log messages
@@ -97,26 +97,48 @@ def initialize_logging(logger_name='echelon', log_level=None,
         logging.Logger: Configured logger instance
     """
     global _app_logger
-
-    # If already initialized, return existing logger
-    if _app_logger is not None:
+    if _app_logger is not None: # Simplified check
         return _app_logger
-    
-    # Get the QSettings value if available
-    settings = QSettings()
-    if log_level is None:
-        saved_level = settings.value('logging/level')
-        if saved_level is not None:
-            try:
-                log_level = int(saved_level)
-            except (ValueError, TypeError):
-                log_level = DEFAULT_LOG_LEVEL
-        else:
-            log_level = DEFAULT_LOG_LEVEL
+
+    # Determine the actual log level to use
+    level_to_set = DEFAULT_LOG_LEVEL # Start with a safe default
+
+    if log_level_param is not None: # If a level was explicitly passed as argument
+        if isinstance(log_level_param, str):
+            val = getattr(logging, log_level_param.upper(), None)
+            if isinstance(val, int):
+                level_to_set = val
+            # else: level_to_set remains DEFAULT_LOG_LEVEL if string is invalid
+        elif isinstance(log_level_param, int):
+            # We should ideally check if this int is a known log level, but for now trust direct int params.
+            # The original error was `None`, not an invalid int, so this path is likely not the primary issue.
+            level_to_set = log_level_param
+        # else: (invalid type for log_level_param) level_to_set remains DEFAULT_LOG_LEVEL
+    else: # No explicit log_level_param, so try QSettings
+        settings = QSettings()
+        saved_level_setting = settings.value('logging/level')
+
+        if saved_level_setting is not None: # If a setting exists in QSettings
+            if isinstance(saved_level_setting, str):
+                val = getattr(logging, saved_level_setting.upper(), None)
+                if isinstance(val, int): # Valid string from QSettings like "INFO"
+                    level_to_set = val
+                # else: level_to_set remains DEFAULT_LOG_LEVEL if string from settings is invalid
+            elif isinstance(saved_level_setting, int):
+                # Again, ideally validate this int. For now, trust it if it's an int from settings.
+                level_to_set = saved_level_setting
+            # else: (invalid type from QSettings) level_to_set remains DEFAULT_LOG_LEVEL
+        # else: (no 'logging/level' in QSettings) level_to_set remains DEFAULT_LOG_LEVEL
     
     # Create logger
     logger = logging.getLogger(logger_name)
-    logger.setLevel(log_level)
+    
+    # Critical check before setting level to prevent TypeError
+    if not isinstance(level_to_set, int):
+        print(f"CRITICAL LOGGING ERROR: Resolved log level '{level_to_set}' (type: {type(level_to_set)}) is not an integer. Defaulting to DEBUG.")
+        level_to_set = logging.DEBUG # Fallback to a known valid integer level
+        
+    logger.setLevel(level_to_set)
     logger.propagate = False  # Don't propagate to parent loggers
     
     # Create formatter
@@ -125,7 +147,7 @@ def initialize_logging(logger_name='echelon', log_level=None,
     # Add console handler if enabled
     if console_logging:
         console_handler = logging.StreamHandler()
-        console_handler.setLevel(log_level)
+        console_handler.setLevel(level_to_set)
         console_handler.setFormatter(formatter)
         logger.addHandler(console_handler)
     
@@ -144,56 +166,88 @@ def initialize_logging(logger_name='echelon', log_level=None,
                 maxBytes=max_log_size, 
                 backupCount=backup_count
             )
-            file_handler.setLevel(log_level)
+            file_handler.setLevel(level_to_set)
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
             
             # Log the file location for debugging
-            print(f"Log file location: {log_file}")
+            # debug(f"Log file initialized at: {log_file}")
         except (IOError, PermissionError) as e:
             # Print to console since logger may not be fully set up yet
             print(f"Warning: Could not set up file logging: {e}")
     
     # Store the logger for later use
     _app_logger = logger
-    
+
+    # Log the file location for debugging using print, NOT the app's debug() helper
+    if file_logging and log_file and os.path.exists(log_file): # Check if file_logging was successful and log_file is valid
+        # Use print for this initial message as logger might not be fully ready for itself.
+        print(f"INFO: Log file initialized at: {log_file}")
+            
     return logger
 
 def debug(message):
     """Log a debug message"""
-    if _app_logger is None:
-        initialize_logging()
-    _app_logger.debug(message)
+    global _app_logger
+    if _app_logger is None: 
+        initialize_logging() 
+    # Ensure _app_logger is now available after initialize_logging()
+    if _app_logger:
+        _app_logger.debug(message)
+    else: # Should not happen if initialize_logging is correct
+        print(f"DEBUG (logger still None after init attempt): {message}")
 
 def info(message):
     """Log an info message"""
-    if _app_logger is None:
+    global _app_logger
+    if _app_logger is None: 
         initialize_logging()
-    _app_logger.info(message)
+    if _app_logger:
+        _app_logger.info(message)
+    else:
+        print(f"INFO (logger still None after init attempt): {message}")
 
 def warning(message):
     """Log a warning message"""
-    if _app_logger is None:
+    global _app_logger
+    if _app_logger is None: 
         initialize_logging()
-    _app_logger.warning(message)
+    if _app_logger:
+        _app_logger.warning(message)
+    else:
+        print(f"WARNING (logger still None after init attempt): {message}")
 
 def error(message):
     """Log an error message"""
-    if _app_logger is None:
+    global _app_logger
+    if _app_logger is None: 
         initialize_logging()
-    _app_logger.error(message)
+    if _app_logger:
+        _app_logger.error(message)
+    else:
+        print(f"ERROR (logger still None after init attempt): {message}")
 
 def critical(message):
     """Log a critical message"""
-    if _app_logger is None:
+    global _app_logger
+    if _app_logger is None: 
         initialize_logging()
-    _app_logger.critical(message)
+    if _app_logger:
+        _app_logger.critical(message)
+    else:
+        print(f"CRITICAL (logger still None after init attempt): {message}")
 
 def exception(message):
     """Log an exception message with traceback"""
-    if _app_logger is None:
+    global _app_logger
+    if _app_logger is None: 
         initialize_logging()
-    _app_logger.exception(message)
+    if _app_logger:
+        _app_logger.exception(message)
+    else:
+        print(f"EXCEPTION (logger still None after init attempt): {message}")
+        import traceback
+        traceback.print_exc()
 
 def get_logger():
     """Get the application logger instance"""

@@ -422,100 +422,34 @@ def main():
             return 0
         
         # Deploy example templates if necessary
-        deploy_example_templates()
+        settings = QSettings() # Ensure settings is available
+        deployed_examples_version_key = "internal/deployed_examples_version"
+        current_app_version_for_examples = APP_VERSION # Using APP_VERSION
+
+        if settings.value(deployed_examples_version_key) != current_app_version_for_examples:
+            deploy_example_templates()
+            settings.setValue(deployed_examples_version_key, current_app_version_for_examples)
+            info(f"Example templates deployment/check completed for version {current_app_version_for_examples}.")
+        else:
+            info("Example templates already deployed for current version.")
         
         # Create and show the main window
         main_window = ProjectCreatorApp()
         # Store the instance for future reference
         ProjectCreatorApp._instance = main_window
         
-        # Initialize the CategoryUpdateManager with the app instance
-        # from app.templates.category_update_manager import get_instance #, test_category_update_manager # Old import
         category_manager = get_category_update_manager_instance(main_window)
         info(f"Initialized CategoryUpdateManager for the application: {category_manager}")
         
-        # Register CategoryUpdateManager with all template forms
-        # This logic for finding template forms was previously commented out and can remain so,
-        # as the new CategoryUpdateManager updates comboboxes globally.
-        # def ensure_template_forms_have_category_manager():
-        
         main_window.show()
         
-        # Schedule initial category update after main window is shown and UI is likely stable
-        # The new manager handles its own logic, but an initial explicit call can be good.
-        QTimer.singleShot(1000, category_manager.force_immediate_global_update)
-        info("Scheduled initial force_immediate_global_update for categories.")
-        
-        # Apply template migration if needed
-        try:
-            TemplateManagerMigration.apply_migration(main_window)
-        except Exception as e:
-            error(f"Error during template migration: {e}")
-            exception("Template migration failure details:")
-        
-        # Apply dark theme to template section
-        try:
-            apply_dark_theme_to_template_section(main_window)
-        except Exception as e:
-            error(f"Error applying theme: {e}")
-            exception("Theme application failure details:")
-        
-        # Apply tree styling to all tree widgets
         styled_count = apply_styling_to_all_tree_widgets(main_window)
-        
-        # Force a complete icon cache refresh to ensure we're using platform-native icons
-        clear_icon_cache()
         
         # Force icon cache refresh and update all tree icons
         refresh_count = refresh_all_tree_icons()
         
         # Schedule another refresh after a short delay to ensure everything is loaded
         QTimer.singleShot(1000, lambda: refresh_all_tree_icons())
-        
-        # Schedule the category manager's force update (this is the line at 472)
-        # This is likely redundant if force_immediate_global_update is called above,
-        # but we can ensure delegates are applied after a delay if needed.
-        # QTimer.singleShot(1000, category_manager.force_immediate_global_update) # Changed from force_update_all_category_combos
-         # QTimer.singleShot(1500, lambda: ensure_all_combos_have_hover_delegates(main_window)) # Explicit delegate check - Call is now commented out
-        # info("Scheduled ensure_all_combos_have_hover_delegates after UI stabilization. (Call is now commented out, relying on global theme)")
-        
-        # Schedule diagnostic run
-        # from app.templates.category_update_manager import diagnose_category_dropdown_issue # Old import
-        # The diagnose function is now deprecated, logging should be used instead.
-        # QTimer.singleShot(2000, lambda: deprecated_diagnose_dropdown_issue(main_window))
-        # info("Note: diagnose_category_dropdown_issue is deprecated.")
-        
-        # Apply hover delegates to ensure category dropdowns have proper hover effects
-        # This function is now removed from main.py as its logic is centralized in
-        # category_combobox_updater.ensure_all_combos_have_hover_delegates,
-        # which is called by the CategoryUpdateManager.
-        # def apply_hover_delegates_to_category_dropdowns():
-        #     \"\"\"Apply hover delegates to all category dropdown menus for proper hover effects\"\"\"
-        #     from app.ui.custom_delegates import apply_hover_delegate
-        #     from PyQt6.QtWidgets import QComboBox, QApplication
-            
-        #     all_widgets = QApplication.allWidgets()
-        #     delegate_count = 0
-            
-        #     # Known category-related combo box names
-        #     category_names = ["template_category_combo_box", "project_type_combo_box", "category_combo"]
-            
-        #     for widget in all_widgets:
-        #         if isinstance(widget, QComboBox):
-        #             # Check if this is a known category combo
-        #             obj_name = widget.objectName().lower()
-        #             is_category_combo = any(name in obj_name for name in category_names)
-                    
-        #             if is_category_combo:
-        #                 apply_hover_delegate(widget)
-        #                 delegate_count += 1
-            
-        #     print(f"Applied hover delegates to {delegate_count} category combo boxes")
-        
-        # Schedule application of hover delegates after UI initialization
-        # This is now handled by the CategoryUpdateManager calls like force_immediate_global_update
-        # and the explicit ensure_all_combos_have_hover_delegates call scheduled above.
-        # QTimer.singleShot(1500, apply_hover_delegates_to_category_dropdowns) 
         
         # --- Connect state saving for TableView --- 
         def save_table_view_state():
@@ -535,6 +469,26 @@ def main():
 
         app.aboutToQuit.connect(save_table_view_state)
         # ------------------------------------------
+        
+        # Apply template migration if needed
+        migrated_templates_version_key = "internal/migrated_templates_version"
+        if settings.value(migrated_templates_version_key) != APP_VERSION:
+            try:
+                TemplateManagerMigration.apply_migration(main_window)
+                settings.setValue(migrated_templates_version_key, APP_VERSION)
+                info(f"Template migration check/application completed for version {APP_VERSION}.")
+            except Exception as e:
+                error(f"Error during template migration: {e}")
+                exception("Template migration failure details:")
+        else:
+            info("Template migration already performed for current version.")
+        
+        # Apply dark theme to template section
+        try:
+            apply_dark_theme_to_template_section(main_window)
+        except Exception as e:
+            error(f"Error applying dark theme to template section: {e}")
+            exception("Dark theme application failure details:")
         
         return app.exec()
     except Exception as e:

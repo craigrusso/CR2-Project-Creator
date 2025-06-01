@@ -658,13 +658,13 @@ def clear_icon_cache():
     debug("Icon cache cleared")
     
     # Force immediate refresh of all tree widgets in the application
-    app = QApplication.instance()
-    if app:
-        for widget in app.allWidgets():
-            if isinstance(widget, QTreeWidget):
-                # Update all visible tree items
-                for i in range(widget.topLevelItemCount()):
-                    _refresh_widget_item_icons(widget.topLevelItem(i))
+    # app = QApplication.instance() # Removed UI update from here
+    # if app:
+    #     for widget in app.allWidgets():
+    #         if isinstance(widget, QTreeWidget):
+    #             # Update all visible tree items
+    #             for i in range(widget.topLevelItemCount()):
+    #                 _refresh_widget_item_icons(widget.topLevelItem(i))
     
     return True
 

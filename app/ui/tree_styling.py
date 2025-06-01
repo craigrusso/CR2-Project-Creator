@@ -17,6 +17,12 @@ from app.ui.color_scheme_pyqt import APP_COLORS
 from app.constants import get_resource_path
 from app.ui.icon_utilities import get_folder_icon, get_file_icon
 
+import logging
+logger = logging.getLogger(__name__)
+
+def debug(msg):
+    logger.debug(msg)
+
 def apply_tree_styling(tree_widget):
     """
     Apply consistent styling to a QTreeWidget
@@ -53,6 +59,9 @@ def apply_tree_styling(tree_widget):
     
     # Update icons for all existing items
     update_tree_item_icons(tree_widget)
+
+    debug("Tree widget set up for structure editing with enhanced delegate")
+    debug("Applied enhanced tree styling with folder/file icons")
 
 def apply_enhanced_tree_styling(tree_widget):
     """
@@ -343,8 +352,8 @@ def setup_tree_for_structure_editing(tree_widget):
     # This is particularly important for structure editing where icons need to be visible
     update_tree_item_icons(tree_widget)
     
-    print("DEBUG: Tree widget set up for structure editing with enhanced delegate")
-    print("DEBUG: Applied enhanced tree styling with folder/file icons")
+    debug("Tree widget set up for structure editing with enhanced delegate")
+    debug("Applied enhanced tree styling with folder/file icons")
 
 def update_folder_icon_on_expand(item, expanded):
     """Update folder icon when item is expanded or collapsed"""
@@ -449,7 +458,7 @@ def apply_styling_to_all_tree_widgets(parent_widget=None):
                 
             count += 1
     
-    print(f"DEBUG: Applied styling to {count} tree widgets with platform-specific icons")
+    debug(f"Applied styling to {count} tree widgets with platform-specific icons")
     return count
 
 def refresh_all_tree_icons():
