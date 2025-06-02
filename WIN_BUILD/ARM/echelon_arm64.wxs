@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    <!-- Define product details -->
+    <Product Id="*" 
+             Name="Echelon" 
+             Language="1033" 
+             Version="1.0.0.0" 
+             Manufacturer="CR2 Creative" 
+             UpgradeCode="6788E65F-1FBE-4E66-A81A-1DC6F5F7B475">
+        
+        <!-- Package details -->
+        <Package InstallerVersion="200" 
+                 Compressed="yes" 
+                 InstallScope="perMachine"
+                 Platform="arm64" />
+        
+        <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+        <MediaTemplate EmbedCab="yes" />
+        
+        <!-- Define installation directory structure -->
+        <Directory Id="TARGETDIR" Name="SourceDir">
+            <Directory Id="ProgramFiles64Folder">
+                <Directory Id="INSTALLFOLDER" Name="Echelon">
+                    <!-- Application files will be added here dynamically -->
+                </Directory>
+            </Directory>
+            
+            <!-- Program Menu folder -->
+            <Directory Id="ProgramMenuFolder">
+                <Directory Id="ApplicationProgramsFolder" Name="Echelon"/>
+            </Directory>
+            
+            <!-- Desktop folder -->
+            <Directory Id="DesktopFolder" Name="Desktop"/>
+        </Directory>
+        
+        <!-- Define components -->
+        <Feature Id="ProductFeature" Title="Echelon" Level="1">
+            <ComponentGroupRef Id="ProductComponents" />
+            <ComponentRef Id="ApplicationShortcut" />
+            <ComponentRef Id="DesktopShortcut" />
+        </Feature>
+        
+        <!-- Shortcuts -->
+        <DirectoryRef Id="ApplicationProgramsFolder">
+            <Component Id="ApplicationShortcut" Guid="*">
+                <Shortcut Id="ApplicationStartMenuShortcut" 
+                          Name="Echelon" 
+                          Description="Echelon Project Template Manager"
+                          Target="[INSTALLFOLDER]Echelon.exe"
+                          WorkingDirectory="INSTALLFOLDER"/>
+                <RemoveFolder Id="CleanUpShortCut" Directory="ApplicationProgramsFolder" On="uninstall"/>
+                <RegistryValue Root="HKCU" Key="Software\CR2Creative\Echelon" Name="installed" Type="integer" Value="1" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        
+        <DirectoryRef Id="DesktopFolder">
+            <Component Id="DesktopShortcut" Guid="*">
+                <Shortcut Id="DesktopShortcut" 
+                          Name="Echelon" 
+                          Description="Echelon Project Template Manager"
+                          Target="[INSTALLFOLDER]Echelon.exe"
+                          WorkingDirectory="INSTALLFOLDER"/>
+                <RegistryValue Root="HKCU" Key="Software\CR2Creative\Echelon" Name="desktop_installed" Type="integer" Value="1" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+        
+        <!-- UI configuration -->
+        <UIRef Id="WixUI_InstallDir" />
+        <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+        
+        <!-- License dialog -->
+        <WixVariable Id="WixUILicenseRtf" Value="EULA.rtf" />
+    </Product>
+    
+    <!-- This ComponentGroup will be populated dynamically by heat.exe -->
+    <Fragment>
+        <ComponentGroup Id="ProductComponents">
+            <!-- Components will be added here by WiX harvester (heat.exe) -->
+        </ComponentGroup>
+    </Fragment>
+</Wix> 

@@ -588,14 +588,15 @@ class ProjectCreatorApp(QMainWindow):
         
     def get_output_dir(self):
         """Open file dialog to select output directory"""
-        directory = QFileDialog.getExistingDirectory(
-            self, 
-            "Select Output Directory",
-            self.output_dir_input.text() if hasattr(self, 'output_dir_input') else "",
-            QFileDialog.ShowDirsOnly
-        )
+        dialog = QFileDialog(self, "Select Output Directory")
+        dialog.setFileMode(QFileDialog.FileMode.Directory)
+        dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)
         
-        if directory:
+        initial_dir = self.output_dir_input.text() if hasattr(self, 'output_dir_input') else ""
+        dialog.setDirectory(initial_dir)
+
+        if dialog.exec():
+            directory = dialog.selectedFiles()[0]
             # Update the output directory entry
             if hasattr(self, 'output_dir_input'):
                 self.output_dir_input.setText(directory)
