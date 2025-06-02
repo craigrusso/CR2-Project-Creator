@@ -424,30 +424,46 @@ class GalleryTemplatesSetup:
     
     @staticmethod
     def connect_template_signals(gallery, item, template_data):
-        """Connect signals consistently for both grid and list view items"""
-        template_name = template_data.get('name', '') if isinstance(template_data, dict) else str(template_data)
+        """Connect signals for a template item (card or list item)"""
+        # Ensure template_data is a dictionary
+        if not isinstance(template_data, dict):
+            # Attempt to get it from template_io if it's just a name
+            if isinstance(template_data, str) and hasattr(gallery, 'app') and gallery.app.template_manager:
+                template_name_str = template_data
+                template_data = gallery.app.template_manager.template_io.get_template(template_name_str)
+                if not template_data: # Fallback if still not found
+                    print(f"[ERROR] connect_template_signals: Could not retrieve template data for name '{template_name_str}'")
+                    template_data = {'name': template_name_str} # Minimal data
+            else:
+                print(f"[ERROR] connect_template_signals: template_data is not a dict and cannot be resolved: {template_data}")
+                # Create a minimal dict to avoid errors, though functionality might be limited
+                template_data = {'name': str(template_data) if template_data else "Unknown"}
+
+        template_name = template_data.get('name', 'Unknown')
+        is_folder = template_data.get('is_folder', False)
+
+        # Connect signals based on item type (TemplateCard or QTableWidgetItem/etc.)
+        if hasattr(item, 'clicked'):
+            item.clicked.connect(lambda td=template_data: GalleryEvents.on_template_select(gallery, td))
         
-        # Connect click handler for selection
-        if hasattr(gallery, '_on_template_select') and hasattr(item, 'clicked'):
-            item.clicked.connect(lambda checked=False, t=template_data: gallery._on_template_select(t))
-        
-        # Connect double-click handler for editing
         if hasattr(item, 'doubleClicked'):
-            item.doubleClicked.connect(lambda t_name=template_name: handle_template_edit(gallery, t_name))
-        
-        # Connect context menu actions
+            item.doubleClicked.connect(lambda t_name=template_name: GalleryEvents.on_edit_template(gallery, t_name))
+
         if hasattr(item, 'editRequested'):
-            item.editRequested.connect(lambda t_name=template_name: handle_template_edit(gallery, t_name))
+            item.editRequested.connect(lambda t_name=template_name: GalleryEvents.on_edit_template(gallery, t_name))
         
         if hasattr(item, 'deleteRequested'):
-            item.deleteRequested.connect(lambda t_name=template_name: 
-                GalleryEvents.on_delete_template(gallery, t_name))
-        
-        # Connect move to folder signal
+            # Corrected: on_delete_template expects only the gallery instance.
+            # It uses the gallery's selection_manager to determine what to delete.
+            item.deleteRequested.connect(lambda: GalleryEvents.on_delete_template(gallery))
+
+        if hasattr(item, 'duplicate_requested'):
+            item.duplicate_requested.connect(lambda t_name=template_name: GalleryEvents.on_duplicate_template(gallery, t_name))
+
         if hasattr(item, 'moveToFolderRequested'):
-            item.moveToFolderRequested.connect(lambda t_name, folder_name: 
-                GalleryEvents.on_move_template_to_folder(gallery, t_name, folder_name))
-        
+            item.moveToFolderRequested.connect(lambda t_name=template_name, folder=template_data.get('parent_folder'): 
+                                                GalleryEvents.on_move_template_to_folder(gallery, [t_name], folder))
+
         # Connect multi-select handler
         if hasattr(gallery, 'on_template_multi_select') and hasattr(item, 'multiSelectRequested'):
             item.multiSelectRequested.connect(
@@ -1399,178 +1415,5 @@ def test_template_rename(gallery, template_name, new_name):
         import traceback
         print(f"TEST ERROR: Exception during template rename test: {e}")
         print(traceback.format_exc())
-        results['errors'].append(f"Exception: {str(e)}")
-        return results
-
-def test_template_rename_workflow(gallery, template_name, new_name):
-    """
-    Test the complete template rename workflow
-    
-    This function can be called to test the template rename functionality. It:
-    1. Finds an existing template
-    2. Renames it
-    3. Verifies the rename in the template manager
-    4. Checks that the UI is updated correctly
-    
-    Args:
-        gallery: The template gallery instance
-        template_name: Original name of the template to rename
-        new_name: New name to give the template
-        
-    Returns:
-        dict: Results of the test with details on what passed/failed
-    """
-    print(f"TEST: Starting template rename test: '{template_name}' -> '{new_name}'")
-    results = {
-        'original_template_found': False,
-        'structure_loaded': False,
-        'rename_successful': False,
-        'new_template_found': False,
-        'gallery_updated': False,
-        'errors': []
-    }
-    
-    try:
-        # Step 1: Verify template manager is available
-        if not hasattr(gallery, 'app') or not hasattr(gallery.app, 'template_manager'):
-            results['errors'].append("No template manager available")
-            return results
-        
-        template_manager = gallery.app.template_manager
-        
-        # Step 2: Find the original template
-        original_template = template_manager.get_template_by_name(template_name)
-        if not original_template:
-            print(f"TEST: Original template '{template_name}' not found")
-            results['errors'].append(f"Original template '{template_name}' not found")
-            return results
-        
-        print(f"TEST: Found original template: {original_template.get('name', 'Unknown')}")
-        results['original_template_found'] = True
-        
-        # Save original template data for verification
-        original_data = original_template.copy()
-        
-        # Step 3: Get the structure
-        structure_name = f"Template_{template_name}"
-        structure = template_manager.get_structure(structure_name)
-        if not structure:
-            structure_name = template_name
-            structure = template_manager.get_structure(structure_name)
-            
-        if not structure:
-            print(f"TEST: No structure found for template '{template_name}'")
-            # Create a simple test structure
-            structure = [
-                {"type": "folder", "name": "Test Folder"},
-                {"type": "file", "name": "test.txt", "parent": "Test Folder"}
-            ]
-            print(f"TEST: Created simple test structure with {len(structure)} items")
-        else:
-            print(f"TEST: Loaded structure with {len(structure)} items")
-            
-        results['structure_loaded'] = True
-        
-        # Step 4: Rename the template
-        print(f"TEST: Renaming template '{template_name}' to '{new_name}'")
-        rename_success = template_manager.rename_template(template_name, new_name)
-        
-        if rename_success:
-            print(f"TEST: Template successfully renamed")
-            results['rename_successful'] = True
-        else:
-            # Try fallback update method
-            print(f"TEST: Direct rename failed, trying update method")
-            
-            # Create updated template
-            updated_template = original_data.copy()
-            updated_template['name'] = new_name
-            updated_template['structure_name'] = f"Template_{new_name}"
-            
-            # Update or add the template
-            update_success = template_manager.update_template(updated_template)
-            
-            if update_success:
-                print(f"TEST: Template updated successfully with new name")
-                
-                # Delete the old template if needed
-                if template_name != new_name:
-                    delete_success = template_manager.delete_template(template_name)
-                    print(f"TEST: Deleted old template '{template_name}': {delete_success}")
-                
-                results['rename_successful'] = True
-            else:
-                print(f"TEST: Failed to update template with new name")
-                results['errors'].append("Failed to rename or update template")
-                return results
-            
-        # Step 5: Verify the renamed template exists
-        new_template = template_manager.get_template_by_name(new_name)
-        if new_template:
-            print(f"TEST: Found renamed template: {new_template.get('name', 'Unknown')}")
-            results['new_template_found'] = True
-        else:
-            print(f"TEST: Renamed template '{new_name}' not found")
-            results['errors'].append(f"Renamed template '{new_name}' not found")
-            return results
-        
-        # Step 6: Verify old template is gone
-        old_template = template_manager.get_template_by_name(template_name)
-        if old_template:
-            print(f"TEST: WARNING: Old template '{template_name}' still exists")
-            results['errors'].append(f"Old template '{template_name}' still exists")
-        else:
-            print(f"TEST: Old template '{template_name}' no longer exists (good)")
-        
-        # Step 7: Save the structure under the new name
-        new_structure_name = f"Template_{new_name}"
-        save_structure_success = template_manager.save_custom_structure(new_structure_name, structure)
-        print(f"TEST: Saved structure under new name '{new_structure_name}': {save_structure_success}")
-        
-        # Step 8: Refresh gallery and verify UI update
-        print(f"TEST: Refreshing gallery to update UI")
-        gallery.populate_gallery(force_refresh=True)
-        
-        # Wait a moment for UI to update
-        from PyQt6.QtCore import QTimer
-        from PyQt6.QtWidgets import QApplication
-        
-        # Process events to ensure UI updates
-        QApplication.processEvents()
-        
-        # Step 9: Try to select the renamed template
-        success = False
-        if hasattr(gallery, 'select_template'):
-            success = gallery.select_template(new_name)
-            print(f"TEST: Selection result: {success}")
-        
-        if success:
-            print(f"TEST: Successfully selected renamed template in gallery")
-            results['gallery_updated'] = True
-        else:
-            print(f"TEST: Failed to select renamed template in gallery")
-            
-            # Check if the template is visible in the gallery
-            template_found = False
-            if hasattr(gallery, 'template_cards') and gallery.template_cards:
-                for card in gallery.template_cards:
-                    if hasattr(card, 'template') and isinstance(card.template, dict):
-                        card_name = card.template.get('name', '')
-                        if card_name == new_name:
-                            template_found = True
-                            print(f"TEST: Found template card with name '{new_name}' but selection failed")
-                            break
-            
-            if not template_found:
-                print(f"TEST: No template card found with name '{new_name}'")
-                results['gallery_updated'] = True
-        
-        print(f"TEST: Template rename test completed with results: {results}")
-        return results
-        
-    except Exception as e:
-        import traceback
-        print(f"TEST ERROR: Exception during template rename test: {e}")
-        traceback.print_exc()
         results['errors'].append(f"Exception: {str(e)}")
         return results 

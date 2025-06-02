@@ -490,6 +490,33 @@ class GalleryTemplatesSetup:
                 pass
             # Use GalleryEvents.on_edit_template which expects the gallery and template_name
             item.doubleClicked.connect(lambda name=template_name: GalleryEvents.on_edit_template(gallery, name))
+            
+        # --- Delete Request Handling ---
+        if hasattr(item, 'deleteRequested'):
+            try:
+                item.deleteRequested.disconnect()
+            except TypeError:
+                pass
+            # Connect to GalleryEvents.on_delete_template
+            item.deleteRequested.connect(lambda name=template_name: GalleryEvents.on_delete_template(gallery, name))
+            
+        # --- Duplicate Request Handling ---
+        if hasattr(item, 'duplicate_requested'):
+            try:
+                item.duplicate_requested.disconnect()
+            except TypeError:
+                pass
+            # Connect to GalleryEvents.on_duplicate_template
+            item.duplicate_requested.connect(lambda name=template_name: GalleryEvents.on_duplicate_template(gallery, name))
+            
+        # --- Move to Folder Request Handling ---
+        if hasattr(item, 'moveToFolderRequested'):
+            try:
+                item.moveToFolderRequested.disconnect()
+            except TypeError:
+                pass
+            # Connect to move to folder handler
+            item.moveToFolderRequested.connect(lambda template_name=name, folder=None: GalleryEvents.on_move_template_to_folder(gallery, [template_name], folder))
 
     @staticmethod
     def setup_templates_section(gallery):

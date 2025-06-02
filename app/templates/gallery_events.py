@@ -980,37 +980,68 @@ class GalleryEvents:
     
     @staticmethod
     def on_duplicate_template(gallery, template_name):
-        """Handle duplicating a template"""
-        print(f"🔍 LISTENER: Duplicate requested for '{template_name}'")
-        
-        if not template_name or not hasattr(gallery, 'template_manager'):
-            QMessageBox.warning(gallery, "Error", "Cannot duplicate template: No template selected or template manager not available.")
+        """Handle duplicating a template without a dialog, automatically generating a name."""
+        print(f"🔍 LISTENER: Duplicate requested for '{template_name}' (auto-name, context menu style name generation)")
+
+        if not template_name or not hasattr(gallery, 'template_manager') or not hasattr(gallery.template_manager, 'template_io'):
+            QMessageBox.warning(gallery, "Error", "Cannot duplicate template: Template manager or TemplateIO not available.")
             return
-            
-        # Ask for new name
-        new_name, ok = QInputDialog.getText(
-            gallery,
-            "Duplicate Template",
-            "Enter name for the duplicate template:",
-            text=f"{template_name} (Copy)"
-        )
+
+        template_manager = gallery.template_manager
+
+        # Align naming with Cmd+D shortcut: "copy", "copy 2", etc.
+        base_new_name = f"{template_name} copy" # Changed from (Copy)
+        new_name = base_new_name
+        counter = 1 # Start with base_new_name (suffixless or 'copy'), counter for 'copy 2', 'copy 3'
         
-        if not ok or not new_name:
-            return  # User cancelled
+        # Check if "Template Name copy" exists
+        if template_manager.template_io.get_template(new_name):
+            # If "Template Name copy" exists, start with "Template Name copy 2"
+            counter = 2 
+            new_name = f"{template_name} copy {counter}"
+            # Loop to find next available "Template Name copy N"
+            while template_manager.template_io.get_template(new_name):
+                counter += 1
+                new_name = f"{template_name} copy {counter}"
+        # If "Template Name copy" does not exist, new_name (base_new_name) is already correctly set.
+        
+        print(f"🔍 LISTENER: Generated unique name for duplicate: '{new_name}'")
             
         # Duplicate template
         try:
-            if hasattr(gallery.template_manager, 'duplicate_template'):
-                success = gallery.template_manager.duplicate_template(template_name, new_name)
+            if hasattr(template_manager, 'duplicate_template'):
+                success = template_manager.duplicate_template(template_name, new_name)
                 if success:
-                    QMessageBox.information(gallery, "Success", f"Template '{template_name}' duplicated as '{new_name}'.")
+                    # If duplicating within a folder, ensure the new template is added to this folder.
+                    if gallery.current_folder and hasattr(template_manager, 'move_template_to_folder'):
+                        print(f"[DEBUG] Context Duplicate: Moving new template '{new_name}' to current folder '{gallery.current_folder}'")
+                        # Use move_template_to_folder to ensure it's correctly placed and removed from others if necessary
+                        # (though for a brand new template, it's effectively an add).
+                        moved_to_folder = template_manager.move_template_to_folder(new_name, gallery.current_folder)
+                        if not moved_to_folder:
+                            print(f"[WARNING] Context Duplicate: Failed to move '{new_name}' to folder '{gallery.current_folder}'")
+
+                    if hasattr(gallery.app, 'show_status_message'):
+                        gallery.app.show_status_message(f"Template '{template_name}' duplicated as '{new_name}'.", "success")
+                    else:
+                        QMessageBox.information(gallery, "Success", f"Template '{template_name}' duplicated as '{new_name}'.")
                     gallery.populate_gallery(force_refresh=True)
+                    QTimer.singleShot(100, lambda: gallery.select_template(new_name))
                 else:
-                    QMessageBox.warning(gallery, "Error", f"Failed to duplicate template '{template_name}'.")
+                    if hasattr(gallery.app, 'show_status_message'):
+                        gallery.app.show_status_message(f"Failed to duplicate template '{template_name}'. Error during duplication process.", "error")
+                    else:
+                        QMessageBox.warning(gallery, "Error", f"Failed to duplicate template '{template_name}'. Error during duplication process.")
             else:
-                QMessageBox.warning(gallery, "Not Implemented", "Duplicate functionality is not implemented yet.")
+                QMessageBox.warning(gallery, "Not Implemented", "Duplicate functionality is not implemented in the template manager.")
         except Exception as e:
-            QMessageBox.critical(gallery, "Error", f"Error duplicating template: {str(e)}")
+            if hasattr(gallery.app, 'show_status_message'):
+                gallery.app.show_status_message(f"Error duplicating template: {str(e)}", "error")
+            else:
+                QMessageBox.critical(gallery, "Error", f"Error duplicating template: {str(e)}")
+            print(f"[ERROR] Exception in on_duplicate_template: {e}")
+            import traceback
+            traceback.print_exc()
     
     @staticmethod
     def on_rename_template(gallery, template_name):
@@ -1103,73 +1134,71 @@ class GalleryEvents:
         
         try:
             if event.key() == Qt.Key.Key_Delete or event.key() == Qt.Key.Key_Backspace:
-                # Priority 1: Folder deletion if a folder is selected
-                if hasattr(gallery, 'selected_folder') and gallery.selected_folder:
-                    print(f"[DEBUG] Delete/Backspace key pressed, folder selected: {gallery.selected_folder}")
+                # Determine what is selected for deletion
+                templates_to_delete_from_selection_manager = []
+                if hasattr(gallery, 'selection_manager') and gallery.selection_manager:
+                    multi_selected = gallery.selection_manager.multi_selected_templates
+                    primary_selected = gallery.selection_manager.selected_template
+                    if multi_selected:
+                        templates_to_delete_from_selection_manager.extend(multi_selected)
+                    elif primary_selected:
+                        templates_to_delete_from_selection_manager.append(primary_selected)
+
+                is_folder_view_active = hasattr(gallery, 'current_folder') and gallery.current_folder
+                is_folder_card_selected = hasattr(gallery, 'selected_folder') and gallery.selected_folder
+
+                # Priority 1: Template Deletion if templates are selected
+                if templates_to_delete_from_selection_manager:
+                    # If we are in a folder view, ensure the selected templates are indeed part of that folder
+                    # This check might be redundant if selection manager correctly reflects the current view context
+                    # For now, we assume selection manager is the source of truth for what is selected.
+                    print(f"[DEBUG] Delete/Backspace key pressed, {len(templates_to_delete_from_selection_manager)} template(s) identified by SelectionManager.")
+                    GalleryEvents.on_delete_template(gallery) 
+                    event.accept()
+                    return True
+                
+                # Priority 2: Folder deletion if a folder card is selected AND no templates are selected
+                # (The `gallery.selected_folder` attribute is typically set when a folder CARD is explicitly clicked and selected)
+                elif is_folder_card_selected and not templates_to_delete_from_selection_manager:
+                    print(f"[DEBUG] Delete/Backspace key pressed, folder card selected: {gallery.selected_folder}")
                     
                     if gallery.selected_folder in getattr(gallery.template_manager, 'DEFAULT_FOLDERS', ["General", "Development", "Business"]):
-                        from PyQt6.QtWidgets import QMessageBox
                         QMessageBox.warning(gallery, "Error", 
                             f"'{gallery.selected_folder}' is a default folder and cannot be deleted.")
                         event.accept()
                         return True
                     
-                    # Add confirmation for folder deletion
                     reply = QMessageBox.question(gallery, "Confirm Folder Deletion",
                                                  f"Are you sure you want to delete the folder '{gallery.selected_folder}' and all its templates?",
-                                                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-                    if reply == QMessageBox.No:
-                        event.accept() # Still accept event to prevent further processing
+                                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+                    if reply == QMessageBox.StandardButton.No:
+                        event.accept()
                         return True
 
                     if hasattr(gallery, 'template_manager') and gallery.template_manager:
-                        folder_name_to_delete = gallery.selected_folder # Save before it's reset
+                        folder_name_to_delete = gallery.selected_folder 
                         success = gallery.template_manager.delete_folder(folder_name_to_delete)
                         
                         if success:
                             gallery.populate_gallery(force_refresh=True)
                             gallery.selected_folder = None 
-                            if hasattr(gallery, 'app') and hasattr(gallery.app, 'show_status_message'):
+                            if hasattr(gallery.app, 'show_status_message'):
                                 gallery.app.show_status_message(f"Folder '{folder_name_to_delete}' deleted", "info")
                         else:
-                            from PyQt6.QtWidgets import QMessageBox
                             QMessageBox.warning(gallery, "Delete Failed", 
                                 f"Failed to delete folder '{folder_name_to_delete}'.")
-                        
                         event.accept()
                         return True
-                    else: # Should not happen if gallery.selected_folder was set
+                    else: 
                         event.accept()
                         return True
-
-                # Priority 2: Template Deletion using SelectionManager
-                templates_to_potentially_delete = []
-                if hasattr(gallery, 'selection_manager') and gallery.selection_manager:
-                    multi_selected = gallery.selection_manager.multi_selected_templates
-                    primary_selected = gallery.selection_manager.selected_template
-
-                    if multi_selected:
-                        templates_to_potentially_delete.extend(multi_selected)
-                    elif primary_selected:
-                        templates_to_potentially_delete.append(primary_selected)
-                
-                if templates_to_potentially_delete:
-                    print(f"[DEBUG] Delete/Backspace key pressed, {len(templates_to_potentially_delete)} template(s) identified by SelectionManager.")
-                    # on_delete_template will handle confirmation and actual deletion
-                    # It uses selection_manager internally, so just calling it is fine.
-                    GalleryEvents.on_delete_template(gallery) 
-                    event.accept()
-                    return True
                 else:
-                    print(f"[DEBUG] Delete/Backspace key pressed, but no templates selected via SelectionManager.")
-                    # Optional: If you want to prevent further processing even if nothing was deleted.
-                    # event.accept() 
-                    pass # Let event propagate if no templates/folders were clearly selected for deletion
+                    print(f"[DEBUG] Delete/Backspace key pressed, but no templates or folder card selected for deletion.")
+                    pass 
 
         except Exception as e:
             print(f"[ERROR] Error handling key press event in GalleryEvents: {e}")
             import traceback
             traceback.print_exc()
         
-        # If not handled by this function, return False so event can propagate
         return False 

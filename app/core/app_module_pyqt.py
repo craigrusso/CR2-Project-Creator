@@ -595,6 +595,9 @@ class ProjectCreatorApp(QMainWindow):
         initial_dir = self.output_dir_input.text() if hasattr(self, 'output_dir_input') else ""
         dialog.setDirectory(initial_dir)
 
+        # Initialize directory to None before the dialog executes
+        directory = None
+        
         if dialog.exec():
             directory = dialog.selectedFiles()[0]
             # Update the output directory entry
@@ -615,7 +618,7 @@ class ProjectCreatorApp(QMainWindow):
                 except Exception as e:
                     print(f"ERROR: Failed to create security-scoped bookmark: {e}")
             
-        return directory  # Return the selected directory so it can be used by callers
+        return directory  # Return the selected directory or None if cancelled
     
     def get_current_output_dir(self, use_fallbacks=True):
         """Get the current output directory from the entry field

@@ -883,91 +883,78 @@ class TemplateCard(QFrame):
             
         super().keyPressEvent(event)
     
-    def contextMenuEvent(self, event):
-        """Show context menu when right-clicked"""
-        if not self.app or not hasattr(self.app, 'template_manager'):
-            return
-            
-        # CRITICAL: First, apply immediate visual selection feedback
-        # This ensures the user sees this template as selected before the context menu appears
-        self.set_selected(True)
-        
-        # Create context menu using our custom class
+    def contextMenuEvent(self, event: QEvent):
+        """Create and show a context menu for the template card"""
+        from app.templates.gallery_events import GalleryEvents # Ensure import
+
+        # Create a context menu
+        # Use our custom ContextMenu class
         context_menu = ContextMenu(self)
         
+        # Get template name
+        t_name = self.template_name()
+        
+        # --- Add actions ---
         # Add "Edit" action
         edit_action = QAction("Edit", self)
         edit_action.triggered.connect(lambda: self.editRequested.emit(self.template_name()))
         context_menu.addAction(edit_action)
         
-        # Find the parent gallery for multi-selection handling
+        # Find the parent gallery for multi-selection handling and folder operations
         gallery = None
         p = self.parent()
         while p is not None:
-            if hasattr(p, 'selection_manager') and hasattr(p, 'template_manager'):
+            # Check if it's the TemplateGalleryWidget instance directly
+            if hasattr(p, 'selection_manager') and hasattr(p, 'template_manager') and hasattr(p, 'current_folder'):
                 gallery = p
                 break
+            # Check if parent has template_gallery attribute (e.g. if parent is main window)
+            if hasattr(p, 'template_gallery'):
+                gallery_candidate = p.template_gallery
+                if hasattr(gallery_candidate, 'selection_manager') and \
+                   hasattr(gallery_candidate, 'template_manager') and \
+                   hasattr(gallery_candidate, 'current_folder'):
+                    gallery = gallery_candidate
+                    break
             p = p.parent()
-        
+
+        if not gallery and self.app and hasattr(self.app, 'template_gallery'): # Fallback to app.template_gallery
+            gallery = self.app.template_gallery
+
         # Before showing context menu, ensure this item is selected if it's not already part of selection
-        is_in_multi_selection = False
+        # This logic is handled by mousePressEvent now, so it can be simplified or removed here
+        # to avoid conflicts, as mousePressEvent already updates selection_manager.
+
+        # Determine if multi-selection is active to adjust "Delete" text
+        has_multi_selection_active = False
+        num_selected_for_context_menu = 0
         if gallery and hasattr(gallery, 'selection_manager'):
-            try:
-                # Use the selection manager's safe methods to check multi-selection
-                if hasattr(gallery.selection_manager, 'is_multi_selected'):
-                    is_in_multi_selection = gallery.selection_manager.is_multi_selected(self.template)
-                # Fallback to direct check if the method doesn't exist
-                elif hasattr(gallery, 'multi_selected_templates'):
-                    is_in_multi_selection = self.template in gallery.multi_selected_templates
-            except Exception as e:
-                print(f"Error checking multi-selection: {e}")
+            multi_selected_items = gallery.selection_manager.multi_selected_templates
+            num_selected_for_context_menu = len(multi_selected_items)
+            if num_selected_for_context_menu > 1 and self.template_info() in multi_selected_items:
+                has_multi_selection_active = True
         
-        # If not already in multi-selection, select it (preserving existing multi-selection)
-        if gallery and not is_in_multi_selection:
-            # Check if we have modifiers pressed (ctrl/cmd)
-            modifiers = QApplication.keyboardModifiers()
-            is_modifier_pressed = bool(modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier | Qt.KeyboardModifier.ShiftModifier))
-            
-            # If no modifiers, set this as primary but preserve multi-selection
-            if not is_modifier_pressed:
-                # Don't clear multi-selection when right-clicking
-                if hasattr(gallery, 'selection_manager'):
-                    # Use clear_multi=False to preserve existing multi-selection
-                    gallery.selection_manager.set_primary_selection(self.template, emit_signal=True, clear_multi=False)
-                    
-                    # Always update our own visual state after changing selection
-                    is_primary = gallery.selection_manager.is_selected(self.template)
-                    is_multi = gallery.selection_manager.is_multi_selected(self.template)
-                    self.set_selected(is_primary)
-                    self.set_multi_selected(is_multi)
-                # Fallback for galleries without selection_manager
-                elif hasattr(gallery, 'selected_template'):
-                    gallery.selected_template = self.template
-                    
-                    # Always update our own visual state
-                    self.set_selected(True)
+        # --- Delete Action ---
+        delete_action_text = "Delete"
+        if has_multi_selection_active:
+            delete_action_text = f"Delete {num_selected_for_context_menu} Selected Templates"
         
-        # Check if we're in a multi-selection state - using selection_manager if available
-        has_multi = False
-        if gallery:
-            if hasattr(gallery, 'selection_manager') and hasattr(gallery.selection_manager, 'multi_selected_templates'):
-                has_multi = bool(gallery.selection_manager.multi_selected_templates) and len(gallery.selection_manager.multi_selected_templates) > 1
-            elif hasattr(gallery, 'multi_selected_templates'):
-                has_multi = bool(gallery.multi_selected_templates) and len(gallery.multi_selected_templates) > 1
-                    
-        # Add "Delete" action with appropriate callback based on selection state
-        if has_multi:
-            delete_text = "Delete Selected Templates"
-            delete_callback = lambda: self._delete_multi_selected(gallery)
+        # Define the callback for the delete action
+        delete_callback = None
+        if gallery: # Ensure gallery instance is available
+            delete_callback = lambda: GalleryEvents.on_delete_template(gallery)
         else:
-            delete_text = "Delete"
-            delete_callback = lambda: self.deleteRequested.emit(self.template_name())
-            
+            # Fallback if gallery not found (should not happen ideally)
+            print("[WARNING] TemplateCard context menu: Gallery instance not found for delete action callback. Falling back to deleteRequested signal.")
+            delete_callback = lambda: self.deleteRequested.emit(t_name) # t_name is self.template_name()
+        
+        # Use addRedDeleteAction from ContextMenu class for styling and adding to menu
         context_menu.addRedDeleteAction(
-            parent=self,
+            parent=self, # Or context_menu as parent for the QWidgetAction
             callback=delete_callback,
-            text=delete_text
+            text=delete_action_text
         )
+        # --- End Delete Action ---
         
         # Add separator
         context_menu.addSeparator()
@@ -977,89 +964,60 @@ class TemplateCard(QFrame):
         duplicate_action.triggered.connect(lambda: self.duplicate_requested.emit(self.template_name()))
         context_menu.addAction(duplicate_action)
         
-        # Add export template option
-        export_action = QAction("Export Template...", self)
-        export_action.triggered.connect(lambda: self._export_template())
-        context_menu.addAction(export_action)
-        
-        # Add cache management submenu
-        cache_menu = ContextMenu(context_menu)
-        cache_menu.setTitle("Cache Management")
-        
-        # Add cache management actions
-        recache_action = QAction("Recache Template", self)
-        recache_action.triggered.connect(lambda: self._recache_template())
-        cache_menu.addAction(recache_action)
-        
-        clear_cache_action = QAction("Clear Template Cache", self)
-        clear_cache_action.triggered.connect(lambda: self._clear_template_cache())
-        cache_menu.addAction(clear_cache_action)
-        
-        # Add cache management submenu to main menu
-        context_menu.addSeparator()
-        context_menu.addMenu(cache_menu)
-        
-        # --- Keep reference to action during exec_ ---
-        self._temp_duplicate_action = duplicate_action 
-        # --- END ---
-
-        # Add separator
-        context_menu.addSeparator()
-        
-        # Add move actions
-        move_to_menu = ContextMenu(context_menu)
-        move_to_menu.setTitle("Move to...")
-        
-        # Find current folder of this template
-        current_folder = None
-        template_manager = self.app.template_manager
-        if hasattr(template_manager, 'folders'):
-            for folder_name, templates in template_manager.folders.items():
-                if self.template_name() in templates:
-                    current_folder = folder_name
-                    break
-        
-        # Add "Move to Root" option if template is in a folder
-        if current_folder:
-            move_to_root_action = QAction("No Folder", self)
-            move_to_root_action.triggered.connect(lambda: self._move_template_out_of_folder(current_folder))
-            move_to_menu.addAction(move_to_root_action)
+        # --- Move to Folder ---
+        if gallery and hasattr(gallery, 'template_manager'):
+            # Create "Move to Folder" submenu
+            move_menu = context_menu.addMenu("Move to Folder")
             
-            move_to_menu.addSeparator()
+            # Action to move to root (remove from current folder)
+            # Only show if currently in a folder
+            current_template_info = gallery.template_manager.get_template_by_name(t_name)
+            is_in_any_folder = current_template_info and current_template_info.get('parent_folder')
+
+            if is_in_any_folder:
+                move_to_root_action = move_menu.addAction("Move to Root (No Folder)")
+                move_to_root_action.triggered.connect(lambda: self._move_template_out_of_folder(gallery.current_folder)) # Pass current_folder
+            
+            # Get available folders
+            folders = gallery.template_manager.get_folders() # Returns folder names
+            
+            if folders:
+                if is_in_any_folder: # Add separator if "Move to Root" was added
+                     move_menu.addSeparator()
+
+                for folder_name_iter in folders:
+                    # Don't allow moving to its own current parent folder
+                    if current_template_info and current_template_info.get('parent_folder') == folder_name_iter:
+                        continue
+
+                    action = QAction(folder_name_iter, self)
+                    action.triggered.connect(lambda checked=False, f_name=folder_name_iter: self.moveToFolderRequested.emit(t_name, f_name))
+                    move_menu.addAction(action)
+            elif not is_in_any_folder: # No folders exist and not in one
+                no_folders_action = QAction("No folders available", self)
+                no_folders_action.setEnabled(False)
+                move_menu.addAction(no_folders_action)
+
+        # Add a separator
+        context_menu.addSeparator()
+
+        # Export template option
+        export_action = QAction("Export Template...", self)
+        export_action.triggered.connect(self._export_template) # Connect to internal method
+        context_menu.addAction(export_action)
+
+        # Recache template option
+        recache_action = QAction("Recache Template Files", self)
+        recache_action.triggered.connect(self._recache_template)
+        context_menu.addAction(recache_action)
         
-        # Add all folders except current one
-        if hasattr(template_manager, 'folders'):
-            folders = sorted(list(template_manager.folders.keys()))
-            for folder_name in folders:
-                # Skip the current folder
-                if folder_name == current_folder:
-                    continue
-                    
-                # Create a properly captured lambda for this folder using a function factory
-                def make_action_for_folder(folder):
-                    action = QAction(folder, self)
-                    action.triggered.connect(lambda checked=False, f=folder: self._move_to_folder_and_hide(f))
-                    return action
-                
-                # Add the folder action to the menu
-                move_to_menu.addAction(make_action_for_folder(folder_name))
+        # Clear Cache for this template option
+        clear_cache_action = QAction("Clear Cache for This Template", self)
+        clear_cache_action.triggered.connect(self._clear_template_cache)
+        context_menu.addAction(clear_cache_action)
         
-        # Only add the Move To menu if it has items
-        if not move_to_menu.isEmpty():
-            context_menu.addMenu(move_to_menu)
-        
-        # Show the menu
+        # Show the context menu
         context_menu.exec(event.globalPos())
-        
-        # When context menu closes, make sure our selection state reflects reality
-        if gallery and hasattr(gallery, 'selection_manager'):
-            try:
-                is_primary = gallery.selection_manager.is_selected(self.template)
-                is_multi = gallery.selection_manager.is_multi_selected(self.template)
-                self.set_selected(is_primary)
-                self.set_multi_selected(is_multi)
-            except Exception as e:
-                print(f"[ERROR] Error updating selection visuals after context menu: {e}")
 
     def _move_template_out_of_folder(self, current_folder):
         """Move template out of its current folder and hide it for immediate feedback"""

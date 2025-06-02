@@ -32,7 +32,7 @@ def get_resource_path(relative_path):
 # App constants
 APP_NAME = "Echelon"
 APP_VERSION = "1.0"
-APP_BUILD_NUMBER = 264
+APP_BUILD_NUMBER = 265
 RECENT_PROJECTS_MAX = 5
 RECENT_TEMPLATES_MAX = 5
 
