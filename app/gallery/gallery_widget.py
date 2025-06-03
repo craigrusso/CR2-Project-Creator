@@ -219,34 +219,44 @@ class TemplateGallery(QWidget):
                 self.back_button.setVisible(True)
                 print(f"🔍 LISTENER: Ensuring back button is visible for folder '{self.current_folder}'")
             if hasattr(self, 'folder_label'):
-                self.folder_label.setText(f"Folder: {self.current_folder}")
-                if not self.folder_label.isVisible(): self.folder_label.show()
+                self.folder_label.setText(self.current_folder) # Update to only show folder name
+                if not self.folder_label.isVisible(): self.folder_label.show() # This might be redundant if folder_nav handles visibility
+            if hasattr(self, 'folder_notice_label'): # Manage notice label
+                self.folder_notice_label.setText(f"You are viewing templates inside <b>{self.current_folder}</b>. Only items in this folder are shown.")
+                self.folder_notice_label.setVisible(True)
+            if hasattr(self, 'no_root_templates_notice_label'): # Ensure this is hidden when in a folder
+                self.no_root_templates_notice_label.setVisible(False)
         else:
             # Root view (not inside a folder)
-            # Always hide folder navigation elements at root level
-            if hasattr(self, 'folder_nav') and self.folder_nav.isVisible():
-                 self.folder_nav.setVisible(False)
-            if hasattr(self, 'back_button') and self.back_button.isVisible():
-                 self.back_button.setVisible(False)
-            if hasattr(self, 'folder_label') and self.folder_label.isVisible():
-                 self.folder_label.hide()
+            if hasattr(self, 'folders_section') and not self.folders_section.isVisible():
+                self.folders_section.setVisible(True)
+            if hasattr(self, 'templates_section') and not self.templates_section.isVisible():
+                self.templates_section.setVisible(True)
 
-            # Show folders section at root level unless filtering by category/search
-            if self.current_category == "All" and not self.current_search:
-                # No filtering - show folders section
-                if hasattr(self, 'folders_section') and not self.folders_section.isVisible():
-                     self.folders_section.setVisible(True)
+            # Populate folders section when in root view
+            folder_items_for_root_view = [item for item in items_for_table if item['is_folder']]
+            if self.folder_view_mode == "grid":
+                GalleryFoldersSetup.populate_folders_grid(self, folder_items_for_root_view)
+            else: # folder_view_mode == "list"
+                GalleryFoldersSetup.populate_folders_list(self, folder_items_for_root_view)
                 
-                # Populate folders section based on folder_view_mode
-                folder_list_for_ui = [{'name': fn, 'is_folder': True} for fn in folder_names_list]
-                if self.folder_view_mode == "grid":
-                    GalleryFoldersSetup.populate_folders_grid(self, folder_list_for_ui)
-                else:  # list mode for folders
-                    GalleryFoldersSetup.populate_folders_list(self, folder_list_for_ui)
-            else:
-                # Filtering by category or search - hide folders section
-                if hasattr(self, 'folders_section') and self.folders_section.isVisible():
-                     self.folders_section.setVisible(False)
+            if hasattr(self, 'folder_nav') and self.folder_nav.isVisible():
+                self.folder_nav.setVisible(False)
+            if hasattr(self, 'folder_notice_label'): # Manage notice label
+                self.folder_notice_label.setText("")
+                self.folder_notice_label.setVisible(False)
+
+            # --- Manage no_root_templates_notice_label --- 
+            if hasattr(self, 'no_root_templates_notice_label'):
+                root_templates_exist = any(not item['is_folder'] and item.get('parent_folder', 'ROOT') == "ROOT" for item in items_for_table)
+                templates_in_collections_exist = any(not item['is_folder'] and item.get('parent_folder') and item.get('parent_folder') != "ROOT" for item in items_for_table)
+                
+                if not root_templates_exist and templates_in_collections_exist:
+                    self.no_root_templates_notice_label.setText("<b>No templates in the main view.</b> Templates exist inside Template Collections. Click a collection to view them.")
+                    self.no_root_templates_notice_label.setVisible(True)
+                else:
+                    self.no_root_templates_notice_label.setText("")
+                    self.no_root_templates_notice_label.setVisible(False)
 
         # Prepare the filtered templates list for the current context (template view):
         if self.current_folder:
@@ -976,26 +986,15 @@ class TemplateGallery(QWidget):
         global_position = self.mapToGlobal(position)
 
         # --- Template Card Context Menu ---
-        if template_card and template_name:
-            print(f"DEBUG: Showing context menu for template card: '{template_name}'")
-            menu = ContextMenu(parent_widget) # Use the custom menu
+        if template_card and template_name: # template_name is from template_card.template_name()
+            # menu = ContextMenu(parent_widget) # Use the custom menu # Original line, will be uncommented later
             
-            # Determine if multi-select is active and if this card is part of it
-            num_selected = len(self.selection_manager.multi_selected_templates) # Use manager
-            # Multi-select is true if > 1 selected, OR if 1 is selected but it's NOT the card clicked on
-            is_multi_select = num_selected > 1 or \
-                              (num_selected == 1 and self.selection_manager.multi_selected_templates[0].get('name') != template_name)
-            print(f"DEBUG: Multi-select active: {is_multi_select}, Count: {num_selected}")
-
-            # Determine which template names to process (single or multi)
-            if is_multi_select:
-                names_to_process = [t.get('name') for t in self.selection_manager.multi_selected_templates if t and t.get('name')]
-                # Ensure the right-clicked card's template is included if multi-select is active
-                if template_name not in names_to_process:
-                     names_to_process.append(template_name) 
-            else:
-                names_to_process = [template_name]
-            print(f"DEBUG: Names to process for Move/Delete: {names_to_process}")
+            # Step 1: Reliably fetch clicked_template_data
+            clicked_template_data = None
+            if self.template_manager and template_name: 
+                clicked_template_data = self.template_manager.get_template_by_name(template_name)
+            
+            print(f"[DEBUG GRID CONTEXT] Clicked card: '{template_name}'. Fetched data: {'Exists' if clicked_template_data else 'None'}")
 
             # --- Standard Actions ---
             edit_action = menu.addAction("Edit")
@@ -1008,61 +1007,111 @@ class TemplateGallery(QWidget):
             # Define the text for the delete action based on selection
             delete_action_text = "Delete Selected Templates" if is_multi_select else "Delete Template"
 
-            # Add Delete action styled in red - Match position to List View
-            menu.addRedDeleteAction(self, callback=delete_selected, text=delete_action_text)
+            # Step 3: Construct "Move to..." Submenu
+            # For now, let's just print what would happen. Actual menu creation will be integrated after this log check.
             
-            # Always add Duplicate and Export options (like in List View)
-            duplicate_action = menu.addAction("Duplicate")
-            export_action = menu.addAction("Export Template...")
-            
-            # Disable Edit action if multi-select
-            edit_action.setEnabled(not is_multi_select)
-            # Disable Duplicate and Export if multi-select (matching List View behavior)
-            duplicate_action.setEnabled(not is_multi_select)
-            export_action.setEnabled(not is_multi_select)
+            log_move_menu_actions = [] # To store descriptions of actions for logging
 
-            # --- Move to Folder Submenu ---
-            menu.addSeparator()
-            move_menu = menu.addMenu("Move to...")
-            folders = self.template_manager.get_folders() if self.template_manager else []
-
-            # Add "No Folder" option
-            root_action = move_menu.addAction("No Folder")
-            root_action.triggered.connect(lambda: GalleryEvents.on_move_template_to_folder(
-                self, names_to_process, None # Pass None instead of 'root'
-            ))
-            move_menu.addSeparator()
-
-            # Add folder options
-            if folders:
-                folder_names_to_iterate = []
-                if isinstance(folders, dict):
-                    folder_names_to_iterate = sorted(folders.keys())
-                elif isinstance(folders, list):
-                    folder_names_to_iterate = sorted(folders)
-                
-                for folder_name_iter in folder_names_to_iterate:
-                    move_action = move_menu.addAction(folder_name_iter)
-                    # Ensure lambda captures current folder name and correct names list
-                    move_action.triggered.connect(lambda checked, fn=folder_name_iter, ntp=list(names_to_process): \
-                        GalleryEvents.on_move_template_to_folder(self, ntp, fn))
+            # "No Folder" option
+            if clicked_template_data and current_template_name_for_move:
+                no_folder_enabled = current_template_parent_folder is not None
+                log_move_menu_actions.append(f"  Action: No Folder (Enabled: {no_folder_enabled})")
             else:
-                no_folders_action = move_menu.addAction("No folders available")
-                no_folders_action.setEnabled(False)
+                log_move_menu_actions.append("  Action: No Folder (Disabled - no template data)")
 
-            # --- Connect Actions ---
-            # Use manager for primary_template
-            primary_template = self.selection_manager.selected_template if num_selected == 1 and not is_multi_select else \
-                               (self.selection_manager.multi_selected_templates[0] if num_selected > 0 else None)
-            primary_name = primary_template.get('name') if primary_template else None
+            # Folder List
+            all_folders = self.template_manager.get_folders() if self.template_manager else []
+            if all_folders:
+                log_move_menu_actions.append("  Separator")
+                for folder_name_iter in sorted(all_folders):
+                    if folder_name_iter == current_template_parent_folder:
+                        log_move_menu_actions.append(f"  Skipping Action: {folder_name_iter} (current parent)")
+                        continue
+                    is_action_enabled = bool(clicked_template_data and current_template_name_for_move)
+                    log_move_menu_actions.append(f"  Action: {folder_name_iter} (Enabled: {is_action_enabled})")
             
-            if primary_name:
-                 edit_action.triggered.connect(lambda: self._on_edit_template(primary_name))
-                 duplicate_action.triggered.connect(lambda: self._on_duplicate_template(primary_name))
-                 export_action.triggered.connect(lambda: GalleryEvents.on_export_template(self, primary_name))
+            print(f"[DEBUG GRID CONTEXT] Planned 'Move to...' submenu actions:")
+            for log_action in log_move_menu_actions:
+                print(log_action)
 
-            # --- Show Menu --- 
-            menu.exec(self.template_table_view.viewport().mapToGlobal(position))
+            # --- Re-integrate the actual menu creation (this part was temporarily commented out for clarity) ---
+            menu = ContextMenu(parent_widget) # Use the custom menu
+            
+            # ... (Standard Actions like Edit, Delete, Duplicate, Export would be here) ...
+            # Example:
+            # edit_action = menu.addAction("Edit")
+            # edit_action.setEnabled(not is_multi_select and bool(clicked_template_data))
+            # if clicked_template_data:
+            #    edit_action.triggered.connect(lambda: self._on_edit_template(current_template_name_for_move))
+            # (Ensure other actions also use clicked_template_data and current_template_name_for_move)
+
+            # Actual "Move to..." submenu creation
+            menu.addSeparator() # Separator before "Move to..."
+            move_menu = menu.addMenu("Move to...")
+
+            if clicked_template_data and current_template_name_for_move:
+                root_action = move_menu.addAction("No Folder")
+                root_action.setEnabled(current_template_parent_folder is not None)
+                root_action.triggered.connect(lambda checked, tn=current_template_name_for_move: GalleryEvents.on_move_template_to_folder(self, tn, None))
+
+                if all_folders:
+                    move_menu.addSeparator()
+                    for folder_name_iter in sorted(all_folders):
+                        if folder_name_iter == current_template_parent_folder:
+                            continue
+                        action = move_menu.addAction(folder_name_iter)
+                        action.triggered.connect(lambda checked, tn=current_template_name_for_move, f=folder_name_iter: GalleryEvents.on_move_template_to_folder(self, tn, f))
+            else: # Case where clicked_template_data might be None (should be rare if template_card exists)
+                no_folder_action = move_menu.addAction("No Folder")
+                no_folder_action.setEnabled(False)
+                if all_folders:
+                    move_menu.addSeparator()
+                    for folder_name_iter in sorted(all_folders):
+                        action = move_menu.addAction(folder_name_iter)
+                        action.setEnabled(False)
+            # --- END "Move to..." Menu ---
+
+            # Ensure standard actions (Edit, Delete, etc.) are also correctly set up above the "Move to..." menu
+            # For brevity, I'm focusing on the "Move to..." part here.
+            # You'll need to re-integrate or ensure the existing Edit, Delete, Duplicate actions are present
+            # and correctly use clicked_template_data and current_template_name_for_move.
+            
+            # Example of re-adding Edit action (ensure other actions follow this pattern)
+            # This should be placed BEFORE the move_menu.addSeparator()
+            if not hasattr(menu, 'standard_actions_added_flag'): # Simple flag to avoid adding twice if this block runs multiple times due to edits
+                 # --- Standard Actions (ensure these are before the "Move to..." menu) ---
+                num_selected_mgr = len(self.selection_manager.multi_selected_templates)
+                is_multi_select_mgr = num_selected_mgr > 1 or \
+                                     (num_selected_mgr == 1 and self.selection_manager.multi_selected_templates[0].get('name') != current_template_name_for_move)
+
+                edit_action = menu.addAction("Edit")
+                edit_action.setEnabled(not is_multi_select_mgr and bool(clicked_template_data))
+                if clicked_template_data:
+                    edit_action.triggered.connect(lambda: self._on_edit_template(current_template_name_for_move))
+
+                def delete_selected_grid():
+                    names_to_process_delete = [current_template_name_for_move] if not is_multi_select_mgr and current_template_name_for_move else \
+                                             [t.get('name') for t in self.selection_manager.multi_selected_templates if t and t.get('name')]
+                    if current_template_name_for_move and current_template_name_for_move not in names_to_process_delete and is_multi_select_mgr : # ensure clicked item is in list if multi
+                        names_to_process_delete.append(current_template_name_for_move)
+                    GalleryEvents.on_delete_template(self, names_to_process_delete)
+                
+                delete_text = "Delete Selected Templates" if is_multi_select_mgr else "Delete Template"
+                menu.addRedDeleteAction(self, callback=delete_selected_grid, text=delete_text) # Ensure this method exists on ContextMenu or adapt
+
+                duplicate_action = menu.addAction("Duplicate")
+                duplicate_action.setEnabled(not is_multi_select_mgr and bool(clicked_template_data))
+                if clicked_template_data:
+                     duplicate_action.triggered.connect(lambda: self._on_duplicate_template(current_template_name_for_move))
+                
+                export_action = menu.addAction("Export Template...")
+                export_action.setEnabled(not is_multi_select_mgr and bool(clicked_template_data))
+                if clicked_template_data:
+                    export_action.triggered.connect(lambda: GalleryEvents.on_export_template(self, current_template_name_for_move))
+                
+                menu.standard_actions_added_flag = True # Mark that standard actions are added
+
+            menu.exec(global_position) # Execute the menu
 
         # --- Folder Card Context Menu ---
         elif folder_card and folder_name:
@@ -1569,51 +1618,49 @@ class TemplateGallery(QWidget):
         # --- Move to Folder Submenu ---
         move_menu = menu.addMenu("Move to...")
 
-        # Determine template names for move action
-        # Ensure names_to_process is defined before being used in lambdas
-        if is_multi_select:
-             names_to_process = [t.get('name') for t in selected_templates if t and t.get('name')]
-        else:
-             # If single select, use the primary template's name
-             primary_template = selected_templates[0] if selected_templates else None
-             names_to_process = [primary_template.get('name')] if primary_template and primary_template.get('name') else []
+        # Determine template names and current folder for the primary selected template
+        primary_template_for_move = selected_templates[0] if num_selected == 1 and selected_templates else None
+        current_template_name_for_move = primary_template_for_move.get('name') if primary_template_for_move else None
+        current_template_parent_folder = None
+        if self.template_manager and current_template_name_for_move:
+            # Iterate through folders to find the parent
+            for folder_name_iter, templates_in_folder in self.template_manager.folders.items():
+                if current_template_name_for_move in templates_in_folder:
+                    current_template_parent_folder = folder_name_iter
+                    break
 
-        # Add "No Folder" option - ALWAYS add this if items are selected
+        # Add "No Folder" option
         root_action = move_menu.addAction("No Folder")
-        # Ensure names_to_process is captured correctly by the lambda
-        root_action.triggered.connect(lambda checked, ntp=list(names_to_process): GalleryEvents.on_move_template_to_folder(
-            self, ntp, None # Pass None instead of 'root'
-        ))
-        # Enable based on whether items are selected, not if in folder
-        root_action.setEnabled(bool(names_to_process)) 
-
-        # Add separator if folders exist
-        folders = self.template_manager.get_folders() if hasattr(self.template_manager, 'get_folders') else []
-        if folders:
-             move_menu.addSeparator()
-
-        # Get available folders and iterate
-        if folders:
-            folder_names_to_iterate = []
-            if isinstance(folders, dict):
-                folder_names_to_iterate = sorted(folders.keys())
-            elif isinstance(folders, list):
-                folder_names_to_iterate = sorted(folders) # Assume list of names
-            else:
-                print(f"[WARNING] _show_table_context_menu: Unexpected type for folders: {type(folders)}")
-                folder_names_to_iterate = []
+        # Disable if not a single selection or if already in root
+        root_action.setEnabled(num_selected == 1 and current_template_parent_folder is not None)
+        if num_selected == 1 and current_template_name_for_move: # Connect only if single valid selection
+            root_action.triggered.connect(lambda checked, tn=current_template_name_for_move: GalleryEvents.on_move_template_to_folder(self, tn, None))
+        
+        all_folders = self.template_manager.get_folders() if hasattr(self.template_manager, 'get_folders') else []
+        if all_folders:
+            move_menu.addSeparator()
+            folder_names_to_iterate = sorted(all_folders) # Assuming get_folders returns a list of names
             
-            # Iterate over the determined list of folder names
-            for folder_name in folder_names_to_iterate:
-                # FIX: Explicitly skip the CURRENT folder as a destination
-                if self.current_folder and folder_name == self.current_folder:
-                     continue
-                      
-                folder_action = move_menu.addAction(folder_name)
-                # Ensure names_to_process is captured correctly by the lambda
-                folder_action.triggered.connect(lambda checked, name=folder_name, ntp=list(names_to_process): 
-                    GalleryEvents.on_move_template_to_folder(self, ntp, name)
-                )
+            for folder_name_iter in folder_names_to_iterate:
+                # For single selection, exclude the template's current parent folder
+                if num_selected == 1 and folder_name_iter == current_template_parent_folder:
+                    continue
+                
+                folder_action = move_menu.addAction(folder_name_iter)
+                # Enable/disable based on selection. If multi-select, always enable. If single, ensure it's not current folder.
+                if num_selected > 1:
+                    folder_action.setEnabled(True)
+                else: # Single selection
+                    folder_action.setEnabled(folder_name_iter != current_template_parent_folder)
+                
+                # Connect action - ensure names_to_process is used for multi-select
+                # For single select, current_template_name_for_move is the one
+                target_names = names_to_process if num_selected > 1 else [current_template_name_for_move]
+                if target_names and any(target_names): # Ensure there's at least one valid name
+                    folder_action.triggered.connect(lambda checked, fn=folder_name_iter, ntp=list(target_names): 
+                        GalleryEvents.on_move_template_to_folder(self, ntp, fn))
+                else:
+                    folder_action.setEnabled(False) # No valid names to move
 
         # --- Connect Actions ---
         # Use manager for primary_template

@@ -45,6 +45,7 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
 
     def move_template_to_folder(self, template_name, folder_name):
         """Move a template to a folder, ensuring it's removed from other folders first"""
+        print(f"[DEBUG] TemplateManager.move_template_to_folder ENTERED with folder_name: '{folder_name}', type: {type(folder_name)}")
         print(f"[DEBUG] FolderOps: Moving template '{template_name}' to folder '{folder_name}'")
         
         # Validate input - only template_name is required

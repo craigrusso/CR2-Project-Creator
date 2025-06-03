@@ -484,9 +484,13 @@ class GalleryTemplatesSetup:
         GalleryTemplatesSetup.setup_templates_header(gallery)
         
         # Add the templates header to the section layout
-        gallery.templates_section_layout.addWidget(gallery.templates_header) # Ensure the header container is added
+        gallery.templates_section_layout.addWidget(gallery.templates_header)
+
+        # Add the "No root templates" notice label here, after the header
+        if hasattr(gallery, 'no_root_templates_notice_label'):
+            gallery.templates_section_layout.addWidget(gallery.no_root_templates_notice_label)
         
-        # Add a small margin between header and content
+        # Add a small margin between header/notice and content
         spacer = QWidget()
         spacer.setFixedHeight(5)
         spacer.setStyleSheet("background: transparent;")

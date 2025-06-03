@@ -246,21 +246,33 @@ class ProjectCreatorApp(QMainWindow):
         
         # Project settings header
         self.settings_header = QLabel("Project Settings")
-        self.settings_header.setStyleSheet("font-weight: bold; font-size: 14px; border: none;")
+        self.settings_header.setStyleSheet(f"font-weight: bold; font-size: 14px; border: none; color: {colors.get('text_subtle', '#A0A0A0')};")
         self.left_layout.addWidget(self.settings_header)
         
         # Batch project input area - integrated directly into the main UI
         self.batch_projects_header = QLabel("Enter Project Names")
-        self.batch_projects_header.setStyleSheet("font-weight: bold; font-size: 13px; border: none;")
+        self.batch_projects_header.setStyleSheet(f"font-weight: bold; font-size: 13px; border: none; color: {colors.get('text_focus', '#FFFFFF')};")
         self.left_layout.addWidget(self.batch_projects_header)
         
         # Instructions for batch projects
-        self.batch_instructions = QLabel(
-            "Enter one project name per line. You can also separate names with commas or semicolons.\n"
-            "All projects will be created using the selected template and output location."
+        instruction_base_color = colors.get('text', '#CCCCCC') # Brighter base grey
+        highlight_color = colors.get('text_focus', '#FFFFFF') # White for "template"
+
+        instruction_html = (
+            f"<span style='color: {instruction_base_color};'>Select a <span style='color: {highlight_color}; font-weight: bold;'>template</span> on the right to use for project creation.</span><br>"
+            f"<span style='color: {instruction_base_color};'>Enter one project name per line. You can also separate names with commas or semicolons.</span><br>"
+            f"<span style='color: {instruction_base_color};'>All projects will be created using the selected <span style='color: {highlight_color}; font-weight: bold;'>template</span> and output location.</span>"
         )
+        self.batch_instructions = QLabel(instruction_html)
+        self.batch_instructions.setTextFormat(Qt.TextFormat.RichText) # Ensure HTML is rendered
         self.batch_instructions.setWordWrap(True)
-        self.batch_instructions.setStyleSheet(f"color: {colors['secondary_text']};")
+        self.batch_instructions.setStyleSheet(
+            f"background-color: {colors.get('info_bg_transparent', 'rgba(46, 59, 78, 0.7)')}; "
+            f"border: none; " # Outline removed
+            f"border-radius: 4px; "
+            f"padding: 8px; "
+            f"color: {instruction_base_color};" # Base text color set by the HTML span
+        )
         self.left_layout.addWidget(self.batch_instructions)
         
         # Create dummy structure_combo property for compatibility
@@ -370,7 +382,7 @@ class ProjectCreatorApp(QMainWindow):
         bottom_layout.addSpacing(10)
         
         # Batch create project button
-        self.batch_create_btn = QPushButton("Create Projects")
+        self.batch_create_btn = QPushButton("Create Project(s)")
         self.batch_create_btn.clicked.connect(self.process_batch_projects)
         self.batch_create_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
         # Set minimum height for the button to make it more prominent

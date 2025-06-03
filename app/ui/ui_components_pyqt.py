@@ -1586,7 +1586,7 @@ class ProjectNameInput(QDialog):
         
         button_layout.addStretch()
         
-        self.create_button = QPushButton("Create Projects")
+        self.create_button = QPushButton("Create Project(s)")
         self.create_button.setStyleSheet(ACCENT_BUTTON_STYLE)
         self.create_button.clicked.connect(self.process_projects)
         button_layout.addWidget(self.create_button)

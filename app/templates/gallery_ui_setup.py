@@ -3,13 +3,15 @@
 
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
                            QFrame, QScrollArea, QGridLayout, QComboBox, QButtonGroup, 
-                           QToolButton, QSlider, QSizePolicy, QSplitter, QMenu)
-from PyQt6.QtCore import Qt
+                           QToolButton, QSlider, QSizePolicy, QSplitter, QMenu, QStyle)
+from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QFont
 
 from app.ui.color_scheme_pyqt import colors, get_color, BUTTON_STYLE, ACCENT_BUTTON_STYLE
 from .components.utils import SYSTEM_FONT
 from .components.components import SearchBox
+from .gallery_folders import GalleryFoldersSetup
+from .gallery_templates import GalleryTemplatesSetup
 
 class GalleryUISetup:
     """UI setup methods for the Template Gallery"""
@@ -239,108 +241,111 @@ class GalleryUISetup:
 
     @staticmethod
     def setup_gallery_containers(gallery):
-        """Set up the gallery containers for folders and templates"""
-        # Add QSplitter import
-        from PyQt6.QtWidgets import QSplitter
-        
-        # Template gallery - use a main vertical layout
-        gallery.gallery_scroll = QScrollArea()
-        gallery.gallery_scroll.setWidgetResizable(True)
-        gallery.gallery_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        gallery.gallery_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        gallery.gallery_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        # Ensure scroll area fills available space
-        gallery.gallery_scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        gallery.gallery_scroll.setStyleSheet("background: transparent; border: none;")
-        
-        # Main container widget with vertical layout and fixed spacing
-        gallery.gallery_widget = QWidget()
-        gallery.gallery_widget.setStyleSheet("background: transparent; border: none;")
-        gallery.gallery_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        gallery.main_layout = QVBoxLayout(gallery.gallery_widget)
-        gallery.main_layout.setContentsMargins(0, 0, 0, 0)  # No margins on the main layout
-        gallery.main_layout.setSpacing(15)  # Space between sections
-        
-        # Create folder navigation bar (will be hidden initially)
-        gallery.folder_nav = QFrame()
-        gallery.folder_nav.setFrameShape(QFrame.Shape.NoFrame)
-        gallery.folder_nav.setStyleSheet("background: transparent;")
-        gallery.folder_nav.setMaximumHeight(40)
+        """Set up the gallery containers"""
+        # Main container for folders and templates (everything below search bar)
+        gallery.gallery_content_area = QWidget()
+        gallery.gallery_content_layout = QVBoxLayout(gallery.gallery_content_area)
+        gallery.gallery_content_layout.setContentsMargins(0, 0, 0, 0)
+        gallery.gallery_content_layout.setSpacing(0)
+
+        # --- Folder Navigation Bar (Initially hidden) ---
+        gallery.folder_nav = QWidget()
+        gallery.folder_nav.setObjectName("folderNav")
+        gallery.folder_nav.setStyleSheet(f"""
+            QWidget#folderNav {{
+                background-color: {colors.get('dark_header_bg', '#252525')};
+                padding: 5px 10px;
+                border-bottom: 1px solid {colors.get('border', '#444444')};
+            }}
+        """)
         gallery.folder_nav_layout = QHBoxLayout(gallery.folder_nav)
-        gallery.folder_nav_layout.setContentsMargins(5, 2, 5, 2)
+        gallery.folder_nav_layout.setContentsMargins(0, 5, 0, 5) # Top/bottom padding
         gallery.folder_nav_layout.setSpacing(10)
-        
-        # Add back button with double angle quotes
-        gallery.back_button = QPushButton("« Back to All")
-        gallery.back_button.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border-radius: 4px;
-                padding: 6px 12px;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{
-                background-color: {colors['hover_bg']};
-            }}
-            QPushButton:pressed {{
-                background-color: {colors['bg']};
-            }}
-        """)
-        gallery.back_button.clicked.connect(lambda: gallery._on_back_to_all())
+
+        gallery.back_button = QPushButton("〈 Back to All") # Using a fancier back arrow
+        gallery.back_button.setStyleSheet(BUTTON_STYLE + "padding: 5px 10px;") # Add some padding
+        gallery.back_button.clicked.connect(gallery._on_back_to_all)
         gallery.folder_nav_layout.addWidget(gallery.back_button)
+
+        # Breadcrumb layout
+        breadcrumb_layout = QHBoxLayout()
+        breadcrumb_layout.setSpacing(5) # Spacing between elements
+
+        # Icon for "Template Collections"
+        collections_icon_label = QLabel()
+        collections_icon_label.setPixmap(gallery.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon).pixmap(QSize(16, 16)))
+        collections_icon_label.setStyleSheet("border: none; background-color: transparent;")
+        breadcrumb_layout.addWidget(collections_icon_label)
+
+        breadcrumb_static_label = QLabel("Template Collections >")
+        breadcrumb_static_label.setStyleSheet(f"color: {colors['secondary_text']}; font-size: 13px; border: none; background: transparent;")
+        breadcrumb_layout.addWidget(breadcrumb_static_label)
+
+        # Icon for the current folder name
+        current_folder_icon_label = QLabel()
+        current_folder_icon_label.setPixmap(gallery.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon).pixmap(QSize(16, 16)))
+        current_folder_icon_label.setStyleSheet("border: none; background-color: transparent;")
+        breadcrumb_layout.addWidget(current_folder_icon_label)
+
+        gallery.folder_label = QLabel("") # Will be filled with current folder name
+        gallery.folder_label.setStyleSheet(f"color: {colors['text']}; font-size: 13px; font-weight: bold; border: none; background: transparent;")
+        breadcrumb_layout.addWidget(gallery.folder_label)
         
-        # Add folder label
-        gallery.folder_label = QLabel("")
-        gallery.folder_label.setStyleSheet(f"color: {colors['text']}; font-weight: bold;")
-        gallery.folder_nav_layout.addWidget(gallery.folder_label)
-        
-        # Add spacer to push content to the left
-        gallery.folder_nav_layout.addStretch()
-        
-        # Add folder navigation to main layout (but hide it initially)
-        gallery.main_layout.addWidget(gallery.folder_nav)
-        gallery.folder_nav.setVisible(False)
-        
-        # Import the setup classes here to avoid circular imports
-        from .gallery_folders import GalleryFoldersSetup
-        from .gallery_templates import GalleryTemplatesSetup
-        
-        # Create a splitter widget
-        gallery.content_splitter = QSplitter(Qt.Orientation.Vertical)  # Vertical splitter for top/bottom sections
-        gallery.content_splitter.setChildrenCollapsible(False)  # Don't allow sections to be collapsed
-        gallery.content_splitter.setHandleWidth(5)  # Slightly wider handle for easier grabbing
-        gallery.content_splitter.setStyleSheet("""
-            QSplitter::handle {
-                background-color: #555555;
-                border: 1px solid #666666;
-            }
-            QSplitter::handle:hover {
-                background-color: #777777;
-            }
+        breadcrumb_layout.addStretch(1) # Push to the left
+
+        gallery.folder_nav_layout.addLayout(breadcrumb_layout)
+        gallery.folder_nav_layout.addStretch(1) # Ensure back button and breadcrumb are on left
+        gallery.folder_nav.setVisible(False) # Initially hidden
+        gallery.gallery_content_layout.addWidget(gallery.folder_nav)
+        # --- End Folder Navigation Bar ---
+
+        # --- Folder Content Notice ---
+        gallery.folder_notice_label = QLabel("")
+        gallery.folder_notice_label.setObjectName("folderNoticeLabel")
+        gallery.folder_notice_label.setStyleSheet(f"""
+            QLabel#folderNoticeLabel {{
+                color: {colors['secondary_text']};
+                font-size: 12px;
+                padding: 8px 12px;
+                background-color: {colors.get('content_bg', '#2A2A2A')}; 
+                border-bottom: 1px solid {colors.get('border', '#444444')};
+                text-align: center; 
+            }}
         """)
-        
-        # Set up folders section
+        gallery.folder_notice_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        gallery.folder_notice_label.setWordWrap(True)
+        gallery.folder_notice_label.setVisible(False) # Initially hidden
+        gallery.gallery_content_layout.addWidget(gallery.folder_notice_label)
+        # --- End Folder Content Notice ---
+
+        # --- No Root Templates Notice ---
+        gallery.no_root_templates_notice_label = QLabel("")
+        gallery.no_root_templates_notice_label.setObjectName("noRootTemplatesNoticeLabel")
+        gallery.no_root_templates_notice_label.setStyleSheet(f"""
+            QLabel#noRootTemplatesNoticeLabel {{
+                color: {colors['text_info'] if 'text_info' in colors else colors['secondary_text']}; 
+                font-size: 12px;
+                padding: 8px 12px;
+                background-color: {colors.get('info_bg', '#2E3B4E')}; 
+                border: 1px solid {colors.get('info_border', '#4A5F7A')};
+                border-radius: 4px;
+                margin: 10px; 
+            }}
+        """)
+        gallery.no_root_templates_notice_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        gallery.no_root_templates_notice_label.setWordWrap(True)
+        gallery.no_root_templates_notice_label.setVisible(False) # Initially hidden
+        # --- End No Root Templates Notice ---
+
+        # Folders section (for displaying folder cards or list)
         GalleryFoldersSetup.setup_folders_section(gallery)
+        gallery.gallery_content_layout.addWidget(gallery.folders_section)
         
-        # Set up templates section
+        # Templates section (for displaying template cards or list)
         GalleryTemplatesSetup.setup_templates_section(gallery)
-        
-        # Add sections to the splitter
-        gallery.content_splitter.addWidget(gallery.folders_section)
-        gallery.content_splitter.addWidget(gallery.templates_section)
-        
-        # Set the initial sizes (40% folders, 60% templates)
-        gallery.content_splitter.setSizes([400, 600])  # Use actual pixel values, not percentages
-        
-        # Add the splitter to the main layout
-        gallery.main_layout.addWidget(gallery.content_splitter)
-        
-        # Add the gallery widget to the scroll area
-        gallery.gallery_scroll.setWidget(gallery.gallery_widget)
-        
-        # Add the scroll area to the main layout
-        gallery.layout.addWidget(gallery.gallery_scroll)
+        gallery.gallery_content_layout.addWidget(gallery.templates_section)
+
+        gallery.layout.addWidget(gallery.gallery_content_area)
 
     @staticmethod
     def add_search_box(gallery):

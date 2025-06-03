@@ -891,7 +891,7 @@ class TemplateCard(QFrame):
         # Use our custom ContextMenu class
         context_menu = ContextMenu(self)
         
-        # Get template name
+        # Get template name from the card's own data
         t_name = self.template_name()
         
         # --- Add actions ---
@@ -904,11 +904,9 @@ class TemplateCard(QFrame):
         gallery = None
         p = self.parent()
         while p is not None:
-            # Check if it's the TemplateGalleryWidget instance directly
             if hasattr(p, 'selection_manager') and hasattr(p, 'template_manager') and hasattr(p, 'current_folder'):
                 gallery = p
                 break
-            # Check if parent has template_gallery attribute (e.g. if parent is main window)
             if hasattr(p, 'template_gallery'):
                 gallery_candidate = p.template_gallery
                 if hasattr(gallery_candidate, 'selection_manager') and \
@@ -921,17 +919,24 @@ class TemplateCard(QFrame):
         if not gallery and self.app and hasattr(self.app, 'template_gallery'): # Fallback to app.template_gallery
             gallery = self.app.template_gallery
 
-        # Before showing context menu, ensure this item is selected if it's not already part of selection
-        # This logic is handled by mousePressEvent now, so it can be simplified or removed here
-        # to avoid conflicts, as mousePressEvent already updates selection_manager.
-
-        # Determine if multi-selection is active to adjust "Delete" text
+        # Determine if multi-selection is active
         has_multi_selection_active = False
         num_selected_for_context_menu = 0
         if gallery and hasattr(gallery, 'selection_manager'):
             multi_selected_items = gallery.selection_manager.multi_selected_templates
-            num_selected_for_context_menu = len(multi_selected_items)
-            if num_selected_for_context_menu > 1 and self.template_info() in multi_selected_items:
+            # Check if the current card's template is among the multi-selected items
+            # Card's template object: self.template
+            # Multi-selected items: list of template dicts
+            card_template_name = self.template.get('name') if isinstance(self.template, dict) else None
+            is_current_card_in_multi_selection = False
+            if card_template_name:
+                for item in multi_selected_items:
+                    if isinstance(item, dict) and item.get('name') == card_template_name:
+                        is_current_card_in_multi_selection = True
+                        break
+            
+            if len(multi_selected_items) > 1 and is_current_card_in_multi_selection:
+                num_selected_for_context_menu = len(multi_selected_items)
                 has_multi_selection_active = True
         
         # --- Delete Action ---
@@ -939,84 +944,88 @@ class TemplateCard(QFrame):
         if has_multi_selection_active:
             delete_action_text = f"Delete {num_selected_for_context_menu} Selected Templates"
         
-        # Define the callback for the delete action
         delete_callback = None
-        if gallery: # Ensure gallery instance is available
+        if gallery: 
             delete_callback = lambda: GalleryEvents.on_delete_template(gallery)
         else:
-            # Fallback if gallery not found (should not happen ideally)
-            print("[WARNING] TemplateCard context menu: Gallery instance not found for delete action callback. Falling back to deleteRequested signal.")
-            delete_callback = lambda: self.deleteRequested.emit(t_name) # t_name is self.template_name()
+            print("[WARNING] TemplateCard context menu: Gallery instance not found for delete action callback.")
+            delete_callback = lambda: self.deleteRequested.emit(t_name)
         
-        # Use addRedDeleteAction from ContextMenu class for styling and adding to menu
-        context_menu.addRedDeleteAction(
-            parent=self, # Or context_menu as parent for the QWidgetAction
-            callback=delete_callback,
-            text=delete_action_text
-        )
-        # --- End Delete Action ---
+        context_menu.addRedDeleteAction(parent=self, callback=delete_callback, text=delete_action_text)
         
-        # Add separator
         context_menu.addSeparator()
         
-        # Add duplicate template option
         duplicate_action = QAction("Duplicate", self)
         duplicate_action.triggered.connect(lambda: self.duplicate_requested.emit(self.template_name()))
         context_menu.addAction(duplicate_action)
         
-        # --- Move to Folder ---
-        if gallery and hasattr(gallery, 'template_manager'):
-            # Create "Move to Folder" submenu
-            move_menu = context_menu.addMenu("Move to Folder")
-            
-            # Action to move to root (remove from current folder)
-            # Only show if currently in a folder
-            current_template_info = gallery.template_manager.get_template_by_name(t_name)
-            is_in_any_folder = current_template_info and current_template_info.get('parent_folder')
-
-            if is_in_any_folder:
-                move_to_root_action = move_menu.addAction("Move to Root (No Folder)")
-                move_to_root_action.triggered.connect(lambda: self._move_template_out_of_folder(gallery.current_folder)) # Pass current_folder
-            
-            # Get available folders
-            folders = gallery.template_manager.get_folders() # Returns folder names
-            
-            if folders:
-                if is_in_any_folder: # Add separator if "Move to Root" was added
-                     move_menu.addSeparator()
-
-                for folder_name_iter in folders:
-                    # Don't allow moving to its own current parent folder
-                    if current_template_info and current_template_info.get('parent_folder') == folder_name_iter:
-                        continue
-
-                    action = QAction(folder_name_iter, self)
-                    action.triggered.connect(lambda checked=False, f_name=folder_name_iter: self.moveToFolderRequested.emit(t_name, f_name))
-                    move_menu.addAction(action)
-            elif not is_in_any_folder: # No folders exist and not in one
-                no_folders_action = QAction("No folders available", self)
-                no_folders_action.setEnabled(False)
-                move_menu.addAction(no_folders_action)
-
-        # Add a separator
+        export_action = QAction("Export Template...", self)
+        export_action.triggered.connect(self._export_template)
+        context_menu.addAction(export_action)
+        
         context_menu.addSeparator()
 
-        # Export template option
-        export_action = QAction("Export Template...", self)
-        export_action.triggered.connect(self._export_template) # Connect to internal method
-        context_menu.addAction(export_action)
+        # --- Move to Folder ---
+        if gallery and hasattr(gallery, 'template_manager'):
+            move_menu = context_menu.addMenu("Move to...")
+            
+            # Determine current folder and if template is in any folder
+            # directly from the card's own template data.
+            card_template_data = self.template # self.template is the dict the card was initialized with
+            is_in_any_folder = False
+            current_folder_for_this_card = "" 
 
-        # Recache template option
+            if isinstance(card_template_data, dict):
+                current_folder_for_this_card = card_template_data.get('parent_folder', "")
+                is_in_any_folder = bool(current_folder_for_this_card)
+            
+            print(f"DEBUG: TemplateCard context menu for '{t_name}': in_folder={is_in_any_folder}, current_card_folder='{current_folder_for_this_card}'")
+            
+            move_to_root_action = QAction("No Folder", self)
+            move_to_root_action.setEnabled(is_in_any_folder)
+            
+            def move_to_root_handler(): # Renamed to avoid conflict if contextMenuEvent is called rapidly
+                print(f"DEBUG: 'No Folder' clicked for '{t_name}' (current_card_folder='{current_folder_for_this_card}')")
+                # Pass None as the target_folder to signify moving to root
+                GalleryEvents.on_move_template_to_folder(gallery, [t_name], None) 
+            
+            move_to_root_action.triggered.connect(move_to_root_handler)
+            move_menu.addAction(move_to_root_action)
+            
+            available_folders = []
+            if hasattr(gallery.template_manager, 'get_folders'):
+                available_folders = gallery.template_manager.get_folders()
+            
+            if available_folders:
+                move_menu.addSeparator()
+                # Determine the folder to exclude from the list (the one this card is in)
+                # current_folder_for_this_card is used here
+                print(f"DEBUG: TemplateCard 'Move to...' menu: current_card_folder='{current_folder_for_this_card}', gallery.current_folder='{gallery.current_folder}'")
+
+                for folder_name_iter in sorted(available_folders):
+                    if folder_name_iter == current_folder_for_this_card:
+                        print(f"DEBUG: Skipping folder '{folder_name_iter}' (current folder of this card) in move menu for '{t_name}'")
+                        continue
+
+                    folder_action = QAction(folder_name_iter, self)
+                    
+                    # Use a lambda that captures f_name correctly
+                    folder_action.triggered.connect(
+                        lambda checked=False, template_name_captured=t_name, target_folder_name=folder_name_iter: 
+                            GalleryEvents.on_move_template_to_folder(gallery, [template_name_captured], target_folder_name)
+                    )
+                    move_menu.addAction(folder_action)
+
+        context_menu.addSeparator()
+
         recache_action = QAction("Recache Template Files", self)
         recache_action.triggered.connect(self._recache_template)
         context_menu.addAction(recache_action)
         
-        # Clear Cache for this template option
         clear_cache_action = QAction("Clear Cache for This Template", self)
         clear_cache_action.triggered.connect(self._clear_template_cache)
         context_menu.addAction(clear_cache_action)
         
-        # Show the context menu
         context_menu.exec(event.globalPos())
 
     def _move_template_out_of_folder(self, current_folder):

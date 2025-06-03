@@ -288,6 +288,11 @@ class GalleryEvents:
         if hasattr(gallery, 'back_button'):
             gallery.back_button.setVisible(False)
             
+        # Hide folder notice label
+        if hasattr(gallery, 'folder_notice_label'):
+            gallery.folder_notice_label.setText("")
+            gallery.folder_notice_label.setVisible(False)
+            
         print(f"🔍 LISTENER: Successfully returned to root view from folder '{current_folder}'")
     
     @staticmethod
@@ -434,40 +439,59 @@ class GalleryEvents:
 
     @staticmethod
     def on_move_template_to_folder(gallery, template_names, target_folder=None):
-        """Handle moving templates to a folder or to the root"""
-        if not hasattr(gallery, 'template_manager') or not gallery.template_manager:
-            QMessageBox.warning(gallery, "Operation Failed", "Template manager is not available")
+        """Move specified templates to the target folder."""
+        if not gallery.template_manager:
+            print("ERROR: Template manager not available.")
             return
+
+        if not isinstance(template_names, list):
+            template_names = [template_names] # Ensure it's a list
+
+        moved_count = 0
+        for template_name in template_names:
+            if not template_name: # Skip if name is empty or None
+                continue
+
+            # Find current folder of the template
+            current_template_folder = None
+            for folder, templates_in_folder in gallery.template_manager.folders.items():
+                if template_name in templates_in_folder:
+                    current_template_folder = folder
+                    break
             
-        # Handle both single template name (string) and list of template names
-        if isinstance(template_names, str):
-            template_names = [template_names]
-            
-        if not template_names:
-            return
-            
-        # Treat 'root' folder name the same as None (no folder)
-        if target_folder == 'root' or target_folder == '':
-            target_folder = None
-            
-        if target_folder is None:
-            # Moving to no folder (removing from all folders)
-            for name in template_names:
-                gallery.template_manager.move_template_to_folder(name, None)
-        else:
-            # Moving to a specific folder
-            moved_count = 0
-            for name in template_names:
-                if gallery.template_manager.move_template_to_folder(name, target_folder):
+            print(f"Moving '{template_name}'. Current folder: {current_template_folder}, Target folder: {target_folder}")
+
+            # Case 1: Moving to root (target_folder is None or empty string)
+            if target_folder is None or target_folder == "":
+                if current_template_folder:
+                    print(f"  Action: Moving '{template_name}' from '{current_template_folder}' to root.")
+                    # Pass None to signify moving to root (no specific folder)
+                    gallery.template_manager.move_template_to_folder(template_name, None)
                     moved_count += 1
-                    
-            # Only show warning on complete failure
-            if moved_count == 0:
-                QMessageBox.warning(gallery, "Operation Failed", 
-                                   f"Failed to move templates to folder '{target_folder}'.")
+                else:
+                    print(f"  Info: '{template_name}' is already in root. No action needed.")
+            # Case 2: Moving to a specific folder
+            else:
+                if current_template_folder == target_folder:
+                    print(f"  Info: '{template_name}' is already in target folder '{target_folder}'. No action needed.")
+                    continue # Skip if already in the target folder
                 
-        # Update the gallery to reflect changes
-        gallery.populate_gallery()
+                # Move directly to the new folder
+                print(f"  Action: Moving '{template_name}' from '{current_template_folder}' to '{target_folder}'.")
+                gallery.template_manager.move_template_to_folder(template_name, target_folder)
+                moved_count += 1
+
+        if moved_count > 0:
+            gallery.template_manager.save_folders() # Save changes to folders.json
+            gallery.populate_gallery(force_refresh=True)
+            current_view_name = target_folder if target_folder else "root view"
+            if hasattr(gallery, 'app') and hasattr(gallery.app, 'show_status_message'):
+                gallery.app.show_status_message(f"Moved {moved_count} template(s) to {current_view_name}", "success")
+            print(f"Successfully moved {moved_count} templates.")
+        else:
+            if hasattr(gallery, 'app') and hasattr(gallery.app, 'show_status_message'):
+                gallery.app.show_status_message(f"No templates needed to be moved.", "info")
+            print("No templates were moved (either already in target or no valid names provided).")
     
     @staticmethod
     def on_add_template(gallery):

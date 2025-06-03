@@ -156,8 +156,8 @@ class TemplateFolderCard(QFrame):
         app_bg = colors.get('bg', '#1E1E1E')
         
         if self.editing:
-            # Special style for renaming (maybe just keep border?)
-            self.setStyleSheet(f"background-color: {app_bg}; border-radius: 6px; border: 1px solid {colors.get('highlight_bg', '#FFFFFF')};")
+            # Special style for renaming - remove border here
+            self.setStyleSheet(f"background-color: {app_bg}; border-radius: 6px; border: none;")
         elif self.selected:
             self.setStyleSheet(f"background-color: {CARD_SELECTED}; border-radius: 6px; border: none;")
         elif self.hover:

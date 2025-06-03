@@ -35,7 +35,7 @@ class GalleryFoldersSetup:
         gallery.folders_header_layout.setContentsMargins(15, 10, 15, 10)  # Increase padding for better spacing
         
         # Folders section header - should stretch
-        gallery.folders_label = QLabel("PROJECT FOLDERS")
+        gallery.folders_label = QLabel("Template Collections")
         gallery.folders_label.setProperty("class", "section-header")
         gallery.folders_label.setFont(QFont(SYSTEM_FONT, 14, QFont.Weight.Bold))
         gallery.folders_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)  # Changed back to Expanding
