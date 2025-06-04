@@ -122,23 +122,28 @@ class TemplateStructureOps:
                     print(f"DEBUG: {message}")
                     continue
 
-            # Check on disk
-            custom_structure_path = os.path.join(self.paths["custom_structures_dir"], f"{name_to_try}.json")
-            if os.path.exists(custom_structure_path):
-                try:
-                    with open(custom_structure_path, 'r') as f:
-                        structure_data = json.load(f)
-                        print(f"DEBUG: Found custom structure on disk: {name_to_try}")
-                        
-                        # Validate structure before returning
-                        is_valid, structure, message = self.validate_structure_file(structure_data)
-                        if is_valid:
-                            return structure
-                        else:
-                            print(f"DEBUG: {message}")
-                            continue
-                except Exception as e:
-                    print(f"Error loading structure {name_to_try}: {e}")
+            # Check on disk (only if custom_structures_dir is configured)
+            custom_structures_dir = self.paths.get("custom_structures_dir")
+            if custom_structures_dir:
+                custom_structure_path = os.path.join(custom_structures_dir, f"{name_to_try}.json")
+                if os.path.exists(custom_structure_path):
+                    try:
+                        with open(custom_structure_path, 'r') as f:
+                            structure_data = json.load(f)
+                            print(f"DEBUG: Found custom structure on disk: {name_to_try}")
+                            
+                            # Validate structure before returning
+                            is_valid, structure, message = self.validate_structure_file(structure_data)
+                            if is_valid:
+                                return structure
+                            else:
+                                print(f"DEBUG: {message}")
+                                continue
+                    except Exception as e:
+                        print(f"Error loading structure {name_to_try}: {e}")
+            # else:
+                # print(f"DEBUG: custom_structures_dir not configured, skipping disk check for {name_to_try}")
+
 
         print(f"DEBUG: Structure not found: {structure_name}")
         return []
@@ -360,11 +365,16 @@ class TemplateStructureOps:
 
     def save_custom_structure(self, name, structure):
         """Save a custom folder structure to disk and update in-memory list."""
+        custom_structures_dir = self.paths.get("custom_structures_dir")
+        if not custom_structures_dir:
+            print(f"WARN: Custom structures directory not configured. Cannot save standalone structure '{name}'. This feature might be deprecated.")
+            return False
+
         if not name or not structure:
             print(f"ERROR: Cannot save custom structure. Invalid name or structure provided.")
             return False
             
-        print(f"INFO: Saving custom structure '{name}'")
+        print(f"INFO: Saving custom structure '{name}' to {custom_structures_dir}")
         
         # Ensure custom_structures is initialized as a dictionary
         if not hasattr(self, 'custom_structures') or not isinstance(self.custom_structures, dict):
@@ -398,13 +408,16 @@ class TemplateStructureOps:
         existing_found_index = -1
         
         # Check if it exists in the in-memory list
-        for i, s in self.custom_structures.items():
+        for i, s in self.custom_structures.items(): # Iterate through dict items
             if isinstance(s, dict) and s.get("name") == name:
                 existing_creation_time = s.get("created", time.time())
-                existing_found_index = i
+                # Use the key from iteration directly if it's the sanitized name
+                # or reconstruct the sanitized name to find the key if needed.
+                # For now, assume 'i' (the key) is what we need if found this way.
+                existing_found_index = i 
                 break
                 
-        file_path = os.path.join(self.paths["custom_structures_dir"], f"{sanitized_name}.json")
+        file_path = os.path.join(custom_structures_dir, f"{sanitized_name}.json")
         
         # If not found in memory, check if file exists on disk to preserve creation time
         if existing_found_index == -1 and os.path.exists(file_path):
@@ -429,7 +442,7 @@ class TemplateStructureOps:
             
         # Save to disk
         try:
-            os.makedirs(self.paths["custom_structures_dir"], exist_ok=True)
+            os.makedirs(custom_structures_dir, exist_ok=True)
             with open(file_path, 'w') as f:
                 json.dump(structure_data_to_save, f, indent=2)
                 
@@ -535,16 +548,14 @@ class TemplateStructureOps:
             
         structures_dir = self.paths.get("custom_structures_dir")
         if not structures_dir:
-             print("ERROR: 'custom_structures_dir' not found in paths config. Cannot load structures.")
+             print("INFO: 'custom_structures_dir' not configured or deprecated. Skipping load of standalone structures.")
              return self.custom_structures # Return empty dictionary
 
         if not os.path.exists(structures_dir):
-            try:
-                os.makedirs(structures_dir, exist_ok=True)
-                print(f"INFO: Created custom structures directory: {structures_dir}")
-            except OSError as e:
-                 print(f"ERROR: Failed to create custom structures directory '{structures_dir}': {e}")
-                 return self.custom_structures # Return empty dictionary
+            # Do not create the directory if it doesn't exist and we are just loading.
+            # The ensure_exists=False in config_manager should prevent its creation.
+            # If it was meant to be there and is missing, that's a different issue.
+            print(f"INFO: Custom structures directory '{structures_dir}' does not exist. Skipping load.")
             return self.custom_structures
             
         # Load all structure JSON files
@@ -586,18 +597,26 @@ class TemplateStructureOps:
     def delete_custom_structure(self, name):
         """Delete a custom folder structure file and remove from memory."""
         
+        custom_structures_dir = self.paths.get("custom_structures_dir")
+        # It's okay if the directory isn't configured; we just won't delete any files.
+        # The memory deletion part will still proceed if the item is found there.
+
         structure_to_delete = None
-        index_to_delete = -1
-        for i, s in self.custom_structures.items():
-            if isinstance(s, dict) and s.get("name") == name:
-                 structure_to_delete = s
-                 index_to_delete = i
+        key_to_delete_in_memory = None # Changed from index_to_delete
+
+        # Iterate through dictionary items (key, value)
+        for mem_key, s_data in self.custom_structures.items():
+            if isinstance(s_data, dict) and s_data.get("name") == name:
+                 structure_to_delete = s_data
+                 key_to_delete_in_memory = mem_key # Store the key for deletion
                  break
 
-        if index_to_delete == -1:
-            print(f"WARN: Custom structure '{name}' not found in memory. Cannot delete.")
-            # Try to delete file anyway? For robustness, let's try.
-            # return False 
+        if not key_to_delete_in_memory: # If not found by name
+            print(f"WARN: Custom structure '{name}' not found in memory. Attempting file deletion if path configured.")
+            # Try to find by sanitized name as key if original name wasn't the key
+            # This might happen if it was added with sanitized_name as key
+            # This part could be complex if naming conventions for keys varied.
+            # For now, we rely on the loop above.
         
         # Determine filename (use sanitization)
         try:
@@ -609,47 +628,44 @@ class TemplateStructureOps:
         if not sanitized_name:
              print(f"ERROR: Could not determine sanitized filename for structure '{name}'. Cannot delete file.")
              # If we found it in memory, still remove it from memory
-             if index_to_delete != -1:
-                 del self.custom_structures[sanitized_name]
-                 print(f"INFO: Removed structure '{name}' from memory despite file deletion issues.")
+             if key_to_delete_in_memory: # Check if we found it in memory
+                 del self.custom_structures[key_to_delete_in_memory]
+                 print(f"INFO: Removed structure '{name}' (key: {key_to_delete_in_memory}) from memory despite file deletion issues.")
              return False
 
-        file_path = os.path.join(self.paths["custom_structures_dir"], f"{sanitized_name}.json")
         file_deleted = False
+        if custom_structures_dir: # Only attempt file operations if directory is configured
+            file_path = os.path.join(custom_structures_dir, f"{sanitized_name}.json")
+            try:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    print(f"INFO: Deleted custom structure file: {file_path}")
+                    file_deleted = True
+                else:
+                    print(f"WARN: Custom structure file not found at {file_path}. It might have been already deleted or never saved correctly.")
+                    if not key_to_delete_in_memory: # Not in memory and not on disk (if dir was checked)
+                        return False 
+
+                # Legacy cache dir deletion attempt can also be conditional
+                # cache_dir = os.path.join(self.paths.get("templates_dir", ""), "cache", sanitized_name)
+                # if os.path.exists(cache_dir) and os.path.isdir(cache_dir):
+                #     shutil.rmtree(cache_dir)
+
+            except OSError as e:
+                print(f"ERROR: Failed to delete structure file {file_path}: {e}")
+                # Don't return False yet, still try to remove from memory if it was found
+            except Exception as e:
+                print(f"ERROR: Unexpected error deleting structure file for {name}: {e}")
+        else:
+            print(f"INFO: custom_structures_dir not configured. Skipping file deletion for '{name}'.")
+
+        # Remove from in-memory list if found by its key
+        if key_to_delete_in_memory:
+            del self.custom_structures[key_to_delete_in_memory]
+            print(f"INFO: Removed custom structure '{name}' (key: {key_to_delete_in_memory}) from in-memory list.")
         
-        try:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                print(f"INFO: Deleted custom structure file: {file_path}")
-                file_deleted = True
-            else:
-                 print(f"WARN: Custom structure file not found at {file_path}. It might have been already deleted or never saved correctly.")
-                 # If it wasn't found in memory either, it likely didn't exist
-                 if index_to_delete == -1:
-                     return False # Indicate structure wasn't found anywhere
-
-            # Delete associated legacy cache dir (templates_dir/cache/filename)
-            # This cache seems unused/deprecated based on current code, but clean up if exists
-            # cache_dir = os.path.join(self.paths.get("templates_dir", ""), "cache", sanitized_name)
-            # if os.path.exists(cache_dir) and os.path.isdir(cache_dir):
-            #     print(f"DEBUG: Deleting legacy cache directory for structure '{name}': {cache_dir}")
-            #     shutil.rmtree(cache_dir)
-            #     print(f"DEBUG: Successfully deleted legacy cache directory for structure '{name}'")
-            
-            # Remove from in-memory list if found
-            if index_to_delete != -1:
-                del self.custom_structures[sanitized_name]
-                print(f"INFO: Removed custom structure '{name}' from in-memory list.")
-            
-            # Return True if either file was deleted or memory entry was removed
-            return file_deleted or (index_to_delete != -1)
-
-        except OSError as e:
-            print(f"ERROR: Failed to delete structure file {file_path}: {e}")
-            return False
-        except Exception as e:
-            print(f"ERROR: Unexpected error deleting structure {name}: {e}")
-            return False
+        # Return True if either file was deleted or memory entry was removed
+        return file_deleted or (key_to_delete_in_memory is not None)
 
     def _normalize_structure_format(self, structure_items):
         """Normalize the structure format to ensure consistency.

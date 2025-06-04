@@ -203,11 +203,6 @@ def get_cache_path():
     """Returns the path to the Cache directory."""
     return get_path("Cache") # Changed from 'template_cache' for consistency
 
-def get_structures_path():
-    """Returns the path to the Structures directory (for custom structures)."""
-    # Maintain consistency with old 'structures' name if needed, or use 'CustomStructures'
-    return get_path("Structures")
-
 def get_settings_path():
     """Returns the path to the Settings directory (for JSON configs like preferences.json)."""
     # This is where non-QSettings files could live, like the cache preferences

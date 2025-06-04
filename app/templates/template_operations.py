@@ -41,7 +41,6 @@ class TemplateOperations:
             self.paths = {
                 "templates_dir": config_manager.get_templates_path(),
                 "cache_dir": config_manager.get_cache_path(), 
-                "custom_structures_dir": config_manager.get_structures_path(),
                 "template_directories_dir": config_manager.get_template_directories_path(),
                 "settings_dir": config_manager.get_settings_path()
             }

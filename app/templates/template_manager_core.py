@@ -34,17 +34,18 @@ class TemplateManagerCore(TemplateOperations):
         self.folders = {}  # Map of folder name to list of template names
         self.preferences = {}
         
-        # Create a paths dictionary using config_manager
-        self._paths = {
+        # Initialize paths (can be overridden by subclass or tests)
+        # These are the primary directories the application will use.
+        self.paths = {
             "templates_dir": config_manager.get_templates_path(),
-            "cache_dir": config_manager.get_cache_path(), # Use unified cache dir
-            "custom_structures_dir": config_manager.get_structures_path(),
+            "cache_dir": config_manager.get_cache_path(),
             "template_directories_dir": config_manager.get_template_directories_path(),
-            "settings_dir": config_manager.get_settings_path(), # For things like folders.json, preferences.json
-             # Add other paths if TemplateOperations needs them directly
+            "settings_dir": config_manager.get_settings_path(),
+            "log_dir": config_manager.get_log_path()
         }
+        
         # Pass the constructed paths dict to the parent constructor via super()
-        super().__init__(paths=self._paths)
+        super().__init__(paths=self.paths)
         
         # Load folders (folder organization data)
         self.load_folders()
