@@ -5,7 +5,7 @@
 Project Creator Tool - A tool for creating project structures from templates.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0"
 __author__ = "Craig P. Russo / CR2 Creative"
 
 # Import key components for easier access if needed
