@@ -32,6 +32,8 @@ from app.templates.category_combobox_updater import update_single_combobox
 # Import folder icon utilities - added for proper Windows folder icons
 from app.ui.icon_utilities import get_folder_icon, get_file_icon
 
+import platform
+
 class StructureEditorTree(QTreeWidget):
     """Enhanced QTreeWidget for structure editing with improved styling"""
     
@@ -903,33 +905,12 @@ class UIBuilder(QObject):
                 }}
             """)
         
-        # Get SVG icon paths for dropdown arrows
-        import platform
+        # Get dropdown arrow SVGs for styling ComboBoxes
+        dropdown_arrow_path, dropdown_arrow_up_path = self._get_dropdown_arrows()
         
-        # Use platform-specific dropdown arrow SVGs
-        system = platform.system()
-        if system == "Windows":
-            # For Windows, use the Windows-specific SVGs with darker color for better contrast
-            dropdown_arrow_path = "app/assets/css/dropdown_arrow_windows.svg"
-            dropdown_arrow_up_path = "app/assets/css/dropdown_arrow_up_windows.svg"
-        else:
-            # Default arrows for macOS/Linux
-            dropdown_arrow_path = "app/assets/css/dropdown_arrow.svg"
-            dropdown_arrow_up_path = "app/assets/css/dropdown_arrow_up.svg"
-        
-        # Get the full paths using get_resource_path
-        arrow_path = get_resource_path(dropdown_arrow_path)
-        arrow_up_path = get_resource_path(dropdown_arrow_up_path)
-        
-        # For Qt stylesheets, always use forward slashes regardless of platform
-        arrow_path = arrow_path.replace('\\', '/')
-        arrow_up_path = arrow_up_path.replace('\\', '/')
-        
-        # Debug output
-        print(f"[DEBUG] {system} dropdown arrow path: {arrow_path}")
-        print(f"[DEBUG] {system} dropdown arrow up path: {arrow_up_path}")
-        print(f"[DEBUG] Path exists (arrow): {os.path.exists(arrow_path)}")
-        print(f"[DEBUG] Path exists (arrow up): {os.path.exists(arrow_up_path)}")
+        # Use resource path helper to get the absolute paths
+        arrow_path = dropdown_arrow_path
+        arrow_up_path = dropdown_arrow_up_path
         
         if self.template_category_field:
             self.template_category_field.setStyleSheet(f"""
@@ -1546,3 +1527,32 @@ class UIBuilder(QObject):
         
         print(f"[DEBUG] _get_categories FINAL result: {categories}")
         return categories 
+
+    def _get_dropdown_arrows(self):
+        """
+        Get the appropriate dropdown arrow paths for the current platform,
+        using resource paths.
+        
+        Returns:
+            tuple: (arrow_path, arrow_up_path) with resolved paths
+        """
+        # Use different arrows for Windows vs. macOS/Linux
+        if platform.system() == "Windows":
+            # For Windows, use white arrows for better contrast on dark backgrounds
+            dropdown_arrow_path = get_resource_path("app/assets/css/dropdown_arrow_windows.svg")
+            dropdown_arrow_up_path = get_resource_path("app/assets/css/dropdown_arrow_up_windows.svg")
+            
+            # If the Windows-specific arrows don't exist, fall back to regular ones
+            if not os.path.exists(dropdown_arrow_path):
+                dropdown_arrow_path = get_resource_path("app/assets/css/dropdown_arrow.svg")
+                dropdown_arrow_up_path = get_resource_path("app/assets/css/dropdown_arrow_up.svg")
+        else:
+            # Default arrows for macOS/Linux
+            dropdown_arrow_path = get_resource_path("app/assets/css/dropdown_arrow.svg")
+            dropdown_arrow_up_path = get_resource_path("app/assets/css/dropdown_arrow_up.svg")
+        
+        # For Qt stylesheets, always use forward slashes regardless of platform
+        dropdown_arrow_path = dropdown_arrow_path.replace('\\', '/')
+        dropdown_arrow_up_path = dropdown_arrow_up_path.replace('\\', '/')
+        
+        return dropdown_arrow_path, dropdown_arrow_up_path 

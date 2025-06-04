@@ -85,10 +85,6 @@ class TemplateOperations:
         """Get the default directory structure for a project type (Delegated)"""
         return self.structure_ops.get_default_structure(project_type)
 
-    def get_structure(self, structure_name):
-        """Get the folder structure for a template (Delegated)"""
-        return self.structure_ops.get_structure(structure_name)
-
     def save_custom_structure(self, name, structure):
         """Save a custom folder structure (Delegated)"""
         return self.structure_ops.save_custom_structure(name, structure)

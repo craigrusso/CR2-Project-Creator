@@ -3,6 +3,7 @@
 
 import os
 import platform
+import json
 from PyQt6.QtCore import QSettings, QStandardPaths, QCoreApplication
 # Removed direct import of APP_NAME to break circular dependency
 # from .app_config import APP_NAME 
@@ -220,6 +221,49 @@ def get_template_directories_path():
 def get_log_path():
     """Returns the path to the Logs directory."""
     return get_path("Logs")
+
+
+# --- Application Preferences (app_preferences.json) ---
+
+APP_PREFERENCES_FILE = "app_preferences.json"
+
+def get_app_preferences_path():
+    """Returns the full path to app_preferences.json."""
+    return os.path.join(get_settings_path(), APP_PREFERENCES_FILE)
+
+def load_app_preferences():
+    """Loads the application preferences from app_preferences.json."""
+    path = get_app_preferences_path()
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        print(f"Error loading app preferences from {path}: {e}")
+        return {}
+
+def save_app_preferences(prefs_data):
+    """Saves the application preferences to app_preferences.json."""
+    path = get_app_preferences_path()
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(prefs_data, f, indent=2)
+        return True
+    except IOError as e:
+        print(f"Error saving app preferences to {path}: {e}")
+        return False
+
+def get_app_preference(key, default=None):
+    """Gets a specific preference value from app_preferences.json."""
+    prefs = load_app_preferences()
+    return prefs.get(key, default)
+
+def set_app_preference(key, value):
+    """Sets a specific preference value in app_preferences.json."""
+    prefs = load_app_preferences()
+    prefs[key] = value
+    return save_app_preferences(prefs)
 
 
 # Example Usage (for testing when run directly)

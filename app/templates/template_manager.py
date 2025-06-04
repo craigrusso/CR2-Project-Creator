@@ -6,6 +6,7 @@ import importlib
 import json
 import datetime
 import time
+import traceback
 
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 
@@ -190,6 +191,14 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
 
     def save_custom_structure(self, name, structure, category="General", description=None, original_name=None):
         """Save a custom structure to disk, now including category and description."""
+        print(f"\n🚨🚨🚨 TemplateManager.save_custom_structure CALLED FOR: '{name}' 🚨🚨🚨")
+        print(f"Category: '{category}', Description: '{description}', Original Name: '{original_name}'")
+        print("Structure (first 3 items):", structure[:3] if isinstance(structure, list) else structure)
+        print("Call Stack:")
+        for line in traceback.format_stack():
+            print(line.strip())
+        print("--------------------------------------------------")
+        
         print(f"\n[DEBUG] TemplateManager.save_custom_structure: Starting save for '{name}' with received category '{category}'")
         
         try:

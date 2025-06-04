@@ -25,7 +25,7 @@ class TemplateStructureOps:
         """Initialize with required paths."""
         self.paths = paths
         # Initialize custom structures list/dict
-        self.custom_structures = [] 
+        self.custom_structures = {} 
         # self.load_custom_structures() # REMOVED: Prevent auto-load on init
 
     def get_default_structure(self, project_type):
@@ -75,7 +75,7 @@ class TemplateStructureOps:
 
     def get_structure(self, structure_name):
         """Get the folder structure for a template."""
-        print(f"DEBUG: get_structure called with structure_name='{structure_name}'")
+        # print(f"DEBUG: get_structure called with structure_name='{structure_name}'")
 
         if not structure_name:
             print("DEBUG: No structure name provided, returning empty structure")
@@ -100,14 +100,14 @@ class TemplateStructureOps:
                 space_versions.append(name.replace('_', ' '))
         structure_names_to_try.extend(space_versions)
 
-        print(f"DEBUG: Trying structure names: {structure_names_to_try}")
+        # print(f"DEBUG: Trying structure names: {structure_names_to_try}")
 
         # Check custom structures for all variations
         for name_to_try in structure_names_to_try:
             # Check in self.custom_structures first (in-memory cache)
             # Adjust check for list format
             found_in_memory = None
-            for struct_data in self.custom_structures:
+            for struct_data in self.custom_structures.values():
                 if isinstance(struct_data, dict) and struct_data.get('name') == name_to_try:
                      found_in_memory = struct_data
                      break
@@ -159,12 +159,12 @@ class TemplateStructureOps:
         files_to_cache = files_to_cache or {} # Ensure it's a dict
             
         # Print debug information
-        print(f"DEBUG: Extracting files from structure at folder '{parent_path}'")
-        print(f"DEBUG: Structure at this level has {len(structure)} items")
+        # print(f"DEBUG: Extracting files from structure at folder '{parent_path}'")
+        # print(f"DEBUG: Structure at this level has {len(structure)} items")
         
         # First, check files_to_cache directly if at the root level and provided
         if parent_path == "" and files_to_cache:
-            print(f"DEBUG: Root level - checking provided files_to_cache ({len(files_to_cache)} items)")
+            # print(f"DEBUG: Root level - checking provided files_to_cache ({len(files_to_cache)} items)")
             
             # Process each file in files_to_cache
             for rel_path, file_data in files_to_cache.items():
@@ -180,7 +180,7 @@ class TemplateStructureOps:
                         elif '/' in rel_path: # Fallback to dirname from rel_path
                             folder = os.path.dirname(rel_path) + '/'
                         
-                        print(f"DEBUG: Adding file from files_to_cache: {file_name} in folder {folder}")
+                        # print(f"DEBUG: Adding file from files_to_cache: {file_name} in folder {folder}")
                         
                         # Create file info
                         file_info = {
@@ -230,7 +230,7 @@ class TemplateStructureOps:
                 folder = parent_path # Folder path relative to template root
                 file_name = item.get('name', '')
                 
-                print(f"DEBUG: Processing file item: {file_name} with user_data: {item.get('user_data', 'None')}")
+                # print(f"DEBUG: Processing file item: {file_name} with user_data: {item.get('user_data', 'None')}")
                 
                 # Get the file's original path if available directly in the item
                 original_path = item.get('original_path', '')
@@ -250,23 +250,23 @@ class TemplateStructureOps:
                     if rel_path_in_structure in files_to_cache:
                         cache_data = files_to_cache[rel_path_in_structure]
                         original_path = cache_data.get('original_path', '')
-                        print(f"DEBUG: Found file in files_to_cache via rel_path: {rel_path_in_structure} -> {original_path}")
+                        # print(f"DEBUG: Found file in files_to_cache via rel_path: {rel_path_in_structure} -> {original_path}")
                     
                     # Fallback: Check by filename only (less reliable)
                     if not original_path and file_name in files_to_cache:
                          cache_data = files_to_cache[file_name]
                          original_path = cache_data.get('original_path', '')
-                         print(f"DEBUG: Found file in files_to_cache via filename only: {file_name} -> {original_path}")
+                         # print(f"DEBUG: Found file in files_to_cache via filename only: {file_name} -> {original_path}")
 
                 # Skip if no original path could be determined or file doesn't exist
                 if not original_path:
-                    print(f"DEBUG: No original path could be determined for file item: {file_name}, skipping")
+                    # print(f"DEBUG: No original path could be determined for file item: {file_name}, skipping")
                     continue
                 if not os.path.exists(original_path):
-                    print(f"DEBUG: Original path file does not exist: {original_path}, skipping {file_name}")
+                    print(f"DEBUG: Original path file does not exist: {original_path}, skipping {file_name}") # This is a useful warning
                     continue
                 
-                print(f"DEBUG: Adding file item from structure: {file_name} to folder: {folder}")
+                # print(f"DEBUG: Adding file item from structure: {file_name} to folder: {folder}")
                 
                 # Get file info
                 file_info = {
@@ -366,9 +366,9 @@ class TemplateStructureOps:
             
         print(f"INFO: Saving custom structure '{name}'")
         
-        # Ensure custom_structures is initialized as a list
-        if not hasattr(self, 'custom_structures') or not isinstance(self.custom_structures, list):
-            self.custom_structures = []
+        # Ensure custom_structures is initialized as a dictionary
+        if not hasattr(self, 'custom_structures') or not isinstance(self.custom_structures, dict):
+            self.custom_structures = {}
             
         # Prepare a safe structure (deep copy and basic validation)
         try:
@@ -398,7 +398,7 @@ class TemplateStructureOps:
         existing_found_index = -1
         
         # Check if it exists in the in-memory list
-        for i, s in enumerate(self.custom_structures):
+        for i, s in self.custom_structures.items():
             if isinstance(s, dict) and s.get("name") == name:
                 existing_creation_time = s.get("created", time.time())
                 existing_found_index = i
@@ -441,7 +441,7 @@ class TemplateStructureOps:
                 self.custom_structures[existing_found_index] = structure_data_to_save
                 print(f"INFO: Updated in-memory custom structure '{name}'")
             else:
-                self.custom_structures.append(structure_data_to_save)
+                self.custom_structures[sanitized_name] = structure_data_to_save
                 print(f"INFO: Added new custom structure '{name}' to memory")
 
             # Optional: Cleanup old file if name sanitized differently (rare for structures)
@@ -453,7 +453,7 @@ class TemplateStructureOps:
             print(f"ERROR: Failed to save custom structure '{name}' to disk path '{file_path}': {e}")
             # Attempt to rollback memory change if add failed
             if existing_found_index == -1:
-                self.custom_structures = [s for s in self.custom_structures if s.get("name") != name]
+                del self.custom_structures[sanitized_name]
             return False
 
     def get_custom_structure(self, name):
@@ -473,7 +473,7 @@ class TemplateStructureOps:
             self.load_custom_structures()
             
         # Find the structure in the custom structures list (which contains dicts)
-        for structure_data in self.custom_structures:
+        for structure_data in self.custom_structures.values():
             if isinstance(structure_data, dict) and structure_data.get("name") == name:
                 print(f"INFO: Found custom structure '{name}' in memory.")
                 # Return the actual structure part
@@ -526,17 +526,17 @@ class TemplateStructureOps:
         
     def load_custom_structures(self):
         """Load custom structures from the dedicated directory into memory."""
-        # Ensure the target attribute exists and is a list
-        if not hasattr(self, 'custom_structures') or not isinstance(self.custom_structures, list):
-            self.custom_structures = []
+        # Ensure the target attribute exists and is a dictionary
+        if not hasattr(self, 'custom_structures') or not isinstance(self.custom_structures, dict):
+            self.custom_structures = {}
         else:
-             # Clear existing list before loading to avoid duplicates if called multiple times
+             # Clear existing dictionary before loading to avoid duplicates if called multiple times
              self.custom_structures.clear()
             
         structures_dir = self.paths.get("custom_structures_dir")
         if not structures_dir:
              print("ERROR: 'custom_structures_dir' not found in paths config. Cannot load structures.")
-             return self.custom_structures # Return empty list
+             return self.custom_structures # Return empty dictionary
 
         if not os.path.exists(structures_dir):
             try:
@@ -544,7 +544,7 @@ class TemplateStructureOps:
                 print(f"INFO: Created custom structures directory: {structures_dir}")
             except OSError as e:
                  print(f"ERROR: Failed to create custom structures directory '{structures_dir}': {e}")
-                 return self.custom_structures # Return empty list
+                 return self.custom_structures # Return empty dictionary
             return self.custom_structures
             
         # Load all structure JSON files
@@ -567,8 +567,8 @@ class TemplateStructureOps:
                             structure_data['directories'] = structure_data['structure']
                             
                         # Check for duplicates by name before adding
-                        if not any(s.get('name') == structure_data['name'] for s in self.custom_structures):
-                            self.custom_structures.append(structure_data)
+                        if not any(s.get('name') == structure_data['name'] for s in self.custom_structures.values()):
+                            self.custom_structures[structure_data['name']] = structure_data
                             loaded_count += 1
                             print(f"INFO: Loaded custom structure '{structure_data.get('name')}' from {filename}")
                         else:
@@ -588,7 +588,7 @@ class TemplateStructureOps:
         
         structure_to_delete = None
         index_to_delete = -1
-        for i, s in enumerate(self.custom_structures):
+        for i, s in self.custom_structures.items():
             if isinstance(s, dict) and s.get("name") == name:
                  structure_to_delete = s
                  index_to_delete = i
@@ -610,7 +610,7 @@ class TemplateStructureOps:
              print(f"ERROR: Could not determine sanitized filename for structure '{name}'. Cannot delete file.")
              # If we found it in memory, still remove it from memory
              if index_to_delete != -1:
-                 del self.custom_structures[index_to_delete]
+                 del self.custom_structures[sanitized_name]
                  print(f"INFO: Removed structure '{name}' from memory despite file deletion issues.")
              return False
 
@@ -638,7 +638,7 @@ class TemplateStructureOps:
             
             # Remove from in-memory list if found
             if index_to_delete != -1:
-                del self.custom_structures[index_to_delete]
+                del self.custom_structures[sanitized_name]
                 print(f"INFO: Removed custom structure '{name}' from in-memory list.")
             
             # Return True if either file was deleted or memory entry was removed

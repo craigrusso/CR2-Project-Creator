@@ -1,0 +1,10 @@
+Echelon ARM64 Error Log
+======================
+
+Executable: Y:\WIN_BUILD\ARM\dist\Echelon\Echelon.exe
+PATH: Y:\WIN_BUILD\ARM\dist\Echelon\_internal;Y:\WIN_BUILD\ARM\dist\Echelon\_internal\PyQt6\Qt6\bin;Y:\WIN_BUILD\ARM\dist\Echelon\_internal\PyQt6\Qt6\plugins\platforms;Y:\.venv\Scripts;C:\Program Files\Parallels\Parallels Tools\Applications;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;c:\Users\craigrusso\AppData\Local\Programs\cursor\resources\app\bin;C:\Program Files\Git\cmd;C:\Program Files\LLVM\bin;C:\Program Files\dotnet\;C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\;C:\Users\craigrusso\AppData\Local\Programs\Python\Python313-arm64\;C:\Users\craigrusso\AppData\Local\Programs\cursor\resources\app\bin;C:\Users\craigrusso\.dotnet\tools
+QT_PLUGIN_PATH: Y:\WIN_BUILD\ARM\dist\Echelon\_internal\PyQt6\Qt6\plugins
+QT_QPA_PLATFORM_PLUGIN_PATH: Y:\WIN_BUILD\ARM\dist\Echelon\_internal\PyQt6\Qt6\plugins\platforms
+
+--- Application Output ---
+

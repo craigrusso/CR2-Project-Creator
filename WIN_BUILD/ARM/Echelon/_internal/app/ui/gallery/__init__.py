@@ -1,1 +1,0 @@
-# This file makes the 'gallery' directory a Python package. 

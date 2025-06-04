@@ -45,6 +45,7 @@ class TemplateIO:
                         # Add template to dict if it has a name
                         if isinstance(template_data, dict) and 'name' in template_data:
                              template_name = template_data['name']
+                             
                              if template_name in self.templates:
                                  print(f"WARN: Duplicate template name '{template_name}' found. Overwriting entry from {self.templates[template_name].get('file_path')} with {template_path}")
                              # Add/overwrite template using its name as the key

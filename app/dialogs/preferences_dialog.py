@@ -406,6 +406,58 @@ def show_preferences_dialog(parent=None):
     # Add Cache tab to main tabs
     tabs.addTab(cache_tab, "Cache")
 
+    # --- General Tab ---
+    general_tab = QWidget()
+    general_layout = QVBoxLayout(general_tab)
+    
+    # Examples Folder Checkbox
+    examples_group = QGroupBox("Examples")
+    examples_group.setStyleSheet(GROUPBOX_STYLE)
+    examples_layout = QVBoxLayout(examples_group)
+    
+    # Use the same direct styling for checkbox as in Cache tab for consistency
+    checkbox_direct_style_general = f"""
+        QCheckBox {{
+            color: {colors['text']};
+            spacing: 5px;
+        }}
+        QCheckBox::indicator {{
+            width: 16px;
+            height: 16px;
+            border: 1px solid {colors['border']};
+            border-radius: 3px;
+            background-color: {colors['card_bg']};
+        }}
+        QCheckBox::indicator:hover {{
+            border: 1px solid {colors['accent']};
+        }}
+        QCheckBox::indicator:checked {{
+            background-color: {colors['accent']};
+            border: 1px solid {colors['accent']};
+        }}
+    """
+    
+    examples_enabled_check = QCheckBox("Enable and show project Examples")
+    examples_enabled_check.setStyleSheet(checkbox_direct_style_general)
+    examples_enabled_check.setChecked(config_manager.get_app_preference("examples_folder_enabled", True))
+    examples_enabled_check.setToolTip("If enabled, a folder with example project templates will be available.")
+    
+    def on_examples_enabled_changed(state):
+        config_manager.set_app_preference("examples_folder_enabled", bool(state))
+        # Optionally, show a message that restart is needed, but save_preferences does that broadly.
+
+    examples_enabled_check.stateChanged.connect(on_examples_enabled_changed)
+    examples_layout.addWidget(examples_enabled_check)
+    
+    examples_note = QLabel("Changes to the Examples folder visibility may require an application restart to take full effect.")
+    examples_note.setStyleSheet(f"color: {colors['secondary_text']}; font-style: italic;")
+    examples_note.setWordWrap(True)
+    examples_layout.addWidget(examples_note)
+    
+    general_layout.addWidget(examples_group)
+    general_layout.addStretch()
+    tabs.addTab(general_tab, "General")
+
     # --- Apply Tab Styling ---
     tabs.setStyleSheet(f"""
         QTabWidget::pane {{ /* The tab widget frame */

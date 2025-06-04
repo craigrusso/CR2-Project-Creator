@@ -27,7 +27,7 @@ from PyQt6.QtWidgets import QDialog
 from app.dialogs.eula_dialog import EULADialog
 
 # Import for deploying example templates
-from app.core.config_manager import get_templates_path, get_settings_path
+from app.core.config_manager import get_templates_path, get_settings_path, get_app_preference, set_app_preference
 from app.utils.utils import load_json_file, save_json_file
 
 # Import our new logging system
@@ -67,7 +67,16 @@ def deploy_example_templates():
     """
     Copies bundled example templates to the user's template directory,
     placing them inside an 'Examples' subdirectory.
+    Only proceeds if the 'examples_folder_enabled' preference is true.
     """
+    # Check preference first
+    examples_enabled = get_app_preference("examples_folder_enabled", True) # Default to True if not set
+    if not examples_enabled:
+        info("Example templates deployment skipped as 'examples_folder_enabled' is false.")
+        # Optionally, ensure the Examples folder is removed from folders.json if it exists
+        # For now, just skipping creation/update is sufficient.
+        return
+
     try:
         base_user_templates_path = get_templates_path() # e.g., $HOME/Library/Application Support/Echelon/Templates
         

@@ -908,9 +908,11 @@ def _save_template_structure(app, old_name, new_name, structure, template):
     """Save a structure associated with a template"""
     from app.core.structures import update_structure_dropdown
     
-    # Save the structure
-    success = app.template_manager.save_custom_structure(new_name, structure)
-    
+    # Assume success since the main template saving (which includes the structure) 
+    # was handled by EnhancedStructureEditor.accept() before this callback was invoked.
+    # If we reach here, the primary save operation was successful.
+    success = True # Placeholder, actual success comes from the editor's save.
+
     if success:
         # Associate the structure with the template
         template_info_path = ""

@@ -215,16 +215,16 @@ def handle_template_edit(gallery, template=None, selected_template=None, name=No
             
             # --- Save structure (using save_custom_structure) ---
             # Ensure structure name always starts with Template_
-            if not updated_structure_name.startswith("Template_"):
-                updated_structure_name = f"Template_{updated_template_name}"
+            # if not updated_structure_name.startswith("Template_"):
+            #    updated_structure_name = f"Template_{updated_template_name}"
                 
-            print(f"🔷 GALLERY LISTENER: Saving structure: Name='{updated_structure_name}', Category='{saved_category}'")
-            structure_save_success = template_manager.save_custom_structure(updated_structure_name, updated_structure, saved_category, saved_description)
+            # print(f"🔷 GALLERY LISTENER: Saving structure: Name='{updated_structure_name}', Category='{saved_category}'")
+            # structure_save_success = template_manager.save_custom_structure(updated_structure_name, updated_structure, saved_category, saved_description)
             
-            if not structure_save_success:
-                print(f"❌ GALLERY LISTENER: Failed to save structure for template '{updated_template_name}'")
-                QMessageBox.warning(gallery, "Save Error", f"Could not save the template structure for {updated_template_name}. The structure might be saved, but the template list may be inconsistent.")
-                return False
+            # if not structure_save_success:
+            #    print(f"❌ GALLERY LISTENER: Failed to save structure for template '{updated_template_name}'")
+            #    QMessageBox.warning(gallery, "Save Error", f"Could not save the template structure for {updated_template_name}. The structure might be saved, but the template list may be inconsistent.")
+            #    return False
             
             # --- Save main template file (using save_template) ---
             print(f"🔷 GALLERY LISTENER: Saving main template file: Name='{updated_template_name}', Category='{saved_category}'")

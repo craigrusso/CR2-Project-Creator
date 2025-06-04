@@ -34,14 +34,14 @@ class TemplatesGallery(QWidget):
             # Get the template manager
             if hasattr(self, 'app') and hasattr(self.app, 'template_manager'):
                 # First save the structure
-                structure_save_success = self.app.template_manager.save_custom_structure(
-                    name=new_name,
-                    structure=structure
-                )
+                # structure_save_success = self.app.template_manager.save_custom_structure(
+                #    name=new_name,
+                #    structure=structure
+                # )
                 
-                if not structure_save_success:
-                    print(f"DEBUG: Failed to save structure for template '{new_name}'")
-                    return False
+                # if not structure_save_success:
+                #    print(f"DEBUG: Failed to save structure for template '{new_name}'")
+                #    return False
                 
                 # Create a proper template data object
                 template_data = {

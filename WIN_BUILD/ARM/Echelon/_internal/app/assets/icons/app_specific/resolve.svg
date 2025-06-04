@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 234" width="48" height="48">
-  <defs>
-    <style>.cls-1{fill:#131313;}.cls-2{fill:#F15A22;}</style>
-  </defs>
-  <rect class="cls-1" width="240" height="234" rx="42.5"/>
-  <path class="cls-2" d="M120,56.5c-35.8,0-65,29.2-65,65s29.2,65,65,65s65-29.2,65-65S155.8,56.5,120,56.5z M120,164.5
-    c-23.7,0-43-19.3-43-43s19.3-43,43-43s43,19.3,43,43S143.7,164.5,120,164.5z"/>
-  <circle class="cls-2" cx="120" cy="121.5" r="22"/>
-</svg> 

@@ -400,17 +400,17 @@ class GalleryEvents:
                     updated_structure_name = f"Template_{updated_template_name}"
                 
                 # --- Save structure file --- (This might be redundant if save_template handles it)
-                structure_save_success = gallery.app.template_manager.save_custom_structure(
-                    name=updated_structure_name,
-                    structure=updated_structure,
-                    category=saved_category,
-                    description=saved_description
-                )
-                if not structure_save_success:
-                    print(f"❌ LISTENER: Failed to save structure for new template '{updated_template_name}'")
-                    # Optionally show an error message
-                    # QMessageBox.warning(self.parent_widget, "Save Error", ...)
-                    # return # Don't proceed if structure save fails
+                # structure_save_success = gallery.app.template_manager.save_custom_structure(
+                #     name=updated_structure_name,
+                #     structure=updated_structure,
+                #     category=saved_category,
+                #     description=saved_description
+                # )
+                # if not structure_save_success:
+                #     print(f"❌ LISTENER: Failed to save structure for new template '{updated_template_name}'")
+                #     # Optionally show an error message
+                #     # QMessageBox.warning(self.parent_widget, "Save Error", ...)
+                #     # return # Don't proceed if structure save fails
                 
                 # --- Save main template file ---    
                 # Now save the main template file, linking to the saved structure
@@ -890,17 +890,6 @@ class GalleryEvents:
         """Save template and associated structure"""
         try:
             print(f"🔍 GALLERY LISTENER: Attempting to save template '{data['name']}' and its structure")
-            
-            # Save the structure first
-            structure_save_success = gallery.app.template_manager.save_custom_structure(
-                name=data.get('structure_name', f"Template_{data['name'].replace(' ', '_')}"),
-                structure=data.get('structure', {}),
-                category=data.get('category', "General"),
-                description=data.get('description', "")
-            )
-            if not structure_save_success:
-                print(f"❌ GALLERY LISTENER: Failed to save structure for template '{data['name']}'")
-                return False
             
             # Save the main template file with individual parameters
             save_success, save_message = gallery.app.template_manager.save_template(

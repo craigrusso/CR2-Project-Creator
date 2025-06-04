@@ -1,1 +1,0 @@
-WARNING: Could not import objc/Foundation modules. Security-scoped bookmarks will not work.

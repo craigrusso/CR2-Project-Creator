@@ -990,11 +990,8 @@ class EnhancedStructureEditor(QDialog):
         is_rename = not self.is_new and self.original_structure_name and updated_structure_name != self.original_structure_name
         print(f"[DEBUG] Is Rename: {is_rename} (Original: '{self.original_structure_name}', New: '{updated_structure_name}')")
 
-        # --- 5. Save Structure ---
+        # --- 5. Save Template (Primary Change Here) ---
         try:
-            # Check if template manager is available
-            # Use self.template_manager if it was passed during initialization
-            # or attempt to get it from the parent if not directly available.
             template_manager_instance = None
             if hasattr(self, 'template_manager') and self.template_manager:
                 template_manager_instance = self.template_manager
@@ -1005,29 +1002,51 @@ class EnhancedStructureEditor(QDialog):
             if not template_manager_instance:
                 raise AttributeError("Template manager instance is not available.")
 
-            print(f"[DEBUG] Attempting to save structure: Name='{updated_structure_name}', TemplateName='{updated_template_name}'")
+            print(f"[DEBUG] Preparing to save template: Name='{updated_template_name}', Category='{selected_category}'")
+
+            # Construct the full template_data object
+            template_data_to_save = {
+                'template_name': updated_template_name, # CORRECTED KEY
+                'structure': updated_structure,
+                'category': selected_category,
+                'description': template_description,
+                'template_type': self.template_data.get('type', 'Standard') if self.template_data else 'Standard', # CORRECTED KEY
+                'tags': self.template_data.get('tags', []) if self.template_data else [],
+                'files_to_cache': self.files_to_cache if hasattr(self, 'files_to_cache') else {},
+                'modified': time.time(), # Will be filtered out before calling save_template
+                'created': None # Will be set below and then filtered out
+            }
+
+            if self.is_new or not (self.template_data and 'created' in self.template_data):
+                template_data_to_save['created'] = time.time()
+            else:
+                template_data_to_save['created'] = self.template_data['created']
+
+            if is_rename:
+                original_clean_name = self.original_structure_name
+                if original_clean_name.startswith("Template_"):
+                    original_clean_name = original_clean_name[len("Template_"):]
+                template_data_to_save['original_name'] = original_clean_name
+                print(f"[DEBUG] Adding original_name '{original_clean_name}' for rename operation to template_data")
             
-            # Create save parameters with additional info for rename operations
-            save_params = {
-                "name": updated_structure_name,
-                "structure": updated_structure,
-                "category": selected_category
+            # Filter template_data_to_save to only include keys expected by save_template
+            expected_args = [
+                'template_name', 'structure', 'category', 'description', 
+                'tags', 'template_type', 'original_name', 'files_to_cache'
+            ]
+            filtered_template_data = {
+                k: v for k, v in template_data_to_save.items() if k in expected_args
             }
             
-            # If this is a rename operation, add the original name to ensure proper cleanup
-            if is_rename:
-                save_params["original_name"] = self.original_structure_name
-                print(f"[DEBUG] Adding original_name '{self.original_structure_name}' for rename operation")
-            
-            # Pass the save parameters to the save function
-            success = template_manager_instance.save_custom_structure(**save_params)
+            # REMOVED: success = template_manager_instance.save_custom_structure(**save_params)
+            # INSTEAD: Call save_template with the filtered and unpacked template data
+            success = template_manager_instance.save_template(**filtered_template_data)
 
             if not success:
-                raise RuntimeError("Failed to save the structure via Template Manager.")
-            print(f"[DEBUG] Structure saved successfully for '{updated_structure_name}'")
+                raise RuntimeError("Failed to save the template via Template Manager.")
+            print(f"[DEBUG] Template saved successfully for '{updated_template_name}'")
 
-            # After successfully saving the structure and template data, refresh the gallery
-            # Check if the parent object (likely the gallery or main app) has a refresh method
+            # After successfully saving, refresh the gallery
             parent_widget = self.parent()
             if parent_widget and hasattr(parent_widget, 'refresh_gallery'):
                 print(f"[DEBUG] Calling parent widget's refresh_gallery method")
