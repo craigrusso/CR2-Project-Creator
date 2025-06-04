@@ -42,6 +42,7 @@ RECENT_TEMPLATES_MAX = 5
 # Default template categories (Still used for the dropdown)
 DEFAULT_TEMPLATE_CATEGORIES = [
     "Custom",
+    "Examples",
     "Video Editing",
     "Motion Graphics",
     "VFX",

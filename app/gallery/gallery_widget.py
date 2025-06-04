@@ -21,11 +21,13 @@ from app.ui.gallery.components.template_card import TemplateCard
 from app.ui.gallery.components.template_folder_card import TemplateFolderCard
 from app.templates.components.template_folder_list_item import TemplateFolderListItem
 from app.templates.components.menu_actions import ContextMenu
-from app.gallery.selection_manager import GallerySelectionManager # Add this import
+from app.gallery.selection_manager import GallerySelectionManager
 
-# Import the new combobox updater utility
 from app.templates.category_combobox_updater import update_single_combobox
 from app.templates.category_update_manager import get_instance as get_category_update_manager_instance
+
+from app.templates.template_manager_core import EXAMPLES_FOLDER_NAME # ADDED
+from app.core import config_manager # ADDED
 
 class TemplateGallery(QWidget):
     """Main widget for displaying and managing templates"""
@@ -39,56 +41,49 @@ class TemplateGallery(QWidget):
         self.parent = parent
         self.template_manager = app.template_manager if app else None
         
-        # Get CategoryUpdateManager instance
         self.category_update_manager = get_category_update_manager_instance(app)
         if self.category_update_manager:
             self.category_update_manager.categories_changed_signal.connect(self._update_categories)
             print("[GalleryWidget] Connected to CategoryUpdateManager categories_changed_signal.")
         else:
             print("[GalleryWidget] WARNING: Could not get CategoryUpdateManager instance.")
+
+        # Connect to ProjectCreatorApp signal for preference changes
+        if hasattr(self.app, "gallery_preference_changed"):
+            self.app.gallery_preference_changed.connect(self._handle_gallery_preference_changed)
+            print("[GalleryWidget] Connected to ProjectCreatorApp.gallery_preference_changed signal.")
+        else:
+            print("[GalleryWidget] WARNING: ProjectCreatorApp instance does not have 'gallery_preference_changed' signal.")
         
-        # Initialize selection manager
         self.selection_manager = GallerySelectionManager(self)
-        # Connect its signal to a handler that will update the UI
         self.selection_manager.selection_changed.connect(self._handle_selection_manager_update)
         
-        # UI state tracking - some of this will be deprecated by selection_manager
         self.current_category = "All"
         self.current_folder = None
         self.current_search = ""
-        # self.selected_template = None # Managed by selection_manager
-        self.selected_folder = None # This is for folders, not templates
+        self.selected_folder = None
         self.folder_cards = []
         self.template_cards = []
-        # self.multi_selected_templates = []  # Managed by selection_manager
-        self.icon_scale = 100  # Default scale in percentage
-        self.folder_view_mode = "grid"  # Default to grid view for folders
-        self.view_mode = "grid"  # Default to grid view for templates
-        self.templates_loaded = False  # Track if templates have been loaded
+        self.icon_scale = 100
+        self.folder_view_mode = "grid"
+        self.view_mode = "grid"
+        self.templates_loaded = False
         
-        # Add placeholder for table view instance (will be created in setup_ui)
         self.template_table_view = None
         
-        # Set minimum size to ensure all UI elements are visible
         self.setMinimumSize(800, 400)
-        
-        # Configure size policy to always expand
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         
-        # Initialize grid layouts to avoid AttributeError
         self.folders_grid = None
         self.templates_grid = None
         
-        # Resize handling
         self.resize_timer = QTimer()
         self.resize_timer.setSingleShot(True)
-        self.resize_timer.setInterval(200)  # 200ms debounce
+        self.resize_timer.setInterval(200)
         self.resize_timer.timeout.connect(self._handle_resize_timeout)
         
-        # Set up the UI
         GalleryUISetup.setup_ui(self)
         
-        # --- Connect Table View Signals --- 
         if self.template_table_view:
             print("DEBUG: Connecting TemplateTableView signals...")
             self.template_table_view.clicked.connect(self._on_table_item_clicked)
@@ -99,15 +94,12 @@ class TemplateGallery(QWidget):
             self.template_table_view.selectionModel().selectionChanged.connect(self._on_table_selection_changed)
         else:
             print("[ERROR] TemplateTableView instance not found after UI setup!")
-        # ---------------------------------
         
-        # Set up the main gallery context menu (for blank space)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_gallery_context_menu)
         
-        # Populate the gallery initially - do this after UI setup and signal connection
         self.populate_gallery()
-        self._update_categories() # Initial call to populate category filter
+        self._update_categories()
         self._setup_shortcuts()
     
     def _handle_selection_manager_update(self, primary_selected, multi_selected_list):
@@ -136,48 +128,49 @@ class TemplateGallery(QWidget):
 
         print(f"[DEBUG] Gallery: Populating gallery. Current folder: {self.current_folder}, View mode: {self.view_mode}")
         
-        # Always reload templates and folder structures from the manager
-        # This ensures data freshness, especially after operations like add/delete/rename
         if hasattr(self.app.template_manager, 'template_io') and hasattr(self.app.template_manager.template_io, 'load_templates'):
-            self.app.template_manager.template_io.load_templates() # Ensure templates are fresh from the IO layer
+            self.app.template_manager.template_io.load_templates()
             print("[DEBUG] Gallery: Templates reloaded via template_io.")
         else:
             print("[ERROR] Gallery: Could not call template_io.load_templates. Template data may be stale.")
             
         if hasattr(self.app.template_manager, 'load_folders') and callable(self.app.template_manager.load_folders):
-            self.app.template_manager.load_folders() # Ensure folder structure is fresh
+            self.app.template_manager.load_folders()
             print("[DEBUG] Gallery: Folders reloaded via template_manager.load_folders().")
         else:
             print("[ERROR] Gallery: Could not call template_manager.load_folders. Folder data may be stale.")
 
-        all_templates_list = self.app.template_manager.get_all_templates()
-        # self.app.template_manager.folders is expected to be a dict like: {"FolderName": ["template_name1", ...]}
-        # self.app.template_manager.get_folders() returns a list of folder names.
-        actual_folders_dict = self.app.template_manager.folders if hasattr(self.app.template_manager, 'folders') else {}
-        folder_names_list = list(actual_folders_dict.keys()) if isinstance(actual_folders_dict, dict) else []
+        all_templates_list = self.app.template_manager.get_all_templates() # This is already filtered by pref if not in a folder
+        
+        # Get the list of folder names that should be VISIBLE in the UI
+        visible_folder_names = self.app.template_manager.get_folders() # This respects the preference
+        
+        # Get all folder data (still needed for template_to_folder_map and knowing contents)
+        all_folders_data = self.app.template_manager.folders if hasattr(self.app.template_manager, 'folders') else {}
 
         items_for_table = []
 
-        # 1. Add Folder Items
-        if isinstance(actual_folders_dict, dict):
-            for folder_name in actual_folders_dict.keys(): # Iterate keys of the actual dictionary
+        # 1. Add Folder Items (for display in folder list/grid and potentially table view)
+        # Only add folders that are in the visible_folder_names list
+        for folder_name in visible_folder_names:
+            if folder_name in all_folders_data: # Ensure it's a real folder defined in folders.json
                 items_for_table.append({
                     'name': folder_name,
                     'is_folder': True,
-                    'parent_folder': None, # Folders are always at the root level in this implementation
-                    'category': 'Folder', # Special category for filtering/display
-                    'created': None, # No timestamps for folders
+                    'parent_folder': None, 
+                    'category': 'Folder',
+                    'created': None, 
                     'modified': None
                 })
         
         # 2. Add Template Items
-        # Create a reverse map for quick lookup of a template's folder
         template_to_folder_map = {}
-        if isinstance(actual_folders_dict, dict):
-            for folder_name, template_names_in_folder in actual_folders_dict.items():
+        if isinstance(all_folders_data, dict):
+            for f_name, template_names_in_folder in all_folders_data.items():
                 if isinstance(template_names_in_folder, list):
                     for tmpl_name in template_names_in_folder:
-                        template_to_folder_map[tmpl_name] = folder_name
+                        if isinstance(tmpl_name, str): # Ensure tmpl_name is a string
+                           template_to_folder_map[tmpl_name.lower()] = f_name 
 
         if isinstance(all_templates_list, list):
             for template_dict in all_templates_list:
@@ -186,22 +179,21 @@ class TemplateGallery(QWidget):
                     continue
 
                 template_name = template_dict['name']
-                parent_folder = template_to_folder_map.get(template_name, "ROOT") # "ROOT" if not in any folder
+                parent_folder_name = "ROOT" # Default
+                if isinstance(template_name, str): # Ensure template_name is a string for .lower()
+                    parent_folder_name = template_to_folder_map.get(template_name.lower(), "ROOT") 
 
-                # Prepare template item data, ensuring all expected keys by populate_data are present
                 item_data = {
                     'name': template_name,
                     'is_folder': False,
-                    'parent_folder': parent_folder,
+                    'parent_folder': parent_folder_name,
                     'category': template_dict.get('category'),
                     'created': template_dict.get('created'),
                     'modified': template_dict.get('modified'),
-                    'structure': template_dict.get('structure'), # Should be bool or evaluated to bool
-                    # Add any other fields expected by template_table_view.populate_data or its delegates
+                    'structure': template_dict.get('structure'),
                 }
                 items_for_table.append(item_data)
         
-        # Store items for potential reuse (e.g., in delayed population)
         self.current_templates_to_display = items_for_table
         
         # Setup visibility of sections and navigation based on current state
@@ -2236,4 +2228,35 @@ class TemplateGallery(QWidget):
                     f"Cache for template \'{template_name}\' has been cleared successfully.")
         else:
             print(f"[ERROR] Template manager does not support safe cache clearing")
+
+    def _handle_gallery_preference_changed(self, preference_key):
+        if preference_key == "examples_folder_enabled":
+            print(f"[GalleryWidget] Detected 'examples_folder_enabled' preference change.")
+            
+            current_selected_folder_name = None
+            if hasattr(self, 'folder_list_widget') and self.folder_list_widget: 
+                current_item = self.folder_list_widget.currentItem()
+                if current_item:
+                    if hasattr(current_item, 'folder_name'): 
+                        current_selected_folder_name = current_item.folder_name
+                    elif hasattr(current_item, 'text'): 
+                        current_selected_folder_name = current_item.text()
+
+            show_examples = config_manager.get_app_preference("examples_folder_enabled", True)
+            if not show_examples and current_selected_folder_name and \
+               current_selected_folder_name.lower() == EXAMPLES_FOLDER_NAME.lower():
+                print(f"[GalleryWidget] 'Examples' folder was selected and is now hidden. Switching to root view.")
+                self.current_folder = None 
+                if hasattr(self, 'folder_list_widget') and self.folder_list_widget.isVisible():
+                    self.folder_list_widget.setCurrentItem(None) 
+            
+            self.populate_gallery(force_refresh=True)
+
+    def update_folder_list_display(self):
+        """Placeholder: Ensures the folder list UI is updated. 
+        Currently, populate_gallery() is expected to handle this due to its structure.
+        If a more lightweight refresh is needed, this method can be built out.
+        """
+        print("[GalleryWidget] update_folder_list_display called. Relies on populate_gallery for actual update.")
+        pass
 

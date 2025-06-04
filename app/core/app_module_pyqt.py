@@ -103,6 +103,7 @@ class ProjectCreatorApp(QMainWindow):
     
     # Signal for template updates
     template_updated = pyqtSignal()
+    gallery_preference_changed = pyqtSignal(str)
     
     # Class variable to hold the instance
     _instance = None
@@ -1400,6 +1401,10 @@ class ProjectCreatorApp(QMainWindow):
     def show_about_dialog(self):
         """Shows the About dialog."""
         show_about(self)
+
+    def notify_gallery_preference_changed(self, preference_key):
+        """Notify listeners that a gallery-related preference has changed."""
+        self.gallery_preference_changed.emit(preference_key)
 
 # Add a class variable to hold the single instance
 ProjectCreatorApp._instance = None 

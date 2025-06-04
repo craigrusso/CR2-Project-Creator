@@ -10,11 +10,13 @@ from pathlib import Path
 
 from app.utils.utils import load_json_file, save_json_file
 from app.core import config_manager
-from app.constants import DEFAULT_TEMPLATE_CATEGORIES, APP_VERSION
+from app.constants import DEFAULT_TEMPLATE_CATEGORIES, APP_VERSION, get_resource_path
 from app.templates.folder_operations import FolderOperations
 from app.templates.structure_operations import StructureOperations
 from app.templates.template_operations import TemplateOperations
 from app.templates.project_type_manager import ProjectTypeManager
+
+EXAMPLES_FOLDER_NAME = "Examples" # Added constant
 
 class TemplateManagerCore(TemplateOperations):
     """
@@ -47,8 +49,11 @@ class TemplateManagerCore(TemplateOperations):
         # Pass the constructed paths dict to the parent constructor via super()
         super().__init__(paths=self.paths)
         
-        # Load folders (folder organization data)
+        # Load folders (folder organization data) - must be before ensure_default_examples
         self.load_folders()
+        
+        # Ensure default examples are installed and listed in folders.json
+        self._ensure_default_examples()
         
         # Load user preferences
         self.load_preferences()
@@ -68,6 +73,116 @@ class TemplateManagerCore(TemplateOperations):
         # --- END ADDED ---
         
         print(f"DEBUG: TemplateManagerCore Initialized. Loaded {len(self.template_io.templates if self.template_io else 0)} templates via TemplateIO.")
+    
+    def _ensure_default_examples(self):
+        """
+        Ensures that default example templates are copied to the user's templates
+        directory if they don't exist and that they are listed in the 'Examples'
+        folder in folders.json.
+        """
+        try:
+            bundled_examples_dir_name = "app/resources/default_templates/Examples/"
+            bundled_examples_path = get_resource_path(bundled_examples_dir_name)
+            print(f"DEBUG: _ensure_default_examples: bundled_examples_path resolved to: {bundled_examples_path}")
+            user_templates_path = self.paths.get("templates_dir")
+
+            if not os.path.exists(bundled_examples_path):
+                print(f"WARN: Bundled examples directory not found at: {bundled_examples_path}")
+                # Attempt to list parent directory contents for debugging
+                parent_dir_of_examples = get_resource_path("app/resources/default_templates/")
+                if os.path.exists(parent_dir_of_examples):
+                    print(f"DEBUG: Contents of parent directory ({parent_dir_of_examples}): {os.listdir(parent_dir_of_examples)}")
+                else:
+                    print(f"DEBUG: Parent directory ({parent_dir_of_examples}) also not found.")
+                return
+
+            if not user_templates_path or not os.path.exists(user_templates_path):
+                print(f"WARN: User templates directory not found or not yet created: {user_templates_path}")
+                # Attempt to create it if it's the default path.
+                # This is a bit risky if the user has configured a custom path that's invalid,
+                # but get_templates_path() from config_manager usually ensures it exists.
+                if user_templates_path:
+                    try:
+                        os.makedirs(user_templates_path, exist_ok=True)
+                        print(f"DEBUG: Created user templates directory: {user_templates_path}")
+                    except Exception as e_create:
+                        print(f"ERROR: Failed to create user templates directory {user_templates_path}: {e_create}")
+                        return # Cannot proceed if user templates dir cannot be accessed/created
+                else:
+                    return
+
+
+            example_template_files = [f for f in os.listdir(bundled_examples_path) if f.endswith('.json') and not f.startswith('._')]
+            
+            if not example_template_files:
+                print(f"DEBUG: No example template .json files found in {bundled_examples_path}")
+                return
+
+            folders_updated = False
+            if not isinstance(self.folders, dict): # Should have been loaded by load_folders()
+                print("WARN: self.folders is not a dict in _ensure_default_examples. Re-initializing.")
+                self.folders = {}
+                folders_updated = True # Will need to save if we create Examples folder
+
+            # Ensure "Examples" folder exists in self.folders (case-insensitive check for existing)
+            current_examples_key = None
+            for key in self.folders.keys():
+                if key.lower() == EXAMPLES_FOLDER_NAME.lower():
+                    current_examples_key = key
+                    break
+            
+            if current_examples_key is None:
+                self.folders[EXAMPLES_FOLDER_NAME] = []
+                current_examples_key = EXAMPLES_FOLDER_NAME
+                folders_updated = True
+                print(f"DEBUG: Created '{EXAMPLES_FOLDER_NAME}' in self.folders.")
+            
+            # Ensure the list for the examples folder is actually a list
+            if not isinstance(self.folders[current_examples_key], list):
+                print(f"WARN: '{current_examples_key}' in self.folders was not a list. Resetting to empty list.")
+                self.folders[current_examples_key] = []
+                folders_updated = True
+
+            for example_file in example_template_files:
+                source_path = os.path.join(bundled_examples_path, example_file)
+                target_path = os.path.join(user_templates_path, example_file)
+
+                if not os.path.exists(target_path):
+                    try:
+                        shutil.copy2(source_path, target_path)
+                        print(f"INFO: Copied example template '{example_file}' to user templates.")
+                    except Exception as e:
+                        print(f"ERROR: Failed to copy example template '{example_file}': {e}")
+                        continue # Skip this example if copy fails
+                
+                # Read the template name from its JSON content
+                try:
+                    template_data = load_json_file(target_path)
+                    if template_data and isinstance(template_data, dict) and 'name' in template_data:
+                        template_name = template_data['name']
+                        # Add to "Examples" folder in self.folders if not already present (case-insensitive check)
+                        found_in_folder = False
+                        for existing_name in self.folders[current_examples_key]:
+                            if isinstance(existing_name, str) and existing_name.lower() == template_name.lower():
+                                found_in_folder = True
+                                break
+                        if not found_in_folder:
+                            self.folders[current_examples_key].append(template_name)
+                            folders_updated = True
+                            print(f"DEBUG: Added '{template_name}' to '{current_examples_key}' folder list.")
+                    else:
+                        print(f"WARN: Could not read name from example template: {target_path}")
+                except Exception as e_read:
+                    print(f"ERROR: Failed to read or parse example template '{target_path}': {e_read}")
+
+            print(f"DEBUG: Pre-save check in _ensure_default_examples. folders_updated: {folders_updated}, self.folders content: {self.folders}")
+            if folders_updated:
+                self.save_folders()
+                print(f"DEBUG: Saved updated folders.json due to example processing.")
+        except Exception as e:
+            print(f"ERROR: Unexpected error in _ensure_default_examples: {e}")
+            import traceback
+            traceback.print_exc()
     
     def load_template_directories(self):
         """Load all template directories"""
@@ -138,13 +253,39 @@ class TemplateManagerCore(TemplateOperations):
         return self
     
     def get_all_templates(self):
-        """Returns all loaded templates from TemplateIO."""
-        if self.template_io:
-            # Return a list of the dictionary values from template_io.templates
-            return list(self.template_io.templates.values())
-        else:
+        """Returns all loaded templates from TemplateIO, optionally filtering examples."""
+        if not self.template_io:
             print("WARN: TemplateIO not initialized in TemplateManagerCore.")
-            return [] # Return empty list if IO not ready
+            return []
+
+        all_templates_dict = self.template_io.templates
+        show_examples = config_manager.get_app_preference("examples_folder_enabled", True)
+
+        if not show_examples:
+            example_template_names = []
+            if isinstance(self.folders, dict): # Ensure self.folders is a dict
+                # Make folder name matching case-insensitive for robustness
+                for folder_name, template_list in self.folders.items():
+                    if folder_name.lower() == EXAMPLES_FOLDER_NAME.lower():
+                        if isinstance(template_list, list): # Ensure the value is a list
+                            example_template_names.extend(template_list)
+                        break # Found the examples folder
+
+            if example_template_names:
+                # Filter out templates that are in the example_template_names list
+                # Also make this comparison case-insensitive for robustness
+                example_template_names_lower = {name.lower() for name in example_template_names if isinstance(name, str)}
+                filtered_templates = {
+                    name: data for name, data in all_templates_dict.items()
+                    if isinstance(name, str) and name.lower() not in example_template_names_lower
+                }
+                return list(filtered_templates.values())
+            else:
+                # No "Examples" folder found or it's empty, so no filtering based on folder needed
+                return list(all_templates_dict.values())
+        else:
+            # Preference is true, show all templates
+            return list(all_templates_dict.values())
     
     def get_template_by_name(self, template_name):
         """

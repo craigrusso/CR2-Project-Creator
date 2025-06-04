@@ -442,9 +442,14 @@ def show_preferences_dialog(parent=None):
     examples_enabled_check.setChecked(config_manager.get_app_preference("examples_folder_enabled", True))
     examples_enabled_check.setToolTip("If enabled, a folder with example project templates will be available.")
     
+    logger = get_logger() # Get logger for this module/function
+
     def on_examples_enabled_changed(state):
+        logger.debug(f"Preference 'examples_folder_enabled' set to: {bool(state)}")
         config_manager.set_app_preference("examples_folder_enabled", bool(state))
-        # Optionally, show a message that restart is needed, but save_preferences does that broadly.
+        # Notify the main application that this preference has changed
+        if dialog.parent() and hasattr(dialog.parent(), "notify_gallery_preference_changed"):
+            dialog.parent().notify_gallery_preference_changed("examples_folder_enabled")
 
     examples_enabled_check.stateChanged.connect(on_examples_enabled_changed)
     examples_layout.addWidget(examples_enabled_check)

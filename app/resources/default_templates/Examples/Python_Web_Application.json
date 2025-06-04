@@ -1,0 +1,33 @@
+{
+    "name": "Python Web Application",
+    "category": "Software Development",
+    "description": "A common structure for Python web applications using frameworks like Flask or Django. Includes app, static, and templates folders.",
+    "structure": [
+        {"app": [
+            {"static": [
+                {"css": ["style.css"]},
+                {"js": ["script.js"]},
+                {"img": []}
+            ]},
+            {"templates": [
+                "base.html",
+                "index.html"
+            ]},
+            {"routes": ["__init__.py", "main_routes.py"]},
+            {"models": ["__init__.py", "user_model.py"]},
+            {"services": ["__init__.py"]},
+            "__init__.py",
+            "config.py"
+        ]},
+        {"tests": [
+            {"unit": ["test_example_unit.py"]},
+            {"integration": ["test_example_integration.py"]},
+            "__init__.py"
+        ]},
+        {"docs": ["conf.py", "index.rst"]},
+        "requirements.txt",
+        "run.py",
+        ".env.example",
+        "README.md"
+    ]
+} 

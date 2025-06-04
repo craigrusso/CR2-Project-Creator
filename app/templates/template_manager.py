@@ -10,7 +10,7 @@ import traceback
 
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 
-from app.templates.template_manager_core import TemplateManagerCore
+from app.templates.template_manager_core import TemplateManagerCore, EXAMPLES_FOLDER_NAME
 from app.templates.structure_operations import StructureOperations
 from app.templates.folder_operations import FolderOperations
 from app.templates.ui_operations import UIOperations
@@ -32,6 +32,11 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
         """Initialize the template manager"""
         super().__init__()  # Initialize QObject and other parents via MRO
         
+        # Import config_manager here if not already available as self.app.config_manager or similar
+        # For now, assume config_manager can be imported directly or accessed via self.app
+        from app.core import config_manager
+        self._config_manager = config_manager # Store for use in methods
+        
         # Initialization of mixins/parents is handled by super() based on MRO
         # TemplateManagerCore.__init__(self)  # REMOVED
         # StructureOperations.__init__(self) # REMOVED
@@ -43,6 +48,29 @@ class TemplateManager(TemplateManagerCore, StructureOperations, FolderOperations
         
         # Initialize the template cache manager with a reference to this instance
         self.cache_manager = TemplateCacheManager(self)
+
+    def get_folders(self):
+        """
+        Get list of all folders, optionally filtering out the 'Examples' folder
+        based on application preference.
+        Overrides FolderOperations.get_folders().
+        """
+        # Get all folder names from the parent class (FolderOperations)
+        # which likely gets them from self.folders.keys() initialized by TemplateManagerCore
+        all_folder_names = super().get_folders() 
+
+        show_examples = self._config_manager.get_app_preference("examples_folder_enabled", True)
+
+        if not show_examples:
+            # Filter out the EXAMPLES_FOLDER_NAME (case-insensitive)
+            # EXAMPLES_FOLDER_NAME is imported from template_manager_core
+            filtered_folder_names = [
+                name for name in all_folder_names 
+                if not (isinstance(name, str) and name.lower() == EXAMPLES_FOLDER_NAME.lower())
+            ]
+            return filtered_folder_names
+        else:
+            return all_folder_names
 
     def move_template_to_folder(self, template_name, folder_name):
         """Move a template to a folder, ensuring it's removed from other folders first"""
