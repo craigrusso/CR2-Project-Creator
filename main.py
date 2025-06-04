@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import Qt, QCoreApplication, QSettings, QTimer
 from PyQt6.QtGui import QIcon
 from app.core.app_module_pyqt import ProjectCreatorApp
-from app.config.app_config import APP_NAME, APP_VERSION, setup_dpi_awareness, APP_BUILD_NUMBER
+from app.config.app_config import APP_NAME, APP_VERSION_NUMBER, setup_dpi_awareness, APP_BUILD_NUMBER
 from app.ui.app_theme_pyqt import apply_dark_theme_to_template_section, force_app_palette, configure_styles
 from app.templates.template_manager_migration import TemplateManagerMigration
 from app.ui.tree_styling import apply_styling_to_all_tree_widgets, refresh_all_tree_icons
@@ -272,36 +272,29 @@ def main():
     faulthandler.enable() # Enable it immediately
     try:
         # Initialize logging system
-        initialize_logging()
-        
+        detect_and_set_environment()
+        initialize_logging() # Initializes with default (production) settings first
+
         # Log system information for debugging
         log_system_info()
         
-        # Load the user's saved logging preferences instead of forcing production mode
+        # Check if user has custom logging settings
         settings = QSettings()
-        if settings.contains('logging/level'):
-            # User has set preferences before, load them
-            # The set_log_level, enable_console_logging, and enable_file_logging functions
-            # will use the values saved in QSettings
+        if settings.contains("logging/log_level") and settings.contains("logging/log_to_console") and settings.contains("logging/log_to_file"):
+            level_str = settings.value("logging/log_level", "INFO")
+            to_console = settings.value("logging/log_to_console", True, type=bool)
+            to_file = settings.value("logging/log_to_file", True, type=bool)
             
-            # Get the saved log level
-            level_name = settings.value('logging/level', 'INFO')
-            log_level = getattr(logging, level_name, logging.INFO)
-            set_log_level(log_level)
-            
-            # Get console and file logging settings
-            console_enabled = settings.value('logging/console_enabled', False, type=bool)
-            file_enabled = settings.value('logging/file_enabled', True, type=bool)
-            
-            # Apply settings
-            enable_console_logging(console_enabled)
-            enable_file_logging(file_enabled)
-            
-            info(f"Starting {APP_NAME} v{APP_VERSION} with user-configured logging settings")
+            set_log_level(level_str)
+            if to_console:
+                enable_console_logging()
+            if to_file:
+                enable_file_logging()
+            info(f"Starting {APP_NAME} v{APP_VERSION_NUMBER} with user-configured logging settings")
         else:
-            # First run or no user preferences, use production mode
-            set_production_mode()
-            info(f"Starting {APP_NAME} v{APP_VERSION} with production logging settings")
+            # Default to production logging if no user settings are found
+            set_production_mode() # This sets level to INFO, enables file, disables console
+            info(f"Starting {APP_NAME} v{APP_VERSION_NUMBER} with production logging settings")
         
         # Setup DPI awareness for Windows
         setup_dpi_awareness()
@@ -319,17 +312,17 @@ def main():
                 
                 # Set explicit AppUserModelID for Windows taskbar
                 # This MUST match the ID in the manifest file
-                app_version_for_id = APP_VERSION.replace('.', '_') # Ensure it's a valid ID component
+                app_version_for_id = APP_VERSION_NUMBER.replace('.', '_') # Ensure it's a valid ID component
                 myappid = f'cr2creative.echelon.{app_version_for_id}.{APP_BUILD_NUMBER}'
                 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+                info(f"Windows AppUserModelID set to: {myappid}")
             except Exception as e:
-                debug(f"Could not set app ID: {e}")
-                pass
+                warning(f"Failed to set Windows AppUserModelID: {e}")
 
         # Initialize the PyQt application
         app = QApplication(sys.argv)
         app.setApplicationName(APP_NAME)
-        app.setApplicationVersion(APP_VERSION)
+        app.setApplicationVersion(APP_VERSION_NUMBER)
         
         # Setup has succeeded, show splash window
         # splash_window.hide()  # Commented out as splash_window doesn't exist in this version
@@ -433,7 +426,7 @@ def main():
         # Deploy example templates if necessary
         settings = QSettings() # Ensure settings is available
         deployed_examples_version_key = "internal/deployed_examples_version"
-        current_app_version_for_examples = APP_VERSION # Using APP_VERSION
+        current_app_version_for_examples = APP_VERSION_NUMBER # Using APP_VERSION_NUMBER
 
         if settings.value(deployed_examples_version_key) != current_app_version_for_examples:
             deploy_example_templates()
@@ -481,11 +474,11 @@ def main():
         
         # Apply template migration if needed
         migrated_templates_version_key = "internal/migrated_templates_version"
-        if settings.value(migrated_templates_version_key) != APP_VERSION:
+        if settings.value(migrated_templates_version_key) != APP_VERSION_NUMBER:
             try:
                 TemplateManagerMigration.apply_migration(main_window)
-                settings.setValue(migrated_templates_version_key, APP_VERSION)
-                info(f"Template migration check/application completed for version {APP_VERSION}.")
+                settings.setValue(migrated_templates_version_key, APP_VERSION_NUMBER)
+                info(f"Template migration check/application completed for version {APP_VERSION_NUMBER}.")
             except Exception as e:
                 error(f"Error during template migration: {e}")
                 exception("Template migration failure details:")

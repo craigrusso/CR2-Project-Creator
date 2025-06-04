@@ -3,6 +3,7 @@ import requests
 import platform
 import json
 from packaging.version import parse
+import re # Added for natural sort
 
 # Map platform.system() output to expected API platform strings
 PLATFORM_MAP = {
@@ -11,16 +12,29 @@ PLATFORM_MAP = {
     "Linux": "linux" 
 }
 
+def natural_sort_key(s):
+    """
+    Create a key for natural sorting (handles numbers in strings).
+    None or empty strings are treated as lowest.
+    """
+    if s is None:
+        return [] # Will compare lower than any list with content
+    s_str = str(s).strip()
+    if not s_str:
+        return []
+    return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s_str)]
+
 def get_latest_version_info(api_url):
     """
     Fetches version info from the public API and returns the latest 
-    available version string for the current platform.
+    available version dictionary for the current platform, considering
+    versionNumber and then buildNumber.
     
     Args:
         api_url (str): The URL of the public downloads API endpoint.
         
     Returns:
-        str or None: The latest version string (e.g., "1.0.1") if found and newer,
+        dict or None: The latest version_info dictionary if an update is found,
                      or None if no update is available, no matching platform 
                      is found, or an error occurs.
     """
@@ -43,40 +57,52 @@ def get_latest_version_info(api_url):
             print("ERROR: Update check - Invalid API response format (expected a list).")
             return None
             
-        latest_version = None
-        latest_version_str = "0.0.0" # Start comparison from 0
+        latest_version_obj = None
+        highest_parsed_v_num = parse("0.0.0") # Initialize with a very old version
 
         for version_info in versions_data:
-            # Check required fields are present
+            # Check required fields are present (versionNumber, platform, isAvailable are key)
+            # buildNumber and releaseStage are also expected as per new requirements.
             if not all(k in version_info for k in ('platform', 'versionNumber', 'isAvailable')):
-                # print(f"WARN: Skipping invalid version entry: {version_info}")
+                # print(f"WARN: Skipping invalid version entry (missing core fields): {version_info}")
                 continue
                 
-            # Check platform match (case-insensitive) and availability
             api_platform = version_info.get('platform')
-            if api_platform and api_platform.lower() == target_platform_api and version_info.get('isAvailable') is True:
-                current_entry_version_str = version_info.get('versionNumber')
-                if not current_entry_version_str:
-                    # print(f"WARN: Skipping entry with missing versionNumber: {version_info}")
-                    continue
-                    
-                try:
-                    # Compare versions using packaging.version
-                    if parse(current_entry_version_str) > parse(latest_version_str):
-                        latest_version_str = current_entry_version_str
-                        latest_version = version_info # Store the whole dict
-                except Exception as e:
-                     # print(f"WARN: Could not parse version '{current_entry_version_str}': {e}")
-                     pass
+            if not (api_platform and api_platform.lower() == target_platform_api and version_info.get('isAvailable') is True):
+                continue
 
-        if latest_version:
-            # print(f"DEBUG: Latest available version found for {target_platform_api}: {latest_version_str}")
-            # Return only the version string
-            # return latest_version_str 
-            # Return the full dictionary instead
-            return latest_version
+            current_entry_v_num_str = version_info.get('versionNumber')
+            if not current_entry_v_num_str:
+                # print(f"WARN: Skipping entry with missing versionNumber: {version_info}")
+                continue
+            
+            try:
+                current_entry_parsed_v_num = parse(current_entry_v_num_str)
+                current_entry_build_num = version_info.get('buildNumber') # Can be None, str, or number if JSON has it
+
+                if latest_version_obj is None or current_entry_parsed_v_num > highest_parsed_v_num:
+                    highest_parsed_v_num = current_entry_parsed_v_num
+                    latest_version_obj = version_info
+                elif current_entry_parsed_v_num == highest_parsed_v_num:
+                    # Semantic versions are identical, compare buildNumber
+                    latest_obj_build_num = latest_version_obj.get('buildNumber')
+                    
+                    current_build_key = natural_sort_key(current_entry_build_num)
+                    latest_obj_build_key = natural_sort_key(latest_obj_build_num)
+
+                    if current_build_key > latest_obj_build_key:
+                        latest_version_obj = version_info
+                        # highest_parsed_v_num remains the same
+
+            except Exception as e:
+                 # print(f"WARN: Could not parse/compare version or build for entry '{version_info.get('versionNumber')}': {e}")
+                 pass # Skip this entry if parsing/comparison fails
+
+        if latest_version_obj:
+            # print(f"DEBUG: Latest version selected for {target_platform_api}: {latest_version_obj.get('versionNumber')} Build: {latest_version_obj.get('buildNumber')}")
+            return latest_version_obj
         else:
-            # print(f"DEBUG: No available versions found for platform {target_platform_api}.")
+            # print(f"DEBUG: No suitable newer versions found for platform {target_platform_api}.")
             return None
 
     except requests.exceptions.Timeout:

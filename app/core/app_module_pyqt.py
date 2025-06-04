@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex, QPoint, QUrl, QMimeData, QSettings, QObject, QThread
 from PyQt6.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, QPixmap, QDesktopServices, QCursor, QDragEnterEvent, QDropEvent, QFontMetrics, QStandardItemModel, QStandardItem, QAction
 
-from app.core.app_config import APP_NAME, APP_VERSION, RECENT_TEMPLATES_MAX
+from app.core.app_config import APP_NAME, RECENT_TEMPLATES_MAX
 from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE, LISTVIEW_POPUP_STYLE, APP_COLORS, ACTION_LINK_STYLE
 from app.utils.utils import load_config, save_config, truncate_path, normalize_path_for_storage
 from app.ui.ui_components_pyqt import ToolTip, CardFrame, SearchBox, TemplateFileCard, ScrollableFrame, UI_FONT, UpdateNotificationBanner
@@ -41,10 +41,15 @@ from app.templates.components.utils import get_system_font, SYSTEM_FONT
 from app.core.import_export_manager import import_template
 from app.dialogs.license_management import LicenseManagementDialog
 from app.config.app_config import UPDATE_CHECK_INTERVAL_SECONDS
-from app.utils.update_checker import get_latest_version_info
+from app.utils.update_checker import get_latest_version_info, natural_sort_key
 from packaging.version import parse as parse_version
 import time
-from app.constants import APP_BUILD_NUMBER
+from app.constants import (
+    APP_VERSION_NUMBER, 
+    APP_BUILD_NUMBER as CURRENT_BUILD_NUMBER_CONST,
+    APP_RELEASE_STAGE as CURRENT_RELEASE_STAGE_CONST,
+    USER_UPDATE_CHANNEL_PREFERENCE
+)
 
 # --- Worker for background update check ---
 class UpdateWorker(QObject):
@@ -157,7 +162,7 @@ class ProjectCreatorApp(QMainWindow):
         # CardFrame.__init__ = debug_cardframe_init
         
         # Set window properties
-        self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
+        self.setWindowTitle(f"{APP_NAME} {APP_VERSION_NUMBER}")
         
         # Set window size and position - increased width to better match screenshot
         self.resize(1300, 850)
@@ -181,7 +186,7 @@ class ProjectCreatorApp(QMainWindow):
         self.recent_templates = load_recent_templates()
         
         # Store the app version
-        self.app_version = APP_VERSION
+        self.app_version = APP_VERSION_NUMBER
         
         # Setup UI components
         self._setup_ui()
@@ -817,37 +822,44 @@ class ProjectCreatorApp(QMainWindow):
     
     def handle_update_available(self, version_info):
         """Displays a message box when an update is found."""
-        latest_version_str = version_info.get('versionNumber', 'Unknown')
+        # version_info is the full dict from get_latest_version_info
+        new_v_num_str = version_info.get('versionNumber', 'Unknown')
+        new_b_num_str = version_info.get('buildNumber', 'N/A') # buildNumber can be None
+        new_r_stage_str = version_info.get('releaseStage', 'Unknown')
+        
         actual_download_url = "https://www.cr2creative.com/downloads.html"
         release_notes_text = version_info.get('releaseNotes', 'No release notes provided.')
         
-        # DEBUG: Print release notes content
-        print(f"DEBUG Update Dialog: Release notes content: '{release_notes_text[:100]}...' if release_notes_text else 'None'")
+        # print(f"DEBUG Update Dialog: Release notes content: '{release_notes_text[:100]}...' if release_notes_text else 'None'")
 
-        from app.constants import APP_VERSION, APP_BUILD_NUMBER
-        current_version_str = f"{APP_VERSION}.{APP_BUILD_NUMBER}"
+        # Current version display
+        current_display_version_str = f"{APP_VERSION_NUMBER} (Build {CURRENT_BUILD_NUMBER_CONST})"
 
-        # Create a custom dialog instead of QMessageBox for better control
+        # New available version display string as per requirement
+        # Example: "Update Available: Echelon Version 1.2.0 (Beta, Build 275)"
+        # Or if build number is None/empty: "Echelon Version 1.2.0 (Beta)"
+        build_display_part = f", Build {new_b_num_str}" if new_b_num_str and str(new_b_num_str).strip() else ""
+        available_version_display_str = f"{new_v_num_str} ({new_r_stage_str}{build_display_part})"
+
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QTextEdit, QLabel, QFrame
         
         custom_dialog = QDialog(self)
         custom_dialog.setWindowTitle("Update Available")
         custom_dialog.setMinimumWidth(500)
         
-        # Use vertical layout with proper spacing and margins
         main_layout = QVBoxLayout(custom_dialog)
         main_layout.setContentsMargins(20, 20, 20, 20)
         main_layout.setSpacing(15)
         
-        # Main message area in a container with fixed content
         info_container = QFrame()
         info_layout = QVBoxLayout(info_container)
         info_layout.setContentsMargins(0, 0, 0, 0)
         info_layout.setSpacing(8)
         
         info_label = QLabel(
-            f"<p>You are currently running version <b>{current_version_str}</b>.<br>"
-            f"Version <b>{latest_version_str}</b> is available.</p>"
+            f"<p>An update is available for Echelon!</p>"
+            f"<p><b>New Version: {available_version_display_str}</b></p>"
+            f"<p>You are currently running: {current_display_version_str}</p>"
             f"<p>Would you like to visit the download page now?</p>"
         )
         info_label.setTextFormat(Qt.TextFormat.RichText)
@@ -969,25 +981,19 @@ class ProjectCreatorApp(QMainWindow):
         """Handles the completion of the update check worker."""
         # print(f"DEBUG: Handling check complete. Update Found: {update_was_found}, Error: '{error_message}', Manual: {triggered_manually}")
         if error_message:
-            # An error occurred during the check
             self.handle_check_error(error_message)
         elif not update_was_found:
-            # No update was found and no error occurred
             if triggered_manually:
-                # Show 'Up to Date' only if triggered manually
-                from app.constants import APP_VERSION, APP_BUILD_NUMBER
-                current_version_str = f"{APP_VERSION}.{APP_BUILD_NUMBER}"
+                current_version_str = f"{APP_VERSION_NUMBER} (Build {CURRENT_BUILD_NUMBER_CONST})" # Corrected format
                 QMessageBox.information(self, "Up to Date", f"You are using the latest version of Echelon ({current_version_str}).")
             else:
-                # Log for automatic checks, but don't show popup
                 # print("DEBUG: Automatic check completed, no update found.")
-                pass # No action needed for automatic check with no update
-        # If update_was_found is True, handle_update_available was already called by its dedicated signal.
-
+                pass 
+        
     def _check_for_updates_logic(self, force_check=False):
         """
         Performs the actual update check against the API.
-        Returns the version info dictionary if an update is found, None otherwise.
+        Returns the version info dictionary if an update is found and suitable, None otherwise.
         Handles internal errors and logs them.
         """
         # print("DEBUG: Running update check logic...")
@@ -997,66 +1003,94 @@ class ProjectCreatorApp(QMainWindow):
 
         if not force_check and (current_timestamp - last_check_timestamp < UPDATE_CHECK_INTERVAL_SECONDS):
             # print(f"DEBUG: Update check skipped. Last checked {int((current_timestamp - last_check_timestamp)/60)} mins ago. Interval: {int(UPDATE_CHECK_INTERVAL_SECONDS/60)} mins.")
-            return None # Indicate check skipped/no update
+            return None
 
         # print("DEBUG: Proceeding with API check for updates.")
-        config = load_config() # Reload config in case it changed
+        config = load_config()
         api_url = config.get("api_urls", {}).get("get_public_downloads")
-        
-        # Include build number in version comparison
-        current_app_version = f"{APP_VERSION}.{APP_BUILD_NUMBER}"
 
         if not api_url:
             print("ERROR: Update check - API URL for downloads not found in config.")
-            # Update timestamp even on config error to avoid spamming logs
             settings.setValue("update_check/last_checked_timestamp", current_timestamp)
-            return None # Indicate error/no update
+            return None
 
-        # --- Call the checker function --- 
-        latest_version_info = None
+        fetched_version_info = None
         try:
-            latest_version_info = get_latest_version_info(api_url)
-            # --- Update timestamp ONLY after successful API attempt ---
+            fetched_version_info = get_latest_version_info(api_url)
             settings.setValue("update_check/last_checked_timestamp", current_timestamp)
-            # print(f"DEBUG: Updated last update check timestamp to {current_timestamp}")
         except Exception as e:
-             # Catch potential errors within get_latest_version_info itself if it raises them
-             # (Though the current implementation catches internally and returns None)
-             print(f"ERROR: Exception during get_latest_version_info call: {e}")
-             # Optionally update timestamp here too, depending on desired retry logic
-             settings.setValue("update_check/last_checked_timestamp", current_timestamp) # Update to prevent immediate retry on persistent error
-             return None # Indicate error/no update
-        # --------------------------------
+            print(f"ERROR: Exception during get_latest_version_info call: {e}")
+            settings.setValue("update_check/last_checked_timestamp", current_timestamp)
+            return None
 
-        if latest_version_info:
-            latest_version_str = latest_version_info.get("versionNumber")
-            if not latest_version_str:
-                 print("ERROR: Latest version info dict is missing 'versionNumber'.")
-                 return None # Treat as error/no update
-                 
-            try:
-                # print(f"DEBUG: Comparing versions - Current: {current_app_version}, Latest: {latest_version_str}")
-                
-                # Parse versions for comparison
-                current_parsed = parse_version(current_app_version)
-                latest_parsed = parse_version(latest_version_str)
-                
-                # print(f"DEBUG: Parsed versions - Current: {current_parsed}, Latest: {latest_parsed}")
-                
-                if latest_parsed > current_parsed:
-                    # print(f"INFO: Update found! Current: {current_app_version}, Latest: {latest_version_str}")
-                    return latest_version_info # Return the full dict
-                else:
-                    # print(f"DEBUG: Current version {current_app_version} is up-to-date or newer than latest found ({latest_version_str}).")
-                    return None # Indicate no update needed
-            except Exception as e:
-                print(f"ERROR: Could not compare versions ('{latest_version_str}' vs '{current_app_version}'): {e}")
-                return None # Treat as error/no update
-        else:
-            # Handle None case (API error, network error, no matching platform version, etc.)
-            # print("DEBUG: No latest version info received from update check (could be error or no update).")
-            return None # Indicate no update found or error during fetch
+        if not fetched_version_info:
+            # print("DEBUG: No latest version info received from get_latest_version_info.")
+            return None
 
+        # --- New comparison logic ---
+        available_v_num_str = fetched_version_info.get("versionNumber")
+        available_b_num_str = fetched_version_info.get("buildNumber") # This is a string or None
+        available_r_stage_str = fetched_version_info.get("releaseStage")
+
+        if not available_v_num_str or not available_r_stage_str: # buildNumber can be null
+            print(f"ERROR: Fetched version info is missing versionNumber or releaseStage: {fetched_version_info}")
+            return None
+
+        try:
+            current_v_num_parsed = parse_version(APP_VERSION_NUMBER)
+            available_v_num_parsed = parse_version(available_v_num_str)
+
+            current_b_key = natural_sort_key(str(CURRENT_BUILD_NUMBER_CONST)) # Ensure current build is string for key func
+            available_b_key = natural_sort_key(available_b_num_str)
+            
+            # print(f"DEBUG: Current: v{APP_VERSION_NUMBER} (parsed {current_v_num_parsed}), b{CURRENT_BUILD_NUMBER_CONST} (key {current_b_key}), s{CURRENT_RELEASE_STAGE_CONST}")
+            # print(f"DEBUG: Available: v{available_v_num_str} (parsed {available_v_num_parsed}), b{available_b_num_str} (key {available_b_key}), s{available_r_stage_str}")
+
+            is_newer = False
+            if available_v_num_parsed > current_v_num_parsed:
+                is_newer = True
+            elif available_v_num_parsed == current_v_num_parsed:
+                if available_b_key > current_b_key:
+                    is_newer = True
+            
+            if not is_newer:
+                # print(f"DEBUG: Available version {available_v_num_str} b{available_b_num_str} is not newer than current.")
+                return None
+
+            # --- Release Stage Handling ---
+            # TODO: Replace USER_UPDATE_CHANNEL_PREFERENCE with actual QSettings value if/when UI setting is implemented
+            user_preference = USER_UPDATE_CHANNEL_PREFERENCE 
+            
+            allowed_stages = []
+            if user_preference == "Stable": # Default
+                allowed_stages = ["Stable"]
+            elif user_preference == "Beta":
+                allowed_stages = ["Stable", "Release Candidate", "Beta"]
+            elif user_preference == "Alpha":
+                allowed_stages = ["Stable", "Release Candidate", "Beta", "Alpha"]
+            else: # Fallback to stable if preference is unknown
+                allowed_stages = ["Stable"]
+                print(f"WARN: Unknown USER_UPDATE_CHANNEL_PREFERENCE '{user_preference}'. Defaulting to Stable.")
+
+            if available_r_stage_str not in allowed_stages:
+                # print(f"DEBUG: Available version {available_v_num_str} ({available_r_stage_str}) does not meet user preference '{user_preference}' (Allowed: {allowed_stages}).")
+                return None
+            
+            # Promotion path check:
+            # If current is Beta and Stable of same version.build is available, it should be offered (if user allows stable).
+            # This is naturally handled if get_latest_version_info provides the "best" build and the filtering above allows it.
+            # One specific case: if user is on "1.2.0 Beta b50" and "1.2.0 Stable b60" is available,
+            # and user preference allows "Stable". `is_newer` will be true. `allowed_stages` will permit. So it works.
+
+            # print(f"INFO: Update found and suitable! Current: {APP_VERSION_NUMBER} b{CURRENT_BUILD_NUMBER_CONST}, Available: {available_v_num_str} b{available_b_num_str} s{available_r_stage_str}")
+            return fetched_version_info
+
+        except Exception as e:
+            print(f"ERROR: Could not compare versions or handle release stages: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+            
     def _initial_update_check(self):
         """Runs the update check shortly after startup in a background thread."""
         # print("DEBUG: Scheduling initial update check.")

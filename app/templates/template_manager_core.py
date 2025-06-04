@@ -7,10 +7,12 @@ import datetime
 import shutil
 import time
 from pathlib import Path
+import logging
+from PyQt6.QtWidgets import QMessageBox
 
-from app.utils.utils import load_json_file, save_json_file
+from app.utils.utils import load_json_file, save_json_file, normalize_path_for_storage
 from app.core import config_manager
-from app.constants import DEFAULT_TEMPLATE_CATEGORIES, APP_VERSION, get_resource_path
+from app.constants import DEFAULT_TEMPLATE_CATEGORIES, APP_VERSION_NUMBER, get_resource_path
 from app.templates.folder_operations import FolderOperations
 from app.templates.structure_operations import StructureOperations
 from app.templates.template_operations import TemplateOperations

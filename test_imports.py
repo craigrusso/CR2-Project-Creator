@@ -7,6 +7,10 @@ Test script to verify imports are working properly after reorganization
 
 import sys
 import traceback
+import os
+
+# Add the parent directory to the Python path to find the app module
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def test_imports():
     """Test all critical imports to ensure they still work after reorganization"""
@@ -16,9 +20,9 @@ def test_imports():
     try:
         # 1. Test config imports
         print("Testing config imports...")
-        from app.config import APP_NAME, APP_VERSION, get_resource_path
+        from app.config import APP_NAME, APP_VERSION_NUMBER, get_resource_path
         from app.config import get_user_data_root, get_templates_path
-        print(f"App Name: {APP_NAME}, Version: {APP_VERSION}")
+        print(f"App Name: {APP_NAME}, Version: {APP_VERSION_NUMBER}")
         
         # 2. Test core imports
         print("\nTesting core imports...")

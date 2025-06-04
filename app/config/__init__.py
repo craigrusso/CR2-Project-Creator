@@ -6,8 +6,8 @@ Configuration module for the application
 """
 
 # Import core configuration
-from app.config.app_config import APP_NAME, APP_VERSION
-from app.config.constants import get_resource_path
+from app.config.app_config import APP_NAME, APP_VERSION_NUMBER
+from app.constants import get_resource_path
 from app.config.config_manager import (
     get_user_data_root,
     set_user_data_root,

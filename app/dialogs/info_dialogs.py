@@ -9,23 +9,13 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                            QPushButton, QTabWidget, QWidget,
                            QScrollArea)
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap, QDesktopServices, QFont
 
 # Import from the same place as APP_NAME and APP_VERSION for consistency
-from app.config.app_config import APP_NAME, APP_VERSION
-# Define a fallback build number in case import fails
-APP_BUILD_NUMBER = "250"
-try:
-    # Try to import from constants if available
-    from app.constants import APP_BUILD_NUMBER
-except ImportError:
-    try:
-        # Try alternative location if first import fails
-        from app.config.constants import APP_BUILD_NUMBER
-    except ImportError:
-        # Keep the fallback value if both imports fail
-        pass
-
-from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE
+from app.config.app_config import APP_NAME, APP_VERSION_NUMBER
+from app.constants import APP_BUILD_NUMBER
+from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
+from app.constants import get_resource_path
 
 def show_about(app):
     """Show the about dialog"""
@@ -48,7 +38,7 @@ def show_about(app):
     layout.addWidget(title_label)
     
     # Version with build in parentheses
-    version_label = QLabel(f"{APP_VERSION} <span style='color: {colors['secondary_text']}; font-size: 10px;'>(build {APP_BUILD_NUMBER})</span>")
+    version_label = QLabel(f"{APP_VERSION_NUMBER} <span style='color: {colors['secondary_text']}; font-size: 10px;'>(build {APP_BUILD_NUMBER})</span>")
     version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     version_label.setStyleSheet(f"color: {colors['text']};")
     layout.addWidget(version_label)

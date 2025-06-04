@@ -10,7 +10,7 @@ import sys
 from app.ui.color_scheme_pyqt import colors, APP_COLORS
 # Import all necessary constants from constants.py
 from app.constants import (
-    APP_NAME, APP_VERSION, RECENT_PROJECTS_MAX, RECENT_TEMPLATES_MAX,
+    APP_NAME, APP_VERSION_NUMBER, RECENT_PROJECTS_MAX, RECENT_TEMPLATES_MAX,
     DEFAULT_TEMPLATE_CATEGORIES
 )
 

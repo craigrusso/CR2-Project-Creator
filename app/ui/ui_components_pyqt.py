@@ -25,7 +25,7 @@ from PyQt6.QtGui import QFont, QCursor, QIcon, QColor, QPalette, QDragEnterEvent
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, LINEEDIT_STYLE, LABEL_STYLE
 from app.ui.tree_styling import apply_tree_styling, setup_tree_for_structure_editing
 from app.utils.utils import normalize_path_for_storage
-from app.constants import get_resource_path, APP_NAME, APP_VERSION
+from app.constants import get_resource_path, APP_NAME, APP_VERSION_NUMBER
 
 # Constants for styling
 BLUE_HIGHLIGHT = "#3066BE"

@@ -7,12 +7,14 @@ Usage:
 
 from setuptools import setup
 import os
-from app.constants import APP_NAME, APP_VERSION, APP_BUILD_NUMBER
+from app.constants import APP_NAME, APP_VERSION_NUMBER, APP_BUILD_NUMBER
+import plistlib
+import subprocess
 
 # --- Configuration ---
 APP = ['main.py']
 APP_NAME_STR = APP_NAME
-APP_VERSION_STR = f"{APP_VERSION}"
+APP_VERSION_STR = f"{APP_VERSION_NUMBER}"
 APP_BUILD_STR = str(APP_BUILD_NUMBER)
 BUNDLE_ID = 'com.cr2creative.echelon'
 ICON_FILE = 'Icons/Echelon.icns'
