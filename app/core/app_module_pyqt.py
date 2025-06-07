@@ -1246,10 +1246,22 @@ class ProjectCreatorApp(QMainWindow):
     def _create_template(self):
         """Create a new template"""
         try:
+            # Explicitly get the category update manager instance to ensure it's initialized
+            from app.templates.category_update_manager import get_instance as get_category_update_manager
+            category_manager = get_category_update_manager(self)
+            
+            # Force an immediate update of category comboboxes
+            if category_manager:
+                category_manager.force_immediate_global_update()
+            
             # Use the template manager to create a new template
             success = self.template_manager.create_new_template(self)
             if success:
                 self._refresh_ui()
+                
+                # Ensure all comboboxes have hover delegates 
+                from app.templates.category_combobox_updater import ensure_all_combos_have_hover_delegates
+                ensure_all_combos_have_hover_delegates(self)
         except Exception as e:
             print(f"Error creating template: {e}")
             import traceback

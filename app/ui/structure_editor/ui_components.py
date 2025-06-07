@@ -625,6 +625,8 @@ class UIBuilder(QObject):
         # Manage Categories Button
         self.manage_categories_btn = QPushButton("Manage")
         self.manage_categories_btn.setToolTip("Add, remove, or manage template categories")
+        # Apply the action button style directly when creating the button
+        self.manage_categories_btn.setStyleSheet(self._get_button_style('action'))
         # Connect button click to emit the new signal
         self.manage_categories_btn.clicked.connect(self.manage_categories_requested.emit)
         # Add horizontal layout for category dropdown and manage button
@@ -949,6 +951,11 @@ class UIBuilder(QObject):
                 }}
             """)
         
+        # Apply styling to the Manage Categories button
+        if hasattr(self, 'manage_categories_btn') and self.manage_categories_btn:
+            # Use the 'action' style from _get_button_style for the Manage button
+            self.manage_categories_btn.setStyleSheet(self._get_button_style('action'))
+        
         if self.template_info_field:
             self.template_info_field.setStyleSheet(f"""
                 QTextEdit {{
@@ -1220,7 +1227,7 @@ class UIBuilder(QObject):
 
     def _manage_categories(self):
         """Open the category management dialog"""
-        from .category_manager import CategoryManager
+        from app.dialogs.category_management_dialog import CategoryManagementDialog
         
         # Correctly get template_manager instance
         template_manager = None
@@ -1239,7 +1246,7 @@ class UIBuilder(QObject):
         manager_categories = template_manager.get_categories()
         print(f"UIBuilder: Opening category manager with initial categories: {manager_categories}")
         
-        manager = CategoryManager(parent=self.editor, categories=manager_categories)
+        manager = CategoryManagementDialog(parent=self.editor)
         if manager.exec() == QDialog.Accepted:
             # Categories are saved via ProjectTypeManager now.
             # Dropdowns are updated dynamically via _update_ui_dropdowns 

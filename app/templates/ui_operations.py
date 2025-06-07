@@ -68,12 +68,22 @@ class UIOperations:
                 "is_new_template": True  # Flag to indicate this is a new template being created
             }
             
-            # Show the enhanced structure editor directly
+            # Get the template manager - either use this instance or get from parent
+            template_manager = self
+            if parent and hasattr(parent, 'template_manager'):
+                template_manager = parent.template_manager
+            elif hasattr(self, 'template_manager'):
+                template_manager = self.template_manager
+                
+            print(f"Creating template with template_manager: {template_manager}")
+            
+            # Show the enhanced structure editor directly - ENSURE WE PASS THE TEMPLATE MANAGER
             success, structure, structure_name, _, _, _, _ = show_enhanced_structure_editor(
-                parent, 
+                parent=parent, 
                 structure_name="",  # Empty structure name initially
                 structure=[],
-                is_new=True
+                is_new=True,
+                template_manager=template_manager  # Explicitly pass template_manager just like gallery does
             )
             
             if success and structure:

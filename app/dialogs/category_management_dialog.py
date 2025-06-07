@@ -8,9 +8,12 @@ This module provides a dialog for managing template categories.
 It interacts with the central CategoryUpdateManager to propagate changes.
 """
 import logging
-from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QListWidget, QPushButton,
-                           QHBoxLayout, QLineEdit, QMessageBox, QListWidgetItem, QCheckBox, QInputDialog)
-from PyQt6.QtCore import Qt, QSettings, QTimer
+from PyQt6.QtWidgets import (
+    QDialog, QVBoxLayout, QLabel, QListWidget, QPushButton,
+    QHBoxLayout, QLineEdit, QMessageBox, QListWidgetItem, 
+    QCheckBox, QInputDialog, QWidget, QApplication
+)
+from PyQt6.QtCore import Qt, QSettings, QTimer, QObject, pyqtSignal
 from PyQt6.QtGui import QColor
 
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
@@ -20,7 +23,98 @@ from app.constants import DEFAULT_TEMPLATE_CATEGORIES
 # Define a user role for the divider item
 DIVIDER_ROLE = Qt.ItemDataRole.UserRole + 1
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("app.dialogs.category_management_dialog")
+
+class RenameDialog(QDialog):
+    """Custom dialog for renaming categories with consistent styling"""
+    
+    def __init__(self, parent=None, category_name="", title="Rename Category"):
+        super().__init__(parent)
+        
+        # Set window properties
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.resize(350, 180)
+        
+        # Import here to avoid circular imports
+        from app.ui.color_scheme_pyqt import colors, ACCENT_BUTTON_STYLE, BUTTON_STYLE
+        
+        # Set dialog styling
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {colors['bg']};
+                color: {colors['text']};
+            }}
+        """)
+        
+        # Main layout
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # Title label
+        title_label = QLabel("Enter new category name:")
+        title_label.setStyleSheet(f"""
+            font-size: 14px;
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+        """)
+        layout.addWidget(title_label)
+        
+        # Text input
+        self.text_input = QLineEdit(category_name)
+        self.text_input.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                padding: 8px;
+                selection-background-color: {colors['highlight_bg']};
+                selection-color: {colors['highlight_text']};
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {colors['accent']};
+            }}
+        """)
+        self.text_input.selectAll()
+        layout.addWidget(self.text_input)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(10)
+        
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setStyleSheet(BUTTON_STYLE)
+        self.cancel_button.clicked.connect(self.reject)
+        
+        self.ok_button = QPushButton("OK")
+        self.ok_button.setStyleSheet(ACCENT_BUTTON_STYLE)
+        self.ok_button.clicked.connect(self.accept)
+        self.ok_button.setDefault(True)
+        
+        button_layout.addWidget(self.cancel_button)
+        button_layout.addWidget(self.ok_button)
+        
+        layout.addLayout(button_layout)
+        
+        # Connect Enter key to accept
+        self.text_input.returnPressed.connect(self.accept)
+        
+    def get_text(self):
+        """Get the entered text"""
+        return self.text_input.text().strip()
+        
+    @staticmethod
+    def get_name(parent=None, title="Rename Category", label="Enter new name:", text=""):
+        """Static method to create the dialog and return the entered text"""
+        dialog = RenameDialog(parent, text, title)
+        result = dialog.exec()
+        
+        if result == QDialog.DialogCode.Accepted:
+            return dialog.get_text(), True
+        return "", False
 
 class CategoryManagementDialog(QDialog):
     """Dialog for managing template categories"""
@@ -60,97 +154,310 @@ class CategoryManagementDialog(QDialog):
         self._reload_category_list() # Populate the list
 
     def _get_app_instance(self, parent):
+        # Direct parent check
         if parent and hasattr(parent, 'app'):
+            log.debug(f"Found app directly on parent widget")
             return parent.app
+            
+        # Check parent's editor attribute (structure editor case)
+        if parent and hasattr(parent, 'editor'):
+            if hasattr(parent.editor, 'app'):
+                log.debug(f"Found app via parent.editor.app")
+                return parent.editor.app
+        
+        # Check parent's template_manager (for structure editor case)
+        if parent and hasattr(parent, 'template_manager'):
+            log.debug(f"Parent has template_manager but no direct app reference")
+            # We'll handle this in _get_template_manager instead
+            pass
+            
+        # Walk up the widget hierarchy
         current_widget = parent
         while current_widget:
             if hasattr(current_widget, 'app_instance') and current_widget.app_instance:
-                 return current_widget.app_instance # Common pattern in my app for main window
-            if hasattr(current_widget, 'app') and current_widget.app: # Check for 'app' attribute too
-                 return current_widget.app
+                log.debug(f"Found app_instance via widget hierarchy")
+                return current_widget.app_instance
+                
+            if hasattr(current_widget, 'app') and current_widget.app:
+                log.debug(f"Found app via widget hierarchy")
+                return current_widget.app
+                
+            # Special case for structure editor
+            if hasattr(current_widget, 'editor') and hasattr(current_widget.editor, 'app'):
+                log.debug(f"Found app via editor in widget hierarchy")
+                return current_widget.editor.app
+                
+            # Special case for UIBuilder
+            if hasattr(current_widget, 'ui_builder') and hasattr(current_widget.ui_builder, 'editor') and hasattr(current_widget.ui_builder.editor, 'app'):
+                log.debug(f"Found app via ui_builder.editor in widget hierarchy")
+                return current_widget.ui_builder.editor.app
+                
             if isinstance(current_widget, QDialog) and hasattr(current_widget, 'parent') and callable(current_widget.parent):
-                 current_widget = current_widget.parent()
-                 if current_widget and hasattr(current_widget, 'app'):
-                     return current_widget.app
+                current_widget = current_widget.parent()
+                if current_widget and hasattr(current_widget, 'app'):
+                    log.debug(f"Found app via parent() method")
+                    return current_widget.app
             else:
                 current_widget = current_widget.parentWidget() if hasattr(current_widget, 'parentWidget') else None
+                
+        # Try to get QApplication instance as last resort
+        try:
+            from PyQt6.QtWidgets import QApplication
+            app_instance = QApplication.instance()
+            if app_instance and hasattr(app_instance, 'template_manager'):
+                log.debug(f"Found app via QApplication.instance()")
+                return app_instance
+        except:
+            pass
+                
         log.warning("Could not automatically determine app instance for CategoryManagementDialog.")
         return None
 
     def _get_template_manager(self):
+        # First check if app has template_manager
         if self.app and hasattr(self.app, 'template_manager'):
+            log.debug(f"Found template_manager via app")
             return self.app.template_manager
-        log.warning("Could not get template_manager from app instance.")
-        # Avoid creating a new one here as it might not be configured
+            
+        # Check parent directly if available
+        parent = self.parent()
+        if parent:
+            # Direct template_manager on parent (structure editor case)
+            if hasattr(parent, 'template_manager'):
+                log.debug(f"Found template_manager directly on parent")
+                return parent.template_manager
+                
+            # Check editor attribute (common in structure editor)
+            if hasattr(parent, 'editor'):
+                if hasattr(parent.editor, 'template_manager'):
+                    log.debug(f"Found template_manager via parent.editor")
+                    return parent.editor.template_manager
+                if hasattr(parent.editor, 'app') and hasattr(parent.editor.app, 'template_manager'):
+                    log.debug(f"Found template_manager via parent.editor.app")
+                    return parent.editor.app.template_manager
+                    
+            # Check for UIBuilder (structure editor case)
+            if hasattr(parent, 'ui_builder'):
+                if hasattr(parent.ui_builder, 'template_manager'):
+                    log.debug(f"Found template_manager via parent.ui_builder")
+                    return parent.ui_builder.template_manager
+        
+        # Try to get QApplication instance as last resort
+        try:
+            from PyQt6.QtWidgets import QApplication
+            app_instance = QApplication.instance()
+            if app_instance and hasattr(app_instance, 'template_manager'):
+                log.debug(f"Found template_manager via QApplication.instance()")
+                return app_instance.template_manager
+        except:
+            pass
+            
+        log.warning("Could not get template_manager from app instance or any parent widget.")
+        
+        # Last resort - create a new instance if we have direct import
+        try:
+            from app.templates.template_manager import TemplateManager
+            log.warning("Creating new TemplateManager instance - this is a fallback and may not have full context!")
+            return TemplateManager()
+        except ImportError:
+            log.error("Could not import TemplateManager for fallback instance")
+            
         return None
         
     def _init_ui(self):
+        """Initialize the UI components"""
+        from PyQt6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QCheckBox, QPushButton, QLineEdit, QMessageBox, QDialog
+        from PyQt6.QtCore import Qt
+        from app.ui.color_scheme_pyqt import colors, ACCENT_BUTTON_STYLE, BUTTON_STYLE
+        
+        # Main layout
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.setSpacing(10)
+        
+        # Set overall dialog styling
         self.setStyleSheet(f"""
-            QDialog {{ background-color: {colors['bg']}; color: {colors['text']}; }}
-            QLabel {{ background-color: transparent; border: none; }}
-            QListWidget {{ 
-                background-color: {colors['card_bg']}; 
-                color: {colors['text']}; 
-                border: 1px solid {colors['border']};
-                border-radius: 3px; padding: 5px;
+            QDialog {{
+                background-color: {colors['bg']};
+                color: {colors['text']};
             }}
-            QListWidget::item {{ padding: 6px; border-radius: 3px; }}
-            QListWidget::item:selected {{ background-color: {colors['highlight_bg']}; color: {colors['highlight_text']}; }}
-            QListWidget::item:hover {{ background-color: {colors['hover_bg']}; }}
-            QCheckBox::indicator {{ width: 16px; height: 16px; border: 1px solid {colors['border']}; border-radius: 3px; background-color: {colors['card_bg']}; }}
-            QCheckBox::indicator:checked {{ background-color: {colors['accent']}; border-color: {colors['accent']}; }}
-            QCheckBox::indicator:hover {{ border-color: {colors['highlight_border']}; }}
         """)
         
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
+        # Header with title and description
+        header = QLabel("Manage Template Categories")
+        header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header.setStyleSheet(f"""
+            font-size: 18px;
+            font-weight: bold;
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 10px 0px;
+        """)
+        main_layout.addWidget(header)
         
-        title = QLabel("Template Categories")
-        title.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {colors['text']};")
-        layout.addWidget(title)
-        
-        description = QLabel("Add, edit, or remove custom template categories. Default categories cannot be modified directly but can be hidden.")
+        description = QLabel("Add, remove, and organize categories for your templates.")
+        description.setAlignment(Qt.AlignmentFlag.AlignCenter)
         description.setWordWrap(True)
-        description.setStyleSheet(f"color: {colors['secondary_text']};")
-        layout.addWidget(description)
+        description.setStyleSheet(f"""
+            color: {colors['secondary_text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px 0px 10px 0px;
+            font-size: 13px;
+        """)
+        main_layout.addWidget(description)
         
-        self.hide_defaults_checkbox = QCheckBox("Hide Default Categories")
+        # Checkbox for hiding default categories
+        self.hide_defaults_checkbox = QCheckBox("Hide default categories in dropdowns")
+        self.hide_defaults_checkbox.setChecked(self.hide_defaults_initial_state)
         self.hide_defaults_checkbox.stateChanged.connect(self._toggle_default_categories_visibility)
         self.hide_defaults_checkbox.stateChanged.connect(self._track_hide_defaults_change)
-        layout.addWidget(self.hide_defaults_checkbox)
+        self.hide_defaults_checkbox.setStyleSheet(f"""
+            QCheckBox {{
+                color: {colors['text']};
+                background-color: transparent;
+                border: none;
+                padding: 5px 0px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px;
+                height: 16px;
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                background-color: {colors['card_bg']};
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {colors['accent']};
+                border-color: {colors['accent']};
+                image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path fill='white' d='M5.707 7.293a1 1 0 0 0-1.414 1.414l2 2a1 1 0 0 0 1.414 0l4-4a1 1 0 0 0-1.414-1.414L7 8.586 5.707 7.293z'/></svg>");
+            }}
+            QCheckBox::indicator:hover {{
+                border-color: {colors['highlight_border']};
+            }}
+        """)
+        main_layout.addWidget(self.hide_defaults_checkbox)
         
+        # Category list
         self.category_list = QListWidget()
-        self.category_list.setAlternatingRowColors(True) # Improves readability
-        layout.addWidget(self.category_list)
+        self.category_list.setSelectionMode(self.category_list.SelectionMode.SingleSelection)
+        self.category_list.setMinimumHeight(150)
+        # Style the list widget
+        self.category_list.setStyleSheet(f"""
+            QListWidget {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                padding: 5px;
+            }}
+            QListWidget::item {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                padding: 5px;
+                margin: 2px 0px;
+                border-radius: 3px;
+            }}
+            QListWidget::item:selected {{
+                background-color: {colors['highlight_bg']};
+                color: {colors['highlight_text']};
+            }}
+            QListWidget::item:hover:!selected {{
+                background-color: {colors['hover_bg']};
+            }}
+        """)
+        main_layout.addWidget(self.category_list)
         
-        # Buttons layout
-        button_layout = QHBoxLayout()
-        self.add_button = QPushButton("Add Category")
-        self.add_button.setStyleSheet(BUTTON_STYLE)
+        # Add new category section
+        add_layout = QHBoxLayout()
+        add_layout.setContentsMargins(0, 5, 0, 5)
+        add_layout.setSpacing(10)
+        
+        self.new_category_edit = QLineEdit()
+        self.new_category_edit.setPlaceholderText("New category name...")
+        # Style the line edit
+        self.new_category_edit.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                padding: 5px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {colors['accent']};
+            }}
+        """)
+        # Connect Enter key to add category
+        self.new_category_edit.returnPressed.connect(self._add_category)
+        add_layout.addWidget(self.new_category_edit, 1)  # 1 = stretch factor
+        
+        self.add_button = QPushButton("Add")
         self.add_button.clicked.connect(self._add_category)
-        button_layout.addWidget(self.add_button)
+        # Style the add button using ACCENT_BUTTON_STYLE
+        self.add_button.setStyleSheet(ACCENT_BUTTON_STYLE)
+        add_layout.addWidget(self.add_button)
         
-        self.remove_button = QPushButton("Remove Selected")
-        self.remove_button.setStyleSheet(BUTTON_STYLE)
+        main_layout.addLayout(add_layout)
+        
+        # Buttons for editing categories
+        edit_layout = QHBoxLayout()
+        edit_layout.setContentsMargins(0, 5, 0, 10)
+        edit_layout.setSpacing(10)
+        
+        self.rename_button = QPushButton("Rename")
+        self.rename_button.clicked.connect(self._rename_category)
+        # Style the rename button
+        self.rename_button.setStyleSheet(BUTTON_STYLE)
+        edit_layout.addWidget(self.rename_button)
+        
+        self.remove_button = QPushButton("Remove")
         self.remove_button.clicked.connect(self._remove_category)
-        button_layout.addWidget(self.remove_button)
+        # Style the remove button
+        self.remove_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #902A2A;
+                color: white;
+                border: 1px solid #732121;
+                border-radius: 3px;
+                padding: 5px 15px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: #A33030;
+                border: 1px solid #8A2727;
+            }}
+            QPushButton:pressed {{
+                background-color: #7D2525;
+            }}
+        """)
+        edit_layout.addWidget(self.remove_button)
         
-        layout.addLayout(button_layout)
+        main_layout.addLayout(edit_layout)
         
-        # Dialog buttons
-        dialog_button_layout = QHBoxLayout()
-        self.save_button = QPushButton("Save and Close")
-        self.save_button.setStyleSheet(ACCENT_BUTTON_STYLE)
-        self.save_button.clicked.connect(self.accept)
-        dialog_button_layout.addWidget(self.save_button)
+        # Save and Cancel buttons
+        button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 10, 0, 0)
+        button_layout.setSpacing(10)
         
         self.cancel_button = QPushButton("Cancel")
-        self.cancel_button.setStyleSheet(BUTTON_STYLE)
         self.cancel_button.clicked.connect(self.reject)
-        dialog_button_layout.addWidget(self.cancel_button)
+        # Style the cancel button
+        self.cancel_button.setStyleSheet(BUTTON_STYLE)
+        button_layout.addWidget(self.cancel_button)
         
-        layout.addLayout(dialog_button_layout)
+        button_layout.addStretch(1)  # Add stretch to push buttons to opposite sides
+        
+        self.save_button = QPushButton("Save")
+        self.save_button.clicked.connect(self._save_categories)
+        # Style the save button
+        self.save_button.setStyleSheet(ACCENT_BUTTON_STYLE)
+        button_layout.addWidget(self.save_button)
+        
+        main_layout.addLayout(button_layout)
+        
+        # Set default button (responds to Enter key)
+        self.save_button.setDefault(True)
 
     def _reload_category_list(self):
         self.category_list.clear()
@@ -196,26 +503,33 @@ class CategoryManagementDialog(QDialog):
             self.category_list.addItem(QListWidgetItem("No categories to display.")) 
 
     def _add_category(self):
-        text, ok = QInputDialog.getText(self, "Add Category", "Enter category name:")
-        if ok and text:
-            text = text.strip()
-            if not text:
-                QMessageBox.warning(self, "Invalid Name", "Category name cannot be empty.")
-                return
-            if text in self.current_categories:
-                QMessageBox.warning(self, "Duplicate Category", f"The category '{text}' already exists.")
-                return
-            if text in DEFAULT_TEMPLATE_CATEGORIES:
-                QMessageBox.information(self, "Default Category", 
-                                        f"'{text}' is a default category and cannot be added as a custom category. It can be shown or hidden using the checkbox.")
-                return
-            self.current_categories.append(text)
-            self._reload_category_list()
-            # Select the newly added item
-            for i in range(self.category_list.count()):
-                if self.category_list.item(i).text() == text:
-                    self.category_list.setCurrentRow(i)
-                    break
+        """Add a new category from the input field"""
+        text = self.new_category_edit.text().strip()
+        
+        if not text:
+            QMessageBox.warning(self, "Invalid Name", "Category name cannot be empty.")
+            return
+            
+        if text in self.current_categories:
+            QMessageBox.warning(self, "Duplicate Category", f"The category '{text}' already exists.")
+            return
+            
+        if text in DEFAULT_TEMPLATE_CATEGORIES:
+            QMessageBox.information(self, "Default Category", 
+                                   f"'{text}' is a default category and cannot be added as a custom category. It can be shown or hidden using the checkbox.")
+            return
+            
+        self.current_categories.append(text)
+        self._reload_category_list()
+        
+        # Clear the input field after successful addition
+        self.new_category_edit.clear()
+        
+        # Select the newly added item
+        for i in range(self.category_list.count()):
+            if self.category_list.item(i).text() == text:
+                self.category_list.setCurrentRow(i)
+                break
 
     def _remove_category(self):
         selected_item = self.category_list.currentItem()
@@ -236,7 +550,7 @@ class CategoryManagementDialog(QDialog):
                 self.current_categories.remove(category_name)
             self._reload_category_list()
 
-    def _save_categories_to_source(self):
+    def _save_categories_to_source(self, categories):
         if not self.template_manager:
             log.error("Cannot save categories: TemplateManager is not available.")
             QMessageBox.critical(self, "Error", "Failed to save categories: Template manager not found.")
@@ -249,7 +563,7 @@ class CategoryManagementDialog(QDialog):
             # We need to distinguish between what project_type_manager considers "project types"
             # and the broader list of "categories" this dialog manages.
             # For now, assume all non-default categories are "custom project types".
-            custom_categories_to_save = [cat for cat in self.current_categories if cat not in DEFAULT_TEMPLATE_CATEGORIES]
+            custom_categories_to_save = [cat for cat in categories if cat not in DEFAULT_TEMPLATE_CATEGORIES]
             
             # The project_type_manager might have its own internal list of defaults.
             # We need to be careful not to overwrite those if they are not part of DEFAULT_TEMPLATE_CATEGORIES.
@@ -310,9 +624,36 @@ class CategoryManagementDialog(QDialog):
         if state != self.hide_defaults_initial_state:
             self.hide_defaults_setting_changed_during_session = True
 
+    def _save_categories(self):
+        """Save categories to the project type manager"""
+        try:
+            # Get categories from the list
+            categories = [self.category_list.item(i).text() for i in range(self.category_list.count())]
+            
+            # Save to project type manager
+            success = self._save_categories_to_source(categories)
+            
+            if success:
+                log.debug(f"Successfully saved {len(categories)} categories")
+                
+                # Notify that categories have changed so all dropdowns can update
+                if self.category_update_manager:
+                    log.debug("Notifying category update manager that categories have changed")
+                    self.category_update_manager.notify_categories_changed(categories)
+                
+                # Accept the dialog (will close it)
+                self.accept()
+            else:
+                log.error("Failed to save categories")
+                QMessageBox.warning(self, "Save Error", "Failed to save categories. Please try again.")
+        except Exception as e:
+            log.exception(f"Error saving categories: {e}")
+            QMessageBox.critical(self, "Error", f"An error occurred while saving categories: {str(e)}")
+            # Don't close the dialog on error
+
     def accept(self):
         log.debug("Accept called on CategoryManagementDialog")
-        saved_ok = self._save_categories_to_source()
+        saved_ok = self._save_categories_to_source(self.current_categories)
         if saved_ok:
             log.info(f"Categories saved. Notifying manager with: {self.current_categories}")
             # Notify the central manager that categories might have changed.
@@ -333,7 +674,73 @@ class CategoryManagementDialog(QDialog):
             # However, for a cancel operation, usually no widespread notification is desired.
         super().reject()
 
-# Global function to launch the dialog (if needed from menus etc.)
+    def _rename_category(self):
+        """Rename the selected category"""
+        # Get the selected category
+        selected_items = self.category_list.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "No Selection", "Please select a category to rename.")
+            return
+            
+        selected_item = selected_items[0]
+        old_name = selected_item.text()
+        
+        # Check if this is a default category
+        if old_name in DEFAULT_TEMPLATE_CATEGORIES:
+            QMessageBox.warning(self, "Cannot Rename", f"Cannot rename default category '{old_name}'.")
+            return
+        
+        # Use our custom rename dialog instead of QInputDialog
+        new_name, ok = RenameDialog.get_name(
+            parent=self,
+            title="Rename Category",
+            text=old_name
+        )
+        
+        if ok and new_name and new_name != old_name:
+            # Check for duplicates
+            for i in range(self.category_list.count()):
+                if self.category_list.item(i).text() == new_name:
+                    QMessageBox.warning(self, "Duplicate Name", f"Category '{new_name}' already exists.")
+                    return
+            
+            # Update the item text
+            selected_item.setText(new_name)
+            
+            # Update in our local list
+            index = self.current_categories.index(old_name)
+            self.current_categories[index] = new_name
+            
+            log.debug(f"Renamed category '{old_name}' to '{new_name}'")
+            
+        # Indicate that we need to save
+        self.setWindowModified(True)
+
 def manage_categories_dialog(parent=None):
-    dialog = CategoryManagementDialog(parent)
-    return dialog.exec()
+    """
+    Show the category management dialog
+    
+    Args:
+        parent: The parent widget
+        
+    Returns:
+        bool: True if the dialog was accepted, False otherwise
+    """
+    try:
+        # Create the dialog
+        dialog = CategoryManagementDialog(parent)
+        
+        # Pass template_manager directly if parent has it
+        if parent and hasattr(parent, 'template_manager'):
+            dialog.template_manager = parent.template_manager
+        
+        # Show the dialog
+        result = dialog.exec()
+        
+        # Return whether the dialog was accepted
+        return result == QDialog.DialogCode.Accepted
+    except Exception as e:
+        log.exception(f"Error showing category management dialog: {e}")
+        if parent:
+            QMessageBox.critical(parent, "Error", f"An error occurred while showing the category management dialog: {str(e)}")
+        return False

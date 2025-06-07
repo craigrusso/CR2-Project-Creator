@@ -7,7 +7,7 @@ Module for updating and styling category-related QComboBoxes.
 
 import logging
 from PyQt6.QtCore import Qt, QSettings
-from PyQt6.QtWidgets import QApplication, QComboBox, QListView
+from PyQt6.QtWidgets import QApplication, QComboBox, QListView, QDialog
 from PyQt6.QtGui import QStandardItem, QStandardItemModel, QColor
 
 from app.ui.color_scheme_pyqt import colors, COMBOBOX_STYLE, LISTVIEW_POPUP_STYLE
@@ -54,6 +54,10 @@ def update_single_combobox(combo: QComboBox, categories: list, current_category:
             if not current_style or COMBOBOX_STYLE not in current_style:
                 combo.setStyleSheet(COMBOBOX_STYLE)
                 log_updater(f"UPDATE_SINGLE_COMBO: Applied COMBOBOX_STYLE to \'{combo.objectName()}\' (only No Category).")
+        
+        # Always ensure hover delegate is applied, even with empty categories
+        apply_hover_delegate(combo)
+        log_updater(f"UPDATE_SINGLE_COMBO: Applied hover delegate to '{combo.objectName()}' (empty categories case)")
         return
 
     obj_name = combo.objectName()
@@ -183,6 +187,10 @@ def update_single_combobox(combo: QComboBox, categories: list, current_category:
         log_updater(f"UPDATE_SINGLE_COMBO: No view found for '{obj_name}'.")
     # --- END NEW DIRECT VIEW CONFIGURATION ---
 
+    # Ensure hover delegate is always applied, independent of the view configuration
+    apply_hover_delegate(combo)
+    log_updater(f"UPDATE_SINGLE_COMBO: Ensured hover delegate is applied to '{obj_name}'")
+
     QApplication.processEvents() # Process events to ensure UI updates if called mid-operation
 
 
@@ -190,46 +198,51 @@ def ensure_all_combos_have_hover_delegates(app_instance=None):
     """
     Ensure all relevant QComboBoxes in the application have hover delegates applied.
     This is crucial for consistent item highlighting.
-    
-    NOTE: This function's body is commented out as of [Date of refactor]
-    The global theme in app_theme_pyqt.py (specifically ComboBoxPopupFilter 
-    applying ComboBoxItemDelegate) is expected to handle hover effects for 
-    QComboBox popups globally. This function is preserved as a stub in case
-    that assumption proves incorrect or specific overrides are needed later.
     """
-    # log_updater("Skipping ensure_all_combos_have_hover_delegates; relying on global theme.")
-    if app_instance is None:
-        app_instance = QApplication.instance()
-    if not app_instance:
-        log_updater("No QApplication instance found for delegate application.")
-        return
-
-    all_widgets = QApplication.allWidgets()
-    delegate_count = 0
+    log_updater("Applying hover delegates to category comboboxes...")
     
-    # Known category-related combo box names (can be expanded)
+    if not app_instance:
+        app_instance = QApplication.instance()
+    
+    if not app_instance:
+        log_updater("No QApplication instance found.")
+        return
+    
+    # Find all QComboBoxes in the application
+    all_widgets = QApplication.allWidgets()
+    
+    # Define known names for comboboxes that should be updated
     known_category_combo_names = [
         "template_category_combo_box", 
-        "project_type_combo_box", 
+        "project_type_combo_box",
         "category_combo",
-        "type_combo" # From template_creation_form
-    ] 
-    # Also include general gallery filters if they behave like category dropdowns
-    gallery_filter_names = ["gallerycategoryfilter", "category_filter"]
-
+        "type_combo",
+        "gallerycategoryfilter",
+        "category_filter"
+    ]
+    
+    count = 0
     for widget in all_widgets:
         if isinstance(widget, QComboBox):
             obj_name = widget.objectName().lower()
             
-            is_target_combo = (any(name in obj_name for name in known_category_combo_names) or
-                              any(name in obj_name for name in gallery_filter_names))
+            # Check if the combobox is one of the known types
+            is_known_target = any(known_name in obj_name for known_name in known_category_combo_names)
             
-            if is_target_combo:
-                apply_hover_delegate(widget) # This was the line applying the local delegate
-                delegate_count += 1
+            # More sophisticated check: if it's in a dialog related to templates or categories
+            parent_dialog = widget.window()
+            is_in_relevant_dialog = False
+            if isinstance(parent_dialog, QDialog):
+                dialog_title = parent_dialog.windowTitle().lower()
+                if "template" in dialog_title or "category" in dialog_title or "filter" in dialog_title:
+                    is_in_relevant_dialog = True
+            
+            if is_known_target or is_in_relevant_dialog:
+                log_updater(f"Applying hover delegate to QComboBox '{widget.objectName()}'")
+                apply_hover_delegate(widget)
+                count += 1
     
-    log_updater(f"Applied/Ensured hover delegates for {delegate_count} targeted QComboBoxes.")
-    QApplication.processEvents()
+    log_updater(f"Applied hover delegates to {count} comboboxes.")
 
 
 def style_category_combobox(combo: QComboBox):

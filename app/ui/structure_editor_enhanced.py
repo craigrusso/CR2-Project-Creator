@@ -1173,12 +1173,37 @@ class EnhancedStructureEditor(QDialog):
             return [] 
 
     def _open_category_manager(self):
-        """Open the category management dialog"""
-        import app.dialogs.category_management_dialog # Import the module
-        # Pass self (the editor dialog) as the parent
-        # The manage_categories_dialog function expects a parent to ensure modality and proper context
-        # It also handles its own execution (e.g., dialog.exec())
-        app.dialogs.category_management_dialog.manage_categories_dialog(self) 
+        """Open the category manager dialog"""
+        try:
+            # Import here to avoid circular imports
+            import app.dialogs.category_management_dialog
+            
+            # Ensure we have template_manager available
+            if not hasattr(self, 'template_manager') or not self.template_manager:
+                if hasattr(self, 'app') and hasattr(self.app, 'template_manager'):
+                    self.template_manager = self.app.template_manager
+                    print("Found template_manager from app reference")
+                elif hasattr(self, 'editor') and hasattr(self.editor, 'template_manager'):
+                    self.template_manager = self.editor.template_manager
+                    print("Found template_manager from editor reference")
+            
+            # Create and show the dialog
+            dialog = app.dialogs.category_management_dialog.CategoryManagementDialog(self)
+            
+            # Pass the template_manager directly if we have it
+            if hasattr(self, 'template_manager') and self.template_manager:
+                dialog.template_manager = self.template_manager
+                print("Directly passing template_manager to CategoryManagementDialog")
+            
+            # Show the dialog
+            if dialog.exec() == QDialog.DialogCode.Accepted:
+                # If the dialog was accepted (saved), update the category dropdown
+                if hasattr(self, 'ui_builder') and hasattr(self.ui_builder, '_init_category_dropdown'):
+                    self.ui_builder._init_category_dropdown()
+        except Exception as e:
+            print(f"Error opening category manager: {e}")
+            import traceback
+            traceback.print_exc()
 
     # --- Template Name, Type, and Category Management ---
     def _on_template_name_changed(self, new_name_full):
