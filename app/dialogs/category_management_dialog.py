@@ -327,13 +327,13 @@ class CategoryManagementDialog(QDialog):
                 border-radius: 3px;
                 background-color: {colors['card_bg']};
             }}
+            QCheckBox::indicator:hover {{
+                border: 1px solid {colors['accent']};
+            }}
             QCheckBox::indicator:checked {{
                 background-color: {colors['accent']};
-                border-color: {colors['accent']};
-                image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path fill='white' d='M5.707 7.293a1 1 0 0 0-1.414 1.414l2 2a1 1 0 0 0 1.414 0l4-4a1 1 0 0 0-1.414-1.414L7 8.586 5.707 7.293z'/></svg>");
-            }}
-            QCheckBox::indicator:hover {{
-                border-color: {colors['highlight_border']};
+                border: 1px solid {colors['accent']};
+                image: url("app/assets/css/check.svg");
             }}
         """)
         main_layout.addWidget(self.hide_defaults_checkbox)
