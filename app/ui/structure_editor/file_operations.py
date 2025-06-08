@@ -595,6 +595,15 @@ class FileOperations:
         if dialog.exec() == QDialog.DialogCode.Accepted:
             pattern_data = dialog.get_pattern_data()
             self._apply_pattern_to_item(item, pattern_data)
+            
+            # Clear any pending events to prevent unwanted context menu triggers
+            if self.tree_widget:
+                self.tree_widget.clearFocus()
+                # Process any pending events to clear the event queue
+                from PyQt6.QtWidgets import QApplication
+                QApplication.processEvents()
+                # Re-focus the tree widget properly
+                self.tree_widget.setFocus()
     
     def _update_item_display(self, item):
         """Update the visual display of an item based on its data"""
@@ -638,6 +647,15 @@ class FileOperations:
         if dialog.exec() == QDialog.DialogCode.Accepted:
             versioning_data = dialog.get_versioning_data()
             self._apply_versioning_to_item(item, versioning_data)
+            
+            # Clear any pending events to prevent unwanted context menu triggers
+            if self.tree_widget:
+                self.tree_widget.clearFocus()
+                # Process any pending events to clear the event queue
+                from PyQt6.QtWidgets import QApplication
+                QApplication.processEvents()
+                # Re-focus the tree widget properly
+                self.tree_widget.setFocus()
     
     def _configure_date_sequences(self, item):
         """Configure date sequences for file versioning"""
@@ -646,6 +664,15 @@ class FileOperations:
         if dialog.exec() == QDialog.DialogCode.Accepted:
             date_data = dialog.get_date_data()
             self._apply_date_sequence_to_item(item, date_data)
+            
+            # Clear any pending events to prevent unwanted context menu triggers
+            if self.tree_widget:
+                self.tree_widget.clearFocus()
+                # Process any pending events to clear the event queue
+                from PyQt6.QtWidgets import QApplication
+                QApplication.processEvents()
+                # Re-focus the tree widget properly
+                self.tree_widget.setFocus()
     
     def _apply_pattern_to_item(self, item, pattern_data):
         """Apply custom pattern to item"""
@@ -1065,6 +1092,15 @@ class FileOperations:
         if dialog.exec() == QDialog.DialogCode.Accepted:
             versioning_data = dialog.get_versioning_data()
             self._apply_versioning_to_folder(item, versioning_data)
+            
+            # Clear any pending events to prevent unwanted context menu triggers
+            if self.tree_widget:
+                self.tree_widget.clearFocus()
+                # Process any pending events to clear the event queue
+                from PyQt6.QtWidgets import QApplication
+                QApplication.processEvents()
+                # Re-focus the tree widget properly
+                self.tree_widget.setFocus()
     
     def _configure_date_sequences_for_folder(self, folder_item):
         """Configure date sequences for all files in a folder"""
@@ -1079,6 +1115,15 @@ class FileOperations:
                 child_data = child.data(0, Qt.ItemDataRole.UserRole) or {}
                 if child_data.get('type') == 'file':
                     self._apply_date_sequence_to_item(child, date_data)
+            
+            # Clear any pending events to prevent unwanted context menu triggers
+            if self.tree_widget:
+                self.tree_widget.clearFocus()
+                # Process any pending events to clear the event queue
+                from PyQt6.QtWidgets import QApplication
+                QApplication.processEvents()
+                # Re-focus the tree widget properly
+                self.tree_widget.setFocus()
     
     def _apply_versioning_to_folder(self, folder_item, versioning_data):
         """Apply versioning to all files in a folder"""
