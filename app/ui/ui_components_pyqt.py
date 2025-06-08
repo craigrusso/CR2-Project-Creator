@@ -485,8 +485,25 @@ class StructureEditor(QDialog):
         if ok and folder_name:
             item = QTreeWidgetItem(parent_item)
             item.setText(0, folder_name)
-            item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+            
+            # Set proper folder icon immediately
+            try:
+                from app.ui.icon_utilities import get_folder_icon
+                item.setIcon(0, get_folder_icon(False))  # Initially collapsed
+            except ImportError:
+                # Fallback to standard icon
+                item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+            
             item.setData(0, Qt.ItemDataRole.UserRole, "folder")  # Mark as folder in user data
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)  # Make editable
+            
+            # Force immediate icon refresh to ensure proper system folder icon
+            try:
+                from app.ui.tree_styling import update_item_icon
+                update_item_icon(item)
+            except ImportError:
+                pass
+            
             parent_item.setExpanded(True)
             
     def _remove_folder(self):
@@ -1070,9 +1087,24 @@ class TemplateDirectoryEditor(QDialog):
         # Create new folder item
         folder_item = QTreeWidgetItem(parent_item)
         folder_item.setText(0, folder_name)
-        folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        
+        # Set proper folder icon immediately
+        try:
+            from app.ui.icon_utilities import get_folder_icon
+            folder_item.setIcon(0, get_folder_icon(False))  # Initially collapsed
+        except ImportError:
+            # Fallback to standard icon
+            folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        
         folder_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder"})
         folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)  # Make folder editable
+        
+        # Force immediate icon refresh to ensure proper system folder icon
+        try:
+            from app.ui.tree_styling import update_item_icon
+            update_item_icon(folder_item)
+        except ImportError:
+            pass
         
         # Expand the parent to show the new folder
         parent_item.setExpanded(True)

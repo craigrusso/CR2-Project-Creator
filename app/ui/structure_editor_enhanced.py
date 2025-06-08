@@ -426,41 +426,20 @@ class EnhancedStructureEditor(QDialog):
             folder_item.setText(0, "Untitled Folder")
             folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
             
-            # Set folder icon
-            # Try to get the icon in multiple ways to ensure we have one
-            folder_icon = None
-            
-            # Try system theme icon first
-            folder_icon = QIcon.fromTheme("folder")
-            
-            # If that failed, try a hardcoded path for standard icon
-            if folder_icon is None or folder_icon.isNull():
-                # Check if we can find an icon in a common location
-                icon_paths = [
-                    os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "icons", "folder.png"),
-                    os.path.join(os.path.dirname(os.path.dirname(__file__)), "icons", "folder.png"),
-                    os.path.join(os.path.dirname(__file__), "icons", "folder.png"),
-                    "icons/folder.png"
-                ]
-                
-                for path in icon_paths:
-                    if os.path.exists(path):
-                        folder_icon = QIcon(path)
-                        if not folder_icon.isNull():
-                            break
-                
-            # If we still don't have an icon, use a fallback emoji
-            if folder_icon is None or folder_icon.isNull():
-                # We don't have an icon, just set the text with a folder emoji
-                folder_item.setText(0, "Untitled Folder")
-            else:
-                folder_item.setIcon(0, folder_icon)
-                
-            # Set user data
+            # Set folder data
             folder_data = {'type': 'folder', 'name': 'Untitled Folder'}
             folder_item.setData(0, Qt.ItemDataRole.UserRole, folder_data)
             
-            # Style the folder item to make it stand out but without the blue box
+            # Set proper folder icon immediately
+            try:
+                from app.ui.icon_utilities import get_folder_icon
+                folder_item.setIcon(0, get_folder_icon(False))  # Initially collapsed
+            except ImportError:
+                # Fallback to standard icon
+                from PyQt6.QtWidgets import QApplication, QStyle
+                folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+            
+            # Style the folder item to make it stand out
             font = folder_item.font(0)
             font.setBold(True)
             folder_item.setFont(0, font)
@@ -468,6 +447,13 @@ class EnhancedStructureEditor(QDialog):
             # Expand parent to show new folder
             if parent_item != root:
                 parent_item.setExpanded(True)
+            
+            # Force immediate icon refresh to ensure proper system folder icon
+            try:
+                from app.ui.tree_styling import update_item_icon
+                update_item_icon(folder_item)
+            except ImportError:
+                pass
                 
             # Start editing immediately
             self.tree_widget.editItem(folder_item, 0)

@@ -325,8 +325,27 @@ class StructureEditor(QDialog):
         if ok and folder_name:
             folder_item = QTreeWidgetItem(parent_item)
             folder_item.setText(0, folder_name)
-            folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+            
+            # Set folder data
+            folder_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": folder_name})
+            
+            # Set proper folder icon immediately
+            try:
+                from app.ui.icon_utilities import get_folder_icon
+                folder_item.setIcon(0, get_folder_icon(False))  # Initially collapsed
+            except ImportError:
+                # Fallback to standard icon
+                folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+            
             folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
+            
+            # Force immediate icon refresh to ensure proper system folder icon
+            try:
+                from app.ui.tree_styling import update_item_icon
+                update_item_icon(folder_item)
+            except ImportError:
+                pass
+            
             parent_item.setExpanded(True)
     
     def _add_file(self):

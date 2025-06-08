@@ -228,6 +228,18 @@ class FileOperations:
         }
         folder_item.setData(0, Qt.ItemDataRole.UserRole, item_data)
         
+        # Set proper folder icon immediately
+        try:
+            from app.ui.icon_utilities import get_folder_icon
+            folder_item.setIcon(0, get_folder_icon(False))  # Initially collapsed
+        except ImportError:
+            # Fallback to standard icon
+            from PyQt6.QtWidgets import QApplication, QStyle
+            folder_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+        
+        # Make folder editable
+        folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
+        
         # Expand parent if needed
         if parent_item:
             parent_item.setExpanded(True)
@@ -235,7 +247,14 @@ class FileOperations:
         # Expand the new folder
         folder_item.setExpanded(True)
         
-        print(f"DEBUG: Added folder '{folder_name}' to tree")
+        # Force immediate icon refresh to ensure proper system folder icon
+        try:
+            from app.ui.tree_styling import update_item_icon
+            update_item_icon(folder_item)
+        except ImportError:
+            pass
+        
+        print(f"DEBUG: Added folder '{folder_name}' to tree with proper icon")
         return folder_item
 
     def delete_selected(self):
