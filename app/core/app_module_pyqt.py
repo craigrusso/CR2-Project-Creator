@@ -318,7 +318,30 @@ class ProjectCreatorApp(QMainWindow):
         
         # Enable versioning checkbox
         self.enable_versioning = QCheckBox("Create sequence variations for each project")
-        self.enable_versioning.setStyleSheet(f"color: {colors['text']}; font-weight: bold;")
+        self.enable_versioning.setStyleSheet(f"""
+            QCheckBox {{
+                color: {colors['text']};
+                font-weight: bold;
+                spacing: 8px;
+                padding: 8px 4px;
+                min-height: 20px;
+            }}
+            QCheckBox::indicator {{
+                width: 16px;
+                height: 16px;
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                background-color: {colors['card_bg']};
+                margin-right: 4px;
+            }}
+            QCheckBox::indicator:hover {{
+                border: 1px solid {colors['accent']};
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {colors['accent']};
+                border: 1px solid {colors['accent']};
+            }}
+        """)
         self.enable_versioning.toggled.connect(self._toggle_versioning_options)
         versioning_layout.addWidget(self.enable_versioning)
         
