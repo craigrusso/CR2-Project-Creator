@@ -452,14 +452,51 @@ class StructureConverter:
                     # If using project name, display the placeholder instead of original name
                     display_name = file_name
                     if uses_project_name:
+                        # Get the project name mode
+                        project_name_mode = item.get('project_name_mode', 'replace')
+                        
                         # Extract extension if present
                         extension = ""
+                        name_without_extension = file_name
                         if '.' in file_name:
                             extension = '.' + file_name.split('.')[-1]
+                            name_without_extension = file_name[:-len(extension)]
                         
-                        # Use the PROJECT_NAME placeholder for display
-                        display_name = f"${{PROJECT_NAME}}{extension}"
-                        print(f"DEBUG: Using placeholder display for file: {display_name} (original: {file_name})")
+                        # Get the placeholder text
+                        placeholder = "${PROJECT_NAME}"
+                        
+                        # Get custom separator if configured
+                        separator = item.get('custom_separator', '.')
+                        
+                        # Create display name based on the project name mode
+                        if project_name_mode == 'replace':
+                            display_name = f"{placeholder}{extension}"
+                        elif project_name_mode == 'prepend':
+                            display_name = f"{placeholder}{separator}{name_without_extension}{extension}"
+                        elif project_name_mode == 'append':
+                            display_name = f"{name_without_extension}{separator}{placeholder}{extension}"
+                        elif project_name_mode == 'pattern':
+                            # Use custom pattern
+                            pattern = item.get('custom_pattern', '$project$ext')
+                            
+                            # Replace placeholders in the pattern
+                            pattern_map = {
+                                '$project': placeholder,
+                                '$base': name_without_extension,
+                                '$ext': extension,
+                                '$sep': separator
+                            }
+                            
+                            # Apply pattern substitutions
+                            for key, value in pattern_map.items():
+                                pattern = pattern.replace(key, value)
+                            
+                            display_name = pattern
+                        else:
+                            # Default to replace mode for any unrecognized mode
+                            display_name = f"{placeholder}{extension}"
+                        
+                        print(f"DEBUG: Using placeholder display for file: {display_name} (original: {file_name}, mode: {project_name_mode})")
                     
                     # Set the display text
                     tree_item.setText(0, display_name)
@@ -907,14 +944,29 @@ class StructureConverter:
                         'uses_project_name': True  # Keep uses_project_name for backward compatibility
                     }
                     
-                    # Include any other useful file metadata from the item_user_data
-                    for key in ['path', 'original_path', 'is_binary', 'cached_path', 'original_name', 'original_extension']:
+                    # Extract all project name options from item_user_data
+                    project_name_keys = [
+                        'project_name_mode', 'custom_separator', 'custom_pattern', 
+                        'original_extension'
+                    ]
+                    
+                    for key in project_name_keys:
                         if key in item_user_data:
                             file_item[key] = item_user_data[key]
+                    
+                    # Include any other useful file metadata from the item_user_data
+                    for key in ['path', 'original_path', 'is_binary', 'cached_path', 'original_name']:
+                        if key in item_user_data:
+                            file_item[key] = item_user_data[key]
+                    
+                    # Store the complete user_data for later extraction
+                    file_item['user_data'] = item_user_data
                     
                     # Ensure original_path is set if path is available but original_path isn't
                     if 'path' in item_user_data and item_user_data['path'] and 'original_path' not in file_item:
                         file_item['original_path'] = item_user_data['path']
+                    
+                    print(f"DEBUG: _process_item - File {original_name} has project name options: mode={item_user_data.get('project_name_mode', 'none')}, separator={item_user_data.get('custom_separator', 'none')}")
                     
                     return file_item
             
@@ -927,9 +979,12 @@ class StructureConverter:
             # Include any other useful file metadata from the item_user_data
             if isinstance(item_user_data, dict):
                 for key in ['path', 'original_path', 'is_binary', 'cached_path', 'rename_flag', 'uses_project_name', 
-                           'original_name', 'original_extension']:
+                           'original_name', 'original_extension', 'project_name_mode', 'custom_separator', 'custom_pattern']:
                     if key in item_user_data:
                         file_item[key] = item_user_data[key]
+                
+                # Store the complete user_data for later extraction
+                file_item['user_data'] = item_user_data
                         
                 # Ensure original_path is set if path is available but original_path isn't
                 if 'path' in item_user_data and item_user_data['path'] and 'original_path' not in file_item:

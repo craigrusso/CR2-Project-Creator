@@ -257,6 +257,63 @@ class TemplateIO:
                     
                     return None
                 
+                # Extract project name options from structure and apply to files array
+                def extract_project_name_options(structure_items, files_array):
+                    if not structure_items or not isinstance(structure_items, list):
+                        return
+                    
+                    # Build lookup dictionary for faster file matching
+                    files_by_name = {}
+                    for file_data in files_array:
+                        file_name = file_data.get('file_name', '')
+                        folder = file_data.get('folder', '')
+                        key = f"{folder}/{file_name}" if folder else file_name
+                        files_by_name[key] = file_data
+                    
+                    # Process each item in the structure
+                    for item in structure_items:
+                        if not isinstance(item, dict):
+                            continue
+                        
+                        # Process file items
+                        if item.get('type') == 'file':
+                            file_name = item.get('name', '')
+                            item_data = item.get('user_data', {})
+                            
+                            # Get the path for this file
+                            folder = ""
+                            if 'path' in item_data:
+                                path = item_data.get('path', '')
+                                if '/' in path:
+                                    folder = os.path.dirname(path)
+                            
+                            # Create lookup key
+                            key = f"{folder}/{file_name}" if folder else file_name
+                            
+                            # Check if this file is in our files_array
+                            if key in files_by_name:
+                                file_data = files_by_name[key]
+                                
+                                # Copy project name options from item_data to file_data
+                                project_name_keys = [
+                                    'project_name_mode', 'uses_project_name', 'rename_flag',
+                                    'custom_separator', 'custom_pattern', 'original_name',
+                                    'original_extension'
+                                ]
+                                
+                                for opt_key in project_name_keys:
+                                    if opt_key in item_data:
+                                        file_data[opt_key] = item_data[opt_key]
+                                
+                                print(f"DEBUG: TemplateIO: Extracted project name options for file: {key}")
+                        
+                        # Recursively process folder items
+                        elif item.get('type') == 'folder' and 'children' in item:
+                            extract_project_name_options(item.get('children', []), files_array)
+                
+                # Call the function to extract project name options
+                extract_project_name_options(structure, files_array)
+                
                 for file_info in files_array:
                     file_name = file_info.get('file_name', '')
                     folder_path = file_info.get('folder', '')
@@ -318,26 +375,25 @@ class TemplateIO:
                     sanitized_old_name = original_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
                     old_file_path = os.path.join(self.paths["templates_dir"], f"{sanitized_old_name}.json")
                     
-                    # Delete the old file if it exists and is different from the new one
-                    if old_file_path != file_path and os.path.exists(old_file_path):
+                    # Remove old file if it exists
+                    if os.path.exists(old_file_path):
                         try:
                             os.remove(old_file_path)
-                            print(f"✅ TemplateIO: Deleted old template file during rename: {old_file_path}")
-                            # Also remove the old entry from the templates dictionary
-                            if original_name in self.templates:
-                                del self.templates[original_name]
-                                print(f"✅ TemplateIO: Removed old template entry for '{original_name}' from memory dict")
+                            print(f"DEBUG: TemplateIO: Removed old template file: {old_file_path}")
                         except Exception as e:
-                            print(f"⚠️ TemplateIO: Error deleting old template file during rename: {e}")
+                            print(f"WARNING: TemplateIO: Failed to remove old template file: {e}")
+                    
+                    # Remove the old template from memory dict
+                    if original_name in self.templates:
+                        del self.templates[original_name]
+                        print(f"DEBUG: TemplateIO: Removed old template '{original_name}' from memory dict.")
                 
-                print(f"✅ TemplateIO: Successfully saved template '{name}'")
                 return True
             else:
-                print(f"ERROR: TemplateIO: Failed to save template '{name}' to {file_path}")
+                print(f"ERROR: TemplateIO: Failed to save template to {file_path}")
                 return False
-                
         except Exception as e:
-            print(f"ERROR: TemplateIO: Error saving template: {e}")
+            print(f"ERROR: TemplateIO: Exception while saving template: {e}")
             import traceback
             traceback.print_exc()
             return False

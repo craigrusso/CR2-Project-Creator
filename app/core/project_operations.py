@@ -183,11 +183,27 @@ def handle_batch_create(app, project_names_text):
         try:
             selected_template_from_gallery = app.template_gallery.get_primary_selected_template()
             if selected_template_from_gallery:
-                template_data = selected_template_from_gallery
-                template_name = template_data.get('name')
-                print(f"DEBUG (handle_batch_create): Got template from gallery.get_primary_selected_template: {template_name}")
+                template_name = selected_template_from_gallery.get('name')
+                
+                # Load the complete template data with files array from template manager
+                if hasattr(app, 'template_manager') and hasattr(app.template_manager, 'template_io'):
+                    complete_template_data = app.template_manager.template_io.get_template(template_name)
+                    if complete_template_data:
+                        template_data = complete_template_data
+                        template_path = None  # For templates loaded from manager
+                    else:
+                        template_data = selected_template_from_gallery
+                        template_path = None
+                else:
+                    template_data = selected_template_from_gallery
+                    template_path = None
+            else:
+                template_data = None
+                template_path = None
         except Exception as e:
-            print(f"Error (handle_batch_create) checking gallery.get_primary_selected_template: {e}")
+            print(f"Error (handle_batch_create) accessing gallery.get_primary_selected_template: {e}")
+            template_data = None
+            template_path = None
 
     # Fallback 1: Legacy direct file path
     if not template_data and hasattr(app, 'template_file_path') and app.template_file_path:
@@ -196,7 +212,6 @@ def handle_batch_create(app, project_names_text):
             with open(template_path, 'r') as f:
                 template_data = json.load(f)
             template_name = template_data.get('name', os.path.basename(template_path))
-            print(f"DEBUG (handle_batch_create): Got template from app.template_file_path: {template_name}")
         except Exception as e:
             print(f"ERROR (handle_batch_create) loading template file: {e}")
             return {"error": f"Error loading template file: {e}"}
@@ -205,7 +220,6 @@ def handle_batch_create(app, project_names_text):
     if not template_data and hasattr(app, 'selected_template') and app.selected_template:
         template_data = app.selected_template
         template_name = template_data.get('name')
-        print(f"DEBUG (handle_batch_create): Got template from app.selected_template (legacy): {template_name}")
     
     # Fallback 3: Gallery's older get_selected_template (less specific than get_primary_selected_template)
     if not template_data and hasattr(app, 'template_gallery') and app.template_gallery and hasattr(app.template_gallery, 'get_selected_template'):
@@ -214,7 +228,6 @@ def handle_batch_create(app, project_names_text):
             if template_info:
                 template_data = template_info
                 template_name = template_info.get('name')
-                print(f"DEBUG (handle_batch_create): Got template from gallery.get_selected_template (legacy gallery method): {template_name}")
         except Exception as e:
             print(f"Error (handle_batch_create) checking gallery.get_selected_template: {e}")
 
@@ -234,13 +247,10 @@ def handle_batch_create(app, project_names_text):
     output_dir = None
     if hasattr(app, 'get_current_output_dir') and callable(app.get_current_output_dir):
         output_dir = app.get_current_output_dir(use_fallbacks=False)
-        print(f"DEBUG: Output directory from get_current_output_dir: {output_dir}")
     elif hasattr(app, 'output_directory') and app.output_directory:
         output_dir = app.output_directory
-        print(f"DEBUG: Output directory from app.output_directory: {output_dir}")
     elif hasattr(app, 'default_output_path'):
         output_dir = app.default_output_path
-        print(f"DEBUG: Output directory from app.default_output_path: {output_dir}")
         
     # If no output directory is available, always prompt the user to select one
     if not output_dir:

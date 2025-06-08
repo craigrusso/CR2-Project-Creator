@@ -1128,6 +1128,8 @@ class FileOperations:
         
         # Get item data
         item_data = item.data(0, Qt.ItemDataRole.UserRole)
+        if not isinstance(item_data, dict):
+            item_data = {}
         
         # Create a submenu for project name options
         project_name_menu = menu.addMenu("Project Name Options")
@@ -1145,12 +1147,13 @@ class FileOperations:
         project_name_menu.addSeparator()
         reset_name_action = project_name_menu.addAction("Reset to Original Name")
         
-        # Set checkable and check the current mode
+        # Set checkable and check the current mode - but don't make them toggle
         replace_name_action.setCheckable(True)
         prepend_name_action.setCheckable(True)
         append_name_action.setCheckable(True)
         
-        replace_name_action.setChecked(name_mode == 'replace' or (uses_project_name and name_mode == 'none'))
+        # Show which mode is currently active
+        replace_name_action.setChecked(name_mode == 'replace')
         prepend_name_action.setChecked(name_mode == 'prepend')
         append_name_action.setChecked(name_mode == 'append')
         
@@ -1167,14 +1170,17 @@ class FileOperations:
         # Execute the menu
         action = menu.exec(self.tree.mapToGlobal(position))
         
-        # Handle actions
+        # Handle actions - Always apply the selected mode, don't toggle
         if action == rename_action:
             self.rename_item(item)
         elif action == replace_name_action:
+            # Always apply replace mode, regardless of current state
             self._use_project_name_for_file(item, mode='replace')
         elif action == prepend_name_action:
+            # Always apply prepend mode, regardless of current state
             self._use_project_name_for_file(item, mode='prepend')
         elif action == append_name_action:
+            # Always apply append mode, regardless of current state
             self._use_project_name_for_file(item, mode='append')
         elif action == pattern_action:
             self._configure_naming_pattern(item)
@@ -1198,97 +1204,69 @@ class FileOperations:
         current_name = item.text(0)
         
         # Store original name if we don't already have it
+        # First check if we already have an original_name stored
         if 'original_name' not in item_data:
-            item_data['original_name'] = current_name
+            # Try to extract original name from current display name if it contains placeholders
+            if "${PROJECT_NAME}" in current_name:
+                # Try to reconstruct original name from placeholder display
+                if mode == 'replace':
+                    # For replace mode: ${PROJECT_NAME}.ext -> original would be the extension part
+                    parts = current_name.split('${PROJECT_NAME}')
+                    if len(parts) == 2 and parts[1].startswith('.'):
+                        # This might be from a replace mode, but we can't reliably reconstruct
+                        # Use a reasonable fallback
+                        item_data['original_name'] = current_name.replace('${PROJECT_NAME}', 'file')
+                    else:
+                        item_data['original_name'] = current_name.replace('${PROJECT_NAME}', 'file')
+                elif mode == 'append':
+                    # For append mode: name.${PROJECT_NAME}.ext -> original would be name.ext
+                    item_data['original_name'] = current_name.replace('.${PROJECT_NAME}', '')
+                elif mode == 'prepend':
+                    # For prepend mode: ${PROJECT_NAME}.name.ext -> original would be name.ext
+                    item_data['original_name'] = current_name.replace('${PROJECT_NAME}.', '')
+                else:
+                    item_data['original_name'] = current_name.replace('${PROJECT_NAME}', 'file')
+            else:
+                # Current name doesn't contain placeholders, so it's the original
+                item_data['original_name'] = current_name
         
         # Use original name as the base to work with
         original_name = item_data.get('original_name', current_name)
         
-        # Use ${PROJECT_NAME} as the placeholder that will be replaced during project creation
-        placeholder = "${PROJECT_NAME}"
-        
-        # For display in the editor, use the template name as an example
-        display_name = "Project_Name"
-        
-        # Try to get the actual template name from the editor for display
-        if self.editor:
-            # Check if editor has a template_name attribute
-            if hasattr(self.editor, 'template_name'):
-                temp_name = self.editor.template_name.strip()
-                if temp_name:
-                    display_name = temp_name
-                    print(f"DEBUG: FileOperations._use_project_name_for_file - using template name: {display_name}")
-                    
-            # Check if editor has a template_name_field in ui_builder as fallback
-            elif hasattr(self.editor, 'ui_builder') and hasattr(self.editor.ui_builder, 'template_name_field'):
-                temp_name = self.editor.ui_builder.template_name_field.text().strip()
-                if temp_name:
-                    display_name = temp_name
-                    print(f"DEBUG: FileOperations._use_project_name_for_file - using template name from field: {display_name}")
-        
-        # Get the file extension
-        extension = ""
-        name_without_extension = original_name
-        name_parts = original_name.split('.')
-        if len(name_parts) > 1:
-            extension = f".{name_parts[-1]}"
-            name_without_extension = original_name[:-len(extension)]
-        
-        # Get custom separator if configured
-        separator = item_data.get('custom_separator', '.')
-        
-        # Create new display name based on the selected mode
-        display_placeholder_name = ""
-        if mode == 'replace':
-            display_placeholder_name = f"{placeholder}{extension}"
-        elif mode == 'prepend':
-            display_placeholder_name = f"{placeholder}{separator}{name_without_extension}{extension}"
-        elif mode == 'append':
-            display_placeholder_name = f"{name_without_extension}{separator}{placeholder}{extension}"
-        elif mode == 'pattern':
-            # Use custom pattern
-            pattern = item_data.get('custom_pattern', '$project$ext')
-            
-            # Replace placeholders in the pattern
-            pattern_map = {
-                '$project': placeholder,
-                '$base': name_without_extension,
-                '$ext': extension,
-                '$sep': separator
-            }
-            
-            for key, value in pattern_map.items():
-                pattern = pattern.replace(key, value)
-            
-            display_placeholder_name = pattern
-        else:
-            print(f"DEBUG: FileOperations._use_project_name_for_file - unknown mode: {mode}")
-            return False
-        
-        print(f"DEBUG: FileOperations._use_project_name_for_file - displaying placeholder: '{display_placeholder_name}' (original: '{original_name}', mode: {mode})")
-        
-        # Update the display text (for visual feedback only)
-        item.setText(0, display_placeholder_name)
-        
-        # Update the data - keep the original name but set the flags
-        # IMPORTANT: Do not change the 'name' field, only add the flags
+        # Set the project name flags
         item_data['uses_project_name'] = True
+        item_data['rename_flag'] = True
         item_data['project_name_mode'] = mode
-        item_data['rename_flag'] = True  # Set rename_flag to true when uses_project_name is true
-        item_data['original_extension'] = extension
         
-        # Store the item_data back to the item
+        # Generate the appropriate display name based on mode
+        if mode == 'replace':
+            # Replace entire name with ${PROJECT_NAME} + extension
+            if '.' in original_name:
+                extension = '.' + original_name.split('.')[-1]
+                display_name = f"${{PROJECT_NAME}}{extension}"
+            else:
+                display_name = "${PROJECT_NAME}"
+        elif mode == 'append':
+            # Append ${PROJECT_NAME} before extension
+            if '.' in original_name:
+                name_part = '.'.join(original_name.split('.')[:-1])
+                extension = '.' + original_name.split('.')[-1]
+                display_name = f"{name_part}.${{PROJECT_NAME}}{extension}"
+            else:
+                display_name = f"{original_name}.${{PROJECT_NAME}}"
+        elif mode == 'prepend':
+            # Prepend ${PROJECT_NAME} to the original name
+            display_name = f"${{PROJECT_NAME}}.{original_name}"
+        else:
+            display_name = f"${{PROJECT_NAME}}"
+        
+        # Update the item display and data
+        item.setText(0, display_name)
         item.setData(0, Qt.ItemDataRole.UserRole, item_data)
         
-        # Apply styling to indicate this is a dynamic file
-        font = item.font(0)
-        font.setItalic(True)
-        item.setFont(0, font)
-        
-        # Also use a different color to make it clear
-        item.setForeground(0, QBrush(QColor("#4A9BFF")))
-        
-        print(f"DEBUG: FileOperations._use_project_name_for_file - file marked to use project name: {original_name}, mode: {mode}")
+        # Mark editor as modified
+        if hasattr(self.editor, 'mark_modified'):
+            self.editor.mark_modified()
         
         return True
 
@@ -1303,18 +1281,29 @@ class FileOperations:
             bool: True if successful, False otherwise
         """
         if not item:
+            print("ERROR: _reset_file_name called with no item")
             return False
         
         # Get current file data
         item_data = item.data(0, Qt.ItemDataRole.UserRole)
         if not isinstance(item_data, dict) or item_data.get('type') != 'file':
+            print("ERROR: _reset_file_name called on non-file item or invalid data")
             return False
         
         # Get original name
         original_name = item_data.get('original_name')
         if not original_name:
-            print("ERROR: Original name not found, cannot reset")
-            return False
+            # Try to get original name from original_path as fallback
+            original_path = item_data.get('original_path', '')
+            if original_path and os.path.exists(original_path):
+                original_name = os.path.basename(original_path)
+                item_data['original_name'] = original_name  # Store it for future use
+                print(f"DEBUG: _reset_file_name - recovered original name from path: {original_name}")
+            else:
+                print("ERROR: Original name not found and cannot be recovered, cannot reset")
+                return False
+        
+        print(f"DEBUG: _reset_file_name - resetting to original name: {original_name}")
         
         # Update display to show original name
         item.setText(0, original_name)
@@ -1324,16 +1313,22 @@ class FileOperations:
         item_data['project_name_mode'] = 'none'
         item_data['rename_flag'] = False
         
+        # Clear any custom settings while preserving original_name
+        if 'custom_separator' in item_data:
+            del item_data['custom_separator']
+        if 'custom_pattern' in item_data:
+            del item_data['custom_pattern']
+        
+        # Store updated data
+        item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+        
         # Restore normal styling
         font = item.font(0)
         font.setItalic(False)
         item.setFont(0, font)
-        item.setForeground(0, QBrush(QColor("#000000")))
+        item.setForeground(0, QBrush(QColor("#000000")))  # Reset to default color
         
-        print(f"DEBUG: Reset file back to original name: {original_name}")
-        
-        # Update the data
-        item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+        print(f"DEBUG: _reset_file_name - successfully reset file back to original name: {original_name}")
         
         return True
 

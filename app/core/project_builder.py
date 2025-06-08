@@ -369,7 +369,6 @@ class ProjectBuilder:
                 template_data = template_file
                 template_name = template_data.get('name', 'Unknown')
                 template_file_path = template_data.get('file_path', None)
-                # print(f"Using provided template dictionary: {template_name}")
             elif isinstance(template_file, str) and os.path.exists(template_file):
                 # Template file path provided
                 template_file_path = template_file
@@ -467,30 +466,30 @@ class ProjectBuilder:
         try:
             # Process each root item in the structure
             self._process_template(project_dir, structure_data, placeholders, created_paths)
-            # print(f"Created {len(created_paths)} paths in project structure")
             
             # Process the files array if present in template
             if template_data and 'files' in template_data:
-                # print(f"Processing files array with {len(template_data['files'])} files")
-                
                 # Apply flags from structure to files if applicable
                 template_data['files'] = self._apply_structure_flags_to_files(
                     structure_data, template_data['files']
                 )
                 
                 # Process files array - copy files with placeholders
-                copied_files = self._process_files_array(
+                success, copied_files = self._process_files_array(
                     project_dir, 
                     template_data['files'], 
                     placeholders,
                     use_cached_files=use_cached_files,
                     template_name=template_name
                 )
-                # print(f"Copied {len(copied_files)} files from files array")
                 
-                # Add to created paths for reporting
-                created_paths.extend(copied_files)
-                
+                if success:
+                    # Add to created paths for reporting
+                    if copied_files:
+                        created_paths.extend(copied_files)
+                else:
+                    return False, f"Failed to copy files: {copied_files}"
+            
             # Return success with project directory
             # print(f"Project '{project_name}' created successfully at: {project_dir}")
             
@@ -1728,9 +1727,6 @@ class ProjectBuilder:
         cache_manager = None
         if hasattr(self, 'template_manager') and hasattr(self.template_manager, 'file_cache_manager'):
              cache_manager = self.template_manager.file_cache_manager
-        else:
-            # print("WARNING: ProjectBuilder cannot access FileCacheManager via template_manager.")
-            pass
 
         if not files_array:
             return True, copied_files
@@ -1757,17 +1753,16 @@ class ProjectBuilder:
 
                 if not file_name:
                     error_msg = f"WARNING: File data missing file_name in index {file_index}: {file_data}"
-                    # print(error_msg)
+                    print(error_msg)
                     error_messages.append(error_msg)
                     continue
                 
                 original_filename_for_debug = file_name # Store before potential rename
-
+                
                 # First check if the filename contains a placeholder
                 if "${PROJECT_NAME}" in file_name:
                     # Apply placeholder replacement directly
                     file_name = self._replace_placeholders(file_name, placeholders)
-                    # print(f"Applied placeholder to filename: {original_filename_for_debug} -> {file_name}")
                 # Apply placeholders to file name if either flag is set
                 elif rename_flag or uses_project_name:
                     project_name = placeholders.get("PROJECT_NAME", "Unknown")
@@ -1809,8 +1804,6 @@ class ProjectBuilder:
                         file_name = pattern
                     else:  # Default to 'replace' mode for backward compatibility
                         file_name = f"{project_name}{ext}"
-                    
-                    # print(f"Renamed file: {original_filename_for_debug} -> {file_name} (mode: {name_mode})")
 
                 # Apply placeholders to folder path
                 folder = self._replace_placeholders(folder, placeholders)
@@ -1818,21 +1811,21 @@ class ProjectBuilder:
                 # Create folder structure if it doesn't exist
                 folder_path = os.path.join(project_dir, folder)
                 os.makedirs(folder_path, exist_ok=True)
-                
-                # print(f"Created folder path: {folder_path}")
 
                 # Determine destination path
                 dest_path = os.path.join(folder_path, file_name)
 
-                # --- IMPROVED SOURCE PATH DETERMINATION LOGIC ---
-                # print(f"DEBUG: Determining source path for: {original_filename_for_debug} (output: {file_name})")
+                # Determine source file path - prioritize cached files, then original files
+                source_path = None
+                source_path_used = None
+                cached_path_attempted = None
+                original_path_attempted = None
 
                 # 1. PRIORITY 1: Check cached_path directly from file_data
                 if cached_path and os.path.exists(cached_path):
                     source_path = cached_path
                     source_path_used = "Direct Cache"
                     cached_path_attempted = cached_path
-                    # print(f"  ✅ Using DIRECT CACHE file: {source_path}")
                     if cache_manager and hasattr(cache_manager, 'cache_stats'): 
                         cache_manager.cache_stats['hits'] += 1
                 
@@ -1850,14 +1843,9 @@ class ProjectBuilder:
                         if lookup_cached_path and os.path.exists(lookup_cached_path):
                             source_path = lookup_cached_path
                             source_path_used = "Cache Lookup"
-                            # print(f"  ✅ Using CACHE LOOKUP file: {source_path}")
                             if hasattr(cache_manager, 'cache_stats'): 
                                 cache_manager.cache_stats['hits'] += 1
-                        elif lookup_cached_path:
-                            # print(f"  ⚠️ Cache path found via lookup ({lookup_cached_path}) but file does not exist.")
-                            pass
                     except Exception as cache_err:
-                        # print(f"  ⚠️ Error looking up file in cache: {cache_err}")
                         cached_path_attempted = f"Error: {cache_err}" # Store error for logging
 
                 # 3. PRIORITY 3: Fall back to original path
@@ -1866,25 +1854,16 @@ class ProjectBuilder:
                     if os.path.exists(original_path):
                         source_path = original_path
                         source_path_used = "Original"
-                        # print(f"  ✅ Using ORIGINAL file: {source_path}")
                         if cache_manager and hasattr(cache_manager, 'cache_stats'): 
                             cache_manager.cache_stats['misses'] += 1
                     else:
-                        # print(f"  ⚠️ Original path ({original_path}) does not exist.")
-                        pass
-                        
                         # Check if path might be using wrong separators
                         alt_path = original_path.replace('\\', '/') if '\\' in original_path else original_path.replace('/', '\\')
                         if os.path.exists(alt_path):
                             source_path = alt_path
                             source_path_used = "Original (Alt Separator)"
-                            # print(f"  ✅ Using ALTERNATIVE SEPARATOR path: {source_path}")
                             if cache_manager and hasattr(cache_manager, 'cache_stats'): 
                                 cache_manager.cache_stats['misses'] += 1
-                
-                elif not source_path and not original_path:
-                    # print(f"  ℹ️ Original path was not provided in template data.")
-                    pass
                     
                 # 4. PRIORITY 4: Special handling for imported files
                 if not source_path and original_path and "Imported from:" in str(original_path) and cached_path:
@@ -1892,43 +1871,50 @@ class ProjectBuilder:
                     if os.path.exists(cached_path):
                         source_path = cached_path
                         source_path_used = "Import Cache"
-                        # print(f"  ✅ Using IMPORT CACHE file for imported file: {source_path}")
                         if cache_manager and hasattr(cache_manager, 'cache_stats'): 
                             cache_manager.cache_stats['hits'] += 1
-                    else:
-                        # print(f"  ⚠️ Import cache path ({cached_path}) does not exist.")
-                        pass
 
                 # Final check - Skip if no valid source path found
                 if not source_path:
-                    error_msg = f"  ❌ ERROR: No valid source path found for file '{original_filename_for_debug}'."
-                    # print(error_msg)
-                    print(f"      Attempted Cache Path: {cached_path_attempted}")
-                    print(f"      Attempted Original Path: {original_path_attempted}")
+                    error_msg = f"ERROR: No valid source path found for file '{original_filename_for_debug}'."
+                    print(error_msg)
                     error_messages.append(error_msg)
                     continue
 
                 # Copy the file
-                # print(f"  ⚙️ Attempting copy: '{source_path}' ({source_path_used}) -> '{dest_path}'")
                 try:
                     # Verify that the source file exists before copying
                     if not os.path.exists(source_path):
-                        error_msg = f"  ❌ ERROR: Source file does not exist: {source_path}"
-                        # print(error_msg)
+                        error_msg = f"ERROR: Source file does not exist: {source_path}"
+                        print(error_msg)
                         error_messages.append(error_msg)
                         continue
+                    
+                    # Check source file size before copying
+                    source_size = os.path.getsize(source_path)
                     
                     # Ensure destination directory exists (double check)
                     os.makedirs(os.path.dirname(dest_path), exist_ok=True)
                     
                     # Use shutil.copy2 for the actual file copy
                     shutil.copy2(source_path, dest_path)
+                    
+                    # Check destination file size after copying
+                    if os.path.exists(dest_path):
+                        dest_size = os.path.getsize(dest_path)
+                        
+                        if source_size != dest_size:
+                            error_msg = f"ERROR: File size mismatch! Source: {source_size}, Dest: {dest_size}"
+                            print(error_msg)
+                            error_messages.append(error_msg)
+                            continue
+                    else:
+                        error_msg = f"ERROR: Destination file was not created: {dest_path}"
+                        print(error_msg)
+                        error_messages.append(error_msg)
+                        continue
+                    
                     copied_files.append(dest_path)
-                    print(f"  ✅ Copied file successfully: {dest_path}")
-
-                    # Log successful renaming
-                    if file_name != original_filename_for_debug:
-                        print(f"  ℹ️ File renamed during copy: '{original_filename_for_debug}' -> '{file_name}'")
 
                     # Replace placeholders in text files only, not in binary files
                     if not is_binary and placeholders and self._might_contain_placeholders(source_path):
@@ -1938,16 +1924,15 @@ class ProjectBuilder:
                             content = self._replace_placeholders(content, placeholders)
                             with open(dest_path, 'w', encoding='utf-8') as f:
                                 f.write(content)
-                            print(f"  ✅ Replaced placeholders in: {dest_path}")
                         except Exception as e:
-                            print(f"  ⚠️ WARNING: Error replacing placeholders in {dest_path}: {str(e)}")
+                            print(f"WARNING: Error replacing placeholders in {dest_path}: {str(e)}")
                 except Exception as e:
                     # More specific copy error logging
-                    error_msg = f"  ❌ ERROR: Failed to copy file using {source_path_used} path."
+                    error_msg = f"ERROR: Failed to copy file using {source_path_used} path."
                     print(error_msg)
-                    print(f"      Source: {source_path}")
-                    print(f"      Destination: {dest_path}")
-                    print(f"      Error Details: {str(e)}")
+                    print(f"  Source: {source_path}")
+                    print(f"  Destination: {dest_path}")
+                    print(f"  Error Details: {str(e)}")
                     error_messages.append(f"{error_msg} - {str(e)}")
                     import traceback
                     traceback.print_exc() # Keep traceback for detailed debugging

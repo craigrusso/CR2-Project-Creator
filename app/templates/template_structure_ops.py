@@ -289,6 +289,25 @@ class TemplateStructureOps:
                     file_info['rename_flag'] = True
                     file_info['uses_project_name'] = True
                 
+                # Extract project name options from item and user_data
+                project_name_keys = [
+                    'project_name_mode', 'uses_project_name', 'rename_flag',
+                    'custom_separator', 'custom_pattern', 'original_name',
+                    'original_extension'
+                ]
+                
+                # Check item directly first
+                for key in project_name_keys:
+                    if key in item:
+                        file_info[key] = item[key]
+                
+                # Then check item.user_data if it exists
+                if 'user_data' in item and isinstance(item['user_data'], dict):
+                    user_data = item['user_data']
+                    for key in project_name_keys:
+                        if key in user_data:
+                            file_info[key] = user_data[key]
+                
                 # Check if the file (by original_path) is already in the files_array to prevent duplicates
                 exists = any(existing.get('original_path') == original_path for existing in files_array)
                 
