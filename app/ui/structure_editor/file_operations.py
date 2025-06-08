@@ -16,8 +16,8 @@ from PyQt6.QtWidgets import (
     QTabWidget, QWidget, QFormLayout, QListWidget, QMessageBox,
     QTreeWidgetItem, QApplication
 )
-from PyQt6.QtCore import Qt, QDate, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import Qt, QDate, QTimer, pyqtSignal
+from PyQt6.QtGui import QFont, QBrush, QColor
 
 # Import binary file handler
 from app.utils.binary_file_handler import BinaryFileHandler
@@ -94,26 +94,45 @@ class FileOperations:
         self.editor = editor
         self.binary_handler = BinaryFileHandler()
         self.current_context_item = None
+        self._context_menu_connected = False  # Track connection state
         
         # Connect context menu if tree widget is available
         if self.tree_widget:
-            self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-            self.tree_widget.customContextMenuRequested.connect(self.create_context_menu)
+            self._connect_context_menu()
             print("DEBUG: Connected context menu to tree widget")
         else:
             print("DEBUG: No tree widget provided to FileOperations")
         
         print("DEBUG: Initialized file operations handler")
 
-    def set_tree_widget(self, tree_widget):
-        """Set or update the tree widget reference"""
-        self.tree_widget = tree_widget
-        if self.tree_widget:
+    def _connect_context_menu(self):
+        """Connect context menu signal only if not already connected"""
+        if self.tree_widget and not self._context_menu_connected:
             self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             self.tree_widget.customContextMenuRequested.connect(self.create_context_menu)
+            self._context_menu_connected = True
+            print("DEBUG: Context menu signal connected")
+        elif self._context_menu_connected:
+            print("DEBUG: Context menu already connected, skipping duplicate connection")
+
+    def set_tree_widget(self, tree_widget):
+        """Set or update the tree widget reference"""
+        # Disconnect from old tree widget if needed
+        if self.tree_widget and self._context_menu_connected:
+            try:
+                self.tree_widget.customContextMenuRequested.disconnect(self.create_context_menu)
+                self._context_menu_connected = False
+                print("DEBUG: Disconnected context menu from old tree widget")
+            except:
+                pass  # Connection might not exist
+        
+        self.tree_widget = tree_widget
+        if self.tree_widget:
+            self._connect_context_menu()
             print("DEBUG: Updated tree widget reference and connected context menu")
         else:
             print("DEBUG: Tree widget set to None")
+            self._context_menu_connected = False
 
     def add_file(self, parent_item=None, file_name=None, file_type=None):
         """Add a new file to the structure"""
@@ -429,20 +448,24 @@ class FileOperations:
         
         print("DEBUG: create_context_menu - tree widget available, creating context menu")
         
-        # Store current item for context - with proper error handling
+        # Get selected items and item at position
         try:
-            self.current_context_item = self.tree_widget.itemAt(position)
-            item = self.current_context_item
+            selected_items = self.tree_widget.selectedItems()
+            item_at_position = self.tree_widget.itemAt(position)
+            
+            # If clicked item is not in selection, select just that item
+            if item_at_position and item_at_position not in selected_items:
+                self.tree_widget.setCurrentItem(item_at_position)
+                selected_items = [item_at_position]
+            
+            # Use the clicked item or first selected item as context
+            self.current_context_item = item_at_position or (selected_items[0] if selected_items else None)
+            
         except (RuntimeError, AttributeError):
-            print("DEBUG: create_context_menu - error getting item at position")
+            print("DEBUG: create_context_menu - error getting items")
             return
         
-        # Safely get item text for debugging
-        try:
-            item_text = item.text(0) if item else 'None'
-        except (RuntimeError, AttributeError):
-            item_text = 'Invalid/Deleted Item'
-        print(f"DEBUG: Item at position: {item_text}")
+        print(f"DEBUG: Selected items count: {len(selected_items)}")
         
         # Create menu with error handling
         try:
@@ -484,64 +507,83 @@ class FileOperations:
         add_folder_action = menu.addAction("Add Folder")
         add_folder_action.triggered.connect(lambda: self.editor.add_folder() if hasattr(self.editor, 'add_folder') else None)
         
-        if item:
+        if selected_items:
             try:
                 menu.addSeparator()
                 
-                # Item-specific actions
-                rename_action = menu.addAction("Rename")
-                rename_action.triggered.connect(lambda: self.tree_widget.editItem(item, 0) if self.tree_widget else None)
-
-                delete_action = menu.addAction("Delete")
-                delete_action.triggered.connect(lambda: self._delete_item(item))
-                    
-                # Get item data for file-specific actions - with error handling
-                try:
-                    item_data = item.data(0, Qt.ItemDataRole.UserRole) if item else {}
-                except (RuntimeError, AttributeError):
-                    item_data = {}
-                    
-                if isinstance(item_data, dict) and item_data.get('type') == 'file':
+                # Multi-selection vs single selection actions
+                if len(selected_items) == 1:
+                    item = selected_items[0]
+                    # Single item actions
+                    rename_action = menu.addAction("Rename")
+                    rename_action.triggered.connect(lambda: self.tree_widget.editItem(item, 0) if self.tree_widget else None)
+                
+                # Delete action (works for single or multiple)
+                delete_text = f"Delete {len(selected_items)} items" if len(selected_items) > 1 else "Delete"
+                delete_action = menu.addAction(delete_text)
+                delete_action.triggered.connect(lambda: self._delete_selected_items(selected_items))
+                
+                # Check if we have any files selected
+                file_items = []
+                for item in selected_items:
+                    try:
+                        item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+                        if isinstance(item_data, dict) and item_data.get('type') == 'file':
+                            file_items.append(item)
+                    except (RuntimeError, AttributeError):
+                        continue
+                
+                if file_items:
                     menu.addSeparator()
                     
-                    # Original project name action
-                    action_text = "Revert to Original Name" if item_data.get('rename_flag') or item_data.get('uses_project_name') else "Use Project Name"
-                    use_project_name_action = menu.addAction(action_text)
-                    use_project_name_action.triggered.connect(lambda: self.editor._toggle_project_name_for_file(item) if hasattr(self.editor, '_toggle_project_name_for_file') else None)
-                
-                # Versioning menu for files
-                versioning_menu = menu.addMenu("Versioning")
-                
-                # Date sequence option
-                date_action = versioning_menu.addAction("Date Sequences...")
-                date_action.triggered.connect(lambda: self._configure_date_sequences(item))
-                
-                # Separator and project name options
-                menu.addSeparator()
-                
-                # Project name mode actions
-                project_menu = menu.addMenu("Project Name")
-                
-                prepend_action = project_menu.addAction("Prepend Project Name")
-                prepend_action.triggered.connect(lambda: self._set_project_name_mode(item, 'prepend'))
-                
-                append_action = project_menu.addAction("Append Project Name")
-                append_action.triggered.connect(lambda: self._set_project_name_mode(item, 'append'))
-                
-                replace_action = project_menu.addAction("Replace with Project Name")
-                replace_action.triggered.connect(lambda: self._set_project_name_mode(item, 'replace'))
-                
-                menu.addSeparator()
-                
-                # Custom patterns
-                patterns_action = menu.addAction("Custom Naming Patterns...")
-                patterns_action.triggered.connect(lambda: self._configure_custom_patterns(item))
-                
-                # Separator and other options
-                menu.addSeparator()
+                    if len(file_items) == 1:
+                        # Single file - original actions
+                        item_data = file_items[0].data(0, Qt.ItemDataRole.UserRole) or {}
+                        action_text = "Revert to Original Name" if item_data.get('rename_flag') or item_data.get('uses_project_name') else "Use Project Name"
+                        use_project_name_action = menu.addAction(action_text)
+                        use_project_name_action.triggered.connect(lambda: self.editor._toggle_project_name_for_file(file_items[0]) if hasattr(self.editor, '_toggle_project_name_for_file') else None)
+                        
+                        # Versioning menu for single file
+                        versioning_menu = menu.addMenu("Versioning")
+                        date_action = versioning_menu.addAction("Date Sequences...")
+                        date_action.triggered.connect(lambda: self._configure_date_sequences(file_items[0]))
+                        
+                        patterns_action = menu.addAction("Custom Naming Patterns...")
+                        patterns_action.triggered.connect(lambda: self._configure_custom_patterns(file_items[0]))
+                    else:
+                        # Multiple files - bulk operations
+                        bulk_menu = menu.addMenu(f"Bulk Operations ({len(file_items)} files)")
+                        
+                        # Bulk project name operations
+                        prepend_bulk_action = bulk_menu.addAction("Prepend Project Name to All")
+                        prepend_bulk_action.triggered.connect(lambda: self._bulk_set_project_name_mode(file_items, 'prepend'))
+                        
+                        append_bulk_action = bulk_menu.addAction("Append Project Name to All")
+                        append_bulk_action.triggered.connect(lambda: self._bulk_set_project_name_mode(file_items, 'append'))
+                        
+                        replace_bulk_action = bulk_menu.addAction("Replace All with Project Name")
+                        replace_bulk_action.triggered.connect(lambda: self._bulk_set_project_name_mode(file_items, 'replace'))
+                        
+                        bulk_menu.addSeparator()
+                        
+                        revert_bulk_action = bulk_menu.addAction("Revert All to Original Names")
+                        revert_bulk_action.triggered.connect(lambda: self._bulk_revert_to_original(file_items))
+                    
+                    # Project name mode actions (available for single or multiple)
+                    menu.addSeparator()
+                    project_menu = menu.addMenu("Project Name")
+                    
+                    prepend_action = project_menu.addAction("Prepend Project Name")
+                    prepend_action.triggered.connect(lambda: self._bulk_set_project_name_mode(file_items, 'prepend'))
+                    
+                    append_action = project_menu.addAction("Append Project Name")
+                    append_action.triggered.connect(lambda: self._bulk_set_project_name_mode(file_items, 'append'))
+                    
+                    replace_action = project_menu.addAction("Replace with Project Name")
+                    replace_action.triggered.connect(lambda: self._bulk_set_project_name_mode(file_items, 'replace'))
                 
             except (RuntimeError, AttributeError) as e:
-                print(f"DEBUG: Error building context menu for item: {e}")
+                print(f"DEBUG: Error building context menu for items: {e}")
         
         # Show menu if it has actions
         if not menu.isEmpty():
@@ -575,6 +617,10 @@ class FileOperations:
         # Get current item data
         item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
         
+        # Store original name if not already stored
+        if 'original_name' not in item_data:
+            item_data['original_name'] = item.text(0)
+        
         # Update the project name mode
         item_data['project_name_mode'] = mode
         item_data['uses_project_name'] = True
@@ -583,10 +629,13 @@ class FileOperations:
         # Update the tree item data
         item.setData(0, Qt.ItemDataRole.UserRole, item_data)
         
-        print(f"DEBUG: Set {mode} mode for {item.text(0)}")
+        # Update the display name
+        self._update_project_name_display(item, mode)
         
-        # Update visual display if needed
+        # Update visual styling
         self._update_item_display(item)
+        
+        print(f"DEBUG: Set {mode} mode for {item.text(0)}")
     
     def _configure_custom_patterns(self, item):
         """Configure custom naming patterns for file"""
@@ -598,46 +647,53 @@ class FileOperations:
             
             # Clear any pending events to prevent unwanted context menu triggers
             if self.tree_widget:
-                self.tree_widget.clearFocus()
+                # Temporarily disable context menu to prevent spurious triggers
+                original_policy = self.tree_widget.contextMenuPolicy()
+                self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+                
+                # Also disable the structure editor's context menu if available
+                if self.editor and hasattr(self.editor, '_disable_context_menu_temporarily'):
+                    self.editor._disable_context_menu_temporarily()
+                
                 # Process any pending events to clear the event queue
                 from PyQt6.QtWidgets import QApplication
                 QApplication.processEvents()
-                # Re-focus the tree widget properly
+                
+                # Use a timer to restore context menu after a short delay
+                QTimer.singleShot(100, lambda: self._restore_context_menu(original_policy))
+                
+                # Ensure focus is properly managed
+                self.tree_widget.clearFocus()
                 self.tree_widget.setFocus()
     
     def _update_item_display(self, item):
-        """Update the visual display of an item based on its data"""
+        """Update the visual display of an item based on its properties"""
         if not item:
             return
         
-        item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
-        original_name = item_data.get('original_name', item.text(0))
-        
-        # Clean any existing display formatting
-        display_name = original_name
-        if ' ' in display_name and any(display_name.startswith(icon) for icon in ['🎬', '🎵', '🖼️', '📄', '📊', '📽️', '📦', '💻']):
-            display_name = display_name.split(' ', 1)[1]
-        
-        # Apply project name placeholder if needed
-        if item_data.get('uses_project_name', False):
-            mode = item_data.get('project_name_mode', 'replace')
-            if mode == 'replace':
-                display_name = "${PROJECT_NAME}"
-                if '.' in original_name:
-                    extension = original_name.split('.')[-1]
-                    display_name = f"${{PROJECT_NAME}}.{extension}"
-            elif mode == 'prepend':
-                display_name = f"${{PROJECT_NAME}}.{original_name}"
-            elif mode == 'append':
-                if '.' in original_name:
-                    base, ext = original_name.rsplit('.', 1)
-                    display_name = f"{base}.${{PROJECT_NAME}}.{ext}"
-                else:
-                    display_name = f"{original_name}.${{PROJECT_NAME}}"
-        
-        # Set display text without emoji icons
-        item.setText(0, display_name)
-    
+        try:
+            item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+            
+            # Apply styling for project name files
+            if item_data.get('uses_project_name') or item_data.get('rename_flag'):
+                font = item.font(0)
+                font.setItalic(True)
+                item.setFont(0, font)
+                
+                # Use a blue color for project name files
+                item.setForeground(0, QBrush(QColor("#4A9BFF")))
+            else:
+                # Reset to normal styling
+                font = item.font(0)
+                font.setItalic(False)
+                item.setFont(0, font)
+                
+                # Reset color to default
+                item.setForeground(0, QBrush())
+                
+        except (RuntimeError, AttributeError) as e:
+            print(f"DEBUG: Error updating item display: {e}")
+
     def _configure_versioning(self, item):
         """Configure versioning for file"""
         if not item:
@@ -650,11 +706,23 @@ class FileOperations:
             
             # Clear any pending events to prevent unwanted context menu triggers
             if self.tree_widget:
-                self.tree_widget.clearFocus()
+                # Temporarily disable context menu to prevent spurious triggers
+                original_policy = self.tree_widget.contextMenuPolicy()
+                self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+                
+                # Also disable the structure editor's context menu if available
+                if self.editor and hasattr(self.editor, '_disable_context_menu_temporarily'):
+                    self.editor._disable_context_menu_temporarily()
+                
                 # Process any pending events to clear the event queue
                 from PyQt6.QtWidgets import QApplication
                 QApplication.processEvents()
-                # Re-focus the tree widget properly
+                
+                # Use a timer to restore context menu after a short delay
+                QTimer.singleShot(100, lambda: self._restore_context_menu(original_policy))
+                
+                # Ensure focus is properly managed
+                self.tree_widget.clearFocus()
                 self.tree_widget.setFocus()
     
     def _configure_date_sequences(self, item):
@@ -667,12 +735,31 @@ class FileOperations:
             
             # Clear any pending events to prevent unwanted context menu triggers
             if self.tree_widget:
-                self.tree_widget.clearFocus()
+                # Temporarily disable context menu to prevent spurious triggers
+                original_policy = self.tree_widget.contextMenuPolicy()
+                self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+                
+                # Also disable the structure editor's context menu if available
+                if self.editor and hasattr(self.editor, '_disable_context_menu_temporarily'):
+                    self.editor._disable_context_menu_temporarily()
+                
                 # Process any pending events to clear the event queue
                 from PyQt6.QtWidgets import QApplication
                 QApplication.processEvents()
-                # Re-focus the tree widget properly
+                
+                # Use a timer to restore context menu after a short delay
+                # This prevents any immediate context menu triggers from stray events
+                QTimer.singleShot(100, lambda: self._restore_context_menu(original_policy))
+                
+                # Ensure focus is properly managed
+                self.tree_widget.clearFocus()
                 self.tree_widget.setFocus()
+    
+    def _restore_context_menu(self, original_policy):
+        """Restore the context menu policy after a delay"""
+        if self.tree_widget:
+            self.tree_widget.setContextMenuPolicy(original_policy)
+            print("DEBUG: Context menu policy restored after date sequence dialog")
     
     def _apply_pattern_to_item(self, item, pattern_data):
         """Apply custom pattern to item"""
@@ -954,8 +1041,16 @@ class FileOperations:
             # Set data on the tree item
             new_item.setData(0, Qt.ItemDataRole.UserRole, new_data)
             
-            # Set display text without emoji icons
-            new_item.setText(0, new_name)
+            # If the original item had project name settings, apply them to the date sequence name
+            if original_data.get('uses_project_name') and item_type == 'file':
+                # Apply project name to the date-sequenced filename
+                mode = original_data.get('project_name_mode', 'prepend')
+                self._update_project_name_display(new_item, mode)
+                # Update visual styling
+                self._update_item_display(new_item)
+            else:
+                # Set display text without emoji icons
+                new_item.setText(0, new_name)
             
             # Force immediate icon refresh to ensure proper system icons
             try:
@@ -1095,11 +1190,23 @@ class FileOperations:
             
             # Clear any pending events to prevent unwanted context menu triggers
             if self.tree_widget:
-                self.tree_widget.clearFocus()
+                # Temporarily disable context menu to prevent spurious triggers
+                original_policy = self.tree_widget.contextMenuPolicy()
+                self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+                
+                # Also disable the structure editor's context menu if available
+                if self.editor and hasattr(self.editor, '_disable_context_menu_temporarily'):
+                    self.editor._disable_context_menu_temporarily()
+                
                 # Process any pending events to clear the event queue
                 from PyQt6.QtWidgets import QApplication
                 QApplication.processEvents()
-                # Re-focus the tree widget properly
+                
+                # Use a timer to restore context menu after a short delay
+                QTimer.singleShot(100, lambda: self._restore_context_menu(original_policy))
+                
+                # Ensure focus is properly managed
+                self.tree_widget.clearFocus()
                 self.tree_widget.setFocus()
     
     def _configure_date_sequences_for_folder(self, folder_item):
@@ -1118,11 +1225,23 @@ class FileOperations:
             
             # Clear any pending events to prevent unwanted context menu triggers
             if self.tree_widget:
-                self.tree_widget.clearFocus()
+                # Temporarily disable context menu to prevent spurious triggers
+                original_policy = self.tree_widget.contextMenuPolicy()
+                self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+                
+                # Also disable the structure editor's context menu if available
+                if self.editor and hasattr(self.editor, '_disable_context_menu_temporarily'):
+                    self.editor._disable_context_menu_temporarily()
+                
                 # Process any pending events to clear the event queue
                 from PyQt6.QtWidgets import QApplication
                 QApplication.processEvents()
-                # Re-focus the tree widget properly
+                
+                # Use a timer to restore context menu after a short delay
+                QTimer.singleShot(100, lambda: self._restore_context_menu(original_policy))
+                
+                # Ensure focus is properly managed
+                self.tree_widget.clearFocus()
                 self.tree_widget.setFocus()
     
     def _apply_versioning_to_folder(self, folder_item, versioning_data):
@@ -1216,6 +1335,155 @@ class FileOperations:
         
         replace_folder_action = project_menu.addAction("Replace with Project Name")
         replace_folder_action.triggered.connect(lambda: self._apply_project_name_to_folder(item, 'replace'))
+
+    def _delete_selected_items(self, items):
+        """Delete multiple selected items"""
+        if not items or not self.tree_widget:
+            return
+
+        # Confirm deletion
+        count = len(items)
+        item_text = "item" if count == 1 else "items"
+        
+        reply = QMessageBox.question(
+            self.tree_widget,
+            "Confirm Deletion",
+            f"Are you sure you want to delete the selected {count} {item_text}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            for item in items:
+                try:
+                    # Get parent before deletion
+                    parent = item.parent()
+                    
+                    # Remove the item
+                    if parent:
+                        parent.removeChild(item)
+                    else:
+                        index = self.tree_widget.indexOfTopLevelItem(item)
+                        if index >= 0:
+                            self.tree_widget.takeTopLevelItem(index)
+                    
+                    print(f"DEBUG: Deleted item '{item.text(0)}'")
+                except (RuntimeError, AttributeError) as e:
+                    print(f"DEBUG: Error deleting item: {e}")
+
+    def _bulk_set_project_name_mode(self, items, mode):
+        """Set project name mode for multiple files"""
+        if not items:
+            return
+        
+        print(f"DEBUG: Setting {mode} mode for {len(items)} files")
+        
+        for item in items:
+            try:
+                # Get current item data
+                item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+                
+                # Only apply to files
+                if item_data.get('type') != 'file':
+                    continue
+                
+                # Store original name if not already stored
+                if 'original_name' not in item_data:
+                    item_data['original_name'] = item.text(0)
+                
+                # Update the project name mode
+                item_data['project_name_mode'] = mode
+                item_data['uses_project_name'] = True
+                item_data['rename_flag'] = True
+                
+                # Update the tree item data
+                item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+                
+                # Update the display name
+                self._update_project_name_display(item, mode)
+                
+                # Update visual styling
+                self._update_item_display(item)
+                
+                print(f"DEBUG: Set {mode} mode for {item.text(0)}")
+            except (RuntimeError, AttributeError) as e:
+                print(f"DEBUG: Error setting project name mode for item: {e}")
+
+    def _bulk_revert_to_original(self, items):
+        """Revert multiple files to their original names"""
+        if not items:
+            return
+        
+        print(f"DEBUG: Reverting {len(items)} files to original names")
+        
+        for item in items:
+            try:
+                # Get current item data
+                item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+                
+                # Only apply to files that use project name
+                if item_data.get('type') != 'file' or not item_data.get('uses_project_name'):
+                    continue
+                
+                # Get original name
+                original_name = item_data.get('original_name', item.text(0))
+                
+                # Reset project name flags
+                item_data['uses_project_name'] = False
+                item_data['rename_flag'] = False
+                item_data.pop('project_name_mode', None)
+                
+                # Update the tree item data
+                item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+                
+                # Reset display name
+                item.setText(0, original_name)
+                
+                # Update visual styling
+                self._update_item_display(item)
+                
+                print(f"DEBUG: Reverted {item.text(0)} to original name")
+            except (RuntimeError, AttributeError) as e:
+                print(f"DEBUG: Error reverting item to original name: {e}")
+
+    def _update_project_name_display(self, item, mode):
+        """Update the display name of an item based on project name mode"""
+        if not item:
+            return
+        
+        try:
+            item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+            original_name = item_data.get('original_name', item.text(0))
+            
+            # Split filename into base and extension
+            name_parts = original_name.rsplit('.', 1)
+            if len(name_parts) == 2:
+                base_name, extension = name_parts
+                extension = '.' + extension
+            else:
+                base_name = original_name
+                extension = ''
+            
+            # Create the display name based on mode
+            placeholder = "${PROJECT_NAME}"
+            separator = "_"
+            
+            if mode == 'replace':
+                display_name = f"{placeholder}{extension}"
+            elif mode == 'prepend':
+                display_name = f"{placeholder}{separator}{base_name}{extension}"
+            elif mode == 'append':
+                display_name = f"{base_name}{separator}{placeholder}{extension}"
+            else:
+                # Default to replace
+                display_name = f"{placeholder}{extension}"
+            
+            # Update the display
+            item.setText(0, display_name)
+            print(f"DEBUG: Updated display name to: {display_name}")
+            
+        except (RuntimeError, AttributeError) as e:
+            print(f"DEBUG: Error updating project name display: {e}")
 
 
 class CustomPatternsDialog(QDialog):

@@ -473,6 +473,11 @@ class EnhancedStructureEditor(QDialog):
         """Show context menu for tree widget"""
         print(f"DEBUG: _show_context_menu called at position {position}")
         
+        # Check if context menu is temporarily disabled
+        if hasattr(self, '_context_menu_disabled') and self._context_menu_disabled:
+            print("DEBUG: Context menu temporarily disabled, ignoring request")
+            return
+        
         # Get item at position
         item = self.tree_widget.itemAt(position)
 
@@ -687,49 +692,58 @@ class EnhancedStructureEditor(QDialog):
         return True
         
     def _toggle_project_name_for_file(self, item):
-        """Toggle between using project name and original name for a file"""
-        if not item:
-            return False
-            
-        # Get item data
-        item_data = item.data(0, Qt.ItemDataRole.UserRole)
-        if not isinstance(item_data, dict) or item_data.get('type') != 'file':
-            return False
-            
-        # Check current state - prioritize rename_flag but check uses_project_name for backward compatibility
-        rename_flag = item_data.get('rename_flag', False)
-        uses_project_name = item_data.get('uses_project_name', False)
+        """
+        Toggle whether a file uses the project name
         
-        if rename_flag or uses_project_name:
-            # Currently using project name, switch back to original name display
-            original_name = item_data.get('original_name')
-            if not original_name:
-                print("ERROR: Original name not found, cannot toggle")
-                return False
-                
-            # Update display to show original name
-            item.setText(0, original_name)
-            
-            # Update data - turn off both flags but keep original_name for future use
-            item_data['rename_flag'] = False  # Primary flag indicating rename should not happen
-            item_data['uses_project_name'] = False  # Keep in sync for backward compatibility
-            
-            # Restore normal styling
-            font = item.font(0)
-            font.setItalic(False)
-            item.setFont(0, font)
-            item.setForeground(0, QBrush(QColor("#000000")))
-            
-            print(f"DEBUG: Toggled file back to original name display: {original_name}")
+        Args:
+            item: The tree item representing the file
+        """
+        if not item:
+            return
+        
+        # Get current item data
+        item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+        
+        # Only apply to files
+        if item_data.get('type') != 'file':
+            return
+        
+        # Toggle the rename flag
+        current_uses_project_name = item_data.get('uses_project_name', False)
+        current_rename_flag = item_data.get('rename_flag', False)
+        
+        # Toggle state
+        if current_uses_project_name or current_rename_flag:
+            # Currently using project name - revert to original
+            item_data['uses_project_name'] = False
+            item_data['rename_flag'] = False
+            display_name = item_data.get('original_name', item_data['name'])
         else:
-            # Not using project name, switch to using project name
-            return self._use_project_name_for_file(item)
+            # Currently using original name - switch to project name
+            item_data['uses_project_name'] = True
+            item_data['rename_flag'] = True
             
-        # Update the data
+            # Store original name if not already stored
+            if 'original_name' not in item_data:
+                item_data['original_name'] = item_data['name']
+            
+            # Extract extension for display
+            original_name = item_data.get('original_name', item_data['name'])
+            original_extension = item_data.get('original_extension', os.path.splitext(original_name)[1])
+            
+            # Store extension if not already stored
+            if 'original_extension' not in item_data:
+                item_data['original_extension'] = original_extension
+            
+            display_name = f"${{PROJECT_NAME}}{original_extension}"
+        
+        # Update the tree item
+        item.setText(0, display_name)
         item.setData(0, Qt.ItemDataRole.UserRole, item_data)
         
-        return True
+        print(f"DEBUG: Toggled project name for {display_name}")
 
+    # --- Template Name, Type, and Category Management ---
     def _on_template_name_changed(self, new_name_full):
         """Handle template name changed event"""
         if not new_name_full:
@@ -1198,75 +1212,15 @@ class EnhancedStructureEditor(QDialog):
             import traceback
             traceback.print_exc()
 
-    # --- Template Name, Type, and Category Management ---
-    def _on_template_name_changed(self, new_name_full):
-        """Handle template name changed event"""
-        if not new_name_full:
-            return
+    def _disable_context_menu_temporarily(self):
+        """Disable context menu temporarily to prevent unwanted triggers"""
+        print("DEBUG: Disabling context menu temporarily")
+        self._context_menu_disabled = True
         
-        # Debug logging for rename tracking
-        old_template_name = self.template_name if hasattr(self, 'template_name') else "None"
-        old_structure_name = self.structure_name if hasattr(self, 'structure_name') else "None"
+        # Re-enable after a short delay using QTimer
+        QTimer.singleShot(500, self._re_enable_context_menu)
         
-        print(f"🔶 TEMPLATE NAME LISTENER: Name changing from '{old_template_name}' to '{new_name_full}'")
-        print(f"🔶 TEMPLATE NAME LISTENER: Original structure name: '{self.original_structure_name}'")
-        
-        # Remove any Template_ prefix from display name
-        clean_name = new_name_full
-        if clean_name.startswith("Template_"):
-            clean_name = clean_name[9:]  # Remove prefix
-        
-        # Update template name attribute - storing the clean name without prefix
-        self.template_name = clean_name
-        
-        # Update window title
-        self.setWindowTitle(f"{'Add New' if self.is_new else 'Edit'} Template - {clean_name}")
-        
-        # For structure_name, preserve Template_ prefix for existing templates
-        if not self.is_new and self.original_structure_name.startswith("Template_"):
-            # Structure name should include Template_ prefix
-            self.structure_name = f"Template_{clean_name}"
-        else:
-            # For new templates or templates without prefix, set structure name to match template name
-            # The prefix will be added when saving if needed
-            self.structure_name = clean_name
-        
-        print(f"🔶 TEMPLATE NAME LISTENER: Template name changed to '{clean_name}', structure_name='{self.structure_name}'")
-        print(f"🔶 TEMPLATE NAME LISTENER: Will be stored as '{self.structure_name}' in template manager")
-        
-        # Update UI builder if available
-        if hasattr(self, 'ui_builder') and hasattr(self.ui_builder, 'template_name_field'):
-            # Only update if the text has actually changed to avoid recursion
-            current_text = self.ui_builder.template_name_field.text()
-            if current_text != clean_name:
-                print(f"🔶 TEMPLATE NAME LISTENER: Updated template name field to '{clean_name}'")
-                self.ui_builder.template_name_field.setText(clean_name)
-        
-        # If we have access to the template manager, check if this name already exists
-        template_manager = None
-        if hasattr(self, 'parent') and self.parent and hasattr(self.parent, 'template_manager'):
-            template_manager = self.parent.template_manager
-        elif hasattr(self, 'parent') and self.parent and hasattr(self.parent, 'app') and hasattr(self.parent.app, 'template_manager'):
-            template_manager = self.parent.app.template_manager
-        
-        # Check if we need to update the UI or notify listeners of the name change
-        if not self.is_new and old_template_name != clean_name:
-            # This is a rename operation - store the information for later use during save
-            print(f"🔶 TEMPLATE NAME LISTENER: Detected template rename from '{old_template_name}' to '{clean_name}'")
-            
-            # Store the rename information for the accept method
-            self.is_rename_operation = True
-            self.old_template_name = old_template_name
-            self.new_template_name = clean_name
-            
-            # Emit a signal if this editor has one
-            if hasattr(self, 'template_renamed') and callable(getattr(self, 'template_renamed', None)):
-                print(f"🔶 TEMPLATE NAME LISTENER: Emitting template_renamed signal")
-                self.template_renamed.emit(old_template_name, clean_name)
-        
-        if template_manager and hasattr(template_manager, 'get_template_by_name'):
-            existing_template = template_manager.get_template_by_name(clean_name)
-            if existing_template and (not hasattr(self, 'original_structure_name') or 
-                                     (self.original_structure_name != clean_name and
-                                      f"Template_{self.original_structure_name}" != self.original_structure_name)):
-                print(f"🔶 TEMPLATE NAME LISTENER: WARNING: Template name '{clean_name}' already exists. This may overwrite an existing template.") 
+    def _re_enable_context_menu(self):
+        """Re-enable context menu after temporary disable"""
+        print("DEBUG: Re-enabling context menu")
+        self._context_menu_disabled = False 
