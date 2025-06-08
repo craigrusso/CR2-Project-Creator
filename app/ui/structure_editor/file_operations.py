@@ -1447,7 +1447,7 @@ class FileOperations:
 
     def _configure_naming_pattern(self, item):
         """
-        Configure a custom naming pattern for project name operations
+        Configure a custom naming pattern for project name operations with professional presets
         
         Args:
             item: The file item to update
@@ -1464,39 +1464,28 @@ class FileOperations:
             return False
         
         # Get current pattern or default
-        current_pattern = item_data.get('custom_pattern', '$project$ext')
+        current_pattern = item_data.get('custom_pattern', '$project_$base$ext')
         
-        # Pattern description
-        pattern_desc = """
-Available placeholders:
-$project - Project name
-$base - Original filename without extension
-$ext - File extension (with dot)
-$sep - Custom separator
-
-Example: $project_$base$ext
-"""
+        # Show the professional naming pattern dialog
+        dialog = NamingPatternDialog(self.tree, current_pattern)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            pattern = dialog.get_selected_pattern()
+            if pattern:
+                # Store the pattern
+                item_data['custom_pattern'] = pattern
+                item_data['project_name_mode'] = 'pattern'
+                item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+                
+                # Update the display
+                self._use_project_name_for_file(item, mode='pattern')
+                
+                # Mark editor as modified
+                if hasattr(self.editor, 'mark_modified'):
+                    self.editor.mark_modified()
+                
+                return True
         
-        # Show input dialog to get the pattern
-        pattern, ok = QInputDialog.getText(
-            self.tree, 
-            "Custom Naming Pattern",
-            f"Enter a custom pattern for filename:{pattern_desc}",
-            text=current_pattern
-        )
-        
-        if not ok or not pattern:
-            return False
-        
-        # Store the pattern
-        item_data['custom_pattern'] = pattern
-        item_data['project_name_mode'] = 'pattern'
-        item.setData(0, Qt.ItemDataRole.UserRole, item_data)
-        
-        # Update the display
-        self._use_project_name_for_file(item, mode='pattern')
-        
-        return True
+        return False
 
     def _get_item_data(self, item):
         """Retrieve the dictionary of data associated with a QTreeWidgetItem."""
@@ -1514,6 +1503,330 @@ Example: $project_$base$ext
         # print(f"DEBUG: Updating data for item: {item.text(0)} with: {data_dict}")
         # This needs to be implemented based on how item data is stored
         pass
+
+class NamingPatternDialog(QDialog):
+    """Professional dialog for selecting file naming patterns with industry-specific presets"""
+    
+    def __init__(self, parent, current_pattern="$project_$base$ext"):
+        super().__init__(parent)
+        self.selected_pattern = current_pattern
+        self.setup_ui()
+        
+    def setup_ui(self):
+        from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
+        
+        self.setWindowTitle("Custom Naming Patterns")
+        self.setFixedWidth(620)
+        self.setFixedHeight(720)
+        
+        # Apply dialog styling
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {colors['bg']};
+                color: {colors['text']};
+            }}
+        """)
+        
+        # Main layout
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Title and description
+        title = QLabel("Professional Naming Patterns")
+        title.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {colors['text']};")
+        layout.addWidget(title)
+        
+        desc = QLabel("Choose from industry-tested naming patterns or create your own:")
+        desc.setStyleSheet(f"color: {colors['secondary_text']}; padding-bottom: 10px;")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+        
+        # Pattern categories
+        pattern_categories = {
+            "📝 Standard Patterns": {
+                "description": "Most commonly used across all industries",
+                "patterns": [
+                    ("$project_$base$ext", "ProjectName_filename.ext", "Clean, professional, widely compatible"),
+                    ("$project-$base$ext", "ProjectName-filename.ext", "Dash separator, web-friendly"),
+                    ("$project.$base$ext", "ProjectName.filename.ext", "Period separator, traditional"),
+                    ("$base_$project$ext", "filename_ProjectName.ext", "Original name first"),
+                ]
+            },
+            "🎬 Video/Film Production": {
+                "description": "Optimized for NLE workflows and post-production",
+                "patterns": [
+                    ("$project_$base_v{version}$ext", "ProjectName_filename_v001.ext", "Version numbering for iterations"),
+                    ("$project_$base_{date}$ext", "ProjectName_filename_20250119.ext", "Date stamp for dailies"),
+                    ("$project_{sequence}_{shot}_$base$ext", "ProjectName_Seq01_Shot001_filename.ext", "Sequence and shot organization"),
+                    ("$base_$project_{timecode}$ext", "filename_ProjectName_01h23m45s.ext", "Timecode reference"),
+                ]
+            },
+            "💰 Finance/Accounting": {
+                "description": "Sequential numbering and audit-friendly formats",
+                "patterns": [
+                    ("$project_{invoice}_{counter:4}$ext", "ProjectName_INV_0001.ext", "Invoice numbering with leading zeros"),
+                    ("$project_{date}_{type}_{seq:3}$ext", "ProjectName_20250119_EXP_001.ext", "Date, type, and sequence"),
+                    ("$project_{client}_{ref}$ext", "ProjectName_ClientCode_RefNumber.ext", "Client reference tracking"),
+                    ("{year}{month}{day}_{project}_{counter:3}$ext", "20250119_ProjectName_001.ext", "ISO date prefix"),
+                ]
+            },
+            "💻 Software Development": {
+                "description": "Version control and development-friendly patterns",
+                "patterns": [
+                    ("$project_{feature}_{version}$ext", "ProjectName_feature_v1.2.3.ext", "Feature and version tracking"),
+                    ("$project_{branch}_{commit}$ext", "ProjectName_main_abc123.ext", "Git branch and commit reference"),
+                    ("$base_{env}_{build}$ext", "filename_prod_build-456.ext", "Environment and build number"),
+                    ("$project.{module}.{class}$ext", "ProjectName.auth.User.ext", "Module and class structure"),
+                ]
+            },
+            "🎨 Design/Creative": {
+                "description": "Asset management and creative workflow patterns",
+                "patterns": [
+                    ("$project_{asset}_{resolution}_{variant}$ext", "ProjectName_logo_4K_final.ext", "Asset, resolution, variant"),
+                    ("$project_{category}_{style}_{version}$ext", "ProjectName_branding_minimal_v3.ext", "Category and style tracking"),
+                    ("$base_{project}_{approval}$ext", "filename_ProjectName_approved.ext", "Approval status tracking"),
+                    ("{client}_{project}_{deliverable}_{date}$ext", "ClientName_ProjectName_logo_20250119.ext", "Client deliverable format"),
+                ]
+            },
+            "🎵 Audio Production": {
+                "description": "Multi-track and session-based naming patterns",
+                "patterns": [
+                    ("$project_{track:2}_{instrument}_{take:2}$ext", "ProjectName_01_guitar_03.ext", "Track, instrument, take numbering"),
+                    ("$project_{session}_{mix}_{version}$ext", "ProjectName_Session1_rough_v2.ext", "Session and mix versioning"),
+                    ("$base_{project}_{bpm}_{key}$ext", "filename_ProjectName_120bpm_Cmaj.ext", "BPM and key reference"),
+                    ("$project_{stem}_{bus}_{fx}$ext", "ProjectName_vocal_reverb_hall.ext", "Stem, bus, and effect tracking"),
+                ]
+            }
+        }
+        
+        # Create scroll area for the categories
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setSpacing(20)
+        
+        for category_name, category_data in pattern_categories.items():
+            self.create_category_section(scroll_layout, category_name, category_data)
+        
+        scroll_area.setWidget(scroll_content)
+        scroll_area.setFixedHeight(400)
+        scroll_area.setStyleSheet(f"""
+            QScrollArea {{
+                border: 1px solid {colors['border']};
+                border-radius: 4px;
+                background-color: {colors['card_bg']};
+            }}
+        """)
+        layout.addWidget(scroll_area)
+        
+        # Custom pattern section
+        custom_frame = QFrame()
+        custom_frame.setFrameStyle(QFrame.Shape.Box)
+        custom_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {colors['card_bg']};
+                border: 2px solid {colors['accent']};
+                border-radius: 6px;
+                padding: 10px;
+            }}
+        """)
+        custom_layout = QVBoxLayout(custom_frame)
+        
+        custom_title = QLabel("🔧 Custom Pattern")
+        custom_title.setStyleSheet(f"font-weight: bold; color: {colors['accent']}; font-size: 14px;")
+        custom_layout.addWidget(custom_title)
+        
+        custom_desc = QLabel("Enter any custom pattern using placeholders:")
+        custom_desc.setStyleSheet(f"color: {colors['secondary_text']}; font-size: 11px;")
+        custom_layout.addWidget(custom_desc)
+        
+        self.custom_input = QLineEdit()
+        self.custom_input.setPlaceholderText("e.g., $project_{department}_{date}_$base$ext")
+        self.custom_input.setText(self.selected_pattern)
+        self.custom_input.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {colors['bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                padding: 8px;
+                font-family: 'Courier New', monospace;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {colors['accent']};
+            }}
+        """)
+        custom_layout.addWidget(self.custom_input)
+        
+        use_custom_btn = QPushButton("Use Custom Pattern")
+        use_custom_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {colors['accent']};
+                color: white;
+                border: none;
+                border-radius: 3px;
+                padding: 6px 12px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {colors.get('accent_hover', colors['accent'])};
+            }}
+        """)
+        use_custom_btn.clicked.connect(self.use_custom_pattern)
+        custom_layout.addWidget(use_custom_btn)
+        
+        layout.addWidget(custom_frame)
+        
+        # Placeholder reference
+        ref_frame = QFrame()
+        ref_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {colors['card_bg']};
+                border: 1px solid {colors['border']};
+                border-radius: 4px;
+                padding: 8px;
+            }}
+        """)
+        ref_layout = QVBoxLayout(ref_frame)
+        
+        ref_title = QLabel("📖 Placeholder Reference")
+        ref_title.setStyleSheet(f"font-weight: bold; color: {colors['text']}; font-size: 12px;")
+        ref_layout.addWidget(ref_title)
+        
+        placeholders_text = (
+            "$project = Project name  •  $base = Original filename  •  $ext = File extension\n"
+            "{version} = Version number  •  {date} = Current date  •  {counter:N} = N-digit counter\n"
+            "{client} = Client code  •  {sequence} = Sequence  •  {shot} = Shot number"
+        )
+        placeholders_label = QLabel(placeholders_text)
+        placeholders_label.setStyleSheet(f"color: {colors['secondary_text']}; font-size: 10px;")
+        placeholders_label.setWordWrap(True)
+        ref_layout.addWidget(placeholders_label)
+        
+        layout.addWidget(ref_frame)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        cancel_btn.setStyleSheet(BUTTON_STYLE)
+        button_layout.addWidget(cancel_btn)
+        
+        self.apply_btn = QPushButton("Apply Pattern")
+        self.apply_btn.clicked.connect(self.accept)
+        self.apply_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
+        self.apply_btn.setEnabled(bool(self.selected_pattern))
+        button_layout.addWidget(self.apply_btn)
+        
+        layout.addLayout(button_layout)
+    
+    def create_category_section(self, layout, category_name, category_data):
+        from app.ui.color_scheme_pyqt import colors
+        
+        # Category header
+        header_frame = QFrame()
+        header_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {colors['card_bg']};
+                border: 1px solid {colors['border']};
+                border-radius: 4px;
+                padding: 5px;
+            }}
+        """)
+        header_layout = QVBoxLayout(header_frame)
+        header_layout.setContentsMargins(10, 8, 10, 8)
+        
+        category_title = QLabel(category_name)
+        category_title.setStyleSheet(f"font-weight: bold; color: {colors['text']}; font-size: 13px;")
+        header_layout.addWidget(category_title)
+        
+        category_desc = QLabel(category_data["description"])
+        category_desc.setStyleSheet(f"color: {colors['secondary_text']}; font-size: 11px;")
+        category_desc.setWordWrap(True)
+        header_layout.addWidget(category_desc)
+        
+        layout.addWidget(header_frame)
+        
+        # Pattern options
+        for pattern, example, description in category_data["patterns"]:
+            self.create_pattern_option(layout, pattern, example, description)
+    
+    def create_pattern_option(self, layout, pattern, example, description):
+        from app.ui.color_scheme_pyqt import colors
+        
+        option_frame = QFrame()
+        option_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {colors['bg']};
+                border: 1px solid {colors['border']};
+                border-radius: 3px;
+                padding: 8px;
+            }}
+            QFrame:hover {{
+                border: 1px solid {colors['accent']};
+                background-color: {colors['card_bg']};
+            }}
+        """)
+        option_frame.setCursor(Qt.CursorShape.PointingHandCursor)
+        option_frame.mousePressEvent = lambda event, p=pattern: self.select_pattern(p)
+        
+        option_layout = QVBoxLayout(option_frame)
+        option_layout.setContentsMargins(8, 6, 8, 6)
+        option_layout.setSpacing(3)
+        
+        # Pattern code
+        pattern_label = QLabel(pattern)
+        pattern_label.setStyleSheet(f"""
+            color: {colors['accent']};
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            font-size: 11px;
+        """)
+        option_layout.addWidget(pattern_label)
+        
+        # Example
+        example_label = QLabel(f"Example: {example}")
+        example_label.setStyleSheet(f"color: {colors['text']}; font-size: 10px;")
+        option_layout.addWidget(example_label)
+        
+        # Description
+        desc_label = QLabel(description)
+        desc_label.setStyleSheet(f"color: {colors['secondary_text']}; font-size: 9px;")
+        desc_label.setWordWrap(True)
+        option_layout.addWidget(desc_label)
+        
+        layout.addWidget(option_frame)
+    
+    def select_pattern(self, pattern):
+        self.selected_pattern = pattern
+        self.custom_input.setText(pattern)
+        self.apply_btn.setEnabled(True)
+        
+        # Visual feedback - highlight selected
+        from app.ui.color_scheme_pyqt import colors
+        sender = self.sender()
+        if hasattr(sender, 'parent') and sender.parent():
+            sender.parent().setStyleSheet(f"""
+                QFrame {{
+                    background-color: {colors['highlight_bg']};
+                    border: 2px solid {colors['accent']};
+                    border-radius: 3px;
+                    padding: 8px;
+                }}
+            """)
+    
+    def use_custom_pattern(self):
+        pattern = self.custom_input.text().strip()
+        if pattern:
+            self.selected_pattern = pattern
+            self.apply_btn.setEnabled(True)
+    
+    def get_selected_pattern(self):
+        return self.selected_pattern
 
 class FileDetailsDialog(QDialog):
     """Dialog for entering file details"""
