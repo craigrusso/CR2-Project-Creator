@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QFileDialog, QMessageBox, QMenu,
                            QStatusBar, QFrame, QSplitter, QScrollArea, QSizePolicy,
                            QApplication, QGroupBox, QListView, QTextEdit, QLayout, QGridLayout,
-                           QWIDGETSIZE_MAX, QCheckBox, QDateEdit, QSpinBox)
+                           QWIDGETSIZE_MAX, QCheckBox, QDateEdit, QSpinBox, QToolButton)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex, QPoint, QUrl, QMimeData, QSettings, QObject, QThread, QDate
 from PyQt6.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, QPixmap, QDesktopServices, QCursor, QDragEnterEvent, QDropEvent, QFontMetrics, QStandardItemModel, QStandardItem, QAction, QTextCharFormat
 
@@ -211,6 +211,11 @@ class ProjectCreatorApp(QMainWindow):
         # Show app (make visible)
         self.show()
         
+    def closeEvent(self, event):
+        """Handle application close event - clean up resources"""
+        # Call parent close event
+        super().closeEvent(event)
+    
     def _setup_ui(self):
         """Set up the main application UI"""
         # Create central widget and layout
@@ -368,13 +373,14 @@ class ProjectCreatorApp(QMainWindow):
             padding: 0px;
             font-weight: normal;
         """)
-        type_label.setFixedWidth(60)  # Fixed width to keep alignment
+        type_label.setFixedWidth(70)  # Match start_date_label width for alignment
         type_layout.addWidget(type_label)
         
         self.sequence_type = QComboBox()
         self.sequence_type.addItems(["Date Sequences", "Version Numbers", "Sequential Numbers"])
         self.sequence_type.setStyleSheet(COMBOBOX_STYLE)
         self.sequence_type.setFixedWidth(160)  # Fixed width
+        self.sequence_type.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.sequence_type.currentTextChanged.connect(self._update_versioning_options)
         type_layout.addWidget(self.sequence_type)
         
@@ -402,6 +408,7 @@ class ProjectCreatorApp(QMainWindow):
         self.name_position.addItems(["Suffix", "Prefix"])
         self.name_position.setStyleSheet(COMBOBOX_STYLE)
         self.name_position.setFixedWidth(100)  # Fixed width
+        self.name_position.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         position_layout.addWidget(self.name_position)
         
         versioning_options_layout.addWidget(position_container)
@@ -442,15 +449,15 @@ class ProjectCreatorApp(QMainWindow):
             padding: 0px;
             font-weight: normal;
         """)
-        start_date_label.setFixedWidth(70)
+        start_date_label.setFixedWidth(70)  # Aligned with type_label
         start_date_layout.addWidget(start_date_label)
         
         self.start_date = QDateEdit()
         self.start_date.setDate(QDate.currentDate())
         self.start_date.setCalendarPopup(True)  # Enable calendar popup
         
-        # Custom calendar widget to handle weekend styling and navigation arrows
-        def setup_calendar_colors():
+        # Simple calendar styling - no complex widget manipulation
+        def apply_simple_calendar_style():
             calendar = self.start_date.calendarWidget()
             if calendar:
                 # Set weekend text format to be dimmer grey
@@ -461,24 +468,40 @@ class ProjectCreatorApp(QMainWindow):
                 
                 # Set weekday text format to white  
                 weekday_format = QTextCharFormat()
-                weekday_format.setForeground(QColor('#FFFFFF'))  # White for weekdays
+                weekday_format.setForeground(QColor(colors['text']))
                 for day in [Qt.DayOfWeek.Monday, Qt.DayOfWeek.Tuesday, Qt.DayOfWeek.Wednesday, 
                            Qt.DayOfWeek.Thursday, Qt.DayOfWeek.Friday]:
                     calendar.setWeekdayTextFormat(day, weekday_format)
                 
-                # Fix navigation arrows by finding and updating the buttons
-                from PyQt6.QtWidgets import QToolButton
-                nav_buttons = calendar.findChildren(QToolButton)
-                for button in nav_buttons:
-                    if button.objectName() == "qt_calendar_prevmonth":
-                        button.setText("<")
-                    elif button.objectName() == "qt_calendar_nextmonth":
-                        button.setText(">")
+                # Apply simple stylesheet without complex widget targeting
+                calendar.setStyleSheet(f"""
+                    QCalendarWidget {{
+                        background-color: {colors['card_bg']};
+                        color: {colors['text']};
+                        border: 1px solid {colors['border']};
+                        font-size: 12px;
+                        min-width: 280px;
+                        min-height: 200px;
+                    }}
+                    QCalendarWidget QWidget {{
+                        background-color: {colors['card_bg']};
+                        color: {colors['text']};
+                    }}
+                    QCalendarWidget QAbstractItemView {{
+                        background-color: {colors['card_bg']};
+                        selection-background-color: {colors['accent']};
+                        gridline-color: {colors['border']};
+                    }}
+                """)
         
-        # Set up calendar colors and arrows when it's shown
-        QTimer.singleShot(100, setup_calendar_colors)
+        # Connect to show calendar styling when popup opens
+        self.start_date.dateChanged.connect(lambda: QTimer.singleShot(10, apply_simple_calendar_style))
+        
+        # Apply initial styling
+        QTimer.singleShot(100, apply_simple_calendar_style)
         
         self.start_date.setFixedWidth(120)
+        self.start_date.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.start_date.setStyleSheet(f"""
             QDateEdit {{
                 background-color: {colors['card_bg']};
@@ -501,79 +524,8 @@ class ProjectCreatorApp(QMainWindow):
                 height: 3px;
                 background-color: {colors['text']};
             }}
-            QCalendarWidget {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                font-size: 13px;
-                min-width: 300px;
-                min-height: 200px;
-            }}
-            QCalendarWidget QWidget#qt_calendar_navigationbar {{
-                background-color: {colors['card_bg_alt']};
-                border-bottom: 1px solid {colors['border']};
-            }}
-            QCalendarWidget QToolButton {{
-                background-color: {colors['card_bg_alt']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                border-radius: 4px;
-                padding: 4px 8px;
-                margin: 2px;
-                font-size: 14px;
-                font-weight: bold;
-                min-width: 60px;
-            }}
-            QCalendarWidget QToolButton:hover {{
-                background-color: {colors['hover_bg']};
-                border: 1px solid {colors['accent']};
-            }}
-            QCalendarWidget QToolButton:pressed {{
-                background-color: {colors['accent']};
-                color: white;
-            }}
-
-            QCalendarWidget QMenu {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-            }}
-            QCalendarWidget QSpinBox {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                padding: 2px;
-                font-size: 14px;
-                font-weight: bold;
-            }}
-            QCalendarWidget QTableView {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                gridline-color: {colors['border']};
-                selection-background-color: {colors['accent']};
-                selection-color: white;
-                font-size: 13px;
-            }}
-            QCalendarWidget QHeaderView::section {{
-                background-color: {colors['card_bg_alt']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                padding: 4px;
-                font-weight: bold;
-                font-size: 12px;
-            }}
-            QCalendarWidget QAbstractItemView:enabled {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-            }}
-            QCalendarWidget QAbstractItemView:disabled {{
-                background-color: {colors['bg']};
-                color: {colors['secondary_text']};
-            }}
-            QCalendarWidget QAbstractItemView {{
-                alternate-background-color: {colors['card_bg']};
-            }}
         """)
+        
         start_date_layout.addWidget(self.start_date)
         first_row_layout.addWidget(start_date_container)
         
@@ -599,6 +551,7 @@ class ProjectCreatorApp(QMainWindow):
         self.date_count.setRange(1, 50)
         self.date_count.setValue(5)
         self.date_count.setFixedWidth(80)
+        self.date_count.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.date_count.setStyleSheet(f"""
             QSpinBox {{
                 background-color: {colors['card_bg']};
@@ -641,6 +594,7 @@ class ProjectCreatorApp(QMainWindow):
         self.date_interval.setRange(1, 30)
         self.date_interval.setValue(1)
         self.date_interval.setFixedWidth(80)
+        self.date_interval.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.date_interval.setStyleSheet(f"""
             QSpinBox {{
                 background-color: {colors['card_bg']};
@@ -656,6 +610,7 @@ class ProjectCreatorApp(QMainWindow):
         self.date_interval_type = QComboBox()
         self.date_interval_type.addItems(["Days", "Weeks", "Months"])
         self.date_interval_type.setFixedWidth(100)
+        self.date_interval_type.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.date_interval_type.setStyleSheet(COMBOBOX_STYLE)
         second_row_layout.addWidget(self.date_interval_type)
         
@@ -690,6 +645,7 @@ class ProjectCreatorApp(QMainWindow):
             "MM/DD/YYYY (01/15/2025)"
         ])
         self.date_format.setFixedWidth(200)
+        self.date_format.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.date_format.setStyleSheet(COMBOBOX_STYLE)
         format_row_layout.addWidget(self.date_format)
         
@@ -724,6 +680,7 @@ class ProjectCreatorApp(QMainWindow):
         self.version_count.setRange(1, 50)
         self.version_count.setValue(5)
         self.version_count.setFixedWidth(80)
+        self.version_count.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.version_count.setStyleSheet(f"""
             QSpinBox {{
                 background-color: {colors['card_bg']};
@@ -761,6 +718,7 @@ class ProjectCreatorApp(QMainWindow):
             "Version1, Version2, Version3..."
         ])
         self.version_format.setFixedWidth(180)
+        self.version_format.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.version_format.setStyleSheet(COMBOBOX_STYLE)
         format_layout.addWidget(self.version_format)
         version_main_layout.addWidget(format_container)
@@ -801,6 +759,7 @@ class ProjectCreatorApp(QMainWindow):
         self.number_start.setRange(1, 999)
         self.number_start.setValue(1)
         self.number_start.setFixedWidth(80)
+        self.number_start.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.number_start.setStyleSheet(f"""
             QSpinBox {{
                 background-color: {colors['card_bg']};
@@ -834,6 +793,7 @@ class ProjectCreatorApp(QMainWindow):
         self.number_count.setRange(1, 50)
         self.number_count.setValue(5)
         self.number_count.setFixedWidth(80)
+        self.number_count.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.number_count.setStyleSheet(f"""
             QSpinBox {{
                 background-color: {colors['card_bg']};
@@ -874,6 +834,7 @@ class ProjectCreatorApp(QMainWindow):
         ])
         self.number_format.setCurrentText("3 digits (001, 002, 003...)")
         self.number_format.setFixedWidth(200)
+        self.number_format.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.number_format.setStyleSheet(COMBOBOX_STYLE)
         format_row_layout.addWidget(self.number_format)
         
