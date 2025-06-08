@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QMenu, QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, 
     QLineEdit, QSpinBox, QComboBox, QTextEdit, QDateEdit, QCheckBox,
     QTabWidget, QWidget, QFormLayout, QListWidget, QMessageBox,
-    QTreeWidgetItem, QApplication
+    QTreeWidgetItem, QApplication, QSpacerItem, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QDate, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QBrush, QColor
@@ -1497,71 +1497,201 @@ class CustomPatternsDialog(QDialog):
     
     def init_ui(self):
         """Initialize the user interface"""
+        # Import styling
+        from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
+        
         self.setWindowTitle("Custom Naming Patterns")
         self.setMinimumSize(600, 500)
         self.resize(700, 600)
         
-        layout = QVBoxLayout(self)
+        # Apply dialog styling
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {colors['bg']};
+                color: {colors['text']};
+            }}
+        """)
         
-        # Title
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(20)
+        
+        # Title - no box/border, just clean text
         title = QLabel("Custom File Naming Patterns")
-        title.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        title.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        title.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            margin-bottom: 10px;
+        """)
         layout.addWidget(title)
         
-        # Pattern input
-        pattern_label = QLabel("Naming Pattern:")
-        layout.addWidget(pattern_label)
+        # Available Variables section - clean header without box
+        variables_header = QLabel("Available Variables:")
+        variables_header.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        variables_header.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            margin-bottom: 5px;
+        """)
+        layout.addWidget(variables_header)
         
-        self.pattern_edit = QLineEdit()
-        self.pattern_edit.setPlaceholderText("e.g., ${PROJECT_NAME}_${VERSION}_${DATE}")
-        self.pattern_edit.textChanged.connect(self.update_preview)
-        layout.addWidget(self.pattern_edit)
+        # Clickable tag buttons in a grid layout
+        tags_widget = QWidget()
+        tags_widget.setStyleSheet(f"background-color: transparent; border: none;")
+        tags_layout = QGridLayout(tags_widget)
+        tags_layout.setSpacing(8)
         
-        # Available variables
-        variables_label = QLabel("Available Variables:")
-        layout.addWidget(variables_label)
+        # Define available tags with descriptions
+        self.tags = [
+            ("${PROJECT_NAME}", "Project name"),
+            ("${BASE}", "Original filename without extension"),
+            ("${EXT}", "File extension"),
+            ("${VERSION}", "Version number (v01, v02, etc.)"),
+            ("${DATE}", "Current date (YYYYMMDD)"),
+            ("${TIME}", "Current time (HHMMSS)"),
+            ("${COUNTER}", "Incremental counter (001, 002, etc.)"),
+            ("${CUSTOM}", "Custom text field")
+        ]
         
-        variables_text = QTextEdit()
-        variables_text.setMaximumHeight(150)
-        variables_text.setPlainText("""
-${PROJECT_NAME} - Project name
-${BASE} - Original filename without extension
-${EXT} - File extension
-${VERSION} - Version number (v01, v02, etc.)
-${DATE} - Current date (YYYYMMDD)
-${TIME} - Current time (HHMMSS)
-${COUNTER} - Incremental counter (001, 002, etc.)
-${CUSTOM} - Custom text field
-        """.strip())
-        variables_text.setReadOnly(True)
-        layout.addWidget(variables_text)
+        # Create clickable buttons for each tag
+        for i, (tag, description) in enumerate(self.tags):
+            tag_button = QPushButton(tag)
+            tag_button.setToolTip(description)
+            tag_button.clicked.connect(lambda checked, tag=tag: self.insert_tag(tag))
+            tag_button.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {colors['card_bg_alt']};
+                    color: {colors['text']};
+                    border: 1px solid {colors['border']};
+                    padding: 2px 6px;
+                    border-radius: 8px;
+                    font-size: 10px;
+                    font-weight: normal;
+                    min-width: 50px;
+                    max-height: 20px;
+                }}
+                QPushButton:hover {{
+                    background-color: {colors['hover_bg']};
+                    border: 1px solid {colors['highlight_border']};
+                }}
+                QPushButton:pressed {{
+                    background-color: {colors['highlight_bg']};
+                    color: {colors['highlight_text']};
+                }}
+            """)
+            # Arrange in 2 columns
+            row = i // 2
+            col = i % 2
+            tags_layout.addWidget(tag_button, row, col)
         
-        # Preview
-        preview_label = QLabel("Preview:")
-        layout.addWidget(preview_label)
+        layout.addWidget(tags_widget)
         
-        self.preview_label = QLabel("(Enter pattern above)")
-        self.preview_label.setStyleSheet("background-color: #2b2b2b; color: #ffffff; padding: 8px; border-radius: 4px;")
+        # Add spacer
+        layout.addItem(QSpacerItem(20, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
+        
+        # Preview section
+        preview_header = QLabel("Preview:")
+        preview_header.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        preview_header.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            margin-bottom: 5px;
+        """)
+        layout.addWidget(preview_header)
+        
+        self.preview_label = QLabel("Preview will appear here once you create a pattern below")
+        self.preview_label.setStyleSheet(f"""
+            background-color: {colors['card_bg']};
+            color: {colors['text']};
+            padding: 12px;
+            border-radius: 4px;
+            border: 1px solid {colors['border']};
+            font-family: 'Courier New', monospace;
+        """)
         layout.addWidget(self.preview_label)
         
-        # Buttons
+        # Pattern input at the bottom
+        pattern_header = QLabel("Enter your naming pattern:")
+        pattern_header.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        pattern_header.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            margin-top: 10px;
+            margin-bottom: 5px;
+        """)
+        layout.addWidget(pattern_header)
+        
+        self.pattern_edit = QLineEdit()
+        self.pattern_edit.setPlaceholderText("Click tags above or type pattern like: ${PROJECT_NAME}_${VERSION}_${DATE}")
+        self.pattern_edit.textChanged.connect(self.update_preview)
+        self.pattern_edit.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 2px solid {colors['accent']};
+                border-radius: 4px;
+                padding: 12px;
+                font-size: 14px;
+                font-family: 'Courier New', monospace;
+            }}
+            QLineEdit:focus {{
+                border: 2px solid {colors['accent_hover']};
+                background-color: {colors['highlight_bg_transparent']};
+            }}
+        """)
+        layout.addWidget(self.pattern_edit)
+        
+        # Buttons at the bottom
         button_layout = QHBoxLayout()
+        button_layout.setSpacing(10)
         
         cancel_button = QPushButton("Cancel")
         cancel_button.clicked.connect(self.reject)
+        cancel_button.setStyleSheet(BUTTON_STYLE)
         button_layout.addWidget(cancel_button)
+        
+        button_layout.addStretch()
         
         apply_button = QPushButton("Apply Pattern")
         apply_button.clicked.connect(self.accept)
+        apply_button.setDefault(True)
+        apply_button.setStyleSheet(ACCENT_BUTTON_STYLE)  # Blue button as requested
         button_layout.addWidget(apply_button)
         
         layout.addLayout(button_layout)
+        
+        # Focus on the pattern input
+        self.pattern_edit.setFocus()
+    
+    def insert_tag(self, tag):
+        """Insert a tag at the cursor position in the pattern edit field"""
+        cursor_pos = self.pattern_edit.cursorPosition()
+        current_text = self.pattern_edit.text()
+        
+        # Insert the tag at cursor position
+        new_text = current_text[:cursor_pos] + tag + current_text[cursor_pos:]
+        self.pattern_edit.setText(new_text)
+        
+        # Move cursor to after the inserted tag
+        self.pattern_edit.setCursorPosition(cursor_pos + len(tag))
+        
+        # Return focus to the input field
+        self.pattern_edit.setFocus()
     
     def update_preview(self):
         """Update the preview based on current pattern"""
         pattern = self.pattern_edit.text()
         if not pattern:
-            self.preview_label.setText("(Enter pattern above)")
+            self.preview_label.setText("Preview will appear here once you create a pattern below")
             return
         
         # Create preview with sample data

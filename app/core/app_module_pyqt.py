@@ -10,12 +10,12 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QApplication, QGroupBox, QListView, QTextEdit, QLayout, QGridLayout,
                            QWIDGETSIZE_MAX, QCheckBox, QDateEdit, QSpinBox)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex, QPoint, QUrl, QMimeData, QSettings, QObject, QThread, QDate
-from PyQt6.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, QPixmap, QDesktopServices, QCursor, QDragEnterEvent, QDropEvent, QFontMetrics, QStandardItemModel, QStandardItem, QAction
+from PyQt6.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, QPixmap, QDesktopServices, QCursor, QDragEnterEvent, QDropEvent, QFontMetrics, QStandardItemModel, QStandardItem, QAction, QTextCharFormat
 
 from app.core.app_config import APP_NAME, RECENT_TEMPLATES_MAX
 from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE, LISTVIEW_POPUP_STYLE, APP_COLORS, ACTION_LINK_STYLE
 from app.utils.utils import load_config, save_config, truncate_path, normalize_path_for_storage
-from app.ui.ui_components_pyqt import ToolTip, CardFrame, SearchBox, TemplateFileCard, ScrollableFrame, UI_FONT, UpdateNotificationBanner, EnhancedProjectCreationDialog
+from app.ui.ui_components_pyqt import ToolTip, CardFrame, SearchBox, TemplateFileCard, ScrollableFrame, UI_FONT, UpdateNotificationBanner
 from app.templates.template_manager import TemplateManager
 from app.templates.template_manager_core import TemplateManagerCore
 from app.core.project_builder import ProjectBuilder
@@ -347,49 +347,337 @@ class ProjectCreatorApp(QMainWindow):
         
         # Versioning options (initially hidden)
         self.versioning_options = QWidget()
-        versioning_options_layout = QGridLayout(self.versioning_options)
+        versioning_options_layout = QHBoxLayout(self.versioning_options)
         versioning_options_layout.setContentsMargins(20, 10, 0, 0)  # Indent options
+        versioning_options_layout.setSpacing(15)  # Space between label-dropdown pairs
         
         # Sequence type
-        versioning_options_layout.addWidget(QLabel("Type:"), 0, 0)
+        type_container = QWidget()
+        type_layout = QHBoxLayout(type_container)
+        type_layout.setContentsMargins(0, 0, 0, 0)
+        type_layout.setSpacing(5)
+        
+        type_label = QLabel("Type:")
+        type_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        type_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            font-weight: normal;
+        """)
+        type_label.setFixedWidth(60)  # Fixed width to keep alignment
+        type_layout.addWidget(type_label)
+        
         self.sequence_type = QComboBox()
         self.sequence_type.addItems(["Date Sequences", "Version Numbers", "Sequential Numbers"])
+        self.sequence_type.setStyleSheet(COMBOBOX_STYLE)
+        self.sequence_type.setFixedWidth(160)  # Fixed width
         self.sequence_type.currentTextChanged.connect(self._update_versioning_options)
-        versioning_options_layout.addWidget(self.sequence_type, 0, 1)
+        type_layout.addWidget(self.sequence_type)
+        
+        versioning_options_layout.addWidget(type_container)
         
         # Position
-        versioning_options_layout.addWidget(QLabel("Position:"), 0, 2)
+        position_container = QWidget()
+        position_layout = QHBoxLayout(position_container)
+        position_layout.setContentsMargins(0, 0, 0, 0)
+        position_layout.setSpacing(5)
+        
+        position_label = QLabel("Position:")
+        position_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        position_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            font-weight: normal;
+        """)
+        position_label.setFixedWidth(60)  # Fixed width to keep alignment
+        position_layout.addWidget(position_label)
+        
         self.name_position = QComboBox()
         self.name_position.addItems(["Suffix", "Prefix"])
-        versioning_options_layout.addWidget(self.name_position, 0, 3)
+        self.name_position.setStyleSheet(COMBOBOX_STYLE)
+        self.name_position.setFixedWidth(100)  # Fixed width
+        position_layout.addWidget(self.name_position)
+        
+        versioning_options_layout.addWidget(position_container)
+        
+        # Add stretch to keep controls on the left
+        versioning_options_layout.addStretch()
+        
+        # Create container for all option widgets
+        options_container = QWidget()
+        options_container_layout = QVBoxLayout(options_container)
+        options_container_layout.setContentsMargins(0, 10, 0, 0)
+        options_container_layout.setSpacing(0)
         
         # Date options (shown when Date Sequences selected)
         self.date_options = QWidget()
-        date_layout = QGridLayout(self.date_options)
-        date_layout.setContentsMargins(0, 5, 0, 0)
+        date_main_layout = QVBoxLayout(self.date_options)
+        date_main_layout.setContentsMargins(0, 5, 0, 0)
+        date_main_layout.setSpacing(8)
         
-        date_layout.addWidget(QLabel("Start Date:"), 0, 0)
+        # First row: Start Date and Count
+        first_row = QWidget()
+        first_row_layout = QHBoxLayout(first_row)
+        first_row_layout.setContentsMargins(0, 0, 0, 0)
+        first_row_layout.setSpacing(15)
+        
+        # Start Date
+        start_date_container = QWidget()
+        start_date_layout = QHBoxLayout(start_date_container)
+        start_date_layout.setContentsMargins(0, 0, 0, 0)
+        start_date_layout.setSpacing(5)
+        
+        start_date_label = QLabel("Start Date:")
+        start_date_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        start_date_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            font-weight: normal;
+        """)
+        start_date_label.setFixedWidth(70)
+        start_date_layout.addWidget(start_date_label)
+        
         self.start_date = QDateEdit()
         self.start_date.setDate(QDate.currentDate())
-        date_layout.addWidget(self.start_date, 0, 1)
+        self.start_date.setCalendarPopup(True)  # Enable calendar popup
         
-        date_layout.addWidget(QLabel("Count:"), 0, 2)
+        # Custom calendar widget to handle weekend styling and navigation arrows
+        def setup_calendar_colors():
+            calendar = self.start_date.calendarWidget()
+            if calendar:
+                # Set weekend text format to be dimmer grey
+                weekend_format = QTextCharFormat()
+                weekend_format.setForeground(QColor('#888888'))  # Dimmer grey for weekends
+                calendar.setWeekdayTextFormat(Qt.DayOfWeek.Saturday, weekend_format)
+                calendar.setWeekdayTextFormat(Qt.DayOfWeek.Sunday, weekend_format)
+                
+                # Set weekday text format to white  
+                weekday_format = QTextCharFormat()
+                weekday_format.setForeground(QColor('#FFFFFF'))  # White for weekdays
+                for day in [Qt.DayOfWeek.Monday, Qt.DayOfWeek.Tuesday, Qt.DayOfWeek.Wednesday, 
+                           Qt.DayOfWeek.Thursday, Qt.DayOfWeek.Friday]:
+                    calendar.setWeekdayTextFormat(day, weekday_format)
+                
+                # Fix navigation arrows by finding and updating the buttons
+                from PyQt6.QtWidgets import QToolButton
+                nav_buttons = calendar.findChildren(QToolButton)
+                for button in nav_buttons:
+                    if button.objectName() == "qt_calendar_prevmonth":
+                        button.setText("<")
+                    elif button.objectName() == "qt_calendar_nextmonth":
+                        button.setText(">")
+        
+        # Set up calendar colors and arrows when it's shown
+        QTimer.singleShot(100, setup_calendar_colors)
+        
+        self.start_date.setFixedWidth(120)
+        self.start_date.setStyleSheet(f"""
+            QDateEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+                min-height: 22px;
+            }}
+            QDateEdit::drop-down {{
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 20px;
+                border-left: 1px solid {colors['border']};
+                background-color: {colors['card_bg_alt']};
+            }}
+            QDateEdit::down-arrow {{
+                image: none;
+                border: 1px solid {colors['text']};
+                width: 3px;
+                height: 3px;
+                background-color: {colors['text']};
+            }}
+            QCalendarWidget {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                font-size: 13px;
+                min-width: 300px;
+                min-height: 200px;
+            }}
+            QCalendarWidget QWidget#qt_calendar_navigationbar {{
+                background-color: {colors['card_bg_alt']};
+                border-bottom: 1px solid {colors['border']};
+            }}
+            QCalendarWidget QToolButton {{
+                background-color: {colors['card_bg_alt']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 4px;
+                padding: 4px 8px;
+                margin: 2px;
+                font-size: 14px;
+                font-weight: bold;
+                min-width: 60px;
+            }}
+            QCalendarWidget QToolButton:hover {{
+                background-color: {colors['hover_bg']};
+                border: 1px solid {colors['accent']};
+            }}
+            QCalendarWidget QToolButton:pressed {{
+                background-color: {colors['accent']};
+                color: white;
+            }}
+
+            QCalendarWidget QMenu {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+            }}
+            QCalendarWidget QSpinBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 2px;
+                font-size: 14px;
+                font-weight: bold;
+            }}
+            QCalendarWidget QTableView {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                gridline-color: {colors['border']};
+                selection-background-color: {colors['accent']};
+                selection-color: white;
+                font-size: 13px;
+            }}
+            QCalendarWidget QHeaderView::section {{
+                background-color: {colors['card_bg_alt']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+                font-weight: bold;
+                font-size: 12px;
+            }}
+            QCalendarWidget QAbstractItemView:enabled {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+            }}
+            QCalendarWidget QAbstractItemView:disabled {{
+                background-color: {colors['bg']};
+                color: {colors['secondary_text']};
+            }}
+            QCalendarWidget QAbstractItemView {{
+                alternate-background-color: {colors['card_bg']};
+            }}
+        """)
+        start_date_layout.addWidget(self.start_date)
+        first_row_layout.addWidget(start_date_container)
+        
+        # Count
+        count_container = QWidget()
+        count_layout = QHBoxLayout(count_container)
+        count_layout.setContentsMargins(0, 0, 0, 0)
+        count_layout.setSpacing(5)
+        
+        count_label = QLabel("Count:")
+        count_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        count_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            font-weight: normal;
+        """)
+        count_label.setFixedWidth(60)
+        count_layout.addWidget(count_label)
+        
         self.date_count = QSpinBox()
         self.date_count.setRange(1, 50)
         self.date_count.setValue(5)
-        date_layout.addWidget(self.date_count, 0, 3)
+        self.date_count.setFixedWidth(80)
+        self.date_count.setStyleSheet(f"""
+            QSpinBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+            }}
+        """)
+        count_layout.addWidget(self.date_count)
+        first_row_layout.addWidget(count_container)
         
-        date_layout.addWidget(QLabel("Interval:"), 1, 0)
+        first_row_layout.addStretch()
+        date_main_layout.addWidget(first_row)
+        
+        # Second row: Interval and Days/Weeks/Months
+        second_row = QWidget()
+        second_row_layout = QHBoxLayout(second_row)
+        second_row_layout.setContentsMargins(0, 0, 0, 0)
+        second_row_layout.setSpacing(15)
+        
+        # Interval
+        interval_container = QWidget()
+        interval_layout = QHBoxLayout(interval_container)
+        interval_layout.setContentsMargins(0, 0, 0, 0)
+        interval_layout.setSpacing(5)
+        
+        interval_label = QLabel("Interval:")
+        interval_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        interval_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            font-weight: normal;
+        """)
+        interval_label.setFixedWidth(70)
+        interval_layout.addWidget(interval_label)
+        
         self.date_interval = QSpinBox()
         self.date_interval.setRange(1, 30)
         self.date_interval.setValue(1)
-        date_layout.addWidget(self.date_interval, 1, 1)
+        self.date_interval.setFixedWidth(80)
+        self.date_interval.setStyleSheet(f"""
+            QSpinBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+            }}
+        """)
+        interval_layout.addWidget(self.date_interval)
+        second_row_layout.addWidget(interval_container)
         
+        # Interval type (Days/Weeks/Months)
         self.date_interval_type = QComboBox()
         self.date_interval_type.addItems(["Days", "Weeks", "Months"])
-        date_layout.addWidget(self.date_interval_type, 1, 2)
+        self.date_interval_type.setFixedWidth(100)
+        self.date_interval_type.setStyleSheet(COMBOBOX_STYLE)
+        second_row_layout.addWidget(self.date_interval_type)
         
-        date_layout.addWidget(QLabel("Format:"), 1, 3)
+        second_row_layout.addStretch()
+        date_main_layout.addWidget(second_row)
+        
+        # Third row: Format
+        format_row = QWidget()
+        format_row_layout = QHBoxLayout(format_row)
+        format_row_layout.setContentsMargins(0, 0, 0, 0)
+        format_row_layout.setSpacing(5)
+        
+        format_label = QLabel("Format:")
+        format_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        format_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            font-weight: normal;
+        """)
+        format_label.setFixedWidth(70)
+        format_row_layout.addWidget(format_label)
+        
         self.date_format = QComboBox()
         self.date_format.addItems([
             "YYYY-MM-DD (2025-01-15)",
@@ -399,22 +687,70 @@ class ProjectCreatorApp(QMainWindow):
             "YYYY/MM/DD (2025/01/15)",
             "MM/DD/YYYY (01/15/2025)"
         ])
-        date_layout.addWidget(self.date_format, 2, 0, 1, 2)
+        self.date_format.setFixedWidth(200)
+        self.date_format.setStyleSheet(COMBOBOX_STYLE)
+        format_row_layout.addWidget(self.date_format)
         
-        versioning_options_layout.addWidget(self.date_options, 1, 0, 1, 4)
+        format_row_layout.addStretch()
+        date_main_layout.addWidget(format_row)
         
         # Version options (shown when Version Numbers selected)
         self.version_options = QWidget()
-        version_layout = QGridLayout(self.version_options)
-        version_layout.setContentsMargins(0, 5, 0, 0)
+        version_main_layout = QHBoxLayout(self.version_options)
+        version_main_layout.setContentsMargins(0, 5, 0, 0)
+        version_main_layout.setSpacing(15)
         
-        version_layout.addWidget(QLabel("Count:"), 0, 0)
+        # Count
+        count_container = QWidget()
+        count_layout = QHBoxLayout(count_container)
+        count_layout.setContentsMargins(0, 0, 0, 0)
+        count_layout.setSpacing(5)
+        
+        count_label = QLabel("Count:")
+        count_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        count_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            font-weight: normal;
+        """)
+        count_label.setFixedWidth(60)
+        count_layout.addWidget(count_label)
+        
         self.version_count = QSpinBox()
         self.version_count.setRange(1, 50)
         self.version_count.setValue(5)
-        version_layout.addWidget(self.version_count, 0, 1)
+        self.version_count.setFixedWidth(80)
+        self.version_count.setStyleSheet(f"""
+            QSpinBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+            }}
+        """)
+        count_layout.addWidget(self.version_count)
+        version_main_layout.addWidget(count_container)
         
-        version_layout.addWidget(QLabel("Format:"), 0, 2)
+        # Format
+        format_container = QWidget()
+        format_layout = QHBoxLayout(format_container)
+        format_layout.setContentsMargins(0, 0, 0, 0)
+        format_layout.setSpacing(5)
+        
+        format_label = QLabel("Format:")
+        format_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        format_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            font-weight: normal;
+        """)
+        format_label.setFixedWidth(60)
+        format_layout.addWidget(format_label)
+        
         self.version_format = QComboBox()
         self.version_format.addItems([
             "V1, V2, V3...",
@@ -422,28 +758,112 @@ class ProjectCreatorApp(QMainWindow):
             "Ver1, Ver2, Ver3...",
             "Version1, Version2, Version3..."
         ])
-        version_layout.addWidget(self.version_format, 0, 3)
+        self.version_format.setFixedWidth(180)
+        self.version_format.setStyleSheet(COMBOBOX_STYLE)
+        format_layout.addWidget(self.version_format)
+        version_main_layout.addWidget(format_container)
         
-        versioning_options_layout.addWidget(self.version_options, 1, 0, 1, 4)
+        version_main_layout.addStretch()
         
         # Number options (shown when Sequential Numbers selected)
         self.number_options = QWidget()
-        number_layout = QGridLayout(self.number_options)
-        number_layout.setContentsMargins(0, 5, 0, 0)
+        number_main_layout = QVBoxLayout(self.number_options)
+        number_main_layout.setContentsMargins(0, 5, 0, 0)
+        number_main_layout.setSpacing(8)
         
-        number_layout.addWidget(QLabel("Start:"), 0, 0)
+        # First row: Start and Count
+        first_row = QWidget()
+        first_row_layout = QHBoxLayout(first_row)
+        first_row_layout.setContentsMargins(0, 0, 0, 0)
+        first_row_layout.setSpacing(15)
+        
+        # Start
+        start_container = QWidget()
+        start_layout = QHBoxLayout(start_container)
+        start_layout.setContentsMargins(0, 0, 0, 0)
+        start_layout.setSpacing(5)
+        
+        start_label = QLabel("Start:")
+        start_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        start_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            font-weight: normal;
+        """)
+        start_label.setFixedWidth(60)
+        start_layout.addWidget(start_label)
+        
         self.number_start = QSpinBox()
         self.number_start.setRange(1, 999)
         self.number_start.setValue(1)
-        number_layout.addWidget(self.number_start, 0, 1)
+        self.number_start.setFixedWidth(80)
+        self.number_start.setStyleSheet(f"""
+            QSpinBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+            }}
+        """)
+        start_layout.addWidget(self.number_start)
+        first_row_layout.addWidget(start_container)
         
-        number_layout.addWidget(QLabel("Count:"), 0, 2)
+        # Count
+        count_container = QWidget()
+        count_layout = QHBoxLayout(count_container)
+        count_layout.setContentsMargins(0, 0, 0, 0)
+        count_layout.setSpacing(5)
+        
+        count_label = QLabel("Count:")
+        count_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        count_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            font-weight: normal;
+        """)
+        count_label.setFixedWidth(60)
+        count_layout.addWidget(count_label)
+        
         self.number_count = QSpinBox()
         self.number_count.setRange(1, 50)
         self.number_count.setValue(5)
-        number_layout.addWidget(self.number_count, 0, 3)
+        self.number_count.setFixedWidth(80)
+        self.number_count.setStyleSheet(f"""
+            QSpinBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+            }}
+        """)
+        count_layout.addWidget(self.number_count)
+        first_row_layout.addWidget(count_container)
         
-        number_layout.addWidget(QLabel("Format:"), 1, 0)
+        first_row_layout.addStretch()
+        number_main_layout.addWidget(first_row)
+        
+        # Second row: Format
+        format_row = QWidget()
+        format_row_layout = QHBoxLayout(format_row)
+        format_row_layout.setContentsMargins(0, 0, 0, 0)
+        format_row_layout.setSpacing(5)
+        
+        format_label = QLabel("Format:")
+        format_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        format_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            font-weight: normal;
+        """)
+        format_label.setFixedWidth(60)
+        format_row_layout.addWidget(format_label)
+        
         self.number_format = QComboBox()
         self.number_format.addItems([
             "No padding (1, 2, 3...)",
@@ -451,14 +871,28 @@ class ProjectCreatorApp(QMainWindow):
             "3 digits (001, 002, 003...)"
         ])
         self.number_format.setCurrentText("3 digits (001, 002, 003...)")
-        number_layout.addWidget(self.number_format, 1, 1, 1, 3)
+        self.number_format.setFixedWidth(200)
+        self.number_format.setStyleSheet(COMBOBOX_STYLE)
+        format_row_layout.addWidget(self.number_format)
         
-        versioning_options_layout.addWidget(self.number_options, 1, 0, 1, 4)
+        format_row_layout.addStretch()
+        number_main_layout.addWidget(format_row)
         
+        # Add all option widgets to the options container
+        options_container_layout.addWidget(self.date_options)
+        options_container_layout.addWidget(self.version_options)
+        options_container_layout.addWidget(self.number_options)
+        
+        # Add options container to main versioning layout
         versioning_layout.addWidget(self.versioning_options)
+        versioning_layout.addWidget(options_container)
+        
+        # Store reference to options container for visibility control
+        self.options_container = options_container
         
         # Initially hide versioning options
         self.versioning_options.hide()
+        self.options_container.hide()
         self._update_versioning_options()  # Set initial state
         
         self.left_layout.addWidget(versioning_container)
@@ -1457,8 +1891,10 @@ class ProjectCreatorApp(QMainWindow):
         """Toggle visibility of versioning options"""
         if enabled:
             self.versioning_options.show()
+            self.options_container.show()
         else:
             self.versioning_options.hide()
+            self.options_container.hide()
     
     def _update_versioning_options(self):
         """Update which versioning options are visible based on sequence type"""
