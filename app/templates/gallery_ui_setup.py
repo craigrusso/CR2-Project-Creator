@@ -339,11 +339,11 @@ class GalleryUISetup:
 
         # Folders section (for displaying folder cards or list)
         GalleryFoldersSetup.setup_folders_section(gallery)
-        gallery.gallery_content_layout.addWidget(gallery.folders_section)
+        gallery.gallery_content_layout.addWidget(gallery.folders_section, 2)  # 20% less space (reduced stretch factor)
         
         # Templates section (for displaying template cards or list)
         GalleryTemplatesSetup.setup_templates_section(gallery)
-        gallery.gallery_content_layout.addWidget(gallery.templates_section)
+        gallery.gallery_content_layout.addWidget(gallery.templates_section, 3)  # 20% more space (increased stretch factor)
 
         gallery.layout.addWidget(gallery.gallery_content_area)
 

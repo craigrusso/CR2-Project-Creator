@@ -354,18 +354,23 @@ class ProjectCreatorApp(QMainWindow):
         
         # Versioning options (initially hidden)
         self.versioning_options = QWidget()
-        versioning_options_layout = QHBoxLayout(self.versioning_options)
-        versioning_options_layout.setContentsMargins(20, 10, 0, 0)  # Indent options
-        versioning_options_layout.setSpacing(15)  # Space between label-dropdown pairs
+        versioning_options_layout = QVBoxLayout(self.versioning_options)
+        versioning_options_layout.setContentsMargins(20, 8, 0, 0)  # Indent options with proper spacing
+        versioning_options_layout.setSpacing(8)  # Consistent 8px spacing
+        
+        # Create a horizontal container for type and position
+        type_position_row = QWidget()
+        type_position_layout = QHBoxLayout(type_position_row)
+        type_position_layout.setContentsMargins(0, 0, 0, 0)
+        type_position_layout.setSpacing(16)  # 16px spacing between controls
         
         # Sequence type
         type_container = QWidget()
-        type_layout = QHBoxLayout(type_container)
+        type_layout = QVBoxLayout(type_container)
         type_layout.setContentsMargins(0, 0, 0, 0)
-        type_layout.setSpacing(5)
+        type_layout.setSpacing(4)  # 4px spacing between label and control
         
         type_label = QLabel("Type:")
-        type_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         type_label.setStyleSheet(f"""
             color: {colors['text']};
             background-color: transparent;
@@ -373,27 +378,30 @@ class ProjectCreatorApp(QMainWindow):
             padding: 0px;
             font-weight: normal;
         """)
-        type_label.setFixedWidth(70)  # Match start_date_label width for alignment
         type_layout.addWidget(type_label)
         
         self.sequence_type = QComboBox()
         self.sequence_type.addItems(["Date Sequences", "Version Numbers", "Sequential Numbers"])
         self.sequence_type.setStyleSheet(COMBOBOX_STYLE)
-        self.sequence_type.setFixedWidth(160)  # Fixed width
+        self.sequence_type.setMinimumWidth(180)  # Minimum width to prevent text cutoff
         self.sequence_type.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.sequence_type.currentTextChanged.connect(self._update_versioning_options)
+        
+        # Apply hover delegate for proper hover effects
+        from app.ui.custom_delegates import apply_hover_delegate
+        apply_hover_delegate(self.sequence_type)
+        
         type_layout.addWidget(self.sequence_type)
         
-        versioning_options_layout.addWidget(type_container)
+        type_position_layout.addWidget(type_container)
         
         # Position
         position_container = QWidget()
-        position_layout = QHBoxLayout(position_container)
+        position_layout = QVBoxLayout(position_container)
         position_layout.setContentsMargins(0, 0, 0, 0)
-        position_layout.setSpacing(5)
+        position_layout.setSpacing(4)  # 4px spacing between label and control
         
         position_label = QLabel("Position:")
-        position_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         position_label.setStyleSheet(f"""
             color: {colors['text']};
             background-color: transparent;
@@ -401,20 +409,25 @@ class ProjectCreatorApp(QMainWindow):
             padding: 0px;
             font-weight: normal;
         """)
-        position_label.setFixedWidth(60)  # Fixed width to keep alignment
         position_layout.addWidget(position_label)
         
         self.name_position = QComboBox()
         self.name_position.addItems(["Suffix", "Prefix"])
         self.name_position.setStyleSheet(COMBOBOX_STYLE)
-        self.name_position.setFixedWidth(100)  # Fixed width
+        self.name_position.setMinimumWidth(100)  # Minimum width
         self.name_position.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
+        
+        # Apply hover delegate for proper hover effects
+        apply_hover_delegate(self.name_position)
+        
         position_layout.addWidget(self.name_position)
         
-        versioning_options_layout.addWidget(position_container)
+        type_position_layout.addWidget(position_container)
         
         # Add stretch to keep controls on the left
-        versioning_options_layout.addStretch()
+        type_position_layout.addStretch()
+        
+        versioning_options_layout.addWidget(type_position_row)
         
         # Create container for all option widgets
         options_container = QWidget()
@@ -432,16 +445,15 @@ class ProjectCreatorApp(QMainWindow):
         first_row = QWidget()
         first_row_layout = QHBoxLayout(first_row)
         first_row_layout.setContentsMargins(0, 0, 0, 0)
-        first_row_layout.setSpacing(15)
+        first_row_layout.setSpacing(16)  # 16px spacing between controls
         
         # Start Date
         start_date_container = QWidget()
-        start_date_layout = QHBoxLayout(start_date_container)
+        start_date_layout = QVBoxLayout(start_date_container)
         start_date_layout.setContentsMargins(0, 0, 0, 0)
-        start_date_layout.setSpacing(5)
+        start_date_layout.setSpacing(4)  # 4px spacing between label and control
         
         start_date_label = QLabel("Start Date:")
-        start_date_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         start_date_label.setStyleSheet(f"""
             color: {colors['text']};
             background-color: transparent;
@@ -449,7 +461,6 @@ class ProjectCreatorApp(QMainWindow):
             padding: 0px;
             font-weight: normal;
         """)
-        start_date_label.setFixedWidth(70)  # Aligned with type_label
         start_date_layout.addWidget(start_date_label)
         
         self.start_date = QDateEdit()
@@ -531,12 +542,11 @@ class ProjectCreatorApp(QMainWindow):
         
         # Count
         count_container = QWidget()
-        count_layout = QHBoxLayout(count_container)
+        count_layout = QVBoxLayout(count_container)
         count_layout.setContentsMargins(0, 0, 0, 0)
-        count_layout.setSpacing(5)
+        count_layout.setSpacing(4)  # 4px spacing between label and control
         
         count_label = QLabel("Count:")
-        count_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         count_label.setStyleSheet(f"""
             color: {colors['text']};
             background-color: transparent;
@@ -544,13 +554,12 @@ class ProjectCreatorApp(QMainWindow):
             padding: 0px;
             font-weight: normal;
         """)
-        count_label.setFixedWidth(60)
         count_layout.addWidget(count_label)
         
         self.date_count = QSpinBox()
         self.date_count.setRange(1, 50)
         self.date_count.setValue(5)
-        self.date_count.setFixedWidth(80)
+        self.date_count.setMinimumWidth(80)
         self.date_count.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.date_count.setStyleSheet(f"""
             QSpinBox {{
@@ -570,16 +579,15 @@ class ProjectCreatorApp(QMainWindow):
         second_row = QWidget()
         second_row_layout = QHBoxLayout(second_row)
         second_row_layout.setContentsMargins(0, 0, 0, 0)
-        second_row_layout.setSpacing(15)
+        second_row_layout.setSpacing(16)  # 16px spacing between controls
         
         # Interval
         interval_container = QWidget()
-        interval_layout = QHBoxLayout(interval_container)
+        interval_layout = QVBoxLayout(interval_container)
         interval_layout.setContentsMargins(0, 0, 0, 0)
-        interval_layout.setSpacing(5)
+        interval_layout.setSpacing(4)  # 4px spacing between label and control
         
         interval_label = QLabel("Interval:")
-        interval_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         interval_label.setStyleSheet(f"""
             color: {colors['text']};
             background-color: transparent;
@@ -587,13 +595,12 @@ class ProjectCreatorApp(QMainWindow):
             padding: 0px;
             font-weight: normal;
         """)
-        interval_label.setFixedWidth(70)
         interval_layout.addWidget(interval_label)
         
         self.date_interval = QSpinBox()
         self.date_interval.setRange(1, 30)
         self.date_interval.setValue(1)
-        self.date_interval.setFixedWidth(80)
+        self.date_interval.setMinimumWidth(80)
         self.date_interval.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.date_interval.setStyleSheet(f"""
             QSpinBox {{
@@ -607,24 +614,43 @@ class ProjectCreatorApp(QMainWindow):
         second_row_layout.addWidget(interval_container)
         
         # Interval type (Days/Weeks/Months)
+        interval_type_container = QWidget()
+        interval_type_layout = QVBoxLayout(interval_type_container)
+        interval_type_layout.setContentsMargins(0, 0, 0, 0)
+        interval_type_layout.setSpacing(4)  # 4px spacing between label and control
+        
+        interval_type_label = QLabel("Unit:")
+        interval_type_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            font-weight: normal;
+        """)
+        interval_type_layout.addWidget(interval_type_label)
+        
         self.date_interval_type = QComboBox()
         self.date_interval_type.addItems(["Days", "Weeks", "Months"])
-        self.date_interval_type.setFixedWidth(100)
+        self.date_interval_type.setMinimumWidth(100)
         self.date_interval_type.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.date_interval_type.setStyleSheet(COMBOBOX_STYLE)
-        second_row_layout.addWidget(self.date_interval_type)
+        
+        # Apply hover delegate for proper hover effects
+        apply_hover_delegate(self.date_interval_type)
+        
+        interval_type_layout.addWidget(self.date_interval_type)
+        second_row_layout.addWidget(interval_type_container)
         
         second_row_layout.addStretch()
         date_main_layout.addWidget(second_row)
         
         # Third row: Format
         format_row = QWidget()
-        format_row_layout = QHBoxLayout(format_row)
+        format_row_layout = QVBoxLayout(format_row)
         format_row_layout.setContentsMargins(0, 0, 0, 0)
-        format_row_layout.setSpacing(5)
+        format_row_layout.setSpacing(4)  # 4px spacing between label and control
         
         format_label = QLabel("Format:")
-        format_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         format_label.setStyleSheet(f"""
             color: {colors['text']};
             background-color: transparent;
@@ -632,7 +658,6 @@ class ProjectCreatorApp(QMainWindow):
             padding: 0px;
             font-weight: normal;
         """)
-        format_label.setFixedWidth(70)
         format_row_layout.addWidget(format_label)
         
         self.date_format = QComboBox()
@@ -644,12 +669,14 @@ class ProjectCreatorApp(QMainWindow):
             "YYYY/MM/DD (2025/01/15)",
             "MM/DD/YYYY (01/15/2025)"
         ])
-        self.date_format.setFixedWidth(200)
+        self.date_format.setMinimumWidth(240)  # Ensure sufficient width for format examples
         self.date_format.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.date_format.setStyleSheet(COMBOBOX_STYLE)
-        format_row_layout.addWidget(self.date_format)
         
-        format_row_layout.addStretch()
+        # Apply hover delegate for proper hover effects
+        apply_hover_delegate(self.date_format)
+        
+        format_row_layout.addWidget(self.date_format)
         date_main_layout.addWidget(format_row)
         
         # Version options (shown when Version Numbers selected)
@@ -720,6 +747,10 @@ class ProjectCreatorApp(QMainWindow):
         self.version_format.setFixedWidth(180)
         self.version_format.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.version_format.setStyleSheet(COMBOBOX_STYLE)
+        
+        # Apply hover delegate for proper hover effects
+        apply_hover_delegate(self.version_format)
+        
         format_layout.addWidget(self.version_format)
         version_main_layout.addWidget(format_container)
         
@@ -836,6 +867,10 @@ class ProjectCreatorApp(QMainWindow):
         self.number_format.setFixedWidth(200)
         self.number_format.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.number_format.setStyleSheet(COMBOBOX_STYLE)
+        
+        # Apply hover delegate for proper hover effects
+        apply_hover_delegate(self.number_format)
+        
         format_row_layout.addWidget(self.number_format)
         
         format_row_layout.addStretch()
@@ -968,8 +1003,8 @@ class ProjectCreatorApp(QMainWindow):
         self.left_panel.setMinimumWidth(280)
         self.right_panel.setMinimumWidth(450)  # Ensure right panel buttons remain visible
         
-        # Initial sizes
-        self.main_splitter.setSizes([400, 900])  # Increased left panel width
+        # Initial sizes - make left project area 6% bigger than original
+        self.main_splitter.setSizes([424, 876])  # Left side 6% bigger than original 400, right side adjusted
         self.main_splitter.setHandleWidth(6)  # Standard handle width
         
         # Allow panels to be collapsed to their minimum size but not further
