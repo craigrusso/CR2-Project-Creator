@@ -3,1830 +3,1499 @@
 
 """
 File Operations Module for Structure Editor
-Handles file and folder operations for the structure
+Handles file and folder operations, context menus, and versioning
 """
 
 import os
-import mimetypes
-import random
-import string
 import json
+import datetime
+from datetime import timedelta
 from PyQt6.QtWidgets import (
-    QTreeWidgetItem, QInputDialog, QMessageBox, QMenu,
-    QFileDialog, QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
-    QLineEdit, QPushButton, QComboBox, QCheckBox, QApplication, QStyle,
-    QListWidget, QListWidgetItem
+    QMenu, QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, 
+    QLineEdit, QSpinBox, QComboBox, QTextEdit, QDateEdit, QCheckBox,
+    QTabWidget, QWidget, QFormLayout, QListWidget, QMessageBox,
+    QTreeWidgetItem, QApplication
 )
-from PyQt6.QtCore import Qt, QSize, QTimer
-from PyQt6.QtGui import QIcon, QDrag, QBrush, QColor, QCursor, QAction
-
-from .utils import get_file_icon_for_type
+from PyQt6.QtCore import Qt, QDate, pyqtSignal
+from PyQt6.QtGui import QFont
 
 # Import binary file handler
-try:
-    from app.utils.binary_file_handler import BinaryFileHandler
-except ImportError:
-    # Simple fallback implementation
-    class BinaryFileHandler:
-        @staticmethod
-        def is_binary_file(file_path):
-            # Very basic check
-            if not os.path.exists(file_path):
+from app.utils.binary_file_handler import BinaryFileHandler
+
+# Constants for file types
+FILE_TYPES = {
+    'video': ['.mp4', '.mov', '.avi', '.mkv', '.wmv', '.flv', '.webm', '.m4v', '.mpg', '.mpeg', '.3gp', '.prproj'],
+    'audio': ['.mp3', '.wav', '.flac', '.aac', '.ogg', '.wma', '.m4a', '.aiff'],
+    'image': ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.webp', '.svg'],
+    'document': ['.pdf', '.doc', '.docx', '.txt', '.rtf', '.odt'],
+    'spreadsheet': ['.xls', '.xlsx', '.csv', '.ods'],
+    'presentation': ['.ppt', '.pptx', '.odp'],
+    'archive': ['.zip', '.rar', '.7z', '.tar', '.gz'],
+    'script': ['.py', '.js', '.html', '.css', '.xml', '.json'],
+    'other': []
+}
+
+class BinaryFileHandler:
+    """Utility class for handling binary files"""
+    
+    @staticmethod
+    def is_binary_file(file_path):
+        # Very basic check
+        try:
+            with open(file_path, 'tr') as check_file:
+                check_file.read(1024)
                 return False
-            _, ext = os.path.splitext(file_path)
-            ext = ext.lower()
-            binary_extensions = ['.jpg', '.png', '.gif', '.mp3', '.mp4', '.pdf']
-            return ext in binary_extensions
+        except:
+            return True
+    
+    @staticmethod
+    def should_embed_binary_file(file_path, max_size_kb=500):
+        """Check if a binary file should be embedded based on size"""
+        try:
+            size_kb = os.path.getsize(file_path) / 1024
+            return size_kb <= max_size_kb
+        except:
+            return False
+
+    @staticmethod
+    def get_file_type_from_extension(file_path):
+        """Determine file type from extension"""
+        ext = os.path.splitext(file_path.lower())[1]
         
-        @staticmethod
-        def should_embed_binary_file(file_path, max_size_kb=500):
-            if not os.path.exists(file_path):
-                return False
-            return os.path.getsize(file_path) / 1024 <= max_size_kb
+        for file_type, extensions in FILE_TYPES.items():
+            if ext in extensions:
+                return file_type
+        return 'other'
 
-# Define file extensions (copied from the original file_types.py)
-FILE_EXTENSIONS = {
-    'Image': ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp', '.svg'],
-    'Audio': ['.mp3', '.wav', '.ogg', '.flac', '.aac', '.m4a'],
-    'Video': ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv'],
-    'Archive': ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2'],
-}
+    @staticmethod
+    def get_file_icon(file_type):
+        """Get appropriate icon for file type"""
+        icon_map = {
+            'video': '🎬',
+            'audio': '🎵',
+            'image': '🖼️',
+            'document': '📄',
+            'spreadsheet': '📊',
+            'presentation': '📽️',
+            'archive': '📦',
+            'script': '💻',
+            'folder': '',
+            'other': '📄'
+        }
+        return icon_map.get(file_type, '📄')
 
-FILE_CATEGORIES = {
-    'Image': 'Images',
-    'Audio': 'Audio',
-    'Video': 'Video',
-    'Archive': 'Archives',
-    'Document': 'Documents',
-    'Code': 'Code',
-    'Data': 'Data'
-}
-
-COMMON_EXTENSIONS = {
-    '.jpg': 'Image', 
-    '.jpeg': 'Image',
-    '.png': 'Image',
-    '.mp3': 'Audio',
-    '.wav': 'Audio',
-    '.mp4': 'Video',
-    '.avi': 'Video',
-    '.zip': 'Archive',
-    '.rar': 'Archive',
-    '.txt': 'Text',
-    '.md': 'Markdown',
-    '.html': 'HTML',
-    '.css': 'CSS',
-    '.js': 'JavaScript',
-    '.py': 'Python',
-    '.json': 'JSON',
-    '.xml': 'XML'
-}
 
 class FileOperations:
-    """
-    Handles file and folder operations for the structure editor
-    
-    This class provides methods for adding, removing, and organizing files
-    and folders in the structure tree.
-    """
+    """Handles file and folder operations in the structure editor"""
     
     def __init__(self, tree_widget=None, editor=None):
-        """
-        Initialize the file operations
-        
-        Args:
-            tree_widget: Reference to the tree widget (QTreeWidget)
-            editor: Reference to the parent editor (optional)
-        """
+        """Initialize file operations handler"""
+        self.tree_widget = tree_widget
         self.editor = editor
-        self.tree = tree_widget
-        self.cached_files = {}
+        self.binary_handler = BinaryFileHandler()
+        self.current_context_item = None
         
-        # Store reference to cached files if available
-        if editor and hasattr(editor, 'files_to_cache'):
-            self.cached_files = editor.files_to_cache
-    
+        # Connect context menu if tree widget is available
+        if self.tree_widget:
+            self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            self.tree_widget.customContextMenuRequested.connect(self.create_context_menu)
+            print("DEBUG: Connected context menu to tree widget")
+        else:
+            print("DEBUG: No tree widget provided to FileOperations")
+        
+        print("DEBUG: Initialized file operations handler")
+
+    def set_tree_widget(self, tree_widget):
+        """Set or update the tree widget reference"""
+        self.tree_widget = tree_widget
+        if self.tree_widget:
+            self.tree_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            self.tree_widget.customContextMenuRequested.connect(self.create_context_menu)
+            print("DEBUG: Updated tree widget reference and connected context menu")
+        else:
+            print("DEBUG: Tree widget set to None")
+
     def add_file(self, parent_item=None, file_name=None, file_type=None):
-        """
-        Add a file or files to the structure tree
-        
-        Args:
-            parent_item: Parent tree item to add the file to
-            file_name: Name of the file (optional)
-            file_type: Type of file (optional)
-        
-        Returns:
-            QTreeWidgetItem or list of QTreeWidgetItems: The created file item(s)
-        """
-        print(f"🔹 ADD_FILE: Called with parent_item={parent_item}, file_name={file_name}, file_type={file_type}")
-        
-        # Get reference to the tree widget
-        if not hasattr(self, 'tree'):
-            if hasattr(self.editor, 'tree'):
-                self.tree = self.editor.tree
-            elif hasattr(self.editor, 'structure_tree'):
-                self.tree = self.editor.structure_tree
-            
-        if not self.tree:
-            print("ERROR: No tree widget available for file operations")
+        """Add a new file to the structure"""
+        if not self.tree_widget:
+            print("ERROR: No tree widget available")
             return None
-    
-        # If parent is not specified, use root item
-        if not parent_item:
-            if self.tree.topLevelItemCount() > 0:
-                parent_item = self.tree.topLevelItem(0)
-                print(f"🔹 ADD_FILE: Using first top level item as parent: {parent_item.text(0)}")
-            else:
-                parent_item = QTreeWidgetItem(self.tree)
-                parent_item.setText(0, "Project Root")
-                parent_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Project Root"})
-                print(f"🔹 ADD_FILE: Created new root item as parent: Project Root")
-    
-        # If file_name is a list or tuple, add multiple files
-        if isinstance(file_name, (list, tuple)):
-            print(f"🔹 ADD_FILE: Adding multiple files: {file_name}")
-            added_items = []
-            for name in file_name:
-                added_item = self._add_file_item(parent_item, name, file_type)
-                if added_item:
-                    added_items.append(added_item)
-            return added_items
-    
-        # If file_name is not specified, show file browser
-        if not file_name:
-            file_path, _ = QFileDialog.getOpenFileName(
-                self.editor, 
-                "Select File", 
-                "", 
-                "All Files (*.*)"
-            )
-            
-            if not file_path:
-                print("🔹 ADD_FILE: User cancelled file selection")
-                return None
-            
-            # Get file name from path
-            file_name = os.path.basename(file_path)
-            print(f"🔹 ADD_FILE: User selected file: {file_path}, using name: {file_name}")
-            
-            # Add file with original path
-            file_item = self._add_file_item(parent_item, file_name)
-            
-            # Store file information for caching but don't cache yet
-            # (Caching will happen when template is saved)
+
+        # Get categories from the editor
+        categories = []
+        if self.editor and hasattr(self.editor, 'template_manager'):
             try:
-                # Get file data from the tree item
-                file_data = file_item.data(0, Qt.ItemDataRole.UserRole)
-                
-                # Set original path
-                file_data['path'] = file_path
-                file_data['original_path'] = file_path
-                
-                # Determine if binary
-                from app.utils.binary_file_handler import BinaryFileHandler
-                is_binary = BinaryFileHandler.is_binary_file(file_path)
-                file_data['is_binary'] = is_binary
-                
-                # Get template name from the editor if available
-                template_name = "Unknown Template"
-                if hasattr(self.editor, 'template_name'):
-                    template_name = self.editor.template_name
-                elif hasattr(self.editor, 'name_input') and hasattr(self.editor.name_input, 'text'):
-                    template_name = self.editor.name_input.text()
-                
-                # Get relative path in the tree structure for later use
-                relative_path = self._get_relative_path(file_item)
-                file_data['relative_path'] = relative_path
-                file_data['template_name'] = template_name
-                
-                print(f"🔹 ADD_FILE: Created file data: {file_data}")
-                
-                # Update file data in the tree item
-                file_item.setData(0, Qt.ItemDataRole.UserRole, file_data)
-                
-                # Store reference to the file in the editor's cache tracking if available
-                if hasattr(self.editor, 'files_to_cache'):
-                    self.editor.files_to_cache[relative_path] = {
-                        "original_path": file_path,
-                        "relative_path": relative_path,
-                        "template_name": template_name
-                    }
-                    print(f"🔹 ADD_FILE: Added to files_to_cache with key {relative_path}")
-                else:
-                    print("🔹 ADD_FILE: Warning - editor does not have files_to_cache attribute")
-                    
-                # Add visual indicator that file is tracked but not yet cached
-                from PyQt6.QtGui import QBrush, QColor
-                colors = self._get_editor_colors()
-                file_item.setForeground(0, QBrush(QColor(colors.get('tracked', '#88AADD'))))
-                
-            except Exception as e:
-                print(f"Error preparing file for caching: {e}")
-            
-            return file_item
-        
-        # If file name is provided, just add a single file
-        print(f"🔹 ADD_FILE: Adding single file with name: {file_name}")
-        return self._add_file_item(parent_item, file_name, file_type)
-    
-    def _add_file_item(self, parent_item, file_name, file_type=None, original_path=None):
-        """
-        Add a file item to the structure tree with appropriate icon and data
-        
-        Args:
-            parent_item: Parent tree item
-            file_name: Name of the file
-            file_type: Type of file (optional)
-            original_path: Original path of the file (optional)
-        
-        Returns:
-            QTreeWidgetItem: The created file item
-        """
-        print(f"🔹 _ADD_FILE_ITEM: Called with parent={parent_item.text(0) if parent_item else 'None'}, file_name={file_name}")
-        
-        # Ensure tree widget reference is available
-        if not self.tree:
-            print("🔹 _ADD_FILE_ITEM: No tree widget available")
-            return None
-            
-        # Create file item
-        file_item = QTreeWidgetItem(parent_item)
-        file_item.setText(0, file_name)
-        file_item.setFlags(file_item.flags() | Qt.ItemFlag.ItemIsEditable)
-        
-        # Determine file type based on extension if not provided
-        if not file_type:
-            _, ext = os.path.splitext(file_name.lower())
-            # Match extension to known file types
-            for category, extensions in FILE_EXTENSIONS.items():
-                if ext in extensions:
-                    file_type = category
-                    break
-            if not file_type:
-                # Use more comprehensive mapping
-                file_type = COMMON_EXTENSIONS.get(ext, "Unknown")
-        
-        # Create item data with file type
-        item_data = {
-            "type": "file",
-            "name": file_name,
-            "file_type": file_type,
-            "original_path": original_path
-        }
-        
-        # Set item data
-        file_item.setData(0, Qt.ItemDataRole.UserRole, item_data)
-        
-        # Set appropriate icon based on file type - use icon_utilities for consistency
-        try:
-            from app.ui.icon_utilities import get_file_icon
-            icon = get_file_icon(file_name)
-            file_item.setIcon(0, icon)
-        except ImportError:
-            # Fallback to local icon function if import fails
-            icon = get_file_icon_for_type(file_type, file_name)
-            file_item.setIcon(0, icon)
-        
-        print(f"🔹 _ADD_FILE_ITEM: Added file item {file_name} with type {file_type}")
-        return file_item
-    
-    def add_folder(self, parent_item=None, folder_name=None):
-        """
-        Add a folder to the structure tree
-        
-        Args:
-            parent_item: Parent tree item to add the folder to
-            folder_name: Name of the folder (optional)
-        
-        Returns:
-            QTreeWidgetItem: The created folder item
-        """
-        print(f"🔹 ADD_FOLDER: Called with parent_item={parent_item}, folder_name={folder_name}")
-        
-        # Get reference to the tree widget
-        if not hasattr(self, 'tree'):
-            if hasattr(self.editor, 'tree'):
-                self.tree = self.editor.tree
-            elif hasattr(self.editor, 'structure_tree'):
-                self.tree = self.editor.structure_tree
-                
-        if not self.tree:
-            print("ERROR: No tree widget available for file operations")
-            return None
-        
-        # If parent is not specified, use root item
-        if not parent_item:
-            if self.tree.topLevelItemCount() > 0:
-                parent_item = self.tree.topLevelItem(0)
-                print(f"🔹 ADD_FOLDER: Using first top level item as parent: {parent_item.text(0)}")
-            else:
-                parent_item = QTreeWidgetItem(self.tree)
-                parent_item.setText(0, "Project Root")
-                parent_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Project Root"})
-                print(f"🔹 ADD_FOLDER: Created new root item as parent: Project Root")
-        
-        # If folder_name is not specified, show input dialog
-        if not folder_name:
-            # Get folder name from user
-            folder_name, ok = QInputDialog.getText(
-                self.tree, "New Folder", "Enter folder name:", 
-                text="New Folder"
-            )
-            
-            if not ok or not folder_name:
-                print("🔹 ADD_FOLDER: User cancelled folder creation")
-                return None
-        
-        # Create folder item
-        folder_item = QTreeWidgetItem(parent_item)
-        folder_item.setText(0, folder_name)
-        folder_item.setFlags(folder_item.flags() | Qt.ItemFlag.ItemIsEditable)
-        
-        # Set folder data
-        folder_data = {
-            "type": "folder",
-            "name": folder_name
-        }
-        folder_item.setData(0, Qt.ItemDataRole.UserRole, folder_data)
-        
-        # Set folder icon - use icon_utilities for Windows folder icons
-        try:
-            from app.ui.icon_utilities import get_folder_icon
-            icon = get_folder_icon(False)  # False = folder is closed initially
-            folder_item.setIcon(0, icon)
-        except ImportError:
-            # Fallback to standard icon if import fails
-            folder_icon = QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon)
-            folder_item.setIcon(0, folder_icon)
-        
-        print(f"🔹 ADD_FOLDER: Added folder item: {folder_name}")
-        
-        # Make the new folder visible
-        self.tree.scrollToItem(folder_item)
-        
-        return folder_item
-    
-    def delete_selected(self):
-        """
-        Delete selected items from the structure
-        
-        Returns:
-            bool: True if items were deleted, False otherwise
-        """
-        try:
-            if not self.tree:
-                print("DEBUG: delete_selected - tree widget not available")
-                return False
-            
-            # Get selected items
-            selected_items = self.tree.selectedItems()
-            if not selected_items:
-                print("DEBUG: delete_selected - no items selected")
-                return False
-            
-            # Confirm deletion
-            count = len(selected_items)
-            print(f"DEBUG: delete_selected - {count} items selected for deletion")
-            confirm_msg = f"Delete {count} selected item{'s' if count > 1 else ''}?"
-            confirm_title = "Confirm Delete"
-            
-            # Add details about what's being deleted
-            if count == 1:
-                item = selected_items[0]
-                item_data = item.data(0, Qt.ItemDataRole.UserRole)
-                if isinstance(item_data, dict):
-                    item_type = item_data.get('type', 'item')
-                    item_name = item.text(0)
-                    confirm_msg = f"Delete {item_type} '{item_name}'?"
-            
-            # Show confirmation dialog
-            reply = QMessageBox.question(
-                self.editor, 
-                confirm_title,
-                confirm_msg, 
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
-                QMessageBox.StandardButton.No
-            )
-            
-            if reply != QMessageBox.StandardButton.Yes:
-                print("DEBUG: delete_selected - user cancelled deletion")
-                return False
-            
-            # Delete items
-            deleted_count = 0
-            root = self.tree.invisibleRootItem()
-            
-            for item in selected_items:
-                try:
-                    # Get the parent of the item
-                    parent = item.parent()
-                    
-                    if parent:
-                        # Handle child items (non-top-level)
-                        print(f"DEBUG: delete_selected - removing child item '{item.text(0)}' from parent '{parent.text(0)}'")
-                        index = parent.indexOfChild(item)
-                        if index >= 0:
-                            parent.takeChild(index)
-                            deleted_count += 1
-                            print(f"DEBUG: delete_selected - child item removed successfully")
-                        else:
-                            print(f"ERROR: delete_selected - failed to find index of child item")
-                    else:
-                        # Handle top-level items
-                        print(f"DEBUG: delete_selected - removing top-level item '{item.text(0)}'")
-                        index = root.indexOfChild(item)
-                        if index >= 0:
-                            root.takeChild(index)
-                            deleted_count += 1
-                            print(f"DEBUG: delete_selected - top-level item removed successfully")
-                        else:
-                            print(f"ERROR: delete_selected - failed to find index of top-level item")
-                except Exception as item_ex:
-                    print(f"ERROR: Exception deleting individual item: {item_ex}")
-                    import traceback
-                    traceback.print_exc()
-            
-            # Refresh the tree view
-            if deleted_count > 0:
-                self.tree.update()
-                print(f"DEBUG: delete_selected - {deleted_count} items deleted successfully")
-                return True
-            else:
-                print(f"DEBUG: delete_selected - no items were deleted")
-                return False
-        except Exception as e:
-            print(f"ERROR: Exception in delete_selected: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
-    
-    def rename_item(self, item):
-        """
-        Rename an item
-        
-        Args:
-            item: The item to rename
-            
-        Returns:
-            bool: True if renamed, False otherwise
-        """
-        if not item:
-            print("ERROR: rename_item - no item provided")
-            return False
-            
-        # Make sure the item is editable
-        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
-            
-        try:
-            # Try in-place editing first
-            self.tree.editItem(item, 0)
-            
-            # Setup timer to check if edit was successful
-            # This is needed because editItem is asynchronous
-            def check_edit_status():
-                # If editor is not visible, the edit may have failed
-                if not self.tree.isPersistentEditorOpen(item, 0) and not self.tree.itemWidget(item, 0):
-                    print("edit: editing failed")
-                    # Use dialog fallback
-                    self._rename_with_dialog(item)
-            
-            # Check status after a short delay
-            QTimer.singleShot(200, check_edit_status)
-            
-            return True
-            
-        except Exception as e:
-            print(f"edit: editing failed with error: {e}")
-            # Use dialog fallback
-            return self._rename_with_dialog(item)
-    
-    def _rename_with_dialog(self, item):
-        """Fallback for renaming using a dialog"""
-        if not item:
-            return False
-            
-        # Get current item name and type
-        current_name = item.text(0)
-        item_data = item.data(0, Qt.ItemDataRole.UserRole)
-        item_type = item_data.get('type', 'item') if isinstance(item_data, dict) else 'item'
-        
-        # Show dialog to get new name
-        new_name, ok = QInputDialog.getText(
-            self.tree,
-            f"Rename {item_type.capitalize()}",
-            f"Enter new name for {item_type}:",
-            text=current_name
+                categories = list(FILE_TYPES.keys())
+                categories.remove('other')  # Remove 'other' from selectable categories
+            except:
+                categories = ['video', 'audio', 'image', 'document']
+
+        # Show file details dialog
+        dialog = FileDetailsDialog(
+            self.tree_widget,
+            "Add New File",
+            "Enter details for the new file:",
+            file_name or "",
+            categories,
+            file_type or ""
         )
         
-        if not ok or not new_name or new_name == current_name:
-            return False
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            file_name = dialog.get_file_name()
+            file_type = dialog.get_file_type()
+            is_binary = dialog.is_binary()
             
-        # Update item name
-        item.setText(0, new_name)
+            if file_name:
+                # Create the file item
+                file_item = self._add_file_item(parent_item, file_name, file_type)
+                
+                # Set binary flag if needed
+                if is_binary:
+                    data = file_item.data(0, Qt.ItemDataRole.UserRole) or {}
+                    data['is_binary'] = True
+                    file_item.setData(0, Qt.ItemDataRole.UserRole, data)
+                
+                return file_item
         
-        # Update item data
-        if isinstance(item_data, dict):
-            item_data['name'] = new_name
-            item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+        return None
+
+    def _add_file_item(self, parent_item, file_name, file_type=None, original_path=None):
+        """Internal method to add a file item to the tree"""
+        if not self.tree_widget:
+            return None
+
+        # Create the tree item
+        if parent_item:
+            file_item = QTreeWidgetItem(parent_item)
+        else:
+            file_item = QTreeWidgetItem(self.tree_widget)
+
+        file_item.setText(0, file_name)
+        
+        # Set item data
+        item_data = {
+            'name': file_name,
+            'type': 'file',
+            'file_type': file_type or self.binary_handler.get_file_type_from_extension(file_name)
+        }
+        
+        if original_path:
+            item_data['original_path'] = original_path
+            item_data['is_binary'] = self.binary_handler.is_binary_file(original_path)
+        
+        file_item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+        
+        # Set display text without emoji icons
+        file_item.setText(0, file_name)
+        
+        # Expand parent if needed
+        if parent_item:
+            parent_item.setExpanded(True)
+        
+        print(f"DEBUG: Added file '{file_name}' to tree")
+        return file_item
+
+    def add_folder(self, parent_item=None, folder_name=None):
+        """Add a new folder to the structure"""
+        if not self.tree_widget:
+            print("ERROR: No tree widget available")
+            return None
+
+        # Get folder name from user if not provided
+        if not folder_name:
+            text, ok = QInputDialog.getText(
+                self.tree_widget, 
+                'Add Folder', 
+                'Enter folder name:'
+            )
+            if ok and text.strip():
+                folder_name = text.strip()
+            else:
+                return None
+
+        # Create the tree item
+        if parent_item:
+            folder_item = QTreeWidgetItem(parent_item)
+        else:
+            folder_item = QTreeWidgetItem(self.tree_widget)
+
+        folder_item.setText(0, folder_name)
+        
+        # Set item data
+        item_data = {
+            'name': folder_name,
+            'type': 'folder'
+        }
+        folder_item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+        
+        # Expand parent if needed
+        if parent_item:
+            parent_item.setExpanded(True)
+        
+        # Expand the new folder
+        folder_item.setExpanded(True)
+        
+        print(f"DEBUG: Added folder '{folder_name}' to tree")
+        return folder_item
+
+    def delete_selected(self):
+        """Delete the selected items"""
+        if not self.tree_widget:
+            return
+
+        selected_items = self.tree_widget.selectedItems()
+        if not selected_items:
+            return
+
+        # Confirm deletion
+        count = len(selected_items)
+        item_text = "item" if count == 1 else "items"
+        
+        reply = QMessageBox.question(
+            self.tree_widget,
+            "Confirm Deletion",
+            f"Are you sure you want to delete the selected {count} {item_text}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            for item in selected_items:
+                # Get parent before deletion
+                parent = item.parent()
+                
+                # Remove the item
+                if parent:
+                    parent.removeChild(item)
+                else:
+                    index = self.tree_widget.indexOfTopLevelItem(item)
+                    if index >= 0:
+                        self.tree_widget.takeTopLevelItem(index)
+                
+                print(f"DEBUG: Deleted item '{item.text(0)}'")
+
+    def rename_item(self, item):
+        """Rename the selected item"""
+        if not item:
+            return
+        
+        # Get current name (remove emoji prefix)
+        current_text = item.text(0)
+        if " " in current_text and any(current_text.startswith(emoji) for emoji in ["🎬", "🎵", "🖼️", "📄", "📊", "📽️", "📦", "💻"]):
+            current_name = current_text.split(" ", 1)[1]
+        else:
+            current_name = current_text
+        
+        # Get new name from user
+        text, ok = QInputDialog.getText(
+            self.tree_widget,
+            'Rename Item',
+            'Enter new name:',
+            QLineEdit.EchoMode.Normal,
+            current_name
+        )
+        
+        if ok and text.strip() and text.strip() != current_name:
+            new_name = text.strip()
             
-        return True
-    
+            # Update item data
+            data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+            data['name'] = new_name
+            item.setData(0, Qt.ItemDataRole.UserRole, data)
+            
+            # Update display text without emoji icons
+            item.setText(0, new_name)
+            
+            print(f"DEBUG: Renamed item to '{new_name}'")
+
     def import_directory(self, target_item=None):
-        """
-        Import a directory from the file system
-        
-        Args:
-            target_item: Item to import into (optional)
-            
-        Returns:
-            bool: True if imported, False otherwise
-        """
-        if not self.tree:
-            return False
-            
-        # Get directory path
+        """Import a directory structure"""
+        if not self.tree_widget:
+            return
+
+        # Get directory from user
         dir_path = QFileDialog.getExistingDirectory(
-            self.editor,
+            self.tree_widget,
             "Select Directory to Import",
-            os.path.expanduser("~"),
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+            "",
+            QFileDialog.Option.ShowDirsOnly
         )
         
         if not dir_path:
-            return False  # User canceled
-            
-        # If no target specified, use selected item or root
-        if not target_item:
-            selected_items = self.tree.selectedItems()
-            if selected_items:
-                target_item = selected_items[0]
-                
-                # If selected item is a file, use its parent
-                item_data = target_item.data(0, Qt.ItemDataRole.UserRole)
-                if isinstance(item_data, dict) and item_data.get('type') == 'file':
-                    if target_item.parent():
-                        target_item = target_item.parent()
-                    else:
-                        target_item = self.tree.invisibleRootItem()
-            else:
-                # Use root item
-                target_item = self.tree.invisibleRootItem()
+            return
         
-        # Import the directory
         try:
-            # Get directory name from path
-            dir_name = os.path.basename(dir_path)
-            
-            # Create folder item
-            folder_item = self.add_folder(target_item, dir_name)
-            
-            # Import contents
-            self._import_directory_contents(dir_path, folder_item)
-            
-            return True
+            # Import the directory contents
+            self._import_directory_contents(dir_path, target_item)
+            print(f"DEBUG: Successfully imported directory: {dir_path}")
         except Exception as e:
             QMessageBox.critical(
-                self.editor,
+                self.tree_widget,
                 "Import Error",
-                f"Error importing directory: {str(e)}"
+                f"Failed to import directory:\n{str(e)}"
             )
-            return False
-    
+
     def _import_directory_contents(self, dir_path, parent_item):
-        """
-        Import contents of a directory recursively
-        
-        Args:
-            dir_path: Path to the directory
-            parent_item: Parent item to add contents to
-        """
-        # List all files and subdirectories
-        for item_name in os.listdir(dir_path):
-            item_path = os.path.join(dir_path, item_name)
-            
-            # Skip hidden files (like .DS_Store)
-            if item_name.startswith('.'):
-                continue
+        """Recursively import directory contents"""
+        try:
+            for item_name in os.listdir(dir_path):
+                item_path = os.path.join(dir_path, item_name)
                 
-            if os.path.isdir(item_path):
-                # Create subdirectory
-                folder_item = self.add_folder(parent_item, item_name)
-                
-                # Use system folder icon directly
-                folder_icon = QIcon.fromTheme("folder", QIcon("icons/folder.png"))
-                if not folder_icon.isNull():
-                    folder_item.setIcon(0, folder_icon)
-                
-                # Import contents recursively
-                self._import_directory_contents(item_path, folder_item)
-            else:
-                # Add file
-                file_item = self._add_file_item(parent_item, item_name)
-                
-                # Use system file icon directly
-                file_icon = QIcon.fromTheme("document", QIcon("icons/file.png"))
-                if not file_icon.isNull():
-                    file_item.setIcon(0, file_icon)
-                
-                # If it's a binary file, cache it
-                if self.is_binary_file(item_name):
-                    try:
-                        with open(item_path, 'rb') as f:
-                            content = f.read()
-                            cache_key = f"{item_name}_{id(file_item)}"
-                            self.cached_files[cache_key] = content
-                            
-                            # Update file data
-                            file_data = file_item.data(0, Qt.ItemDataRole.UserRole)
-                            file_data['cached'] = True
-                            file_data['cache_key'] = cache_key
-                            file_item.setData(0, Qt.ItemDataRole.UserRole, file_data)
-                    except Exception as e:
-                        print(f"DEBUG: Failed to cache binary file: {e}")
-    
+                if os.path.isdir(item_path):
+                    # Create folder item
+                    folder_item = self.add_folder(parent_item, item_name)
+                    # Recursively import subdirectory
+                    self._import_directory_contents(item_path, folder_item)
+                else:
+                    # Create file item
+                    file_type = self.binary_handler.get_file_type_from_extension(item_path)
+                    self._add_file_item(parent_item, item_name, file_type, item_path)
+                    
+        except Exception as e:
+            print(f"ERROR: Failed to import directory contents: {e}")
+            raise
+
     def import_file(self, target_item=None):
-        """
-        Import a file from the file system
-        
-        Args:
-            target_item: Target tree item to add the file to (optional)
-            
-        Returns:
-            QTreeWidgetItem: The created file item or None if canceled
-        """
-        # Open file dialog to select file
+        """Import a single file"""
+        if not self.tree_widget:
+            return
+
+        # Get file from user
         file_path, _ = QFileDialog.getOpenFileName(
-            self.editor, 
-            "Import File", 
-            "", 
-            "All Files (*.*)"
+            self.tree_widget,
+            "Select File to Import",
+            "",
+            "All Files (*)"
         )
         
         if not file_path:
-            return None
+            return
         
-        # Use target item or get selected item
-        if not target_item:
-            selected_items = self.tree.selectedItems()
-            if selected_items:
-                target_item = selected_items[0]
-            else:
-                # Use root item
-                if self.tree.topLevelItemCount() > 0:
-                    target_item = self.tree.topLevelItem(0)
-                else:
-                    # Create root item if not exists
-                    target_item = QTreeWidgetItem(self.tree)
-                    target_item.setText(0, "Project Root")
-                    target_item.setData(0, Qt.ItemDataRole.UserRole, {"type": "folder", "name": "Project Root"})
-        
-        # Import the file
         try:
-            # Get file name from path
             file_name = os.path.basename(file_path)
+            file_type = self.binary_handler.get_file_type_from_extension(file_path)
             
-            # Add file with original path
-            file_item = self._add_file_item(target_item, file_name, original_path=file_path)
-            
-            # Store file information for caching but don't cache yet
-            # (Caching will happen when template is saved)
-            try:
-                # Get file data from the tree item
-                file_data = file_item.data(0, Qt.ItemDataRole.UserRole)
-                
-                # Set original path
-                file_data['path'] = file_path
-                file_data['original_path'] = file_path
-                
-                # Determine if binary
-                from app.utils.binary_file_handler import BinaryFileHandler
-                is_binary = BinaryFileHandler.is_binary_file(file_path)
-                file_data['is_binary'] = is_binary
-                
-                # Get template name from the editor if available
-                template_name = "Unknown Template"
-                if hasattr(self.editor, 'template_name'):
-                    template_name = self.editor.template_name
-                elif hasattr(self.editor, 'name_input') and hasattr(self.editor.name_input, 'text'):
-                    template_name = self.editor.name_input.text()
-                
-                # Get relative path in the tree structure for later use  
-                relative_path = self._get_relative_path(file_item)
-                file_data['relative_path'] = relative_path
-                file_data['template_name'] = template_name
-                
-                # Update file data in the tree item
-                file_item.setData(0, Qt.ItemDataRole.UserRole, file_data)
-                
-                # Store reference to the file in the editor's cache tracking if available
-                if hasattr(self.editor, 'files_to_cache'):
-                    self.editor.files_to_cache[relative_path] = {
-                        "original_path": file_path,
-                        "relative_path": relative_path,
-                        "template_name": template_name
-                    }
-                    
-                # Add visual indicator that file is tracked but not yet cached
-                from PyQt6.QtGui import QBrush, QColor
-                colors = self._get_editor_colors()
-                file_item.setForeground(0, QBrush(QColor(colors.get('tracked', '#88AADD'))))
-                
-            except Exception as e:
-                print(f"Error preparing file for caching: {e}")
-                
-            return file_item
+            # Add the file item
+            self._add_file_item(target_item, file_name, file_type, file_path)
+            print(f"DEBUG: Successfully imported file: {file_name}")
             
         except Exception as e:
-            print(f"Error importing file: {e}")
-            return None
-    
+            QMessageBox.critical(
+                self.tree_widget,
+                "Import Error",
+                f"Failed to import file:\n{str(e)}"
+            )
+
     def is_binary_file(self, file_path):
-        """
-        Check if a file is binary based on extension
+        """Check if a file is binary"""
+        return self.binary_handler.is_binary_file(file_path)
+
+    def create_context_menu(self, position):
+        """Create and show context menu"""
+        print(f"DEBUG: create_context_menu called with position {position}")
         
-        Args:
-            file_path: Path to the file or just the filename
-            
-        Returns:
-            bool: True if binary, False otherwise
-        """
-        # Use BinaryFileHandler if available
-        return BinaryFileHandler.is_binary_file(file_path)
-    
-    def create_context_menu(self, item, position=None):
-        """Create and return a context menu for the given item"""
-        print("DEBUG: create_context_menu - creating context menu")
+        if not self.tree_widget:
+            print("DEBUG: create_context_menu - no tree widget available")
+            return
         
-        if not self.tree:
-            print("ERROR: create_context_menu - tree not available")
-            return None
-            
-        # Create menu
-        menu = QMenu(self.tree)
-        
-        # Apply styling
+        # Check if tree_widget is still valid (not deleted)
         try:
-            from app.ui.color_scheme_pyqt import CONTEXT_MENU_STYLE
-            menu.setStyleSheet(CONTEXT_MENU_STYLE)
-        except Exception as e:
-            print(f"ERROR: Failed to apply menu styling: {e}")
-            menu.setStyleSheet("""
-                QMenu {
-                    background-color: #2D2D30;
-                    color: #FFFFFF;
-                    border: 1px solid #3F3F46;
-                    padding: 5px;
-                }
-                QMenu::item {
-                    padding: 5px 20px 5px 20px;
-                    border-radius: 3px;
-                }
-                QMenu::item:selected {
-                    background-color: #264F78;
-                }
-                QMenu::separator {
-                    height: 1px;
-                    background-color: #3F3F46;
-                    margin: 5px;
-                }
-            """)
+            # Try to access the tree widget to verify it's still valid
+            if not hasattr(self.tree_widget, 'itemAt'):
+                print("DEBUG: create_context_menu - tree widget is invalid")
+                return
+        except (RuntimeError, AttributeError):
+            print("DEBUG: create_context_menu - tree widget has been deleted")
+            return
         
-        # Process by item type
-        if item:
-            # Get item data
-            item_data = item.data(0, Qt.ItemDataRole.UserRole)
-            if isinstance(item_data, dict) and 'type' in item_data:
-                item_type = item_data['type']
-                print(f"DEBUG: create_context_menu - item type: {item_type}")
-                
-                # Add item-specific actions based on type
-                if item_type == 'folder':
-                    self._add_folder_context_actions(menu, item)
-                elif item_type == 'file':
-                    self._add_file_context_actions(menu, item)
-                else:
-                    # Unknown item type - add basic actions
-                    self._add_generic_context_actions(menu, item)
-            else:
-                # Unknown item type - add basic actions
-                self._add_generic_context_actions(menu, item)
-        else:
-            # Root context menu (no item selected)
-            self._add_root_context_actions(menu)
-            
-        # Make sure all actions are properly added
-        menu.ensurePolished()
+        print("DEBUG: create_context_menu - tree widget available, creating context menu")
         
-        # Return the menu for display
-        return menu
-
-    def _add_file_context_actions(self, menu, item):
-        """Add context menu actions for file items"""
-        # Add "Add File" and "Add Folder" actions (to add sibling items)
-        # These should operate on the parent of the current file item
-        parent_for_add = item.parent() if item.parent() else self.tree.invisibleRootItem()
-
+        # Store current item for context - with proper error handling
+        try:
+            self.current_context_item = self.tree_widget.itemAt(position)
+            item = self.current_context_item
+        except (RuntimeError, AttributeError):
+            print("DEBUG: create_context_menu - error getting item at position")
+            return
+        
+        # Safely get item text for debugging
+        try:
+            item_text = item.text(0) if item else 'None'
+        except (RuntimeError, AttributeError):
+            item_text = 'Invalid/Deleted Item'
+        print(f"DEBUG: Item at position: {item_text}")
+        
+        # Create menu with error handling
+        try:
+            menu = QMenu(self.tree_widget)
+        except (RuntimeError, AttributeError):
+            print("DEBUG: Failed to create menu - tree widget invalid")
+            return
+        
+        # Style the menu to match application theme - using the original UIBuilder styling
+        from app.ui.color_scheme_pyqt import APP_COLORS
+        colors = APP_COLORS
+        
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 5px;
+            }}
+            QMenu::item {{
+                padding: 5px 15px;
+                border-radius: 3px;
+            }}
+            QMenu::item:selected {{
+                background-color: {colors['highlight_bg']};
+                color: {colors['highlight_text']};
+            }}
+            QMenu::separator {{
+                height: 1px;
+                background-color: {colors['border']};
+                margin: 5px 2px;
+            }}
+        """)
+        
+        # Add basic actions first (like the original)
         add_file_action = menu.addAction("Add File")
-        add_file_action.triggered.connect(lambda: self.add_file(parent_for_add))
+        add_file_action.triggered.connect(lambda: self.editor.add_file() if hasattr(self.editor, 'add_file') else None)
         
         add_folder_action = menu.addAction("Add Folder")
-        add_folder_action.triggered.connect(lambda: self.add_folder(parent_for_add))
+        add_folder_action.triggered.connect(lambda: self.editor.add_folder() if hasattr(self.editor, 'add_folder') else None)
         
-        menu.addSeparator()
-        
-        # Add rename action
-        rename_action = menu.addAction("Rename")
-        rename_action.triggered.connect(lambda: self.rename_item(item))
-        
-        # Add delete action
-        delete_action = menu.addAction("Delete")
-        delete_action.triggered.connect(lambda: self.delete_selected()) # Assumes delete_selected handles current item
-        
-        # Add keyboard shortcuts (optional, but good practice)
-        # rename_action.setShortcut("F2")
-        # delete_action.setShortcut("Delete")
-        
-        # Project Name Options submenu
-        item_data = item.data(0, Qt.ItemDataRole.UserRole)
-        if isinstance(item_data, dict) and item_data.get('type') == 'file': # Ensure it's a file
-            menu.addSeparator()
-            
-            project_name_menu = menu.addMenu("Project Name Options")
+        if item:
             try:
-                from app.ui.color_scheme_pyqt import CONTEXT_MENU_STYLE
-                # --- Restoring custom styling for the submenu ---
-                project_name_menu.setStyleSheet(CONTEXT_MENU_STYLE) 
-            except Exception as e:
-                print(f"ERROR: Failed to apply submenu styling: {e}")
-
-            # Get project name mode and usage status from item data
-            item_data = self._get_item_data(item)
-            name_mode = item_data.get('project_name_mode', 'none') # none, replace, append, prepend
-            uses_project_name = item_data.get('uses_project_name', False)
-            original_name = item_data.get('original_name', item.text(0))
-            
-            # Only add these options if the item is renameable and it's a file (not a folder)
-            if item.flags() & Qt.ItemFlag.ItemIsEditable and item_data.get('type') == 'file':
-                # Action to use project name (replace current name)
-                use_action = project_name_menu.addAction("Use Project Name")
-                use_action.setCheckable(True)
-                # Set checked based on the specific mode being active, or if uses_project_name is true and mode is none (legacy)
-                use_action.setChecked(name_mode == 'replace' or (uses_project_name and name_mode == 'none'))
-                use_action.triggered.connect(lambda checked, i=item: self._toggle_project_name_for_file(i, mode='replace', is_checked=checked))
-
-                # Action to append project name
-                append_action = project_name_menu.addAction("Append Project Name")
-                append_action.setCheckable(True)
-                append_action.setChecked(name_mode == 'append')
-                append_action.triggered.connect(lambda checked, i=item: self._toggle_project_name_for_file(i, mode='append', is_checked=checked))
-
-                # Action to prepend project name
-                prepend_action = project_name_menu.addAction("Prepend Project Name")
-                prepend_action.setCheckable(True)
-                prepend_action.setChecked(name_mode == 'prepend')
-                prepend_action.triggered.connect(lambda checked, i=item: self._toggle_project_name_for_file(i, mode='prepend', is_checked=checked))
+                menu.addSeparator()
                 
-                project_name_menu.addSeparator()
+                # Item-specific actions
+                rename_action = menu.addAction("Rename")
+                rename_action.triggered.connect(lambda: self.tree_widget.editItem(item, 0) if self.tree_widget else None)
 
-                # Add Custom Pattern and Custom Separator actions
-                pattern_action = project_name_menu.addAction("Use Custom Pattern...")
-                pattern_action.triggered.connect(
-                    lambda checked=False, bound_item=item: (
-                        print(f"DEBUG: Lambda for 'Use Custom Pattern...' triggered for item: {bound_item.text(0) if bound_item else 'None'}"),
-                        self._configure_naming_pattern(bound_item)
-                    )
-                )
-
-                separator_action = project_name_menu.addAction("Use Custom Separator...")
-                separator_action.triggered.connect(
-                    lambda checked=False, bound_item=item: (
-                        print(f"DEBUG: Lambda for 'Use Custom Separator...' triggered for item: {bound_item.text(0) if bound_item else 'None'}"),
-                        self._configure_custom_separator(bound_item)
-                    )
-                )
-
-                project_name_menu.addSeparator() # Add another separator before Revert
-
-                # Action to revert to original name
-                revert_action = project_name_menu.addAction(f'Revert to "{original_name}"')
-                # Enable only if current name differs from original due to project name usage
-                revert_action.setEnabled(uses_project_name or name_mode != 'none') 
-                revert_action.triggered.connect(lambda bound_item=item: self._reset_file_name(bound_item))
-            else:
-                # If not editable or a folder, add a disabled placeholder
-                disabled_action = project_name_menu.addAction("(Options N/A for folders)")
-                disabled_action.setEnabled(False)
+                delete_action = menu.addAction("Delete")
+                delete_action.triggered.connect(lambda: self._delete_item(item))
+                    
+                # Get item data for file-specific actions - with error handling
+                try:
+                    item_data = item.data(0, Qt.ItemDataRole.UserRole) if item else {}
+                except (RuntimeError, AttributeError):
+                    item_data = {}
+                    
+                if isinstance(item_data, dict) and item_data.get('type') == 'file':
+                    menu.addSeparator()
+                    
+                    # Original project name action
+                    action_text = "Revert to Original Name" if item_data.get('rename_flag') or item_data.get('uses_project_name') else "Use Project Name"
+                    use_project_name_action = menu.addAction(action_text)
+                    use_project_name_action.triggered.connect(lambda: self.editor._toggle_project_name_for_file(item) if hasattr(self.editor, '_toggle_project_name_for_file') else None)
                 
-        # Add separator before other actions if project_name_menu was added
-        if project_name_menu:
-             menu.addSeparator()
-
-    def _add_folder_context_actions(self, menu, item):
-        """Add context menu actions for folder items"""
-        # Add "Add Folder" and "Add File" actions
-        add_folder_action = menu.addAction(QIcon.fromTheme("folder-new"), "Add Folder")
-        add_folder_action.triggered.connect(lambda: self.add_folder(item))
+                # Versioning menu for files
+                versioning_menu = menu.addMenu("Versioning")
+                
+                # Date sequence option
+                date_action = versioning_menu.addAction("Date Sequences...")
+                date_action.triggered.connect(lambda: self._configure_date_sequences(item))
+                
+                # Separator and project name options
+                menu.addSeparator()
+                
+                # Project name mode actions
+                project_menu = menu.addMenu("Project Name")
+                
+                prepend_action = project_menu.addAction("Prepend Project Name")
+                prepend_action.triggered.connect(lambda: self._set_project_name_mode(item, 'prepend'))
+                
+                append_action = project_menu.addAction("Append Project Name")
+                append_action.triggered.connect(lambda: self._set_project_name_mode(item, 'append'))
+                
+                replace_action = project_menu.addAction("Replace with Project Name")
+                replace_action.triggered.connect(lambda: self._set_project_name_mode(item, 'replace'))
+                
+                menu.addSeparator()
+                
+                # Custom patterns
+                patterns_action = menu.addAction("Custom Naming Patterns...")
+                patterns_action.triggered.connect(lambda: self._configure_custom_patterns(item))
+                
+                # Separator and other options
+                menu.addSeparator()
+                
+            except (RuntimeError, AttributeError) as e:
+                print(f"DEBUG: Error building context menu for item: {e}")
         
-        add_file_action = menu.addAction(QIcon.fromTheme("document-new"), "Add File")
-        add_file_action.triggered.connect(lambda: self.add_file(item))
-        
-        # Add separator
-        menu.addSeparator()
-        
-        # Add rename action
-        rename_action = menu.addAction(QIcon.fromTheme("edit-rename"), "Rename")
-        rename_action.triggered.connect(lambda: self.rename_item(item))
-        
-        # Add delete action
-        delete_action = menu.addAction(QIcon.fromTheme("edit-delete"), "Delete")
-        delete_action.triggered.connect(lambda: self.delete_selected())
-        
-        # Add keyboard shortcuts
-        rename_action.setShortcut("F2")
-        delete_action.setShortcut("Delete")
-        
-        # Add "Import File" and "Import Directory" actions
-        import_menu = menu.addMenu("Import")
-        import_file_action = import_menu.addAction(QIcon.fromTheme("document-import"), "Import File")
-        import_dir_action = import_menu.addAction(QIcon.fromTheme("folder-import"), "Import Directory")
-        
-        # Connect actions
-        import_file_action.triggered.connect(lambda: self.import_file(item))
-        import_dir_action.triggered.connect(lambda: self.import_directory(item))
-
-    def _add_generic_context_actions(self, menu, item):
-        """Add context menu actions for generic items"""
-        # Add "Add Folder" and "Add File" actions
-        add_folder_action = menu.addAction("Add Folder")
-        add_folder_action.triggered.connect(lambda: self.add_folder())
-        
-        add_file_action = menu.addAction("Add File")
-        add_file_action.triggered.connect(lambda: self.add_file())
-        
-        # Add separator
-        menu.addSeparator()
-        
-        # Add "Import Directory" action
-        import_dir_action = menu.addAction("Import Directory...")
-        import_dir_action.triggered.connect(lambda: self.import_directory())
-
-    def _add_root_context_actions(self, menu):
-        """Add context menu actions for the root item"""
-        # Add "Add Folder" and "Add File" actions
-        add_folder_action = menu.addAction("Add Folder")
-        add_folder_action.triggered.connect(lambda: self.add_folder())
-        
-        add_file_action = menu.addAction("Add File")
-        add_file_action.triggered.connect(lambda: self.add_file())
-        
-        # Add separator
-        menu.addSeparator()
-        
-        # Add "Import Directory" action
-        import_dir_action = menu.addAction("Import Directory...")
-        import_dir_action.triggered.connect(lambda: self.import_directory())
-
-    def _setup_context_menu(self):
-        """Set up the context menu for the tree widget"""
-        if not self.tree:
-            return
-        
-        # Do NOT connect the context menu signal here - this is handled by the structure editor.
-        # Only set the policy if needed.
-        if self.tree.contextMenuPolicy() != Qt.ContextMenuPolicy.CustomContextMenu:
-            self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        
-        print("DEBUG: Context menu policy set (but not connecting the signal to avoid duplicates)")
-
-    def _show_context_menu(self, position):
-        """
-        Show a context menu at the given position
-        
-        Args:
-            position: Position to show the menu at
-        """
-        if not self.tree:
-            return
-        
-        # Get the item at the position
-        item = self.tree.itemAt(position)
-        
-        if item:
-            # Get the item data
-            item_data = item.data(0, Qt.ItemDataRole.UserRole)
-            
-            # Create menu based on item type
-            if isinstance(item_data, dict) and item_data.get('type') == 'folder':
-                self._show_folder_context_menu(item, position)
-            else:
-                self._show_file_context_menu(item, position)
-        else:
-            # Show the general context menu if no item is selected
-            self._show_general_context_menu(position)
-
-    def _show_general_context_menu(self, position):
-        """
-        Show a general context menu for the tree
-        
-        Args:
-            position: Position to show the menu at
-        """
-        # Import main app colors
-        from app.ui.color_scheme_pyqt import APP_COLORS, CONTEXT_MENU_STYLE
-        
-        # Create menu
-        menu = QMenu(self.tree)
-        menu.setStyleSheet(CONTEXT_MENU_STYLE)
-        
-        # Add actions
-        add_folder_action = menu.addAction("Add Folder")
-        add_file_action = menu.addAction("Add File")
-        menu.addSeparator()
-        import_dir_action = menu.addAction("Import Directory...")
-        
-        # Execute the menu
-        action = menu.exec(self.tree.mapToGlobal(position))
-        
-        # Handle actions
-        if action == add_folder_action:
-            self.add_folder()
-        elif action == add_file_action:
-            self.add_file()
-        elif action == import_dir_action:
-            self.import_directory()
-
-    def _show_folder_context_menu(self, item, position):
-        """
-        Show a context menu for folder items
-        
-        Args:
-            item: The folder item
-            position: Position to show the menu at
-        """
-        # Import main app colors
-        from app.ui.color_scheme_pyqt import APP_COLORS, CONTEXT_MENU_STYLE
-        
-        # Create menu
-        menu = QMenu(self.tree)
-        menu.setStyleSheet(CONTEXT_MENU_STYLE)
-        
-        # Add actions
-        add_folder_action = menu.addAction(QIcon.fromTheme("folder-new"), "Add Folder")
-        add_file_action = menu.addAction(QIcon.fromTheme("document-new"), "Add File")
-        menu.addSeparator()
-        
-        # Import actions
-        import_menu = QMenu("Import", menu)
-        import_menu.setStyleSheet(CONTEXT_MENU_STYLE)
-        import_file_action = import_menu.addAction(QIcon.fromTheme("document-import"), "Import File")
-        import_dir_action = import_menu.addAction(QIcon.fromTheme("folder-import"), "Import Directory")
-        menu.addMenu(import_menu)
-        
-        menu.addSeparator()
-        rename_action = menu.addAction(QIcon.fromTheme("edit-rename"), "Rename")
-        delete_action = menu.addAction(QIcon.fromTheme("edit-delete"), "Delete")
-        
-        # Add keyboard shortcuts
-        rename_action.setShortcut("F2")
-        delete_action.setShortcut("Delete")
-        
-        # Execute the menu
-        action = menu.exec(self.tree.mapToGlobal(position))
-        
-        # Handle actions
-        if action == add_folder_action:
-            self.add_folder(item)
-        elif action == add_file_action:
-            self.add_file(item)
-        elif action == import_file_action:
-            self.import_file(item)
-        elif action == import_dir_action:
-            self.import_directory(item)
-        elif action == rename_action:
-            self.rename_item(item)
-        elif action == delete_action:
-            self.delete_selected()
-
-    def _show_file_context_menu(self, item, position):
-        """
-        Show a context menu for file items
-        
-        Args:
-            item: The file item
-            position: Position to show the menu at
-        """
-        # Import main app colors
-        from app.ui.color_scheme_pyqt import APP_COLORS, CONTEXT_MENU_STYLE
-        
-        # Create menu
-        menu = QMenu(self.tree)
-        menu.setStyleSheet(CONTEXT_MENU_STYLE)
-        
-        # Add actions
-        rename_action = menu.addAction(QIcon.fromTheme("edit-rename"), "Rename")
-        menu.addSeparator()
-        
-        # Get item data
-        item_data = item.data(0, Qt.ItemDataRole.UserRole)
-        if not isinstance(item_data, dict):
-            item_data = {}
-        
-        # Create a submenu for project name options
-        project_name_menu = menu.addMenu("Project Name Options")
-        
-        # Determine current state
-        name_mode = item_data.get('project_name_mode', 'none')
-        uses_project_name = item_data.get('uses_project_name', False)
-        
-        # Create project name actions
-        replace_name_action = project_name_menu.addAction("Replace with Project Name")
-        prepend_name_action = project_name_menu.addAction("Prepend Project Name")
-        append_name_action = project_name_menu.addAction("Append Project Name")
-        pattern_action = project_name_menu.addAction("Use Custom Pattern...")
-        separator_action = project_name_menu.addAction("Use Custom Separator...")
-        project_name_menu.addSeparator()
-        reset_name_action = project_name_menu.addAction("Reset to Original Name")
-        
-        # Set checkable and check the current mode - but don't make them toggle
-        replace_name_action.setCheckable(True)
-        prepend_name_action.setCheckable(True)
-        append_name_action.setCheckable(True)
-        
-        # Show which mode is currently active
-        replace_name_action.setChecked(name_mode == 'replace')
-        prepend_name_action.setChecked(name_mode == 'prepend')
-        append_name_action.setChecked(name_mode == 'append')
-        
-        # Enable/disable reset based on whether a project name option is active
-        reset_name_action.setEnabled(uses_project_name or name_mode != 'none')
-        
-        menu.addSeparator()
-        delete_action = menu.addAction(QIcon.fromTheme("edit-delete"), "Delete")
-        
-        # Add keyboard shortcuts
-        rename_action.setShortcut("F2")
-        delete_action.setShortcut("Delete")
-        
-        # Execute the menu
-        action = menu.exec(self.tree.mapToGlobal(position))
-        
-        # Handle actions - Always apply the selected mode, don't toggle
-        if action == rename_action:
-            self.rename_item(item)
-        elif action == replace_name_action:
-            # Always apply replace mode, regardless of current state
-            self._use_project_name_for_file(item, mode='replace')
-        elif action == prepend_name_action:
-            # Always apply prepend mode, regardless of current state
-            self._use_project_name_for_file(item, mode='prepend')
-        elif action == append_name_action:
-            # Always apply append mode, regardless of current state
-            self._use_project_name_for_file(item, mode='append')
-        elif action == pattern_action:
-            self._configure_naming_pattern(item)
-        elif action == reset_name_action:
-            self._reset_file_name(item)
-        elif action == separator_action:
-            self._configure_custom_separator(item)
-        elif action == delete_action:
-            self.delete_selected()
-            
-    def _use_project_name_for_file(self, item, mode):
-        """Set a file item to use the project name with a specific mode (replace, append, prepend)."""
-        if not item or not self.editor:
-            return False
-        
-        # Get current file data and name
-        item_data = item.data(0, Qt.ItemDataRole.UserRole)
-        if not isinstance(item_data, dict) or item_data.get('type') != 'file':
-            return False
-        
-        current_name = item.text(0)
-        
-        # Store original name if we don't already have it
-        # First check if we already have an original_name stored
-        if 'original_name' not in item_data:
-            # Try to extract original name from current display name if it contains placeholders
-            if "${PROJECT_NAME}" in current_name:
-                # Try to reconstruct original name from placeholder display
-                if mode == 'replace':
-                    # For replace mode: ${PROJECT_NAME}.ext -> original would be the extension part
-                    parts = current_name.split('${PROJECT_NAME}')
-                    if len(parts) == 2 and parts[1].startswith('.'):
-                        # This might be from a replace mode, but we can't reliably reconstruct
-                        # Use a reasonable fallback
-                        item_data['original_name'] = current_name.replace('${PROJECT_NAME}', 'file')
-                    else:
-                        item_data['original_name'] = current_name.replace('${PROJECT_NAME}', 'file')
-                elif mode == 'append':
-                    # For append mode: name.${PROJECT_NAME}.ext -> original would be name.ext
-                    item_data['original_name'] = current_name.replace('.${PROJECT_NAME}', '')
-                elif mode == 'prepend':
-                    # For prepend mode: ${PROJECT_NAME}.name.ext -> original would be name.ext
-                    item_data['original_name'] = current_name.replace('${PROJECT_NAME}.', '')
+        # Show menu if it has actions
+        if not menu.isEmpty():
+            try:
+                if self.tree_widget and hasattr(self.tree_widget, 'mapToGlobal'):
+                    global_pos = self.tree_widget.mapToGlobal(position)
+                    print(f"DEBUG: Executing context menu at global position {global_pos}")
+                    menu.exec(global_pos)
                 else:
-                    item_data['original_name'] = current_name.replace('${PROJECT_NAME}', 'file')
-            else:
-                # Current name doesn't contain placeholders, so it's the original
-                item_data['original_name'] = current_name
+                    print("DEBUG: Tree widget invalid during menu execution")
+            except (RuntimeError, AttributeError) as e:
+                print(f"DEBUG: Error executing context menu: {e}")
+            finally:
+                # Always clean up the menu
+                try:
+                    menu.deleteLater()
+                except:
+                    pass
+        else:
+            print("DEBUG: Context menu is empty, not showing")
+            try:
+                menu.deleteLater()
+            except:
+                pass
+
+    def _set_project_name_mode(self, item, mode):
+        """Set project name mode for a file"""
+        if not item:
+            return
         
-        # Use original name as the base to work with
-        original_name = item_data.get('original_name', current_name)
+        # Get current item data
+        item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
         
-        # Set the project name flags
+        # Update the project name mode
+        item_data['project_name_mode'] = mode
         item_data['uses_project_name'] = True
         item_data['rename_flag'] = True
-        item_data['project_name_mode'] = mode
         
-        # Generate the appropriate display name based on mode
-        if mode == 'replace':
-            # Replace entire name with ${PROJECT_NAME} + extension
-            if '.' in original_name:
-                extension = '.' + original_name.split('.')[-1]
-                display_name = f"${{PROJECT_NAME}}{extension}"
-            else:
-                display_name = "${PROJECT_NAME}"
-        elif mode == 'append':
-            # Append ${PROJECT_NAME} before extension
-            if '.' in original_name:
-                name_part = '.'.join(original_name.split('.')[:-1])
-                extension = '.' + original_name.split('.')[-1]
-                display_name = f"{name_part}.${{PROJECT_NAME}}{extension}"
-            else:
-                display_name = f"{original_name}.${{PROJECT_NAME}}"
-        elif mode == 'prepend':
-            # Prepend ${PROJECT_NAME} to the original name
-            display_name = f"${{PROJECT_NAME}}.{original_name}"
-        else:
-            display_name = f"${{PROJECT_NAME}}"
-        
-        # Update the item display and data
-        item.setText(0, display_name)
+        # Update the tree item data
         item.setData(0, Qt.ItemDataRole.UserRole, item_data)
         
-        # Mark editor as modified
-        if hasattr(self.editor, 'mark_modified'):
-            self.editor.mark_modified()
+        print(f"DEBUG: Set {mode} mode for {item.text(0)}")
         
-        return True
-
-    def _reset_file_name(self, item):
-        """
-        Reset file name to the original value
+        # Update visual display if needed
+        self._update_item_display(item)
+    
+    def _configure_custom_patterns(self, item):
+        """Configure custom naming patterns for file"""
+        dialog = CustomPatternsDialog(self.tree_widget, item)
         
-        Args:
-            item: The file item to update
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            pattern_data = dialog.get_pattern_data()
+            self._apply_pattern_to_item(item, pattern_data)
+    
+    def _update_item_display(self, item):
+        """Update the visual display of an item based on its data"""
         if not item:
-            print("ERROR: _reset_file_name called with no item")
-            return False
+            return
         
-        # Get current file data
-        item_data = item.data(0, Qt.ItemDataRole.UserRole)
-        if not isinstance(item_data, dict) or item_data.get('type') != 'file':
-            print("ERROR: _reset_file_name called on non-file item or invalid data")
-            return False
+        item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+        original_name = item_data.get('original_name', item.text(0))
         
-        # Get original name
-        original_name = item_data.get('original_name')
-        if not original_name:
-            # Try to get original name from original_path as fallback
-            original_path = item_data.get('original_path', '')
-            if original_path and os.path.exists(original_path):
-                original_name = os.path.basename(original_path)
-                item_data['original_name'] = original_name  # Store it for future use
-                print(f"DEBUG: _reset_file_name - recovered original name from path: {original_name}")
-            else:
-                print("ERROR: Original name not found and cannot be recovered, cannot reset")
-                return False
+        # Clean any existing display formatting
+        display_name = original_name
+        if ' ' in display_name and any(display_name.startswith(icon) for icon in ['🎬', '🎵', '🖼️', '📄', '📊', '📽️', '📦', '💻']):
+            display_name = display_name.split(' ', 1)[1]
         
-        print(f"DEBUG: _reset_file_name - resetting to original name: {original_name}")
-        
-        # Update display to show original name
-        item.setText(0, original_name)
-        
-        # Update data - turn off the flags but keep original_name for future use
-        item_data['uses_project_name'] = False
-        item_data['project_name_mode'] = 'none'
-        item_data['rename_flag'] = False
-        
-        # Clear any custom settings while preserving original_name
-        if 'custom_separator' in item_data:
-            del item_data['custom_separator']
-        if 'custom_pattern' in item_data:
-            del item_data['custom_pattern']
-        
-        # Store updated data
-        item.setData(0, Qt.ItemDataRole.UserRole, item_data)
-        
-        # Restore normal styling
-        font = item.font(0)
-        font.setItalic(False)
-        item.setFont(0, font)
-        item.setForeground(0, QBrush(QColor("#000000")))  # Reset to default color
-        
-        print(f"DEBUG: _reset_file_name - successfully reset file back to original name: {original_name}")
-        
-        return True
-
-    def _configure_custom_separator(self, item):
-        """
-        Configure a custom separator for project name operations
-        
-        Args:
-            item: The file item to update
-            
-        Returns:
-            bool: True if a separator was set, False otherwise
-        """
-        if not item:
-            return False
-        
-        # Get current file data
-        item_data = item.data(0, Qt.ItemDataRole.UserRole)
-        if not isinstance(item_data, dict) or item_data.get('type') != 'file':
-            return False
-        
-        # Get current separator
-        current_separator = item_data.get('custom_separator', '.')
-        
-        # Show input dialog to get the separator
-        separator, ok = QInputDialog.getText(
-            self.tree, 
-            "Custom Separator",
-            "Enter a custom separator to use between project name and filename:",
-            text=current_separator
-        )
-        
-        if not ok or not separator:
-            return False
-        
-        # Store the separator
-        item_data['custom_separator'] = separator
-        item.setData(0, Qt.ItemDataRole.UserRole, item_data)
-        
-        # If already using project name, update the display
+        # Apply project name placeholder if needed
         if item_data.get('uses_project_name', False):
             mode = item_data.get('project_name_mode', 'replace')
-            self._use_project_name_for_file(item, mode=mode)
+            if mode == 'replace':
+                display_name = "${PROJECT_NAME}"
+                if '.' in original_name:
+                    extension = original_name.split('.')[-1]
+                    display_name = f"${{PROJECT_NAME}}.{extension}"
+            elif mode == 'prepend':
+                display_name = f"${{PROJECT_NAME}}.{original_name}"
+            elif mode == 'append':
+                if '.' in original_name:
+                    base, ext = original_name.rsplit('.', 1)
+                    display_name = f"{base}.${{PROJECT_NAME}}.{ext}"
+                else:
+                    display_name = f"{original_name}.${{PROJECT_NAME}}"
         
-        return True
-
-    def _toggle_project_name_for_file(self, item, mode, is_checked):
-        """Toggle the project name usage for a file item and update item data."""
-        if not item:
-            return False
-        
-        # Get current file data
-        item_data = self._get_item_data(item)
-        if not isinstance(item_data, dict) or item_data.get('type') != 'file':
-            return False
-        
-        # New logic based on is_checked and mode
-        if is_checked:
-            # If the action is being checked (turned on), apply the specified mode
-            return self._use_project_name_for_file(item, mode=mode)
-        else:
-            # If the action is being unchecked, revert to the original name
-            return self._reset_file_name(item)
-
-    def _get_relative_path(self, item):
-        """
-        Get the relative path of an item in the tree
-        
-        Args:
-            item: Tree item to get path for
-            
-        Returns:
-            str: Relative path of the item
-        """
-        if not item:
-            return ""
-            
-        # Start with the item's name
-        path_parts = [item.text(0)]
-        
-        # Walk up the tree
-        parent = item.parent()
-        while parent and parent != self.tree.invisibleRootItem():
-            path_parts.insert(0, parent.text(0))
-            parent = parent.parent()
-        
-        # Join parts with platform-independent separator
-        return "/".join(path_parts[:-1])  # Exclude the file name itself
-
-    def _get_editor_colors(self):
-        """
-        Get color scheme from the editor or use defaults
-        
-        Returns:
-            dict: Dictionary of color values
-        """
-        try:
-            # Try to get colors from app's color scheme
-            from app.ui.color_scheme_pyqt import APP_COLORS
-            return APP_COLORS
-        except ImportError:
-            # Fallback colors
-            return {
-                'accent': '#007ACC',            # Blue accent color
-                'accent_light': '#338ACC',      # Lighter blue
-                'accent_dark': '#005A9C',       # Darker blue
-                'tracked': '#88AADD',           # Light blue for tracked files
-                'background': '#1E1E1E',        # Dark background
-                'text': '#FFFFFF',              # White text
-                'text_secondary': '#CCCCCC',    # Light gray secondary text
-                'border': '#444444',            # Dark gray borders
-                'warning': '#FF9900',           # Orange warning
-                'error': '#FF5555',             # Red error
-                'success': '#55AA55'            # Green success
-            }
-
-    def _configure_naming_pattern(self, item):
-        """
-        Configure a custom naming pattern for project name operations with professional presets
-        
-        Args:
-            item: The file item to update
-            
-        Returns:
-            bool: True if a pattern was set, False otherwise
-        """
-        if not item:
-            return False
-        
-        # Get current file data
-        item_data = item.data(0, Qt.ItemDataRole.UserRole)
-        if not isinstance(item_data, dict) or item_data.get('type') != 'file':
-            return False
-        
-        # Get current pattern or default
-        current_pattern = item_data.get('custom_pattern', '$project_$base$ext')
-        
-        # Show the professional naming pattern dialog
-        dialog = NamingPatternDialog(self.tree, current_pattern)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            pattern = dialog.get_selected_pattern()
-            if pattern:
-                # Store the pattern
-                item_data['custom_pattern'] = pattern
-                item_data['project_name_mode'] = 'pattern'
-                item.setData(0, Qt.ItemDataRole.UserRole, item_data)
-                
-                # Update the display
-                self._use_project_name_for_file(item, mode='pattern')
-                
-                # Mark editor as modified
-                if hasattr(self.editor, 'mark_modified'):
-                    self.editor.mark_modified()
-                
-                return True
-        
-        return False
-
-    def _get_item_data(self, item):
-        """Retrieve the dictionary of data associated with a QTreeWidgetItem."""
-        if not item:
-            return {}
-        try:
-            data = item.data(0, Qt.ItemDataRole.UserRole)
-            return data if isinstance(data, dict) else {}
-        except Exception as e:
-            # print(f"Error getting item data for '{item.text(0)}': {e}")
-            return {}
-
-    def _update_item_data(self, item, data_dict):
-        # Placeholder for actual update logic
-        # print(f"DEBUG: Updating data for item: {item.text(0)} with: {data_dict}")
-        # This needs to be implemented based on how item data is stored
-        pass
-
-class NamingPatternDialog(QDialog):
-    """Professional dialog for selecting file naming patterns with industry-specific presets"""
+        # Set display text without emoji icons
+        item.setText(0, display_name)
     
-    def __init__(self, parent, current_pattern="$project_$base$ext"):
+    def _configure_versioning(self, item):
+        """Configure versioning for file"""
+        if not item:
+            return
+        
+        dialog = VersioningDialog(self.tree_widget, item)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            versioning_data = dialog.get_versioning_data()
+            self._apply_versioning_to_item(item, versioning_data)
+    
+    def _configure_date_sequences(self, item):
+        """Configure date sequences for file versioning"""
+        dialog = DateSequenceDialog(self.tree_widget, item)
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            date_data = dialog.get_date_data()
+            self._apply_date_sequence_to_item(item, date_data)
+    
+    def _apply_pattern_to_item(self, item, pattern_data):
+        """Apply custom pattern to item"""
+        data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+        data.update(pattern_data)
+        item.setData(0, Qt.ItemDataRole.UserRole, data)
+        
+        # Update display
+        if pattern_data.get('pattern'):
+            item.setText(0, pattern_data['pattern'])
+    
+    def _apply_versioning_to_item(self, item, versioning_data):
+        """Apply versioning configuration to item"""
+        if not item or not self.tree_widget:
+            print("DEBUG: _apply_versioning_to_item - missing item or tree widget")
+            return
+            
+        print(f"DEBUG: Applying versioning to item: {item.text(0)}")
+        print(f"DEBUG: Versioning data: {versioning_data}")
+        
+        # Get parent item
+        parent_item = item.parent()
+        
+        # Get original item data
+        original_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+        original_name = original_data.get('name', item.text(0))
+        
+        # Clean original name of any existing icons or prefixes if available
+        if 'name' in original_data:
+            original_name = original_data['name']
+            if ' ' in original_name and any(original_name.startswith(icon) for icon in ['🎬', '🎵', '🖼️', '📄', '📊', '📽️', '📦', '💻']):
+                original_name = original_name.split(' ', 1)[1]
+                original_data['original_name'] = original_name
+        
+        # Ensure we have original_name stored for future reference
+        if 'original_name' not in original_data:
+            original_data['original_name'] = original_name
+        
+        # Extract base name and extension
+        if '.' in original_name:
+            base_name, extension = os.path.splitext(original_name)
+        else:
+            base_name = original_name
+            extension = '.txt'  # Default extension
+        
+        # Get versioning parameters
+        format_text = versioning_data.get('versioning_format', 'v01, v02, v03...')
+        start_num = versioning_data.get('versioning_start', 1)
+        count = versioning_data.get('versioning_count', 5)
+        
+        # Generate version strings and create new items
+        created_items = []
+        
+        for i in range(count):
+            version_num = start_num + i
+            
+            # Generate version string based on format
+            if format_text.startswith("v0"):
+                version_str = f"v{version_num:02d}"
+            elif format_text.startswith("V0"):
+                version_str = f"V{version_num:02d}"
+            elif format_text.startswith("_v"):
+                version_str = f"_v{version_num}"
+            elif format_text.startswith("_V"):
+                version_str = f"_V{version_num}"
+            elif format_text.startswith("(v0"):
+                version_str = f"(v{version_num:02d})"
+            elif format_text.startswith("00"):
+                version_str = f"{version_num:03d}"
+            elif format_text.startswith("_00"):
+                version_str = f"_{version_num:03d}"
+            else:
+                version_str = f"v{version_num:02d}"
+            
+            # Create new filename
+            new_filename = f"{base_name}_{version_str}{extension}"
+            
+            # Create new tree item
+            if i == 0:
+                # Update the first item (original item)
+                new_item = item
+                new_item.setText(0, new_filename)
+            else:
+                # Create additional items
+                if parent_item:
+                    new_item = QTreeWidgetItem(parent_item)
+                else:
+                    new_item = QTreeWidgetItem(self.tree_widget)
+                
+                new_item.setText(0, new_filename)
+            
+            # Copy and update item data
+            new_data = original_data.copy()
+            new_data.update(versioning_data)
+            new_data['name'] = new_filename
+            new_data['original_name'] = original_name  # Keep reference to original
+            new_data['version_number'] = version_num
+            new_data['version_string'] = version_str
+            
+            new_item.setData(0, Qt.ItemDataRole.UserRole, new_data)
+            
+            # Set display text without emoji icons
+            new_item.setText(0, new_filename)
+            
+            created_items.append(new_item)
+            print(f"DEBUG: Created versioned file: {new_filename}")
+        
+        # Expand parent if needed
+        if parent_item:
+            parent_item.setExpanded(True)
+        
+        print(f"DEBUG: Successfully created {len(created_items)} versioned files")
+    
+    def _apply_date_sequence_to_item(self, item, date_data):
+        """Apply date sequence configuration to item"""
+        if not item or not self.tree_widget:
+            print("DEBUG: _apply_date_sequence_to_item - missing item or tree widget")
+            return
+            
+        print(f"DEBUG: Applying date sequence to item: {item.text(0)}")
+        print(f"DEBUG: Date data: {date_data}")
+        
+        # Get parent item
+        parent_item = item.parent()
+        
+        # Get original item data
+        original_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+        original_name = original_data.get('name', item.text(0))
+        item_type = original_data.get('type', 'file')
+        
+        # Clean original name of any existing icons or prefixes
+        if ' ' in original_name and any(original_name.startswith(icon) for icon in ['🎬', '🎵', '🖼️', '📄', '📊', '📽️', '📦', '💻']):
+            original_name = original_name.split(' ', 1)[1]
+        
+        # Ensure we have original_name stored for future reference
+        if 'original_name' not in original_data:
+            original_data['original_name'] = original_name
+        
+        # Extract date sequence data
+        date_format = date_data.get('date_format', 'YYYY-MM-DD')
+        start_date = date_data.get('date_start')
+        end_date = date_data.get('date_end')
+        interval_value = date_data.get('date_interval_value', 1)
+        interval_type = date_data.get('date_interval_type', 'Days')
+        
+        # Parse original filename/foldername to get base name and extension
+        base_name = original_name
+        extension = ""
+        if item_type == 'file' and '.' in original_name:
+            base_name, extension = original_name.rsplit('.', 1)
+            extension = '.' + extension
+        
+        current_date = start_date
+        created_items = []
+        item_index = 0
+        
+        # Create items for each date in the sequence (limit to 10 for performance)
+        while current_date <= end_date and len(created_items) < 10:
+            # Format date string
+            if date_format == "YYYY-MM-DD":
+                date_str = current_date.strftime("%Y-%m-%d")
+            elif date_format == "YYYYMMDD":
+                date_str = current_date.strftime("%Y%m%d")
+            elif date_format == "MM-DD-YYYY":
+                date_str = current_date.strftime("%m-%d-%Y")
+            elif date_format == "DD-MM-YYYY":
+                date_str = current_date.strftime("%d-%m-%Y")
+            elif date_format == "YYYY/MM/DD":
+                date_str = current_date.strftime("%Y/%m/%d")
+            elif date_format == "MM/DD/YYYY":
+                date_str = current_date.strftime("%m/%d/%Y")
+            else:
+                date_str = current_date.strftime("%Y-%m-%d")  # Default format
+            
+            # Create new name with date
+            new_name = f"{base_name}_{date_str}{extension}"
+            
+            # Create new tree item
+            if item_index == 0:
+                # Update the first item (original item)
+                new_item = item
+                new_item.setText(0, new_name)
+            else:
+                # Create additional items
+                if parent_item:
+                    new_item = QTreeWidgetItem(parent_item)
+                else:
+                    new_item = QTreeWidgetItem(self.tree_widget)
+                
+                new_item.setText(0, new_name)
+                
+                # For folders, copy all children to the new folder
+                if item_type == 'folder' and item.childCount() > 0:
+                    self._copy_folder_children(item, new_item)
+            
+            # Copy and update item data - ensure all data is JSON serializable
+            new_data = original_data.copy()
+            
+            # Only copy JSON-serializable fields from date_data
+            json_safe_date_data = {
+                'date_format': date_data.get('date_format'),
+                'date_start_iso': date_data.get('date_start_iso'),
+                'date_end_iso': date_data.get('date_end_iso'),
+                'date_interval_value': date_data.get('date_interval_value'),
+                'date_interval_type': date_data.get('date_interval_type'),
+                'uses_date_sequence': date_data.get('uses_date_sequence'),
+                'rename_flag': date_data.get('rename_flag')
+            }
+            
+            new_data.update(json_safe_date_data)
+            new_data['name'] = new_name
+            new_data['original_name'] = original_name  # Keep reference to original
+            new_data['date_sequence_index'] = item_index
+            new_data['date_sequence_date'] = current_date.isoformat()  # Convert to string
+            
+            # Set data on the tree item
+            new_item.setData(0, Qt.ItemDataRole.UserRole, new_data)
+            
+            # Set display text without emoji icons
+            new_item.setText(0, new_name)
+            
+            created_items.append(new_item)
+            print(f"DEBUG: Created date sequence {item_type}: {new_name}")
+            
+            # Move to next date
+            if interval_type == "Days":
+                current_date += timedelta(days=interval_value)
+            elif interval_type == "Weeks":
+                current_date += timedelta(weeks=interval_value)
+            elif interval_type == "Months":
+                # Approximate month calculation
+                current_date += timedelta(days=interval_value * 30)
+            
+            item_index += 1
+        
+        print(f"DEBUG: Successfully created {len(created_items)} date sequence {item_type}s")
+        
+        # Expand parent if it has children
+        if parent_item:
+            parent_item.setExpanded(True)
+        
+        # Refresh the tree widget
+        if self.tree_widget:
+            self.tree_widget.update()
+    
+    def _copy_folder_children(self, source_folder, target_folder):
+        """Copy all children from source folder to target folder"""
+        for i in range(source_folder.childCount()):
+            source_child = source_folder.child(i)
+            source_data = source_child.data(0, Qt.ItemDataRole.UserRole) or {}
+            
+            # Create new child item
+            new_child = QTreeWidgetItem(target_folder)
+            
+            # Copy data and set proper display text
+            source_name = source_data.get('name', source_child.text(0))
+            # Clean any existing icons from the name
+            if ' ' in source_name and any(source_name.startswith(icon) for icon in ['🎬', '🎵', '🖼️', '📄', '📊', '📽️', '📦', '💻']):
+                source_name = source_name.split(' ', 1)[1]
+            
+            # Set display text without emoji icons
+            new_child.setText(0, source_name)
+            
+            new_child.setData(0, Qt.ItemDataRole.UserRole, source_data.copy())
+            
+            # Recursively copy if this child is also a folder
+            if source_data.get('type') == 'folder' and source_child.childCount() > 0:
+                self._copy_folder_children(source_child, new_child)
+    
+    def _apply_to_folder(self, item):
+        """Apply settings to all files in folder"""
+        print(f"DEBUG: Apply to folder: {item.text(0)}")
+    
+    def _rename_item(self, item):
+        """Rename an item"""
+        if item and self.tree_widget:
+            self.tree_widget.editItem(item, 0)
+    
+    def _delete_item(self, item):
+        """Delete an item from the tree"""
+        if not item or not self.tree_widget:
+            return
+        
+        # Use the editor's delete functionality if available
+        if hasattr(self.editor, 'delete_selected'):
+            # Set the item as current before deleting
+            self.tree_widget.setCurrentItem(item)
+            self.editor.delete_selected()
+        else:
+            # Fallback - direct deletion
+            parent = item.parent()
+            if parent:
+                parent.removeChild(item)
+            else:
+                index = self.tree_widget.indexOfTopLevelItem(item)
+                if index >= 0:
+                    self.tree_widget.takeTopLevelItem(index)
+    
+    def _add_file(self):
+        """Add a new file"""
+        print("DEBUG: Add file")
+    
+    def _add_folder(self):
+        """Add a new folder"""
+        print("DEBUG: Add folder")
+
+    def _configure_versioning_for_folder(self, item):
+        """Configure versioning for all files in folder"""
+        if not item:
+            return
+        
+        dialog = VersioningDialog(self.tree_widget, item)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            versioning_data = dialog.get_versioning_data()
+            self._apply_versioning_to_folder(item, versioning_data)
+    
+    def _configure_date_sequences_for_folder(self, folder_item):
+        """Configure date sequences for all files in a folder"""
+        dialog = DateSequenceDialog(self.tree_widget, folder_item)
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            date_data = dialog.get_date_data()
+            
+            # Apply to all file children
+            for i in range(folder_item.childCount()):
+                child = folder_item.child(i)
+                child_data = child.data(0, Qt.ItemDataRole.UserRole) or {}
+                if child_data.get('type') == 'file':
+                    self._apply_date_sequence_to_item(child, date_data)
+    
+    def _apply_versioning_to_folder(self, folder_item, versioning_data):
+        """Apply versioning to all files in a folder"""
+        if not folder_item:
+            return
+        
+        print(f"DEBUG: Applying versioning to folder: {folder_item.text(0)}")
+        
+        # Find all file items in the folder
+        file_items = []
+        for i in range(folder_item.childCount()):
+            child = folder_item.child(i)
+            child_data = child.data(0, Qt.ItemDataRole.UserRole) or {}
+            if child_data.get('type') == 'file':
+                file_items.append(child)
+        
+        # Apply versioning to each file
+        for file_item in file_items:
+            self._apply_versioning_to_item(file_item, versioning_data)
+        
+        print(f"DEBUG: Applied versioning to {len(file_items)} files in folder")
+    
+    def _apply_date_sequence_to_folder(self, folder_item, date_data):
+        """Apply date sequence to all files in a folder"""
+        if not folder_item:
+            return
+        
+        print(f"DEBUG: Applying date sequence to folder: {folder_item.text(0)}")
+        
+        # Find all file items in the folder
+        file_items = []
+        for i in range(folder_item.childCount()):
+            child = folder_item.child(i)
+            child_data = child.data(0, Qt.ItemDataRole.UserRole) or {}
+            if child_data.get('type') == 'file':
+                file_items.append(child)
+        
+        # Apply date sequence to each file
+        for file_item in file_items:
+            self._apply_date_sequence_to_item(file_item, date_data)
+        
+        print(f"DEBUG: Applied date sequence to {len(file_items)} files in folder")
+    
+    def _apply_project_name_to_folder(self, folder_item, mode):
+        """Apply project name mode to all files in a folder"""
+        if not folder_item:
+            return
+        
+        print(f"DEBUG: Applying project name {mode} to folder: {folder_item.text(0)}")
+        
+        # Find all file items in the folder
+        file_items = []
+        for i in range(folder_item.childCount()):
+            child = folder_item.child(i)
+            child_data = child.data(0, Qt.ItemDataRole.UserRole) or {}
+            if child_data.get('type') == 'file':
+                file_items.append(child)
+        
+        # Apply project name mode to each file
+        for file_item in file_items:
+            self._set_project_name_mode(file_item, mode)
+        
+        print(f"DEBUG: Applied project name {mode} to {len(file_items)} files in folder")
+
+    def _add_folder_context_actions(self, menu, item):
+        """Add folder-specific context menu actions"""
+        # Versioning operations for folders
+        versioning_menu = menu.addMenu("Versioning")
+        
+        # Apply versioning to the folder itself
+        date_folder_action = versioning_menu.addAction("Date Sequences (This Folder)...")
+        date_folder_action.triggered.connect(lambda: self._configure_date_sequences(item))
+        
+        versioning_menu.addSeparator()
+        
+        # Apply versioning to files within folder
+        folder_files_menu = versioning_menu.addMenu("Apply to All Files in Folder")
+        
+        date_action = folder_files_menu.addAction("Date Sequences...")
+        date_action.triggered.connect(lambda: self._configure_date_sequences_for_folder(item))
+        
+        # Project name operations for all files in folder
+        project_menu = folder_files_menu.addMenu("Project Name")
+        
+        prepend_folder_action = project_menu.addAction("Prepend Project Name")
+        prepend_folder_action.triggered.connect(lambda: self._apply_project_name_to_folder(item, 'prepend'))
+        
+        append_folder_action = project_menu.addAction("Append Project Name")
+        append_folder_action.triggered.connect(lambda: self._apply_project_name_to_folder(item, 'append'))
+        
+        replace_folder_action = project_menu.addAction("Replace with Project Name")
+        replace_folder_action.triggered.connect(lambda: self._apply_project_name_to_folder(item, 'replace'))
+
+
+class CustomPatternsDialog(QDialog):
+    """Dialog for configuring custom naming patterns"""
+    
+    def __init__(self, parent, item):
         super().__init__(parent)
-        self.selected_pattern = current_pattern
-        self.setup_ui()
-        
-    def setup_ui(self):
-        from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
-        
+        self.item = item
+        self.pattern_data = {}
+        self.init_ui()
+    
+    def init_ui(self):
+        """Initialize the user interface"""
         self.setWindowTitle("Custom Naming Patterns")
-        self.setFixedWidth(620)
-        self.setFixedHeight(720)
+        self.setMinimumSize(600, 500)
+        self.resize(700, 600)
         
-        # Apply dialog styling
-        self.setStyleSheet(f"""
-            QDialog {{
-                background-color: {colors['bg']};
-                color: {colors['text']};
-            }}
-        """)
-        
-        # Main layout
         layout = QVBoxLayout(self)
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
         
-        # Title and description
-        title = QLabel("Professional Naming Patterns")
-        title.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {colors['text']};")
+        # Title
+        title = QLabel("Custom File Naming Patterns")
+        title.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         layout.addWidget(title)
         
-        desc = QLabel("Choose from industry-tested naming patterns or create your own:")
-        desc.setStyleSheet(f"color: {colors['secondary_text']}; padding-bottom: 10px;")
-        desc.setWordWrap(True)
-        layout.addWidget(desc)
+        # Pattern input
+        pattern_label = QLabel("Naming Pattern:")
+        layout.addWidget(pattern_label)
         
-        # Pattern categories
-        pattern_categories = {
-            "📝 Standard Patterns": {
-                "description": "Most commonly used across all industries",
-                "patterns": [
-                    ("$project_$base$ext", "ProjectName_filename.ext", "Clean, professional, widely compatible"),
-                    ("$project-$base$ext", "ProjectName-filename.ext", "Dash separator, web-friendly"),
-                    ("$project.$base$ext", "ProjectName.filename.ext", "Period separator, traditional"),
-                    ("$base_$project$ext", "filename_ProjectName.ext", "Original name first"),
-                ]
-            },
-            "🎬 Video/Film Production": {
-                "description": "Optimized for NLE workflows and post-production",
-                "patterns": [
-                    ("$project_$base_v{version}$ext", "ProjectName_filename_v001.ext", "Version numbering for iterations"),
-                    ("$project_$base_{date}$ext", "ProjectName_filename_20250119.ext", "Date stamp for dailies"),
-                    ("$project_{sequence}_{shot}_$base$ext", "ProjectName_Seq01_Shot001_filename.ext", "Sequence and shot organization"),
-                    ("$base_$project_{timecode}$ext", "filename_ProjectName_01h23m45s.ext", "Timecode reference"),
-                ]
-            },
-            "💰 Finance/Accounting": {
-                "description": "Sequential numbering and audit-friendly formats",
-                "patterns": [
-                    ("$project_{invoice}_{counter:4}$ext", "ProjectName_INV_0001.ext", "Invoice numbering with leading zeros"),
-                    ("$project_{date}_{type}_{seq:3}$ext", "ProjectName_20250119_EXP_001.ext", "Date, type, and sequence"),
-                    ("$project_{client}_{ref}$ext", "ProjectName_ClientCode_RefNumber.ext", "Client reference tracking"),
-                    ("{year}{month}{day}_{project}_{counter:3}$ext", "20250119_ProjectName_001.ext", "ISO date prefix"),
-                ]
-            },
-            "💻 Software Development": {
-                "description": "Version control and development-friendly patterns",
-                "patterns": [
-                    ("$project_{feature}_{version}$ext", "ProjectName_feature_v1.2.3.ext", "Feature and version tracking"),
-                    ("$project_{branch}_{commit}$ext", "ProjectName_main_abc123.ext", "Git branch and commit reference"),
-                    ("$base_{env}_{build}$ext", "filename_prod_build-456.ext", "Environment and build number"),
-                    ("$project.{module}.{class}$ext", "ProjectName.auth.User.ext", "Module and class structure"),
-                ]
-            },
-            "🎨 Design/Creative": {
-                "description": "Asset management and creative workflow patterns",
-                "patterns": [
-                    ("$project_{asset}_{resolution}_{variant}$ext", "ProjectName_logo_4K_final.ext", "Asset, resolution, variant"),
-                    ("$project_{category}_{style}_{version}$ext", "ProjectName_branding_minimal_v3.ext", "Category and style tracking"),
-                    ("$base_{project}_{approval}$ext", "filename_ProjectName_approved.ext", "Approval status tracking"),
-                    ("{client}_{project}_{deliverable}_{date}$ext", "ClientName_ProjectName_logo_20250119.ext", "Client deliverable format"),
-                ]
-            },
-            "🎵 Audio Production": {
-                "description": "Multi-track and session-based naming patterns",
-                "patterns": [
-                    ("$project_{track:2}_{instrument}_{take:2}$ext", "ProjectName_01_guitar_03.ext", "Track, instrument, take numbering"),
-                    ("$project_{session}_{mix}_{version}$ext", "ProjectName_Session1_rough_v2.ext", "Session and mix versioning"),
-                    ("$base_{project}_{bpm}_{key}$ext", "filename_ProjectName_120bpm_Cmaj.ext", "BPM and key reference"),
-                    ("$project_{stem}_{bus}_{fx}$ext", "ProjectName_vocal_reverb_hall.ext", "Stem, bus, and effect tracking"),
-                ]
-            }
-        }
+        self.pattern_edit = QLineEdit()
+        self.pattern_edit.setPlaceholderText("e.g., ${PROJECT_NAME}_${VERSION}_${DATE}")
+        self.pattern_edit.textChanged.connect(self.update_preview)
+        layout.addWidget(self.pattern_edit)
         
-        # Create scroll area for the categories
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_content = QWidget()
-        scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setSpacing(20)
+        # Available variables
+        variables_label = QLabel("Available Variables:")
+        layout.addWidget(variables_label)
         
-        for category_name, category_data in pattern_categories.items():
-            self.create_category_section(scroll_layout, category_name, category_data)
+        variables_text = QTextEdit()
+        variables_text.setMaximumHeight(150)
+        variables_text.setPlainText("""
+${PROJECT_NAME} - Project name
+${BASE} - Original filename without extension
+${EXT} - File extension
+${VERSION} - Version number (v01, v02, etc.)
+${DATE} - Current date (YYYYMMDD)
+${TIME} - Current time (HHMMSS)
+${COUNTER} - Incremental counter (001, 002, etc.)
+${CUSTOM} - Custom text field
+        """.strip())
+        variables_text.setReadOnly(True)
+        layout.addWidget(variables_text)
         
-        scroll_area.setWidget(scroll_content)
-        scroll_area.setFixedHeight(400)
-        scroll_area.setStyleSheet(f"""
-            QScrollArea {{
-                border: 1px solid {colors['border']};
-                border-radius: 4px;
-                background-color: {colors['card_bg']};
-            }}
-        """)
-        layout.addWidget(scroll_area)
+        # Preview
+        preview_label = QLabel("Preview:")
+        layout.addWidget(preview_label)
         
-        # Custom pattern section
-        custom_frame = QFrame()
-        custom_frame.setFrameStyle(QFrame.Shape.Box)
-        custom_frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: {colors['card_bg']};
-                border: 2px solid {colors['accent']};
-                border-radius: 6px;
-                padding: 10px;
-            }}
-        """)
-        custom_layout = QVBoxLayout(custom_frame)
-        
-        custom_title = QLabel("🔧 Custom Pattern")
-        custom_title.setStyleSheet(f"font-weight: bold; color: {colors['accent']}; font-size: 14px;")
-        custom_layout.addWidget(custom_title)
-        
-        custom_desc = QLabel("Enter any custom pattern using placeholders:")
-        custom_desc.setStyleSheet(f"color: {colors['secondary_text']}; font-size: 11px;")
-        custom_layout.addWidget(custom_desc)
-        
-        self.custom_input = QLineEdit()
-        self.custom_input.setPlaceholderText("e.g., $project_{department}_{date}_$base$ext")
-        self.custom_input.setText(self.selected_pattern)
-        self.custom_input.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: {colors['bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                border-radius: 3px;
-                padding: 8px;
-                font-family: 'Courier New', monospace;
-            }}
-            QLineEdit:focus {{
-                border: 1px solid {colors['accent']};
-            }}
-        """)
-        custom_layout.addWidget(self.custom_input)
-        
-        use_custom_btn = QPushButton("Use Custom Pattern")
-        use_custom_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {colors['accent']};
-                color: white;
-                border: none;
-                border-radius: 3px;
-                padding: 6px 12px;
-                font-weight: bold;
-            }}
-            QPushButton:hover {{
-                background-color: {colors.get('accent_hover', colors['accent'])};
-            }}
-        """)
-        use_custom_btn.clicked.connect(self.use_custom_pattern)
-        custom_layout.addWidget(use_custom_btn)
-        
-        layout.addWidget(custom_frame)
-        
-        # Placeholder reference
-        ref_frame = QFrame()
-        ref_frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: {colors['card_bg']};
-                border: 1px solid {colors['border']};
-                border-radius: 4px;
-                padding: 8px;
-            }}
-        """)
-        ref_layout = QVBoxLayout(ref_frame)
-        
-        ref_title = QLabel("📖 Placeholder Reference")
-        ref_title.setStyleSheet(f"font-weight: bold; color: {colors['text']}; font-size: 12px;")
-        ref_layout.addWidget(ref_title)
-        
-        placeholders_text = (
-            "$project = Project name  •  $base = Original filename  •  $ext = File extension\n"
-            "{version} = Version number  •  {date} = Current date  •  {counter:N} = N-digit counter\n"
-            "{client} = Client code  •  {sequence} = Sequence  •  {shot} = Shot number"
-        )
-        placeholders_label = QLabel(placeholders_text)
-        placeholders_label.setStyleSheet(f"color: {colors['secondary_text']}; font-size: 10px;")
-        placeholders_label.setWordWrap(True)
-        ref_layout.addWidget(placeholders_label)
-        
-        layout.addWidget(ref_frame)
+        self.preview_label = QLabel("(Enter pattern above)")
+        self.preview_label.setStyleSheet("background-color: #2b2b2b; color: #ffffff; padding: 8px; border-radius: 4px;")
+        layout.addWidget(self.preview_label)
         
         # Buttons
         button_layout = QHBoxLayout()
-        button_layout.addStretch()
         
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.clicked.connect(self.reject)
-        cancel_btn.setStyleSheet(BUTTON_STYLE)
-        button_layout.addWidget(cancel_btn)
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_button)
         
-        self.apply_btn = QPushButton("Apply Pattern")
-        self.apply_btn.clicked.connect(self.accept)
-        self.apply_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
-        self.apply_btn.setEnabled(bool(self.selected_pattern))
-        button_layout.addWidget(self.apply_btn)
+        apply_button = QPushButton("Apply Pattern")
+        apply_button.clicked.connect(self.accept)
+        button_layout.addWidget(apply_button)
         
         layout.addLayout(button_layout)
     
-    def create_category_section(self, layout, category_name, category_data):
-        from app.ui.color_scheme_pyqt import colors
+    def update_preview(self):
+        """Update the preview based on current pattern"""
+        pattern = self.pattern_edit.text()
+        if not pattern:
+            self.preview_label.setText("(Enter pattern above)")
+            return
         
-        # Category header
-        header_frame = QFrame()
-        header_frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: {colors['card_bg']};
-                border: 1px solid {colors['border']};
-                border-radius: 4px;
-                padding: 5px;
-            }}
-        """)
-        header_layout = QVBoxLayout(header_frame)
-        header_layout.setContentsMargins(10, 8, 10, 8)
+        # Create preview with sample data
+        preview = pattern
+        preview = preview.replace('${PROJECT_NAME}', 'MyProject')
+        preview = preview.replace('${BASE}', 'filename')
+        preview = preview.replace('${EXT}', '.txt')
+        preview = preview.replace('${VERSION}', 'v01')
+        preview = preview.replace('${DATE}', datetime.datetime.now().strftime('%Y%m%d'))
+        preview = preview.replace('${TIME}', datetime.datetime.now().strftime('%H%M%S'))
+        preview = preview.replace('${COUNTER}', '001')
+        preview = preview.replace('${CUSTOM}', 'custom')
         
-        category_title = QLabel(category_name)
-        category_title.setStyleSheet(f"font-weight: bold; color: {colors['text']}; font-size: 13px;")
-        header_layout.addWidget(category_title)
-        
-        category_desc = QLabel(category_data["description"])
-        category_desc.setStyleSheet(f"color: {colors['secondary_text']}; font-size: 11px;")
-        category_desc.setWordWrap(True)
-        header_layout.addWidget(category_desc)
-        
-        layout.addWidget(header_frame)
-        
-        # Pattern options
-        for pattern, example, description in category_data["patterns"]:
-            self.create_pattern_option(layout, pattern, example, description)
+        self.preview_label.setText(f"Preview: {preview}")
     
-    def create_pattern_option(self, layout, pattern, example, description):
-        from app.ui.color_scheme_pyqt import colors
-        
-        option_frame = QFrame()
-        option_frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: {colors['bg']};
-                border: 1px solid {colors['border']};
-                border-radius: 3px;
-                padding: 8px;
-            }}
-            QFrame:hover {{
-                border: 1px solid {colors['accent']};
-                background-color: {colors['card_bg']};
-            }}
-        """)
-        option_frame.setCursor(Qt.CursorShape.PointingHandCursor)
-        option_frame.mousePressEvent = lambda event, p=pattern: self.select_pattern(p)
-        
-        option_layout = QVBoxLayout(option_frame)
-        option_layout.setContentsMargins(8, 6, 8, 6)
-        option_layout.setSpacing(3)
-        
-        # Pattern code
-        pattern_label = QLabel(pattern)
-        pattern_label.setStyleSheet(f"""
-            color: {colors['accent']};
-            font-family: 'Courier New', monospace;
-            font-weight: bold;
-            font-size: 11px;
-        """)
-        option_layout.addWidget(pattern_label)
-        
-        # Example
-        example_label = QLabel(f"Example: {example}")
-        example_label.setStyleSheet(f"color: {colors['text']}; font-size: 10px;")
-        option_layout.addWidget(example_label)
-        
-        # Description
-        desc_label = QLabel(description)
-        desc_label.setStyleSheet(f"color: {colors['secondary_text']}; font-size: 9px;")
-        desc_label.setWordWrap(True)
-        option_layout.addWidget(desc_label)
-        
-        layout.addWidget(option_frame)
+    def get_pattern_data(self):
+        """Get the configured pattern data"""
+        return {
+            'pattern': self.pattern_edit.text(),
+            'uses_custom_pattern': True,
+            'rename_flag': True
+        }
+
+
+class VersioningDialog(QDialog):
+    """Dialog for configuring file versioning"""
     
-    def select_pattern(self, pattern):
-        self.selected_pattern = pattern
-        self.custom_input.setText(pattern)
-        self.apply_btn.setEnabled(True)
+    def __init__(self, parent, item):
+        super().__init__(parent)
+        self.item = item
+        self.init_ui()
+    
+    def init_ui(self):
+        """Initialize the user interface"""
+        self.setWindowTitle("Configure Versioning")
+        self.setMinimumSize(500, 400)
         
-        # Visual feedback - highlight selected
-        from app.ui.color_scheme_pyqt import colors
-        sender = self.sender()
-        if hasattr(sender, 'parent') and sender.parent():
-            sender.parent().setStyleSheet(f"""
-                QFrame {{
-                    background-color: {colors['highlight_bg']};
-                    border: 2px solid {colors['accent']};
-                    border-radius: 3px;
-                    padding: 8px;
-                }}
-            """)
+        layout = QVBoxLayout(self)
+        
+        # Title
+        title = QLabel("File Versioning Configuration")
+        title.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        layout.addWidget(title)
+        
+        # Versioning format
+        format_label = QLabel("Version Format:")
+        layout.addWidget(format_label)
+        
+        self.format_combo = QComboBox()
+        self.format_combo.addItems([
+            "v01, v02, v03...",
+            "V01, V02, V03...",
+            "_v1, _v2, _v3...",
+            "_V1, _V2, _V3...",
+            "(v01), (v02), (v03)...",
+            "001, 002, 003...",
+            "_001, _002, _003..."
+        ])
+        layout.addWidget(self.format_combo)
+        
+        # Starting number
+        start_label = QLabel("Starting Number:")
+        layout.addWidget(start_label)
+        
+        self.start_spin = QSpinBox()
+        self.start_spin.setMinimum(1)
+        self.start_spin.setMaximum(999)
+        self.start_spin.setValue(1)
+        layout.addWidget(self.start_spin)
+        
+        # Number of versions
+        count_label = QLabel("Number of Versions to Generate:")
+        layout.addWidget(count_label)
+        
+        self.count_spin = QSpinBox()
+        self.count_spin.setMinimum(1)
+        self.count_spin.setMaximum(50)
+        self.count_spin.setValue(5)
+        layout.addWidget(self.count_spin)
+        
+        # Preview
+        preview_label = QLabel("Preview:")
+        layout.addWidget(preview_label)
+        
+        self.preview_text = QTextEdit()
+        self.preview_text.setMaximumHeight(120)
+        self.preview_text.setReadOnly(True)
+        layout.addWidget(self.preview_text)
+        
+        # Connect signals
+        self.format_combo.currentTextChanged.connect(self.update_preview)
+        self.start_spin.valueChanged.connect(self.update_preview)
+        self.count_spin.valueChanged.connect(self.update_preview)
+        
+        # Initial preview
+        self.update_preview()
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_button)
+        
+        apply_button = QPushButton("Apply Versioning")
+        apply_button.clicked.connect(self.accept)
+        button_layout.addWidget(apply_button)
+        
+        layout.addLayout(button_layout)
     
-    def use_custom_pattern(self):
-        pattern = self.custom_input.text().strip()
-        if pattern:
-            self.selected_pattern = pattern
-            self.apply_btn.setEnabled(True)
+    def update_preview(self):
+        """Update the versioning preview"""
+        format_text = self.format_combo.currentText()
+        start_num = self.start_spin.value()
+        count = self.count_spin.value()
+        
+        base_name = "filename"
+        extension = ".txt"
+        
+        preview_lines = []
+        
+        for i in range(count):
+            version_num = start_num + i
+            
+            if format_text.startswith("v0"):
+                version_str = f"v{version_num:02d}"
+            elif format_text.startswith("V0"):
+                version_str = f"V{version_num:02d}"
+            elif format_text.startswith("_v"):
+                version_str = f"_v{version_num}"
+            elif format_text.startswith("_V"):
+                version_str = f"_V{version_num}"
+            elif format_text.startswith("(v0"):
+                version_str = f"(v{version_num:02d})"
+            elif format_text.startswith("00"):
+                version_str = f"{version_num:03d}"
+            elif format_text.startswith("_00"):
+                version_str = f"_{version_num:03d}"
+            else:
+                version_str = f"v{version_num:02d}"
+            
+            filename = f"{base_name}_{version_str}{extension}"
+            preview_lines.append(filename)
+        
+        self.preview_text.setPlainText("\n".join(preview_lines))
     
-    def get_selected_pattern(self):
-        return self.selected_pattern
+    def get_versioning_data(self):
+        """Get the versioning configuration data"""
+        return {
+            'versioning_format': self.format_combo.currentText(),
+            'versioning_start': self.start_spin.value(),
+            'versioning_count': self.count_spin.value(),
+            'uses_versioning': True,
+            'rename_flag': True
+        }
+
+
+class DateSequenceDialog(QDialog):
+    """Dialog for configuring date sequences for file versioning"""
+    
+    def __init__(self, parent, item):
+        super().__init__(parent)
+        self.item = item
+        self.setWindowTitle("Configure Date Sequence")
+        self.setModal(True)
+        self.resize(500, 400)
+        self.init_ui()
+        
+    def _qdate_to_python(self, qdate):
+        """Convert QDate to Python datetime.date safely for PyQt6"""
+        if hasattr(qdate, 'toPython'):
+            return qdate.toPython()
+        else:
+            # PyQt6 alternative - use the QDate properties
+            return datetime.date(qdate.year(), qdate.month(), qdate.day())
+    
+    def init_ui(self):
+        """Initialize the user interface"""
+        layout = QVBoxLayout(self)
+        
+        # Title
+        title = QLabel("Date Sequence Configuration")
+        title.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        layout.addWidget(title)
+        
+        # Date format
+        format_label = QLabel("Date Format:")
+        layout.addWidget(format_label)
+        
+        self.format_combo = QComboBox()
+        self.format_combo.addItems([
+            "YYYY-MM-DD",
+            "YYYYMMDD", 
+            "MM-DD-YYYY",
+            "DD-MM-YYYY",
+            "YYYY/MM/DD",
+            "MM/DD/YYYY",
+            "DD/MM/YYYY",
+            "Mon DD, YYYY",
+            "DD Mon YYYY"
+        ])
+        layout.addWidget(self.format_combo)
+        
+        # Date range
+        range_layout = QHBoxLayout()
+        
+        start_label = QLabel("Start Date:")
+        range_layout.addWidget(start_label)
+        
+        self.start_date = QDateEdit()
+        self.start_date.setDate(QDate.currentDate())
+        self.start_date.setCalendarPopup(True)
+        range_layout.addWidget(self.start_date)
+        
+        end_label = QLabel("End Date:")
+        range_layout.addWidget(end_label)
+        
+        self.end_date = QDateEdit()
+        self.end_date.setDate(QDate.currentDate().addDays(7))
+        self.end_date.setCalendarPopup(True)
+        range_layout.addWidget(self.end_date)
+        
+        layout.addLayout(range_layout)
+        
+        # Interval
+        interval_layout = QHBoxLayout()
+        
+        interval_label = QLabel("Interval:")
+        interval_layout.addWidget(interval_label)
+        
+        self.interval_spin = QSpinBox()
+        self.interval_spin.setMinimum(1)
+        self.interval_spin.setMaximum(365)
+        self.interval_spin.setValue(1)
+        interval_layout.addWidget(self.interval_spin)
+        
+        self.interval_combo = QComboBox()
+        self.interval_combo.addItems(["Days", "Weeks", "Months"])
+        interval_layout.addWidget(self.interval_combo)
+        
+        layout.addLayout(interval_layout)
+        
+        # Preview
+        preview_label = QLabel("Preview (first 10 dates):")
+        layout.addWidget(preview_label)
+        
+        self.preview_text = QTextEdit()
+        self.preview_text.setMaximumHeight(150)
+        self.preview_text.setReadOnly(True)
+        layout.addWidget(self.preview_text)
+        
+        # Connect signals
+        self.format_combo.currentTextChanged.connect(self.update_preview)
+        self.start_date.dateChanged.connect(self.update_preview)
+        self.end_date.dateChanged.connect(self.update_preview)
+        self.interval_spin.valueChanged.connect(self.update_preview)
+        self.interval_combo.currentTextChanged.connect(self.update_preview)
+        
+        # Initial preview
+        self.update_preview()
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_button)
+        
+        apply_button = QPushButton("Apply Date Sequence")
+        apply_button.clicked.connect(self.accept)
+        button_layout.addWidget(apply_button)
+        
+        layout.addLayout(button_layout)
+    
+    def update_preview(self):
+        """Update the preview of date sequences"""
+        if not hasattr(self, 'preview_text'):
+            return
+            
+        try:
+            # Get date range
+            start_date = self._qdate_to_python(self.start_date.date())
+            end_date = self._qdate_to_python(self.end_date.date())
+            
+            # Get interval
+            interval_value = self.interval_spin.value()
+            interval_type = self.interval_combo.currentText()
+            
+            # Get item name and parse extension
+            item_name = self.item.text(0) if self.item else "example_file"
+            
+            # Clean item name of icons
+            if ' ' in item_name and any(item_name.startswith(icon) for icon in ['🎬', '🎵', '🖼️', '📄', '📊', '📽️', '📦', '💻']):
+                item_name = item_name.split(' ', 1)[1]
+            
+            # Parse filename to get base name and extension
+            base_name = item_name
+            extension = ""
+            if '.' in item_name:
+                base_name, extension = item_name.rsplit('.', 1)
+                extension = '.' + extension
+            
+            # Generate preview dates
+            dates = []
+            current_date = start_date
+            
+            while current_date <= end_date and len(dates) < 10:  # Limit preview to 10 items
+                # Format date according to selected format
+                format_text = self.format_combo.currentText()
+                if format_text == "YYYY-MM-DD":
+                    date_str = current_date.strftime("%Y-%m-%d")
+                elif format_text == "YYYYMMDD":
+                    date_str = current_date.strftime("%Y%m%d")
+                elif format_text == "MM-DD-YYYY":
+                    date_str = current_date.strftime("%m-%d-%Y")
+                elif format_text == "DD-MM-YYYY":
+                    date_str = current_date.strftime("%d-%m-%Y")
+                elif format_text == "YYYY/MM/DD":
+                    date_str = current_date.strftime("%Y/%m/%d")
+                elif format_text == "MM/DD/YYYY":
+                    date_str = current_date.strftime("%m/%d/%Y")
+                else:
+                    date_str = current_date.strftime("%Y-%m-%d")  # Default
+                
+                # Create example filename
+                example_filename = f"{base_name}_{date_str}{extension}"
+                dates.append(example_filename)
+                
+                # Move to next date
+                if interval_type == "Days":
+                    current_date += timedelta(days=interval_value)
+                elif interval_type == "Weeks":
+                    current_date += timedelta(weeks=interval_value)
+                elif interval_type == "Months":
+                    # Approximate month calculation
+                    current_date += timedelta(days=interval_value * 30)
+            
+            # Update preview text
+            preview_text = "Preview of generated files:\n\n"
+            for i, filename in enumerate(dates, 1):
+                preview_text += f"{i}. {filename}\n"
+            
+            if len(dates) >= 10:
+                preview_text += "\n... (showing first 10 items)"
+            
+            self.preview_text.setPlainText(preview_text)
+            
+        except Exception as e:
+            print(f"DEBUG: Error updating date preview: {e}")
+            if hasattr(self, 'preview_text'):
+                self.preview_text.setPlainText("Error generating preview")
+    
+    def get_date_data(self):
+        """Get the date sequence configuration data"""
+        # Convert dates to ISO format strings for JSON serialization
+        start_date = self._qdate_to_python(self.start_date.date())
+        end_date = self._qdate_to_python(self.end_date.date())
+        
+        return {
+            'date_format': self.format_combo.currentText(),
+            'date_start': start_date,  # Keep as date object for processing
+            'date_end': end_date,      # Keep as date object for processing
+            'date_start_iso': start_date.isoformat(),  # Store string version for JSON
+            'date_end_iso': end_date.isoformat(),      # Store string version for JSON
+            'date_interval_value': self.interval_spin.value(),
+            'date_interval_type': self.interval_combo.currentText(),
+            'uses_date_sequence': True,
+            'rename_flag': True
+        }
+
 
 class FileDetailsDialog(QDialog):
     """Dialog for entering file details"""
@@ -1874,20 +1543,6 @@ class FileDetailsDialog(QDialog):
         type_layout.addWidget(self.file_type_combo)
         
         layout.addLayout(type_layout)
-        
-        # Extensions dropdown
-        ext_layout = QHBoxLayout()
-        ext_label = QLabel("Extension:")
-        ext_layout.addWidget(ext_label)
-        
-        self.extension_combo = QComboBox()
-        self._update_extensions()
-        ext_layout.addWidget(self.extension_combo)
-        
-        # Update file name when extension changes
-        self.extension_combo.currentIndexChanged.connect(self._update_file_name)
-        
-        layout.addLayout(ext_layout)
         
         # Binary checkbox
         if show_binary:
@@ -1942,95 +1597,23 @@ class FileDetailsDialog(QDialog):
             QPushButton:hover {
                 background-color: #4E4E52;
             }
-            QCheckBox {
-                color: #FFFFFF;
-            }
-            QCheckBox::indicator {
-                width: 15px;
-                height: 15px;
-                background-color: #3E3E42;
-                border: 1px solid #3F3F46;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #007ACC;
-            }
         """)
-        
-        # Connect signals
-        self.file_name_edit.textChanged.connect(self._on_file_name_changed)
-        
-        # Initial update
-        self._on_file_name_changed(file_name)
     
     def _on_type_changed(self, index):
-        """Handle type selection change"""
-        self._update_extensions()
-        
-        # Update file name based on new extension
-        self._update_file_name()
-    
-    def _update_extensions(self):
-        """Update the extensions dropdown based on selected type"""
-        self.extension_combo.clear()
-        
-        # Get current file type
-        file_type = self.file_type_combo.currentText()
-        
-        # Get extensions for this type
-        extensions = FILE_EXTENSIONS.get(file_type, [])
-        if extensions:
-            self.extension_combo.addItems(extensions)
-    
-    def _update_file_name(self):
-        """Update file name based on selected extension"""
-        # Get current file name and remove any extension
-        file_name = self.file_name_edit.text()
-        base_name = os.path.splitext(file_name)[0]
-        
-        # If base name is empty, generate a random one
-        if not base_name:
-            # Generate a random file name
-            base_name = f"file_{''.join(random.choices(string.ascii_lowercase + string.digits, k=6))}"
-        
-        # Get selected extension
-        extension = self.extension_combo.currentText()
-        
-        # Update file name
-        self.file_name_edit.setText(f"{base_name}{extension}")
-    
-    def _on_file_name_changed(self, text):
-        """Handle file name changes"""
-        # Extract extension
-        _, ext = os.path.splitext(text)
-        
-        # Update binary checkbox if available
-        if self.binary_checkbox:
-            # Determine if binary based on extension
-            is_binary = False
-            for category in ['Image', 'Audio', 'Video', 'Archive']:
-                if category in FILE_EXTENSIONS and ext.lower() in FILE_EXTENSIONS[category]:
-                    is_binary = True
-                    break
-                    
-            self.binary_checkbox.setChecked(is_binary)
-            
-        # Try to select matching file type
-        for category, extensions in FILE_EXTENSIONS.items():
-            if ext.lower() in extensions:
-                self.file_type_combo.setCurrentText(category)
-                
-                # Select the extension in the dropdown
-                self.extension_combo.setCurrentText(ext.lower())
-                break
+        """Handle file type change"""
+        # Could update UI based on selected type
+        pass
     
     def get_file_name(self):
         """Get the entered file name"""
-        return self.file_name_edit.text()
+        return self.file_name_edit.text().strip()
     
     def get_file_type(self):
         """Get the selected file type"""
         return self.file_type_combo.currentText()
     
     def is_binary(self):
-        """Check if the file is marked as binary"""
-        return self.binary_checkbox.isChecked() if self.binary_checkbox else False 
+        """Get binary file status"""
+        if self.binary_checkbox:
+            return self.binary_checkbox.isChecked()
+        return False 

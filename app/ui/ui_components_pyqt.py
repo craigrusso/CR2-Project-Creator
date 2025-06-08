@@ -18,8 +18,9 @@ from PyQt6.QtWidgets import (QWidget, QLabel, QVBoxLayout, QHBoxLayout,
                             QApplication, QStyle, QMainWindow, QGroupBox,
                             QRadioButton, QComboBox, QProgressBar, QSplitter,
                             QMenu, QListView, QStyledItemDelegate,
-                            QStyleOptionViewItem, QAbstractItemView, QSpacerItem)
-from PyQt6.QtCore import Qt, QTimer, QPoint, QSize, pyqtSignal, QEvent, QUrl, QMimeData
+                            QStyleOptionViewItem, QAbstractItemView, QSpacerItem,
+                            QDateEdit, QSpinBox)
+from PyQt6.QtCore import Qt, QTimer, QPoint, QSize, pyqtSignal, QEvent, QUrl, QMimeData, QDate
 from PyQt6.QtGui import QFont, QCursor, QIcon, QColor, QPalette, QDragEnterEvent, QDropEvent, QPixmap, QPainter, QPen, QFontMetrics, QStandardItemModel, QStandardItem, QDesktopServices, QAction
 
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, LINEEDIT_STYLE, LABEL_STYLE
@@ -642,7 +643,7 @@ class StructureEditor(QDialog):
         else:
             # For internal drag/drop operations
             QTreeWidget.dropEvent(self.tree, event)
-    
+            
     def _process_dropped_directory(self, dir_path, parent_item):
         """Process a dropped directory and add it to the structure"""
         dir_name = os.path.basename(dir_path)
@@ -1484,13 +1485,28 @@ class TemplateDirectoryEditor(QDialog):
         current = item
         
         # Find the root item
-        root_item = self.structure_tree.topLevelItem(0)
-        
+        root_item = None
+        if hasattr(self, 'root_item'):
+            root_item = self.root_item
+        elif hasattr(self, 'tree') and self.tree.topLevelItemCount() > 0:
+            root_item = self.tree.topLevelItem(0)
+        elif hasattr(self, 'structure_tree') and self.structure_tree.topLevelItemCount() > 0:
+            root_item = self.structure_tree.topLevelItem(0)
+            
+        # If no root item identified, return None
+        if not root_item:
+            print("Warning: Could not identify root item in tree")
+            return None
+            
         # Build the path by walking up the tree
         while current and current != root_item:
             path_parts.insert(0, current.text(0))
             current = current.parent()
-        
+            
+        # If we reached the top without finding the root, the path is incomplete
+        if not current or current != root_item:
+            return None
+            
         # Combine path parts and normalize
         if path_parts:
             return normalize_path_for_storage(os.path.join(*path_parts))
@@ -1527,6 +1543,695 @@ class TemplateDirectoryEditor(QDialog):
                         break
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Failed to add file: {str(e)}")
+
+class EnhancedProjectCreationDialog(QDialog):
+    """
+    Enhanced dialog for creating multiple projects with date/version sequences
+    """
+    def __init__(self, parent=None, callback=None):
+        super().__init__(parent)
+        self.callback = callback
+        
+        # Set window properties
+        self.setWindowTitle("Enhanced Batch Project Creation")
+        self.setMinimumWidth(600)
+        self.setMinimumHeight(500)
+        
+        # Main layout
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
+        
+        # Header
+        header = QLabel("Batch Project Creation with Sequences")
+        header.setFont(QFont(UI_FONT, 16, QFont.Weight.Bold))
+        header.setStyleSheet(f"color: {colors['text']};")
+        layout.addWidget(header)
+        
+        # Project Names Section
+        names_section = QGroupBox("Project Names")
+        names_section.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                margin-top: 10px;
+                padding-top: 10px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 8px;
+                background-color: {colors['bg']};
+            }}
+        """)
+        names_layout = QVBoxLayout(names_section)
+        
+        # Instructions
+        instructions = QLabel(
+            "Enter project names (one per line, or separated by commas/semicolons):"
+        )
+        instructions.setWordWrap(True)
+        instructions.setStyleSheet(f"color: {colors['secondary_text']};")
+        names_layout.addWidget(instructions)
+        
+        # Text input area
+        self.text_edit = QTextEdit()
+        self.text_edit.setPlaceholderText("craig\njohn\nsarah")
+        self.text_edit.setMaximumHeight(120)
+        self.text_edit.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 8px;
+                font-family: 'Segoe UI';
+                font-size: 13px;
+            }}
+        """)
+        names_layout.addWidget(self.text_edit)
+        
+        layout.addWidget(names_section)
+        
+        # Sequence Options Section
+        sequence_section = QGroupBox("Sequence Options")
+        sequence_section.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                margin-top: 10px;
+                padding-top: 10px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 8px;
+                background-color: {colors['bg']};
+            }}
+        """)
+        sequence_layout = QVBoxLayout(sequence_section)
+        
+        # Enable sequence checkbox
+        self.enable_sequence = QCheckBox("Create sequence variations for each project")
+        self.enable_sequence.setStyleSheet(f"color: {colors['text']};")
+        self.enable_sequence.toggled.connect(self._toggle_sequence_options)
+        sequence_layout.addWidget(self.enable_sequence)
+        
+        # Sequence type selection
+        type_layout = QHBoxLayout()
+        type_layout.addWidget(QLabel("Sequence Type:"))
+        
+        self.sequence_type = QComboBox()
+        self.sequence_type.addItems(["Date Sequence", "Version Numbers", "Sequential Numbers"])
+        self.sequence_type.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+            }}
+        """)
+        self.sequence_type.currentTextChanged.connect(self._update_sequence_options)
+        type_layout.addWidget(self.sequence_type)
+        type_layout.addStretch()
+        sequence_layout.addLayout(type_layout)
+        
+        # Naming position
+        position_layout = QHBoxLayout()
+        position_layout.addWidget(QLabel("Position in Name:"))
+        
+        self.name_position = QComboBox()
+        self.name_position.addItems(["Suffix (craig_2025-06-08)", "Prefix (2025-06-08_craig)", "Replace (2025-06-08)"])
+        self.name_position.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+            }}
+        """)
+        position_layout.addWidget(self.name_position)
+        position_layout.addStretch()
+        sequence_layout.addLayout(position_layout)
+        
+        # Sequence-specific options container
+        self.sequence_options_container = QWidget()
+        self.sequence_options_layout = QVBoxLayout(self.sequence_options_container)
+        self.sequence_options_layout.setContentsMargins(0, 0, 0, 0)
+        sequence_layout.addWidget(self.sequence_options_container)
+        
+        # Create different option widgets
+        self._create_date_options()
+        self._create_version_options()
+        self._create_number_options()
+        
+        # Initially hide sequence options
+        self.sequence_options_container.setVisible(False)
+        
+        layout.addWidget(sequence_section)
+        
+        # Preview Section
+        preview_section = QGroupBox("Preview")
+        preview_section.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                margin-top: 10px;
+                padding-top: 10px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 8px;
+                background-color: {colors['bg']};
+            }}
+        """)
+        preview_layout = QVBoxLayout(preview_section)
+        
+        self.preview_label = QLabel("Enter project names to see preview...")
+        self.preview_label.setStyleSheet(f"color: {colors['secondary_text']}; font-family: 'Consolas', monospace;")
+        self.preview_label.setWordWrap(True)
+        preview_layout.addWidget(self.preview_label)
+        
+        layout.addWidget(preview_section)
+        
+        # Connect signals for live preview
+        self.text_edit.textChanged.connect(self._update_preview)
+        self.enable_sequence.toggled.connect(self._update_preview)
+        self.sequence_type.currentTextChanged.connect(self._update_preview)
+        self.name_position.currentTextChanged.connect(self._update_preview)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setStyleSheet(BUTTON_STYLE)
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+        
+        button_layout.addStretch()
+        
+        self.create_button = QPushButton("Create Projects")
+        self.create_button.setStyleSheet(ACCENT_BUTTON_STYLE)
+        self.create_button.clicked.connect(self.process_projects)
+        button_layout.addWidget(self.create_button)
+        
+        layout.addLayout(button_layout)
+        
+        # Set focus to text edit
+        self.text_edit.setFocus()
+        
+        # Update initial state
+        self._update_sequence_options()
+        self._update_preview()
+    
+    def _create_date_options(self):
+        """Create date-specific options"""
+        self.date_widget = QWidget()
+        date_layout = QVBoxLayout(self.date_widget)
+        date_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Date format
+        format_layout = QHBoxLayout()
+        format_layout.addWidget(QLabel("Date Format:"))
+        
+        self.date_format = QComboBox()
+        self.date_format.addItems([
+            "YYYY-MM-DD (2025-06-08)",
+            "YYYYMMDD (20250608)", 
+            "MM-DD-YYYY (06-08-2025)",
+            "DD-MM-YYYY (08-06-2025)",
+            "YYYY/MM/DD (2025/06/08)",
+            "MM/DD/YYYY (06/08/2025)"
+        ])
+        self.date_format.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+            }}
+        """)
+        self.date_format.currentTextChanged.connect(self._update_preview)
+        format_layout.addWidget(self.date_format)
+        format_layout.addStretch()
+        date_layout.addLayout(format_layout)
+        
+        # Date range
+        range_layout = QHBoxLayout()
+        range_layout.addWidget(QLabel("Start Date:"))
+        
+        self.start_date = QDateEdit()
+        self.start_date.setDate(QDate.currentDate())
+        self.start_date.setStyleSheet(f"""
+            QDateEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+            }}
+        """)
+        self.start_date.dateChanged.connect(self._update_preview)
+        range_layout.addWidget(self.start_date)
+        
+        range_layout.addWidget(QLabel("Count:"))
+        
+        self.date_count = QSpinBox()
+        self.date_count.setRange(1, 50)
+        self.date_count.setValue(5)
+        self.date_count.setStyleSheet(f"""
+            QSpinBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+            }}
+        """)
+        self.date_count.valueChanged.connect(self._update_preview)
+        range_layout.addWidget(self.date_count)
+        
+        range_layout.addStretch()
+        date_layout.addLayout(range_layout)
+        
+        # Interval
+        interval_layout = QHBoxLayout()
+        interval_layout.addWidget(QLabel("Interval:"))
+        
+        self.date_interval = QSpinBox()
+        self.date_interval.setRange(1, 30)
+        self.date_interval.setValue(1)
+        self.date_interval.setStyleSheet(f"""
+            QSpinBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+            }}
+        """)
+        self.date_interval.valueChanged.connect(self._update_preview)
+        interval_layout.addWidget(self.date_interval)
+        
+        self.date_interval_type = QComboBox()
+        self.date_interval_type.addItems(["Days", "Weeks", "Months"])
+        self.date_interval_type.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+            }}
+        """)
+        self.date_interval_type.currentTextChanged.connect(self._update_preview)
+        interval_layout.addWidget(self.date_interval_type)
+        
+        interval_layout.addStretch()
+        date_layout.addLayout(interval_layout)
+        
+        self.sequence_options_layout.addWidget(self.date_widget)
+    
+    def _create_version_options(self):
+        """Create version-specific options"""
+        self.version_widget = QWidget()
+        version_layout = QVBoxLayout(self.version_widget)
+        version_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Version format
+        format_layout = QHBoxLayout()
+        format_layout.addWidget(QLabel("Version Format:"))
+        
+        self.version_format = QComboBox()
+        self.version_format.addItems([
+            "V1, V2, V3...",
+            "v1, v2, v3...",
+            "Ver1, Ver2, Ver3...",
+            "Version1, Version2, Version3..."
+        ])
+        self.version_format.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+            }}
+        """)
+        self.version_format.currentTextChanged.connect(self._update_preview)
+        format_layout.addWidget(self.version_format)
+        format_layout.addStretch()
+        version_layout.addLayout(format_layout)
+        
+        # Version count
+        count_layout = QHBoxLayout()
+        count_layout.addWidget(QLabel("Number of Versions:"))
+        
+        self.version_count = QSpinBox()
+        self.version_count.setRange(1, 50)
+        self.version_count.setValue(3)
+        self.version_count.setStyleSheet(f"""
+            QSpinBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+            }}
+        """)
+        self.version_count.valueChanged.connect(self._update_preview)
+        count_layout.addWidget(self.version_count)
+        count_layout.addStretch()
+        version_layout.addLayout(count_layout)
+        
+        self.sequence_options_layout.addWidget(self.version_widget)
+    
+    def _create_number_options(self):
+        """Create sequential number options"""
+        self.number_widget = QWidget()
+        number_layout = QVBoxLayout(self.number_widget)
+        number_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Number format
+        format_layout = QHBoxLayout()
+        format_layout.addWidget(QLabel("Number Format:"))
+        
+        self.number_format = QComboBox()
+        self.number_format.addItems([
+            "001, 002, 003... (3 digits)",
+            "01, 02, 03... (2 digits)",
+            "1, 2, 3... (no padding)"
+        ])
+        self.number_format.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+            }}
+        """)
+        self.number_format.currentTextChanged.connect(self._update_preview)
+        format_layout.addWidget(self.number_format)
+        format_layout.addStretch()
+        number_layout.addLayout(format_layout)
+        
+        # Starting number and count
+        range_layout = QHBoxLayout()
+        range_layout.addWidget(QLabel("Start:"))
+        
+        self.number_start = QSpinBox()
+        self.number_start.setRange(0, 999)
+        self.number_start.setValue(1)
+        self.number_start.setStyleSheet(f"""
+            QSpinBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+            }}
+        """)
+        self.number_start.valueChanged.connect(self._update_preview)
+        range_layout.addWidget(self.number_start)
+        
+        range_layout.addWidget(QLabel("Count:"))
+        
+        self.number_count = QSpinBox()
+        self.number_count.setRange(1, 50)
+        self.number_count.setValue(5)
+        self.number_count.setStyleSheet(f"""
+            QSpinBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                padding: 4px;
+            }}
+        """)
+        self.number_count.valueChanged.connect(self._update_preview)
+        range_layout.addWidget(self.number_count)
+        
+        range_layout.addStretch()
+        number_layout.addLayout(range_layout)
+        
+        self.sequence_options_layout.addWidget(self.number_widget)
+    
+    def _toggle_sequence_options(self, enabled):
+        """Toggle visibility of sequence options"""
+        self.sequence_options_container.setVisible(enabled)
+        self._update_preview()
+    
+    def _update_sequence_options(self):
+        """Update which sequence options are visible"""
+        sequence_type = self.sequence_type.currentText()
+        
+        # Hide all widgets
+        self.date_widget.setVisible(False)
+        self.version_widget.setVisible(False)
+        self.number_widget.setVisible(False)
+        
+        # Show relevant widget
+        if sequence_type == "Date Sequence":
+            self.date_widget.setVisible(True)
+        elif sequence_type == "Version Numbers":
+            self.version_widget.setVisible(True)
+        elif sequence_type == "Sequential Numbers":
+            self.number_widget.setVisible(True)
+        
+        self._update_preview()
+    
+    def _update_preview(self):
+        """Update the preview of project names"""
+        import re
+        from datetime import datetime, timedelta
+        
+        # Get project names
+        text = self.text_edit.toPlainText().strip()
+        if not text:
+            self.preview_label.setText("Enter project names to see preview...")
+            return
+        
+        # Parse project names
+        project_names = re.split(r'[\n,;]+', text)
+        project_names = [name.strip() for name in project_names if name.strip()]
+        
+        if not project_names:
+            self.preview_label.setText("No valid project names found...")
+            return
+        
+        # Generate preview
+        preview_lines = []
+        total_count = 0
+        
+        for base_name in project_names[:3]:  # Show preview for first 3 names
+            if self.enable_sequence.isChecked():
+                sequence_names = self._generate_sequence_names(base_name)
+                total_count += len(sequence_names)
+                
+                # Show first few from this sequence
+                for name in sequence_names[:3]:
+                    preview_lines.append(f"{name}")
+                
+                if len(sequence_names) > 3:
+                    preview_lines.append(f"   ... and {len(sequence_names) - 3} more for '{base_name}'")
+            else:
+                preview_lines.append(f"{base_name}")
+                total_count += 1
+        
+        # Show totals
+        if len(project_names) > 3:
+            remaining_names = len(project_names) - 3
+            if self.enable_sequence.isChecked():
+                estimated_total = len(project_names) * len(self._generate_sequence_names("sample"))
+                preview_lines.append(f"   ... and approximately {estimated_total - total_count} more projects")
+                total_count = estimated_total
+            else:
+                preview_lines.append(f"   ... and {remaining_names} more projects")
+                total_count += remaining_names
+        
+        preview_text = "\n".join(preview_lines)
+        preview_text += f"\n\nTotal: {total_count} projects will be created"
+        
+        self.preview_label.setText(preview_text)
+    
+    def _generate_sequence_names(self, base_name):
+        """Generate sequence names for a base name"""
+        sequence_type = self.sequence_type.currentText()
+        position = self.name_position.currentText()
+        
+        names = []
+        
+        if sequence_type == "Date Sequence":
+            # Generate date sequence
+            # Fix PyQt6 compatibility - toPython() doesn't exist
+            qdate = self.start_date.date()
+            start_date = datetime.date(qdate.year(), qdate.month(), qdate.day())
+            count = self.date_count.value()
+            interval = self.date_interval.value()
+            interval_type = self.date_interval_type.currentText()
+            format_text = self.date_format.currentText()
+            
+            # Extract format
+            if "YYYY-MM-DD" in format_text:
+                date_format = "%Y-%m-%d"
+            elif "YYYYMMDD" in format_text:
+                date_format = "%Y%m%d"
+            elif "MM-DD-YYYY" in format_text:
+                date_format = "%m-%d-%Y"
+            elif "DD-MM-YYYY" in format_text:
+                date_format = "%d-%m-%Y"
+            elif "YYYY/MM/DD" in format_text:
+                date_format = "%Y/%m/%d"
+            elif "MM/DD/YYYY" in format_text:
+                date_format = "%m/%d/%Y"
+            else:
+                date_format = "%Y-%m-%d"
+            
+            current_date = start_date
+            for i in range(count):
+                date_str = current_date.strftime(date_format)
+                
+                if "Suffix" in position:
+                    name = f"{base_name}_{date_str}"
+                elif "Prefix" in position:
+                    name = f"{date_str}_{base_name}"
+                else:  # Replace
+                    name = date_str
+                
+                names.append(name)
+                
+                # Calculate next date
+                if interval_type == "Days":
+                    current_date += timedelta(days=interval)
+                elif interval_type == "Weeks":
+                    current_date += timedelta(weeks=interval)
+                elif interval_type == "Months":
+                    # Approximate month calculation
+                    current_date += timedelta(days=interval * 30)
+        
+        elif sequence_type == "Version Numbers":
+            # Generate version sequence
+            count = self.version_count.value()
+            format_text = self.version_format.currentText()
+            
+            for i in range(1, count + 1):
+                if "V1, V2" in format_text:
+                    version_str = f"V{i}"
+                elif "v1, v2" in format_text:
+                    version_str = f"v{i}"
+                elif "Ver1, Ver2" in format_text:
+                    version_str = f"Ver{i}"
+                elif "Version1, Version2" in format_text:
+                    version_str = f"Version{i}"
+                else:
+                    version_str = f"V{i}"
+                
+                if "Suffix" in position:
+                    name = f"{base_name}_{version_str}"
+                elif "Prefix" in position:
+                    name = f"{version_str}_{base_name}"
+                else:  # Replace
+                    name = version_str
+                
+                names.append(name)
+        
+        elif sequence_type == "Sequential Numbers":
+            # Generate number sequence
+            start = self.number_start.value()
+            count = self.number_count.value()
+            format_text = self.number_format.currentText()
+            
+            for i in range(count):
+                num = start + i
+                
+                if "3 digits" in format_text:
+                    num_str = f"{num:03d}"
+                elif "2 digits" in format_text:
+                    num_str = f"{num:02d}"
+                else:  # no padding
+                    num_str = str(num)
+                
+                if "Suffix" in position:
+                    name = f"{base_name}_{num_str}"
+                elif "Prefix" in position:
+                    name = f"{num_str}_{base_name}"
+                else:  # Replace
+                    name = num_str
+                
+                names.append(name)
+        
+        return names
+    
+    def process_projects(self):
+        """Process the entered project names and generate final list"""
+        import re
+        text = self.text_edit.toPlainText().strip()
+        
+        if not text:
+            QMessageBox.warning(self, "Warning", "Please enter at least one project name.")
+            return
+        
+        # Parse project names
+        project_names = re.split(r'[\n,;]+', text)
+        project_names = [name.strip() for name in project_names if name.strip()]
+        
+        if not project_names:
+            QMessageBox.warning(self, "Warning", "No valid project names found.")
+            return
+        
+        # Generate final list
+        final_projects = []
+        
+        for base_name in project_names:
+            if self.enable_sequence.isChecked():
+                sequence_names = self._generate_sequence_names(base_name)
+                final_projects.extend(sequence_names)
+            else:
+                final_projects.append(base_name)
+        
+        # Validate parent requirements
+        parent = self.parent()
+        missing_requirements = []
+        
+        # Check for template
+        has_template = False
+        if hasattr(parent, 'selected_template') and parent.selected_template:
+            has_template = True
+        elif hasattr(parent, 'template_file_path') and parent.template_file_path:
+            has_template = True
+        elif hasattr(parent, 'template_gallery') and hasattr(parent.template_gallery, 'get_selected_template'):
+            try:
+                selected_template = parent.template_gallery.get_selected_template()
+                if selected_template:
+                    has_template = True
+            except Exception as e:
+                print(f"Error checking gallery template: {e}")
+        
+        if not has_template:
+            missing_requirements.append("No template selected")
+        
+        output_dir = parent.get_current_output_dir() if hasattr(parent, 'get_current_output_dir') else None
+        if not output_dir:
+            missing_requirements.append("No output directory selected")
+        
+        if missing_requirements:
+            QMessageBox.critical(
+                self, 
+                "Missing Requirements", 
+                "Cannot create projects due to the following issues:\n\n" + 
+                "\n".join([f"• {item}" for item in missing_requirements])
+            )
+            self.reject()
+            return
+        
+        # Show confirmation
+        if QMessageBox.question(
+            self, 
+            "Confirm Batch Creation", 
+            f"You are about to create {len(final_projects)} projects.\n\nDo you want to continue?",
+            QMessageBox.Yes | QMessageBox.No
+        ) == QMessageBox.No:
+            return
+        
+        if self.callback:
+            self.callback(final_projects)
+        self.accept()
+
 
 class ProjectNameInput(QDialog):
     """
@@ -1674,108 +2379,6 @@ class ProjectNameInput(QDialog):
         if self.callback:
             self.callback(project_names)
         self.accept()
-
-class TemplateFolderCard(QFrame):
-    """Template folder card widget for displaying a folder in the gallery"""
-    
-    clicked = pyqtSignal(str)
-    
-    def __init__(self, parent=None, folder_name="", app=None):
-        super().__init__(parent)
-        self.folder_name = folder_name
-        self.app = app
-        self.selected = False
-        self.hover = False
-        
-        # Setup styling
-        self.setFrameShape(QFrame.StyledPanel)
-        self.setFixedSize(200, 250)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        
-        # Use a fixed grid layout with fixed row heights
-        self.grid = QGridLayout(self)
-        self.grid.setContentsMargins(10, 10, 10, 10)
-        self.grid.setSpacing(2)
-        self.grid.setRowStretch(0, 3)  # Icon gets most space
-        self.grid.setRowStretch(1, 0)  # Title gets minimum space needed
-        self.grid.setRowStretch(2, 0)  # Folder label gets minimum space
-        self.grid.setRowStretch(3, 2)  # Bottom empty space
-        
-        # Folder icon
-        self.icon_label = QLabel("📁")  # Using a folder emoji
-        self.icon_label.setFont(QFont(UI_FONT, 48))
-        self.icon_label.setStyleSheet(f"color: {colors['secondary_text']};")
-        self.icon_label.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
-        
-        # Folder name
-        self.title = QLabel(folder_name)
-        self.title.setFont(QFont(UI_FONT, 12, QFont.Weight.Bold))
-        self.title.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
-        self.title.setStyleSheet("color: white;")
-        
-        # Folder label
-        self.folder_label = QLabel("Folder")
-        self.folder_label.setFont(QFont(UI_FONT, 9))
-        self.folder_label.setAlignment(Qt.AlignmentFlagFlagFlagFlagFlag.AlignCenter)
-        self.folder_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
-        
-        # Empty widget for bottom space
-        empty = QWidget()
-        empty.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        
-        # Add widgets to grid
-        self.grid.addWidget(self.icon_label, 0, 0)
-        self.grid.addWidget(self.title, 1, 0)
-        self.grid.addWidget(self.folder_label, 2, 0)
-        self.grid.addWidget(empty, 3, 0)
-        
-        # Install event filter for mouse events
-        self.installEventFilter(self)
-        self._update_styling()
-    
-    def eventFilter(self, obj, event):
-        """Handle mouse events for hover and click effects"""
-        if obj is self:
-            if event.type() == QEvent.Enter:
-                self.hover = True
-                self._update_styling()
-                return True
-            elif event.type() == QEvent.Leave:
-                self.hover = False
-                self._update_styling()
-                return True
-            elif event.type() == QEvent.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
-                self.clicked.emit(self.folder_name)
-                return True
-        return super().eventFilter(obj, event)
-        
-    def _update_styling(self):
-        """Update folder card styling based on hover state"""
-        base_style = f"""
-            QFrame {{
-                background-color: {colors['card_bg']};
-                border: 1px solid {colors['border']};
-                border-radius: 5px;
-            }}
-        """
-        
-        hover_style = f"""
-            QFrame {{
-                background-color: {colors['highlight_bg']};
-                border: 2px solid {colors['accent']};
-                border-radius: 5px;
-            }}
-        """
-        
-        # Keep text colors consistent
-        self.title.setStyleSheet("color: white;")
-        self.folder_label.setStyleSheet(f"color: {colors['secondary_text']}; background: transparent;")
-        
-        # Apply main frame styles without affecting layout
-        if self.hover:
-            self.setStyleSheet(hover_style)
-        else:
-            self.setStyleSheet(base_style)
 
 # --- Update Notification Banner --- 
 class UpdateNotificationBanner(QFrame):

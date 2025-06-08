@@ -8,14 +8,14 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QFileDialog, QMessageBox, QMenu,
                            QStatusBar, QFrame, QSplitter, QScrollArea, QSizePolicy,
                            QApplication, QGroupBox, QListView, QTextEdit, QLayout, QGridLayout,
-                           QWIDGETSIZE_MAX)
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex, QPoint, QUrl, QMimeData, QSettings, QObject, QThread
+                           QWIDGETSIZE_MAX, QCheckBox, QDateEdit, QSpinBox)
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex, QPoint, QUrl, QMimeData, QSettings, QObject, QThread, QDate
 from PyQt6.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, QPixmap, QDesktopServices, QCursor, QDragEnterEvent, QDropEvent, QFontMetrics, QStandardItemModel, QStandardItem, QAction
 
 from app.core.app_config import APP_NAME, RECENT_TEMPLATES_MAX
 from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE, LISTVIEW_POPUP_STYLE, APP_COLORS, ACTION_LINK_STYLE
 from app.utils.utils import load_config, save_config, truncate_path, normalize_path_for_storage
-from app.ui.ui_components_pyqt import ToolTip, CardFrame, SearchBox, TemplateFileCard, ScrollableFrame, UI_FONT, UpdateNotificationBanner
+from app.ui.ui_components_pyqt import ToolTip, CardFrame, SearchBox, TemplateFileCard, ScrollableFrame, UI_FONT, UpdateNotificationBanner, EnhancedProjectCreationDialog
 from app.templates.template_manager import TemplateManager
 from app.templates.template_manager_core import TemplateManagerCore
 from app.core.project_builder import ProjectBuilder
@@ -310,6 +310,135 @@ class ProjectCreatorApp(QMainWindow):
         
         # Add the expandable middle section
         self.left_layout.addWidget(middle_container, 1)  # Use stretch factor of 1
+        
+        # Add versioning options section
+        versioning_container = QWidget()
+        versioning_layout = QVBoxLayout(versioning_container)
+        versioning_layout.setContentsMargins(0, 10, 0, 0)
+        
+        # Enable versioning checkbox
+        self.enable_versioning = QCheckBox("Create sequence variations for each project")
+        self.enable_versioning.setStyleSheet(f"color: {colors['text']}; font-weight: bold;")
+        self.enable_versioning.toggled.connect(self._toggle_versioning_options)
+        versioning_layout.addWidget(self.enable_versioning)
+        
+        # Versioning options (initially hidden)
+        self.versioning_options = QWidget()
+        versioning_options_layout = QGridLayout(self.versioning_options)
+        versioning_options_layout.setContentsMargins(20, 10, 0, 0)  # Indent options
+        
+        # Sequence type
+        versioning_options_layout.addWidget(QLabel("Type:"), 0, 0)
+        self.sequence_type = QComboBox()
+        self.sequence_type.addItems(["Date Sequences", "Version Numbers", "Sequential Numbers"])
+        self.sequence_type.currentTextChanged.connect(self._update_versioning_options)
+        versioning_options_layout.addWidget(self.sequence_type, 0, 1)
+        
+        # Position
+        versioning_options_layout.addWidget(QLabel("Position:"), 0, 2)
+        self.name_position = QComboBox()
+        self.name_position.addItems(["Suffix", "Prefix"])
+        versioning_options_layout.addWidget(self.name_position, 0, 3)
+        
+        # Date options (shown when Date Sequences selected)
+        self.date_options = QWidget()
+        date_layout = QGridLayout(self.date_options)
+        date_layout.setContentsMargins(0, 5, 0, 0)
+        
+        date_layout.addWidget(QLabel("Start Date:"), 0, 0)
+        self.start_date = QDateEdit()
+        self.start_date.setDate(QDate.currentDate())
+        date_layout.addWidget(self.start_date, 0, 1)
+        
+        date_layout.addWidget(QLabel("Count:"), 0, 2)
+        self.date_count = QSpinBox()
+        self.date_count.setRange(1, 50)
+        self.date_count.setValue(5)
+        date_layout.addWidget(self.date_count, 0, 3)
+        
+        date_layout.addWidget(QLabel("Interval:"), 1, 0)
+        self.date_interval = QSpinBox()
+        self.date_interval.setRange(1, 30)
+        self.date_interval.setValue(1)
+        date_layout.addWidget(self.date_interval, 1, 1)
+        
+        self.date_interval_type = QComboBox()
+        self.date_interval_type.addItems(["Days", "Weeks", "Months"])
+        date_layout.addWidget(self.date_interval_type, 1, 2)
+        
+        date_layout.addWidget(QLabel("Format:"), 1, 3)
+        self.date_format = QComboBox()
+        self.date_format.addItems([
+            "YYYY-MM-DD (2025-01-15)",
+            "YYYYMMDD (20250115)", 
+            "MM-DD-YYYY (01-15-2025)",
+            "DD-MM-YYYY (15-01-2025)",
+            "YYYY/MM/DD (2025/01/15)",
+            "MM/DD/YYYY (01/15/2025)"
+        ])
+        date_layout.addWidget(self.date_format, 2, 0, 1, 2)
+        
+        versioning_options_layout.addWidget(self.date_options, 1, 0, 1, 4)
+        
+        # Version options (shown when Version Numbers selected)
+        self.version_options = QWidget()
+        version_layout = QGridLayout(self.version_options)
+        version_layout.setContentsMargins(0, 5, 0, 0)
+        
+        version_layout.addWidget(QLabel("Count:"), 0, 0)
+        self.version_count = QSpinBox()
+        self.version_count.setRange(1, 50)
+        self.version_count.setValue(5)
+        version_layout.addWidget(self.version_count, 0, 1)
+        
+        version_layout.addWidget(QLabel("Format:"), 0, 2)
+        self.version_format = QComboBox()
+        self.version_format.addItems([
+            "V1, V2, V3...",
+            "v1, v2, v3...",
+            "Ver1, Ver2, Ver3...",
+            "Version1, Version2, Version3..."
+        ])
+        version_layout.addWidget(self.version_format, 0, 3)
+        
+        versioning_options_layout.addWidget(self.version_options, 1, 0, 1, 4)
+        
+        # Number options (shown when Sequential Numbers selected)
+        self.number_options = QWidget()
+        number_layout = QGridLayout(self.number_options)
+        number_layout.setContentsMargins(0, 5, 0, 0)
+        
+        number_layout.addWidget(QLabel("Start:"), 0, 0)
+        self.number_start = QSpinBox()
+        self.number_start.setRange(1, 999)
+        self.number_start.setValue(1)
+        number_layout.addWidget(self.number_start, 0, 1)
+        
+        number_layout.addWidget(QLabel("Count:"), 0, 2)
+        self.number_count = QSpinBox()
+        self.number_count.setRange(1, 50)
+        self.number_count.setValue(5)
+        number_layout.addWidget(self.number_count, 0, 3)
+        
+        number_layout.addWidget(QLabel("Format:"), 1, 0)
+        self.number_format = QComboBox()
+        self.number_format.addItems([
+            "No padding (1, 2, 3...)",
+            "2 digits (01, 02, 03...)",
+            "3 digits (001, 002, 003...)"
+        ])
+        self.number_format.setCurrentText("3 digits (001, 002, 003...)")
+        number_layout.addWidget(self.number_format, 1, 1, 1, 3)
+        
+        versioning_options_layout.addWidget(self.number_options, 1, 0, 1, 4)
+        
+        versioning_layout.addWidget(self.versioning_options)
+        
+        # Initially hide versioning options
+        self.versioning_options.hide()
+        self._update_versioning_options()  # Set initial state
+        
+        self.left_layout.addWidget(versioning_container)
         
         # Create a fixed bottom section for output directory and create button
         bottom_container = QWidget()
@@ -1301,20 +1430,154 @@ class ProjectCreatorApp(QMainWindow):
         # Pass the event to the parent class
         return super().eventFilter(obj, event) 
 
+    def _toggle_versioning_options(self, enabled):
+        """Toggle visibility of versioning options"""
+        if enabled:
+            self.versioning_options.show()
+        else:
+            self.versioning_options.hide()
+    
+    def _update_versioning_options(self):
+        """Update which versioning options are visible based on sequence type"""
+        sequence_type = self.sequence_type.currentText()
+        
+        # Hide all options first
+        self.date_options.hide()
+        self.version_options.hide()
+        self.number_options.hide()
+        
+        # Show relevant options
+        if sequence_type == "Date Sequences":
+            self.date_options.show()
+        elif sequence_type == "Version Numbers":
+            self.version_options.show()
+        elif sequence_type == "Sequential Numbers":
+            self.number_options.show()
+    
+    def _generate_sequence_names(self, base_name):
+        """Generate sequence names based on current settings"""
+        import datetime
+        from datetime import timedelta
+        
+        if not self.enable_versioning.isChecked():
+            return [base_name]
+        
+        sequence_type = self.sequence_type.currentText()
+        position = self.name_position.currentText()
+        names = []
+        
+        if sequence_type == "Date Sequences":
+            # Generate date sequence
+            qdate = self.start_date.date()
+            start_date = datetime.date(qdate.year(), qdate.month(), qdate.day())
+            count = self.date_count.value()
+            interval = self.date_interval.value()
+            interval_type = self.date_interval_type.currentText()
+            format_text = self.date_format.currentText()
+            
+            # Extract format
+            if "YYYY-MM-DD" in format_text:
+                date_format = "%Y-%m-%d"
+            elif "YYYYMMDD" in format_text:
+                date_format = "%Y%m%d"
+            elif "MM-DD-YYYY" in format_text:
+                date_format = "%m-%d-%Y"
+            elif "DD-MM-YYYY" in format_text:
+                date_format = "%d-%m-%Y"
+            elif "YYYY/MM/DD" in format_text:
+                date_format = "%Y/%m/%d"
+            elif "MM/DD/YYYY" in format_text:
+                date_format = "%m/%d/%Y"
+            else:
+                date_format = "%Y-%m-%d"
+            
+            current_date = start_date
+            for i in range(count):
+                date_str = current_date.strftime(date_format)
+                
+                if "Suffix" in position:
+                    name = f"{base_name}_{date_str}"
+                elif "Prefix" in position:
+                    name = f"{date_str}_{base_name}"
+                else:
+                    name = date_str
+                
+                names.append(name)
+                
+                # Calculate next date
+                if interval_type == "Days":
+                    current_date += timedelta(days=interval)
+                elif interval_type == "Weeks":
+                    current_date += timedelta(weeks=interval)
+                elif interval_type == "Months":
+                    # Approximate month calculation
+                    current_date += timedelta(days=interval * 30)
+        
+        elif sequence_type == "Version Numbers":
+            # Generate version sequence
+            count = self.version_count.value()
+            format_text = self.version_format.currentText()
+            
+            for i in range(1, count + 1):
+                if "V1, V2" in format_text:
+                    version_str = f"V{i}"
+                elif "v1, v2" in format_text:
+                    version_str = f"v{i}"
+                elif "Ver1, Ver2" in format_text:
+                    version_str = f"Ver{i}"
+                elif "Version1, Version2" in format_text:
+                    version_str = f"Version{i}"
+                else:
+                    version_str = f"V{i}"
+                
+                if "Suffix" in position:
+                    name = f"{base_name}_{version_str}"
+                elif "Prefix" in position:
+                    name = f"{version_str}_{base_name}"
+                else:
+                    name = version_str
+                
+                names.append(name)
+        
+        elif sequence_type == "Sequential Numbers":
+            # Generate number sequence
+            start = self.number_start.value()
+            count = self.number_count.value()
+            format_text = self.number_format.currentText()
+            
+            for i in range(count):
+                num = start + i
+                
+                if "3 digits" in format_text:
+                    num_str = f"{num:03d}"
+                elif "2 digits" in format_text:
+                    num_str = f"{num:02d}"
+                else:  # no padding
+                    num_str = str(num)
+                
+                if "Suffix" in position:
+                    name = f"{base_name}_{num_str}"
+                elif "Prefix" in position:
+                    name = f"{num_str}_{base_name}"
+                else:
+                    name = num_str
+                
+                names.append(name)
+        
+        return names
+
     def process_batch_projects(self):
         """Process the entered project names for batch creation"""
         import re
-        from PyQt6.QtWidgets import QMessageBox
         from app.core.project_operations import handle_batch_create
         
-        # Get text from the batch input area
+        # Get project names from text area
         text = self.batch_text_edit.toPlainText().strip()
-        
         if not text:
             QMessageBox.warning(self, "Warning", "Please enter at least one project name.")
             return
         
-        # Split by newlines, commas, or semicolons
+        # Parse project names
         project_names = re.split(r'[\n,;]+', text)
         project_names = [name.strip() for name in project_names if name.strip()]
         
@@ -1322,77 +1585,40 @@ class ProjectCreatorApp(QMainWindow):
             QMessageBox.warning(self, "Warning", "No valid project names found.")
             return
         
-        # Check for duplicate names
-        if len(project_names) != len(set(project_names)):
-            duplicates = [name for name in project_names if project_names.count(name) > 1]
-            if QMessageBox.question(
-                self, 
-                "Duplicate Names", 
-                f"The following names appear more than once: {', '.join(set(duplicates))}\n\nDo you want to continue anyway?",
-                QMessageBox.Yes | QMessageBox.No
-            ) == QMessageBox.No:
-                return
+        # Generate final list with sequences if enabled
+        final_projects = []
+        for base_name in project_names:
+            sequence_names = self._generate_sequence_names(base_name)
+            final_projects.extend(sequence_names)
         
-        # Validate requirements for project creation
-        missing_requirements = []
-        
-        # Check for a template
-        has_template = False
-        current_selected_template_data = None # To store the actual template data
-
-        # PRIORITY 1: Use the TemplateGallery's unified selection access
-        if hasattr(self, 'template_gallery') and hasattr(self.template_gallery, 'get_primary_selected_template'):
-            try:
-                selected_template_from_gallery = self.template_gallery.get_primary_selected_template()
-                if selected_template_from_gallery:
-                    current_selected_template_data = selected_template_from_gallery
-                    has_template = True
-                    print(f"DEBUG: Got template from gallery.get_primary_selected_template: {selected_template_from_gallery.get('name')}")
-            except Exception as e:
-                print(f"Error checking gallery.get_primary_selected_template: {e}")
-
-        # Fallback (Legacy): Check direct attribute on ProjectCreatorApp if gallery method failed
-        if not has_template and hasattr(self, 'selected_template') and self.selected_template:
-            current_selected_template_data = self.selected_template
-            has_template = True
-            print(f"DEBUG: Got template from self.selected_template (legacy): {self.selected_template.get('name') if isinstance(self.selected_template, dict) else self.selected_template}")
-            
-        # Fallback (Legacy for single item in multi-select, less likely for primary selection)
-        if not has_template and hasattr(self, 'multi_selected_templates') and self.multi_selected_templates and len(self.multi_selected_templates) == 1:
-            current_selected_template_data = self.multi_selected_templates[0]
-            has_template = True
-            print(f"DEBUG: Got template from self.multi_selected_templates (legacy): {self.multi_selected_templates[0].get('name') if isinstance(self.multi_selected_templates[0], dict) else self.multi_selected_templates[0]}")
-
-        # Fallback (template_file_path - for non-gallery selection)
-        if not has_template and hasattr(self, 'template_file_path') and self.template_file_path:
-            # This path might need to load full template data if it's just a path string.
-            # For now, assuming if this path is set, it implies a valid template source for creation.
-            # `current_selected_template_data` might remain None or be just a path here if not loaded.
-            # This part of logic might need more refinement if `template_file_path` is critical
-            # and doesn't provide a full data dict needed by `handle_batch_create`.
-            has_template = True 
-            print(f"DEBUG: Using template from self.template_file_path (legacy): {self.template_file_path}")
-        
-        if not has_template:
-            missing_requirements.append("No template selected")
-        
-        output_dir = self.get_current_output_dir(use_fallbacks=False)
-        if not output_dir:
-            # Instead of adding it to missing requirements, directly prompt for selection
-            output_dir = self.get_output_dir()
-            if not output_dir:  # User cancelled the directory selection
-                self.show_status_message("Please select an output location to create projects", message_type="warning")
-                return
-        
-        # Check if there's still any missing requirements
-        if missing_requirements:
-            QMessageBox.critical(
-                self, 
-                "Missing Requirements", 
-                "Cannot create projects due to the following issues:\n\n" + 
-                "\n".join([f"• {item}" for item in missing_requirements])
-            )
+        # Show confirmation
+        if QMessageBox.question(
+            self, 
+            "Confirm Batch Creation", 
+            f"You are about to create {len(final_projects)} projects.\n\nDo you want to continue?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        ) == QMessageBox.StandardButton.No:
             return
+        
+        # Show creating message in status bar
+        self.show_status_message(f"Creating {len(final_projects)} projects...", message_type="info")
+        
+        # Convert list to text for handle_batch_create
+        projects_text = "\n".join(final_projects)
+        
+        # Start batch creation process
+        self.batch_results = handle_batch_create(self, projects_text)
+        
+        # Start result checking timer
+        if not hasattr(self, 'batch_check_timer'):
+            self.batch_check_timer = QTimer()
+            self.batch_check_timer.timeout.connect(self.check_batch_results)
+        
+        self.batch_check_timer.start(500)  # Check every 500ms
+    
+    def _handle_enhanced_batch_creation(self, project_names):
+        """Handle the project creation from the enhanced dialog"""
+        from app.core.project_operations import handle_batch_create
         
         # Show creating message in status bar
         self.show_status_message(f"Creating {len(project_names)} projects...", message_type="info")
@@ -1400,25 +1626,15 @@ class ProjectCreatorApp(QMainWindow):
         # Convert list of project names to a string for handle_batch_create
         projects_text = "\n".join(project_names)
         
-        # Start the batch check timer when we initiate batch creation
+        # Start batch creation process
+        self.batch_results = handle_batch_create(self, projects_text)
+        
+        # Start result checking timer
+        if not hasattr(self, 'batch_check_timer'):
+            self.batch_check_timer = QTimer()
+            self.batch_check_timer.timeout.connect(self.check_batch_results)
+        
         self.batch_check_timer.start(500)  # Check every 500ms
-        
-        # Execute batch creation - It would be best if handle_batch_create could take current_selected_template_data
-        # For now, we assume it will pick up the selection correctly if ProjectCreatorApp.selected_template is set,
-        # or if it also calls template_gallery.get_primary_selected_template().
-        # If ProjectCreatorApp.selected_template is the main way it gets it, we should set it here:
-        if current_selected_template_data:
-            self.selected_template = current_selected_template_data # Ensure legacy attribute is also updated if used downstream
-
-        results = handle_batch_create(self, projects_text)
-        
-        # Store results and check them - dialog will be shown by check_batch_results
-        if results and not isinstance(results, bool):
-            self.batch_results = results
-            self.check_batch_results()
-        else:
-            # If there are no results, stop the timer
-            self.batch_check_timer.stop()
 
     def _export_all(self):
         """Export all settings and templates"""

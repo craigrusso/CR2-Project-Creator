@@ -142,6 +142,10 @@ class EnhancedStructureEditor(QDialog):
             # Get reference to the tree widget created by UIBuilder
             self.tree_widget = self.ui_builder.tree
             
+            # Update file operations handler with the tree widget
+            if self.file_operations:
+                self.file_operations.set_tree_widget(self.tree_widget)
+            
             # Ensure consistent styling with branch indicators and folder icons
             try:
                 from app.ui.tree_styling import apply_enhanced_tree_styling
@@ -174,10 +178,6 @@ class EnhancedStructureEditor(QDialog):
                 self.tree_widget._old_keyPressEvent = self.tree_widget.keyPressEvent
                 # Override keyPressEvent
                 self.tree_widget.keyPressEvent = self._handle_key_press
-                
-                # Update file operations handler with the tree
-                if self.file_operations:
-                    self.file_operations.tree = self.tree_widget
             
             # Add buttons at the bottom - ONLY ONE SET OF BUTTONS
             button_layout = QHBoxLayout()
@@ -452,7 +452,7 @@ class EnhancedStructureEditor(QDialog):
             # If we still don't have an icon, use a fallback emoji
             if folder_icon is None or folder_icon.isNull():
                 # We don't have an icon, just set the text with a folder emoji
-                folder_item.setText(0, "📁 Untitled Folder")
+                folder_item.setText(0, "Untitled Folder")
             else:
                 folder_item.setIcon(0, folder_icon)
                 
@@ -502,7 +502,14 @@ class EnhancedStructureEditor(QDialog):
         if hasattr(self, 'file_operations') and hasattr(self.file_operations, 'create_context_menu'):
             # Let file_operations create the context menu
             print(f"DEBUG: Calling file_operations.create_context_menu for item: {item.text(0) if item else 'None'}")
-            menu = self.file_operations.create_context_menu(item, position)
+            # Store the current item in the file_operations instance so it can access it
+            self.file_operations.current_context_item = item
+            # FileOperations.create_context_menu only takes position parameter and handles display internally
+            self.file_operations.create_context_menu(position)
+            # Clear the stored item after use
+            if hasattr(self.file_operations, 'current_context_item'):
+                delattr(self.file_operations, 'current_context_item')
+            return
         
         # If we have a menu, show it
         if menu and not menu.isEmpty():
