@@ -736,6 +736,36 @@ class FileOperations:
                     new_item = QTreeWidgetItem(self.tree_widget)
                 
                 new_item.setText(0, new_filename)
+                
+                # Set proper icon and properties based on item type
+                if item_type == 'folder':
+                    # Set proper folder icon immediately
+                    try:
+                        from app.ui.icon_utilities import get_folder_icon
+                        new_item.setIcon(0, get_folder_icon(False))  # Initially collapsed
+                    except ImportError:
+                        # Fallback to standard icon
+                        from PyQt6.QtWidgets import QApplication, QStyle
+                        new_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+                    
+                    # Make folder editable
+                    new_item.setFlags(new_item.flags() | Qt.ItemFlag.ItemIsEditable)
+                    
+                    # Copy all children to the new folder if it's a folder
+                    if item.childCount() > 0:
+                        self._copy_folder_children(item, new_item)
+                else:
+                    # Set proper file icon
+                    try:
+                        from app.ui.icon_utilities import get_file_icon
+                        new_item.setIcon(0, get_file_icon(new_filename))
+                    except ImportError:
+                        # Fallback to standard icon
+                        from PyQt6.QtWidgets import QApplication, QStyle
+                        new_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+                    
+                    # Make file editable
+                    new_item.setFlags(new_item.flags() | Qt.ItemFlag.ItemIsEditable)
             
             # Copy and update item data
             new_data = original_data.copy()
@@ -750,8 +780,15 @@ class FileOperations:
             # Set display text without emoji icons
             new_item.setText(0, new_filename)
             
+            # Force immediate icon refresh to ensure proper system icons
+            try:
+                from app.ui.tree_styling import update_item_icon
+                update_item_icon(new_item)
+            except ImportError:
+                pass
+            
             created_items.append(new_item)
-            print(f"DEBUG: Created versioned file: {new_filename}")
+            print(f"DEBUG: Created versioned {item_type}: {new_filename} with proper icon")
         
         # Expand parent if needed
         if parent_item:
@@ -837,9 +874,35 @@ class FileOperations:
                 
                 new_item.setText(0, new_name)
                 
-                # For folders, copy all children to the new folder
-                if item_type == 'folder' and item.childCount() > 0:
-                    self._copy_folder_children(item, new_item)
+                # Set proper icon and properties based on item type
+                if item_type == 'folder':
+                    # Set proper folder icon immediately
+                    try:
+                        from app.ui.icon_utilities import get_folder_icon
+                        new_item.setIcon(0, get_folder_icon(False))  # Initially collapsed
+                    except ImportError:
+                        # Fallback to standard icon
+                        from PyQt6.QtWidgets import QApplication, QStyle
+                        new_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+                    
+                    # Make folder editable
+                    new_item.setFlags(new_item.flags() | Qt.ItemFlag.ItemIsEditable)
+                    
+                    # Copy all children to the new folder
+                    if item.childCount() > 0:
+                        self._copy_folder_children(item, new_item)
+                else:
+                    # Set proper file icon
+                    try:
+                        from app.ui.icon_utilities import get_file_icon
+                        new_item.setIcon(0, get_file_icon(new_name))
+                    except ImportError:
+                        # Fallback to standard icon
+                        from PyQt6.QtWidgets import QApplication, QStyle
+                        new_item.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+                    
+                    # Make file editable
+                    new_item.setFlags(new_item.flags() | Qt.ItemFlag.ItemIsEditable)
             
             # Copy and update item data - ensure all data is JSON serializable
             new_data = original_data.copy()
@@ -867,8 +930,15 @@ class FileOperations:
             # Set display text without emoji icons
             new_item.setText(0, new_name)
             
+            # Force immediate icon refresh to ensure proper system icons
+            try:
+                from app.ui.tree_styling import update_item_icon
+                update_item_icon(new_item)
+            except ImportError:
+                pass
+            
             created_items.append(new_item)
-            print(f"DEBUG: Created date sequence {item_type}: {new_name}")
+            print(f"DEBUG: Created date sequence {item_type}: {new_name} with proper icon")
             
             # Move to next date
             if interval_type == "Days":
@@ -911,9 +981,43 @@ class FileOperations:
             
             new_child.setData(0, Qt.ItemDataRole.UserRole, source_data.copy())
             
-            # Recursively copy if this child is also a folder
-            if source_data.get('type') == 'folder' and source_child.childCount() > 0:
-                self._copy_folder_children(source_child, new_child)
+            # Set proper icon and properties based on item type
+            child_type = source_data.get('type', 'file')
+            if child_type == 'folder':
+                # Set proper folder icon
+                try:
+                    from app.ui.icon_utilities import get_folder_icon
+                    new_child.setIcon(0, get_folder_icon(False))  # Initially collapsed
+                except ImportError:
+                    # Fallback to standard icon
+                    from PyQt6.QtWidgets import QApplication, QStyle
+                    new_child.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon))
+                
+                # Make folder editable
+                new_child.setFlags(new_child.flags() | Qt.ItemFlag.ItemIsEditable)
+                
+                # Recursively copy if this child is also a folder
+                if source_child.childCount() > 0:
+                    self._copy_folder_children(source_child, new_child)
+            else:
+                # Set proper file icon
+                try:
+                    from app.ui.icon_utilities import get_file_icon
+                    new_child.setIcon(0, get_file_icon(source_name))
+                except ImportError:
+                    # Fallback to standard icon
+                    from PyQt6.QtWidgets import QApplication, QStyle
+                    new_child.setIcon(0, QApplication.style().standardIcon(QStyle.StandardPixmap.SP_FileIcon))
+                
+                # Make file editable
+                new_child.setFlags(new_child.flags() | Qt.ItemFlag.ItemIsEditable)
+            
+            # Force immediate icon refresh
+            try:
+                from app.ui.tree_styling import update_item_icon
+                update_item_icon(new_child)
+            except ImportError:
+                pass
     
     def _apply_to_folder(self, item):
         """Apply settings to all files in folder"""
