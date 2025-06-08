@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
     QTreeWidgetItem, QInputDialog, QMessageBox, QMenu,
     QFileDialog, QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
     QLineEdit, QPushButton, QComboBox, QCheckBox, QApplication, QStyle,
-    QListWidget, QListWidgetItem
+    QListWidget, QListWidgetItem, QScrollArea, QFrame, QWidget
 )
 from PyQt6.QtCore import Qt, QSize, QTimer
 from PyQt6.QtGui import QIcon, QDrag, QBrush, QColor, QCursor, QAction
@@ -908,10 +908,10 @@ class FileOperations:
                 project_name_menu.addSeparator() # Add another separator before Revert
 
                 # Action to revert to original name
-                revert_action = project_name_menu.addAction(f'Revert to "{original_name}"')
+                revert_action = project_name_menu.addAction(f'Reset to "{original_name}"')
                 # Enable only if current name differs from original due to project name usage
                 revert_action.setEnabled(uses_project_name or name_mode != 'none') 
-                revert_action.triggered.connect(lambda bound_item=item: self._reset_file_name(bound_item))
+                revert_action.triggered.connect(lambda checked=False, bound_item=item: self._reset_file_name(bound_item))
             else:
                 # If not editable or a folder, add a disabled placeholder
                 disabled_action = project_name_menu.addAction("(Options N/A for folders)")
@@ -1328,13 +1328,15 @@ class FileOperations:
         item.setFont(0, font)
         item.setForeground(0, QBrush(QColor("#000000")))  # Reset to default color
         
-        print(f"DEBUG: _reset_file_name - successfully reset file back to original name: {original_name}")
+        # Mark editor as modified
+        if hasattr(self.editor, 'mark_modified'):
+            self.editor.mark_modified()
         
         return True
 
     def _configure_custom_separator(self, item):
         """
-        Configure a custom separator for project name operations
+        Configure a custom separator for project name operations with industry-specific presets
         
         Args:
             item: The file item to update
@@ -1353,27 +1355,29 @@ class FileOperations:
         # Get current separator
         current_separator = item_data.get('custom_separator', '.')
         
-        # Show input dialog to get the separator
-        separator, ok = QInputDialog.getText(
-            self.tree, 
-            "Custom Separator",
-            "Enter a custom separator to use between project name and filename:",
-            text=current_separator
-        )
+        # Create a custom dialog with organized separator options
+        dialog = SeparatorSelectionDialog(self.tree, current_separator)
         
-        if not ok or not separator:
-            return False
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            separator = dialog.get_selected_separator()
+            
+            if separator:
+                # Store the separator
+                item_data['custom_separator'] = separator
+                item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+                
+                # If already using project name, update the display
+                if item_data.get('uses_project_name', False):
+                    mode = item_data.get('project_name_mode', 'replace')
+                    self._use_project_name_for_file(item, mode=mode)
+                
+                # Mark editor as modified
+                if hasattr(self.editor, 'mark_modified'):
+                    self.editor.mark_modified()
+                
+                return True
         
-        # Store the separator
-        item_data['custom_separator'] = separator
-        item.setData(0, Qt.ItemDataRole.UserRole, item_data)
-        
-        # If already using project name, update the display
-        if item_data.get('uses_project_name', False):
-            mode = item_data.get('project_name_mode', 'replace')
-            self._use_project_name_for_file(item, mode=mode)
-        
-        return True
+        return False
 
     def _toggle_project_name_for_file(self, item, mode, is_checked):
         """Toggle the project name usage for a file item and update item data."""
@@ -1514,6 +1518,351 @@ Example: $project_$base$ext
         # print(f"DEBUG: Updating data for item: {item.text(0)} with: {data_dict}")
         # This needs to be implemented based on how item data is stored
         pass
+
+class SeparatorSelectionDialog(QDialog):
+    """Dialog for selecting file name separators with industry-specific presets"""
+    
+    def __init__(self, parent, current_separator="."):
+        super().__init__(parent)
+        self.selected_separator = current_separator
+        self.setup_ui()
+        
+    def setup_ui(self):
+        self.setWindowTitle("Choose Project Name Separator")
+        self.setFixedWidth(520)
+        self.setFixedHeight(650)
+        
+        # Main layout
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Title and description
+        title = QLabel("Project Name Separator")
+        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #333;")
+        layout.addWidget(title)
+        
+        desc = QLabel("Choose how to separate the project name from the filename:")
+        desc.setStyleSheet("color: #666; margin-bottom: 10px;")
+        layout.addWidget(desc)
+        
+        # Create separator preset sections
+        self.create_separator_sections(layout)
+        
+        # Custom input section
+        self.create_custom_section(layout)
+        
+        # Preview section
+        self.create_preview_section(layout)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        cancel_btn = QPushButton("Cancel")
+        ok_btn = QPushButton("Apply")
+        ok_btn.setDefault(True)
+        
+        cancel_btn.clicked.connect(self.reject)
+        ok_btn.clicked.connect(self.accept)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(cancel_btn)
+        button_layout.addWidget(ok_btn)
+        layout.addLayout(button_layout)
+        
+        # Set initial selection
+        self.update_preview()
+        
+    def create_separator_sections(self, layout):
+        """Create organized sections for different separator types"""
+        
+        # Define separator categories with descriptions and use cases
+        separator_categories = {
+            "Standard Separators": {
+                "description": "Most commonly used across all industries",
+                "separators": [
+                    (".", "Period", "ProjectName.filename.ext", "Clean, professional, widely compatible"),
+                    ("_", "Underscore", "ProjectName_filename.ext", "Very common in programming, technical work"),
+                    ("-", "Dash/Hyphen", "ProjectName-filename.ext", "Web-friendly, clean appearance"),
+                    (" ", "Space", "ProjectName filename.ext", "Natural reading, may cause issues on some systems")
+                ]
+            },
+            "Video/Film Production": {
+                "description": "Optimized for video editing workflows and media management",
+                "separators": [
+                    ("_", "Underscore", "ProjectName_filename.ext", "Industry standard, NLE-friendly"),
+                    ("_v", "Version Underscore", "ProjectName_v01_filename.ext", "Perfect for versioning"),
+                    ("-", "Dash", "ProjectName-filename.ext", "Clean, professional"),
+                    ("_", "Date Underscore", "ProjectName_20250108_filename.ext", "Great with dates")
+                ]
+            },
+            "Software Development": {
+                "description": "Following programming conventions and standards",
+                "separators": [
+                    ("_", "Snake Case", "project_name_filename.ext", "Python, Ruby style"),
+                    ("-", "Kebab Case", "project-name-filename.ext", "Web development, CSS style"),
+                    (".", "Dot Notation", "ProjectName.filename.ext", "Clean, namespace-like"),
+                    ("_", "Constant Style", "PROJECT_NAME_filename.ext", "All caps, constants")
+                ]
+            },
+            "Design/Creative": {
+                "description": "Optimized for creative workflows and client presentations",
+                "separators": [
+                    ("-", "Dash", "ProjectName-filename.ext", "Clean, professional appearance"),
+                    ("_", "Underscore", "ProjectName_filename.ext", "Technical but readable"),
+                    (".", "Period", "ProjectName.filename.ext", "Minimalist, clean"),
+                    (" ", "Space", "ProjectName filename.ext", "Client-friendly, natural")
+                ]
+            },
+            "Audio Production": {
+                "description": "Designed for DAW compatibility and audio workflows",
+                "separators": [
+                    ("_", "Underscore", "ProjectName_filename.ext", "DAW-friendly, no issues"),
+                    ("-", "Dash", "ProjectName-filename.ext", "Clean, professional"),
+                    ("_v", "Version Style", "ProjectName_v01_filename.ext", "Perfect for mix versions"),
+                    ("_", "Mix Style", "ProjectName_mix01_filename.ext", "Audio industry standard")
+                ]
+            }
+        }
+        
+        # Create scroll area for the categories
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setSpacing(20)
+        
+        for category_name, category_data in separator_categories.items():
+            self.create_category_section(scroll_layout, category_name, category_data)
+        
+        scroll_area.setWidget(scroll_content)
+        scroll_area.setFixedHeight(350)
+        layout.addWidget(scroll_area)
+        
+    def create_category_section(self, layout, category_name, category_data):
+        """Create a section for a specific category of separators"""
+        
+        # Category header
+        category_frame = QFrame()
+        category_frame.setStyleSheet("""
+            QFrame {
+                border: 1px solid #ddd;
+                border-radius: 6px;
+                background-color: #f8f9fa;
+                margin: 2px;
+            }
+        """)
+        category_layout = QVBoxLayout(category_frame)
+        category_layout.setSpacing(8)
+        category_layout.setContentsMargins(12, 12, 12, 12)
+        
+        # Category title
+        title_label = QLabel(category_name)
+        title_label.setStyleSheet("font-weight: bold; color: #2c5aa0; font-size: 13px;")
+        category_layout.addWidget(title_label)
+        
+        # Category description
+        desc_label = QLabel(category_data["description"])
+        desc_label.setStyleSheet("color: #666; font-size: 11px; margin-bottom: 8px;")
+        desc_label.setWordWrap(True)
+        category_layout.addWidget(desc_label)
+        
+        # Separator options
+        for separator, name, example, description in category_data["separators"]:
+            self.create_separator_option(category_layout, separator, name, example, description)
+        
+        layout.addWidget(category_frame)
+        
+    def create_separator_option(self, layout, separator, name, example, description):
+        """Create a single separator option"""
+        
+        option_frame = QFrame()
+        option_frame.setStyleSheet("""
+            QFrame {
+                border: 1px solid #e0e0e0;
+                border-radius: 4px;
+                background-color: white;
+                padding: 6px;
+            }
+            QFrame:hover {
+                border-color: #007ACC;
+                background-color: #f0f8ff;
+            }
+        """)
+        option_frame.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        
+        option_layout = QHBoxLayout(option_frame)
+        option_layout.setContentsMargins(8, 6, 8, 6)
+        
+        # Radio button
+        radio = QCheckBox()
+        radio.setStyleSheet("QCheckBox::indicator { width: 14px; height: 14px; }")
+        
+        # Option details
+        details_layout = QVBoxLayout()
+        details_layout.setSpacing(2)
+        
+        # Name and separator
+        name_layout = QHBoxLayout()
+        name_label = QLabel(f"{name}")
+        name_label.setStyleSheet("font-weight: bold; color: #333;")
+        
+        sep_label = QLabel(f"'{separator}'")
+        sep_label.setStyleSheet("font-family: monospace; background: #f0f0f0; padding: 2px 6px; border-radius: 3px; color: #007ACC;")
+        
+        name_layout.addWidget(name_label)
+        name_layout.addWidget(sep_label)
+        name_layout.addStretch()
+        
+        # Example
+        example_label = QLabel(f"Example: {example}")
+        example_label.setStyleSheet("font-family: monospace; color: #666; font-size: 11px;")
+        
+        # Description
+        desc_label = QLabel(description)
+        desc_label.setStyleSheet("color: #777; font-size: 10px;")
+        
+        details_layout.addLayout(name_layout)
+        details_layout.addWidget(example_label)
+        details_layout.addWidget(desc_label)
+        
+        option_layout.addWidget(radio)
+        option_layout.addLayout(details_layout)
+        
+        layout.addWidget(option_frame)
+        
+        # Store references and connect signals
+        option_frame.separator = separator
+        option_frame.radio = radio
+        option_frame.mousePressEvent = lambda event, sep=separator: self.select_separator(sep)
+        radio.clicked.connect(lambda checked, sep=separator: self.select_separator(sep) if checked else None)
+        
+        # Check if this is the current separator
+        if separator == self.selected_separator:
+            radio.setChecked(True)
+            
+    def create_custom_section(self, layout):
+        """Create custom separator input section"""
+        
+        custom_frame = QFrame()
+        custom_frame.setStyleSheet("""
+            QFrame {
+                border: 2px solid #ffa500;
+                border-radius: 6px;
+                background-color: #fff8e1;
+                margin: 2px;
+            }
+        """)
+        custom_layout = QVBoxLayout(custom_frame)
+        custom_layout.setContentsMargins(12, 12, 12, 12)
+        
+        title_label = QLabel("Custom Separator")
+        title_label.setStyleSheet("font-weight: bold; color: #e65100; font-size: 13px;")
+        custom_layout.addWidget(title_label)
+        
+        desc_label = QLabel("Enter any character(s) to use as a separator:")
+        desc_label.setStyleSheet("color: #bf360c; font-size: 11px; margin-bottom: 8px;")
+        custom_layout.addWidget(desc_label)
+        
+        input_layout = QHBoxLayout()
+        self.custom_input = QLineEdit()
+        self.custom_input.setPlaceholderText("Enter custom separator...")
+        self.custom_input.setStyleSheet("""
+            QLineEdit {
+                padding: 6px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-family: monospace;
+            }
+        """)
+        self.custom_input.textChanged.connect(self.on_custom_input_changed)
+        
+        self.custom_radio = QCheckBox("Use Custom")
+        self.custom_radio.clicked.connect(self.on_custom_radio_clicked)
+        
+        input_layout.addWidget(self.custom_input)
+        input_layout.addWidget(self.custom_radio)
+        
+        custom_layout.addLayout(input_layout)
+        layout.addWidget(custom_frame)
+        
+    def create_preview_section(self, layout):
+        """Create preview section"""
+        
+        preview_frame = QFrame()
+        preview_frame.setStyleSheet("""
+            QFrame {
+                border: 1px solid #ddd;
+                border-radius: 6px;
+                background-color: #f5f5f5;
+                margin: 2px;
+            }
+        """)
+        preview_layout = QVBoxLayout(preview_frame)
+        preview_layout.setContentsMargins(12, 12, 12, 12)
+        
+        preview_label = QLabel("Preview:")
+        preview_label.setStyleSheet("font-weight: bold; color: #333; margin-bottom: 6px;")
+        preview_layout.addWidget(preview_label)
+        
+        self.preview_text = QLabel()
+        self.preview_text.setStyleSheet("""
+            font-family: monospace;
+            background: white;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            color: #007ACC;
+            font-size: 12px;
+        """)
+        preview_layout.addWidget(self.preview_text)
+        
+        layout.addWidget(preview_frame)
+        
+    def select_separator(self, separator):
+        """Select a separator and update UI"""
+        self.selected_separator = separator
+        
+        # Update all radio buttons
+        for frame in self.findChildren(QFrame):
+            if hasattr(frame, 'radio') and hasattr(frame, 'separator'):
+                frame.radio.setChecked(frame.separator == separator)
+        
+        # Clear custom radio if not custom
+        if separator != self.custom_input.text():
+            self.custom_radio.setChecked(False)
+        
+        self.update_preview()
+        
+    def on_custom_input_changed(self, text):
+        """Handle custom input changes"""
+        if text and self.custom_radio.isChecked():
+            self.selected_separator = text
+            self.update_preview()
+            
+    def on_custom_radio_clicked(self, checked):
+        """Handle custom radio button clicks"""
+        if checked and self.custom_input.text():
+            self.selected_separator = self.custom_input.text()
+            # Uncheck all other radios
+            for frame in self.findChildren(QFrame):
+                if hasattr(frame, 'radio'):
+                    frame.radio.setChecked(False)
+            self.update_preview()
+        elif checked:
+            # Focus on custom input if checked but empty
+            self.custom_input.setFocus()
+            
+    def update_preview(self):
+        """Update the preview text"""
+        if self.selected_separator:
+            example = f"MyProject{self.selected_separator}filename.ext"
+            self.preview_text.setText(example)
+        else:
+            self.preview_text.setText("No separator selected")
+            
+    def get_selected_separator(self):
+        """Get the selected separator"""
+        return self.selected_separator
 
 class FileDetailsDialog(QDialog):
     """Dialog for entering file details"""
