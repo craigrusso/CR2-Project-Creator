@@ -6,6 +6,7 @@ from PyQt6.QtCore import Qt, QEvent, QObject, QRect, QSize
 from PyQt6.QtGui import QPalette, QColor, QPainter, QBrush, QPen, QFont, QPixmap, QPainterPath
 import sys, time
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE, LINEEDIT_STYLE, LABEL_STYLE, LISTVIEW_POPUP_STYLE, MESSAGE_BOX_BUTTON_STYLE, DIALOG_BUTTON_STYLE
+from app.constants import get_resource_path
 import platform
 
 # Add the force_app_palette function
@@ -178,6 +179,9 @@ class ComboBoxPopupFilter(QObject):
 
 def configure_styles(app):
     """Configure the application styles"""
+    # Resolve SVG paths for checkboxes
+    check_svg_path = get_resource_path('app/assets/css/check.svg')
+    
     # Set application stylesheet with comprehensive style rules
     app.setStyleSheet(f"""
         /* Base application styling */
@@ -391,7 +395,7 @@ def configure_styles(app):
         }}
         
         QCheckBox::indicator:checked {{
-            image: url("app/assets/css/check.svg");
+            image: url("{check_svg_path}");
         }}
         
         QRadioButton::indicator {{
@@ -423,7 +427,7 @@ def configure_styles(app):
         
         QCheckBox::indicator:checked:disabled {{
             background-color: {colors['secondary_text']};
-            image: url("app/assets/css/check.svg");
+            image: url("{check_svg_path}");
         }}
         
         QRadioButton::indicator:checked:disabled {{

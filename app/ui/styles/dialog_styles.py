@@ -6,6 +6,7 @@ Styles for dialog components used throughout the application.
 """
 
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, GROUPBOX_STYLE
+from app.constants import get_resource_path
 
 # Label styles
 LABEL_STYLE = f"""
@@ -99,12 +100,12 @@ SPINBOX_STYLE = f"""
         background-color: {colors['hover_bg']};
     }}
     QSpinBox::up-arrow {{
-        image: url(app/assets/css/v_arrow_up.svg);
+        image: url({get_resource_path('app/assets/css/v_arrow_up.svg')});
         width: 10px;
         height: 10px;
     }}
     QSpinBox::down-arrow {{
-        image: url(app/assets/css/v_arrow.svg);
+        image: url({get_resource_path('app/assets/css/v_arrow.svg')});
         width: 10px;
         height: 10px;
     }}

@@ -333,7 +333,7 @@ class CategoryManagementDialog(QDialog):
             QCheckBox::indicator:checked {{
                 background-color: {colors['accent']};
                 border: 1px solid {colors['accent']};
-                image: url("app/assets/css/check.svg");
+                /* SVG icon handled by global style */
             }}
         """)
         main_layout.addWidget(self.hide_defaults_checkbox)
