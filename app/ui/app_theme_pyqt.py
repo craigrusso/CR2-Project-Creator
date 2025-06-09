@@ -4,7 +4,7 @@
 from PyQt6.QtWidgets import QWidget, QLabel, QLineEdit, QPushButton, QComboBox, QFrame, QListView, QAbstractItemView, QStyledItemDelegate, QApplication, QProxyStyle, QStyle
 from PyQt6.QtCore import Qt, QEvent, QObject, QRect, QSize
 from PyQt6.QtGui import QPalette, QColor, QPainter, QBrush, QPen, QFont, QPixmap, QPainterPath
-import sys, time
+import sys, time, os
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE, LINEEDIT_STYLE, LABEL_STYLE, LISTVIEW_POPUP_STYLE, MESSAGE_BOX_BUTTON_STYLE, DIALOG_BUTTON_STYLE
 from app.constants import get_resource_path
 import platform
@@ -179,8 +179,9 @@ class ComboBoxPopupFilter(QObject):
 
 def configure_styles(app):
     """Configure the application styles"""
-    # Resolve SVG paths for checkboxes
-    check_svg_path = get_resource_path('app/assets/css/check.svg')
+    
+    # Create checkmark icon and save as temp file for CSS use
+    checkmark_file_url = create_checkmark_file()
     
     # Set application stylesheet with comprehensive style rules
     app.setStyleSheet(f"""
@@ -377,25 +378,23 @@ def configure_styles(app):
             {ACCENT_BUTTON_STYLE}
         }}
         
-        /* Checkbox and Radio Button Styling */
+        /* Checkbox and Radio Button Styling - Cross-platform solution */
         QCheckBox::indicator, QRadioButton::indicator {{
             width: 16px;
             height: 16px;
             border: 1px solid {colors['border']};
             background-color: {colors['card_bg']};
+            border-radius: 3px;
         }}
         
         QCheckBox::indicator:hover, QRadioButton::indicator:hover {{
             border: 1px solid {colors['accent']};
         }}
         
-        QCheckBox::indicator:checked, QRadioButton::indicator:checked {{
+        QCheckBox::indicator:checked {{
             background-color: {colors['accent']};
             border: 1px solid {colors['accent']};
-        }}
-        
-        QCheckBox::indicator:checked {{
-            image: url("{check_svg_path}");
+            {f'image: url("{checkmark_file_url}");' if checkmark_file_url else '/* No checkmark file available */'}
         }}
         
         QRadioButton::indicator {{
@@ -403,21 +402,9 @@ def configure_styles(app):
         }}
         
         QRadioButton::indicator:checked {{
-            background-color: {colors['card_bg']}; /* Keep background color */
+            background-color: {colors['accent']};
             border: 1px solid {colors['accent']};
-            image: none; /* Remove any existing image */
-        }}
-        
-        QRadioButton::indicator:checked {{
-            /* Create concentric circles for radio buttons */
-            background-color: {colors['card_bg']};
-            border: 1px solid {colors['accent']};
-        }}
-        
-        QRadioButton::indicator:checked {{
-            /* Create a dot in the middle with a small circle */
-            image: none;
-            background-image: radial-gradient({colors['accent']} 0px, {colors['accent']} 5px, {colors['card_bg']} 6px);
+            background-image: radial-gradient(white 0px, white 4px, transparent 5px);
         }}
         
         QCheckBox::indicator:disabled, QRadioButton::indicator:disabled {{
@@ -427,137 +414,46 @@ def configure_styles(app):
         
         QCheckBox::indicator:checked:disabled {{
             background-color: {colors['secondary_text']};
-            image: url("{check_svg_path}");
+            border: 1px solid {colors['secondary_text']};
+            {f'image: url("{checkmark_file_url}");' if checkmark_file_url else '/* No checkmark file available */'}
         }}
         
         QRadioButton::indicator:checked:disabled {{
             background-color: {colors['bg']};
             border: 1px solid {colors['secondary_text']};
-            background-image: radial-gradient({colors['secondary_text']} 0px, {colors['secondary_text']} 5px, {colors['bg']} 6px);
+            background-image: radial-gradient({colors['secondary_text']} 0px, {colors['secondary_text']} 4px, transparent 5px);
         }}
     """)
+
+def create_checkmark_file():
+    """Create a checkmark PNG file for use in CSS - cross-platform solution"""
+    from PyQt6.QtGui import QIcon
+    from PyQt6.QtCore import QSize
     
-    # Create programmatic checkmark icon for checkboxes
-    def create_checkmark_icon():
-        size = 14  # Size of the checkmark icon
-        pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.GlobalColor.transparent)  # Start with transparent background
+    try:
+        # Load SVG using QIcon (same method that works for template icons)
+        svg_path = get_resource_path(os.path.join('app', 'assets', 'css', 'check.svg'))
         
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        
-        # Draw checkmark path
-        path = QPainterPath()
-        path.moveTo(3, 7)
-        path.lineTo(6, 10)
-        path.lineTo(11, 4)
-        
-        # Set up painter
-        pen = QPen(QColor("white"))
-        pen.setWidth(2)
-        painter.setPen(pen)
-        
-        # Draw the path
-        painter.drawPath(path)
-        painter.end()
-        
-        return pixmap
+        if os.path.exists(svg_path):
+            icon = QIcon(svg_path)
+            if not icon.isNull():
+                pixmap = icon.pixmap(QSize(16, 16))
+                if not pixmap.isNull():
+                    # Save to app assets directory instead of temp
+                    assets_dir = get_resource_path(os.path.join('app', 'assets', 'css'))
+                    png_path = os.path.join(assets_dir, 'check_generated.png')
+                    
+                    if pixmap.save(png_path, 'PNG'):
+                        # Use simple relative path for CSS
+                        css_path = png_path.replace('\\', '/')
+                        return css_path
+    except Exception as e:
+        print(f"DEBUG: Failed to create checkmark file: {e}")
     
-    # Create a custom checkbox style that adds the checkmark directly
-    class CheckboxStyle(QProxyStyle):
-        def __init__(self):
-            super().__init__()
-            self.checkmark = create_checkmark_icon()
-        
-        def drawControl(self, element, option, painter, widget=None):
-            # First draw the checkbox normally
-            super().drawControl(element, option, painter, widget)
-            
-            # If this is a checkbox indicator and it's checked, draw our checkmark
-            if element == QStyle.ControlElement.CE_CheckBox or element == QStyle.ControlElement.CE_CheckBoxLabel:
-                if option.state & QStyle.State.State_On:  # If checked
-                    # Get the indicator rect
-                    rect = self.subElementRect(QStyle.SubElement.SE_CheckBoxIndicator, option, widget)
-                    
-                    # Calculate position to center the checkmark in the indicator
-                    x = rect.x() + (rect.width() - self.checkmark.width()) // 2
-                    y = rect.y() + (rect.height() - self.checkmark.height()) // 2
-                    
-                    # Draw the checkmark
-                    painter.drawPixmap(x, y, self.checkmark)
-            
-        def drawPrimitive(self, element, option, painter, widget=None):
-            # If this is a checkbox indicator and it's checked, handle custom drawing
-            if element == QStyle.PrimitiveElement.PE_IndicatorCheckBox and option.state & QStyle.State.State_On:
-                # Draw the blue background with rounded corners
-                painter.save()
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                
-                # Set the fill color for the checkbox background
-                if option.state & QStyle.State.State_Enabled:
-                    bg_color = QColor(colors['accent'])
-                else:
-                    bg_color = QColor(colors['secondary_text'])  # Use secondary color for disabled
-                
-                painter.setBrush(QBrush(bg_color))
-                painter.setPen(QPen(bg_color))  # Same color for border
-                
-                # Draw a rounded rectangle
-                rect = option.rect
-                painter.drawRoundedRect(rect, 3, 3)  # 3px corner radius
-                
-                # Draw our checkmark on top
-                x = rect.x() + (rect.width() - self.checkmark.width()) // 2
-                y = rect.y() + (rect.height() - self.checkmark.height()) // 2
-                painter.drawPixmap(x, y, self.checkmark)
-                
-                painter.restore()
-            elif element == QStyle.PrimitiveElement.PE_IndicatorRadioButton:
-                # For radio buttons, draw custom indicator
-                if option.state & QStyle.State.State_On:  # If checked
-                    painter.save()
-                    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                    
-                    # Set colors based on state
-                    if option.state & QStyle.State.State_Enabled:
-                        outer_color = QColor(colors['accent'])
-                        inner_color = QColor(colors['accent'])
-                    else:
-                        outer_color = QColor(colors['secondary_text'])
-                        inner_color = QColor(colors['secondary_text'])
-                    
-                    rect = option.rect
-                    
-                    # Draw outer circle (border)
-                    painter.setPen(QPen(outer_color, 1))
-                    painter.setBrush(Qt.BrushStyle.NoBrush)
-                    painter.drawEllipse(rect.adjusted(1, 1, -1, -1))
-                    
-                    # Draw inner circle (the dot)
-                    center_x = rect.center().x()
-                    center_y = rect.center().y()
-                    dot_radius = min(rect.width(), rect.height()) / 3
-                    
-                    painter.setBrush(QBrush(inner_color))
-                    painter.setPen(Qt.PenStyle.NoPen)
-                    painter.drawEllipse(QRect(
-                        int(center_x - dot_radius),
-                        int(center_y - dot_radius),
-                        int(dot_radius * 2),
-                        int(dot_radius * 2)
-                    ))
-                    
-                    painter.restore()
-                    return
-                
-                # For unchecked radio buttons, use default drawing
-                super().drawPrimitive(element, option, painter, widget)
-            else:
-                # For all other elements, use default drawing
-                super().drawPrimitive(element, option, painter, widget)
+    # Return None if failed - CSS will use fallback
+    return None
     
-    # Install custom style for all checkboxes
-    app.setStyle(CheckboxStyle())
+    # Note: Checkbox styling is now handled via CSS with generated PNG files
     
     # Install a global event filter to catch combo box popups
     # popup_filter = ComboBoxPopupFilter() # TEMPORARILY COMMENTED OUT
