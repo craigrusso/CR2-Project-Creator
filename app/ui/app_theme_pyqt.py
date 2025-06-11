@@ -426,32 +426,22 @@ def configure_styles(app):
     """)
 
 def create_checkmark_file():
-    """Create a checkmark PNG file for use in CSS - cross-platform solution"""
-    from PyQt6.QtGui import QIcon
-    from PyQt6.QtCore import QSize
+    """Use SVG directly in CSS - same as other SVG files like dropdown arrows"""
+    # Use the same approach as dropdown arrows - just return the SVG path
+    svg_path = get_resource_path(os.path.join('app', 'assets', 'css', 'check.svg'))
     
-    try:
-        # Load SVG using QIcon (same method that works for template icons)
-        svg_path = get_resource_path(os.path.join('app', 'assets', 'css', 'check.svg'))
-        
-        if os.path.exists(svg_path):
-            icon = QIcon(svg_path)
-            if not icon.isNull():
-                pixmap = icon.pixmap(QSize(16, 16))
-                if not pixmap.isNull():
-                    # Save to app assets directory instead of temp
-                    assets_dir = get_resource_path(os.path.join('app', 'assets', 'css'))
-                    png_path = os.path.join(assets_dir, 'check_generated.png')
-                    
-                    if pixmap.save(png_path, 'PNG'):
-                        # Use simple relative path for CSS
-                        css_path = png_path.replace('\\', '/')
-                        return css_path
-    except Exception as e:
-        print(f"DEBUG: Failed to create checkmark file: {e}")
+    # Convert path to forward slashes for CSS (same as dropdown arrows)
+    css_path = svg_path.replace('\\', '/')
     
-    # Return None if failed - CSS will use fallback
-    return None
+    print(f"DEBUG: Checkbox SVG path: {css_path}")
+    print(f"DEBUG: Path exists: {os.path.exists(svg_path)}")
+    
+    # Return the SVG path directly - no PNG conversion needed
+    if os.path.exists(svg_path):
+        return css_path
+    else:
+        print(f"DEBUG: SVG file not found at: {svg_path}")
+        return None
     
     # Note: Checkbox styling is now handled via CSS with generated PNG files
     

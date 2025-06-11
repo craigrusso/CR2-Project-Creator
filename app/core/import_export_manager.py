@@ -472,7 +472,7 @@ def export_template(app, template_name, include_files=True):
             print(f"[EXPORT_DEBUG] Found folder structure in template: {template_name}")
             
             # If this template has a structure, ensure it's saved as a custom structure
-            structure_name = f"Template_{template_name.replace(' ', '_').replace('/', '-').replace('\\', '-')}"
+            structure_name = f"Template_{template_name.replace(' ', '_').replace('/', '-').replace(chr(92), '-')}"
             if hasattr(app.template_manager, 'save_custom_structure'):
                 app.template_manager.save_custom_structure(structure_name, folder_structure)
                 print(f"[EXPORT_DEBUG] Saved folder structure as custom structure: {structure_name}")
@@ -685,14 +685,14 @@ def export_template(app, template_name, include_files=True):
             StyledMessageBox.show_information(
                 app,
                 "Template Export Successful",
-                f"Template '{template_name}' exported successfully to:\\n{file_path}"
+                f"Template '{template_name}' exported successfully to:\n{file_path}"
             )
             
         except Exception as e:
             StyledMessageBox.show_error(
                 app,
                 "Template Export Error",
-                f"An error occurred during template export: {str(e)}\\n\\nTrace:\\n{traceback.format_exc()}"
+                f"An error occurred during template export: {str(e)}\n\nTrace:\n{traceback.format_exc()}"
             )
 
 def import_template(app, file_path=None):

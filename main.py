@@ -9,6 +9,45 @@ import json
 import logging
 import struct # For checking if we're running on ARM64
 
+# Add DummyIO class for packaged apps
+class DummyIO:
+    """Dummy IO class to handle PyInstaller packaging issues with stdout/stderr"""
+    def write(self, data):
+        pass
+    
+    def flush(self):
+        pass
+    
+    def fileno(self):
+        # Return a safe file descriptor number instead of raising an exception
+        return -1
+    
+    def isatty(self):
+        return False
+    
+    def readable(self):
+        return False
+    
+    def writable(self):
+        return True
+    
+    def close(self):
+        pass
+    
+    def seek(self, *args):
+        return 0
+    
+    def tell(self):
+        return 0
+
+# Fix stdout/stderr for packaged applications
+if getattr(sys, 'frozen', False):
+    # Always replace stdout/stderr in packaged environments to avoid fileno() issues
+    sys.stdout = DummyIO()
+    sys.stderr = DummyIO()
+    # Also ensure stdin is safe
+    sys.stdin = DummyIO()
+
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import Qt, QCoreApplication, QSettings, QTimer
 from PyQt6.QtGui import QIcon
@@ -269,11 +308,30 @@ def log_system_info():
 def main():
     """Main entry point for the Echelon application"""
     import faulthandler # Add import here
-    faulthandler.enable() # Enable it immediately
+    
+    # Safely enable faulthandler with try/except for packaged apps
     try:
-        # Initialize logging system
-        detect_and_set_environment()
-        initialize_logging() # Initializes with default (production) settings first
+        # For packaged apps, try to use stderr if available, otherwise skip
+        if getattr(sys, 'frozen', False):
+            # In packaged environments, don't use faulthandler to avoid file descriptor issues
+            pass
+        else:
+            faulthandler.enable() # Enable it immediately in development
+    except (OSError, ValueError, AttributeError) as e:
+        # Ignore faulthandler errors in packaged applications
+        pass
+    
+    try:
+        # Initialize logging system with extra safety for packaged apps
+        try:
+            detect_and_set_environment()
+            initialize_logging() # Initializes with default (production) settings first
+        except Exception as e:
+            # If logging initialization fails in packaged environment, continue without it
+            if getattr(sys, 'frozen', False):
+                pass  # Continue silently in packaged apps
+            else:
+                raise  # Re-raise in development
 
         # Log system information for debugging
         log_system_info()
