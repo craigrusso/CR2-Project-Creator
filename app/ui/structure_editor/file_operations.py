@@ -305,6 +305,14 @@ class CustomPatternsDialog(QDialog):
         
         main_layout.addWidget(self.custom_options_group)
         
+        # Date and time format sections - will be shown dynamically
+        self.date_format_group, self.date_combo = self.format_managers.create_date_format_group(main_layout)
+        self.time_format_group, self.time_combo = self.format_managers.create_time_format_group(main_layout)
+        
+        # Connect format combo changes to preview update
+        self.date_combo.currentTextChanged.connect(self._update_preview)
+        self.time_combo.currentTextChanged.connect(self._update_preview)
+        
         # Preview section with proper styling
         preview_label = QLabel("Preview:")
         preview_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
@@ -360,6 +368,10 @@ class CustomPatternsDialog(QDialog):
                 updated_pattern = self.pattern_logic.update_pattern_separators(current_pattern, new_separator)
                 self.pattern_edit.setText(updated_pattern)
                 
+                # Also update date/time format separators to match
+                if hasattr(self, 'format_managers') and hasattr(self, 'date_combo') and hasattr(self, 'time_combo'):
+                    self.format_managers.update_datetime_formats_to_separator(new_separator, self.date_combo, self.time_combo)
+                
         self._update_preview()
         
     def _on_custom_separator_changed(self):
@@ -370,6 +382,10 @@ class CustomPatternsDialog(QDialog):
                 new_separator = self.pattern_logic.get_current_separator(self.separator_combo, self.custom_separator_edit)
                 updated_pattern = self.pattern_logic.update_pattern_separators(current_pattern, new_separator)
                 self.pattern_edit.setText(updated_pattern)
+                
+                # Also update date/time format separators to match
+                if hasattr(self, 'format_managers') and hasattr(self, 'date_combo') and hasattr(self, 'time_combo'):
+                    self.format_managers.update_datetime_formats_to_separator(new_separator, self.date_combo, self.time_combo)
         
         self._update_preview()
         
@@ -387,6 +403,9 @@ class CustomPatternsDialog(QDialog):
             
         # Update custom options based on pattern content
         self._update_custom_options_for_pattern(pattern)
+        
+        # Update format groups based on pattern content
+        self._update_format_groups_for_pattern(pattern)
         
         # Generate preview using a simple approach since we don't have all the managers
         try:
@@ -412,10 +431,17 @@ class CustomPatternsDialog(QDialog):
         sample_values = {
             '${PROJECT_NAME}': 'MyProject',
             '${BASE}': 'filename',
-            '${DATE}': datetime.now().strftime('%Y%m%d'),
-            '${TIME}': datetime.now().strftime('%H%M%S'),
             '${COUNTER}': '001'
         }
+        
+        # Add formatted date/time values using format managers
+        if hasattr(self, 'format_managers') and hasattr(self, 'date_combo') and hasattr(self, 'time_combo'):
+            format_values = self.format_managers.get_sample_format_values(self.date_combo, self.time_combo)
+            sample_values.update(format_values)
+        else:
+            # Fallback to basic formatting
+            sample_values['${DATE}'] = datetime.now().strftime('%Y%m%d')
+            sample_values['${TIME}'] = datetime.now().strftime('%H%M%S')
         
         # Add custom options with first option from each list
         for placeholder, options in custom_options.items():
@@ -814,3 +840,18 @@ class CustomPatternsDialog(QDialog):
                     custom_options[placeholder] = options
         
         return custom_options
+    
+    def _update_format_groups_for_pattern(self, pattern):
+        """Update format groups visibility based on pattern content"""
+        if not pattern:
+            self.date_format_group.setVisible(False)
+            self.time_format_group.setVisible(False)
+            return
+        
+        # Show/hide date format group based on ${DATE} presence
+        has_date = self.format_managers.has_date_placeholder(pattern)
+        self.date_format_group.setVisible(has_date)
+        
+        # Show/hide time format group based on ${TIME} presence
+        has_time = self.format_managers.has_time_placeholder(pattern)
+        self.time_format_group.setVisible(has_time)

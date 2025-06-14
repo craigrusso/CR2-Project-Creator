@@ -46,7 +46,7 @@ class PatternUIComponents:
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-bottom: 8px;
+            margin-bottom: 5px;
         """)
         layout.addWidget(title)
         return title
@@ -60,7 +60,7 @@ class PatternUIComponents:
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-bottom: 3px;
+            margin-bottom: 5px;
         """)
         layout.addWidget(variables_header)
         
@@ -136,8 +136,8 @@ class PatternUIComponents:
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-top: 6px;
-            margin-bottom: 3px;
+            margin-top: 8px;
+            margin-bottom: 5px;
         """)
         layout.addWidget(separator_header)
         
@@ -195,8 +195,8 @@ class PatternUIComponents:
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-top: 6px;
-            margin-bottom: 3px;
+            margin-top: 8px;
+            margin-bottom: 5px;
         """)
         layout.addWidget(pattern_header)
         

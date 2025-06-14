@@ -177,12 +177,9 @@ class PatternLogic:
         if not pattern:
             return pattern
         
-        # Define separator patterns to replace
+        # Define separator patterns to replace - more comprehensive patterns
         separator_patterns = [
-            r'(\$\{[^}]+\})_(\$\{[^}]+\})',  # ${VAR}_${VAR}
-            r'(\$\{[^}]+\})-(\$\{[^}]+\})',  # ${VAR}-${VAR}
-            r'(\$\{[^}]+\})\.(\$\{[^}]+\})', # ${VAR}.${VAR}
-            r'(\$\{[^}]+\}) (\$\{[^}]+\})',  # ${VAR} ${VAR}
+            r'(\$\{[^}]+\})[_\-\.\s](\$\{[^}]+\})',  # Any separator between variables
         ]
         
         updated_pattern = pattern
