@@ -117,7 +117,7 @@ class TemplateGallery(QWidget):
         if primary_selected:
             self.template_selected.emit(primary_selected)
         else:
-            self.template_selected.emit({})
+            self.template_selected.emit(None)
 
     # Gallery population methods
     def populate_gallery(self, force_refresh=False):

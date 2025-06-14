@@ -2296,9 +2296,9 @@ class ProjectCreatorApp(QMainWindow):
         self._current_template_name = current_template_name
         
         if not template_data:
-            # Only hide if we don't have a previous template (avoid hiding during selection updates)
-            if not previous_template_name and hasattr(self, 'custom_options_widget') and self.custom_options_widget.is_visible:
-                print(f"DEBUG: No template data and no previous template, hiding widget")
+            # Hide the widget when no template is selected (clicking off templates)
+            if hasattr(self, 'custom_options_widget') and self.custom_options_widget.is_visible:
+                print(f"DEBUG: No template data, hiding custom options widget")
                 self.custom_options_widget.slide_down(delay_ms=0)
             return
         
