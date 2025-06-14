@@ -25,49 +25,44 @@ class BaseCustomOptionsWidget(QWidget):
         self.is_visible = False
         self.preview_pattern = ''
         
-        # Setup basic styling
+        # Setup clean styling without blue outlines
         self.setStyleSheet(f"""
             QWidget {{
                 background-color: {colors['card_bg']};
-                border: 2px solid {colors['accent']};
-                border-radius: 8px;
-                margin: 5px 0px;
+                border: 1px solid {colors['border']};
+                border-radius: 6px;
+                margin: 2px 0px;
             }}
         """)
         
-        # Create main layout
+        # Create main layout with tighter spacing
         self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(15, 15, 15, 15)
-        self.layout.setSpacing(10)
+        self.layout.setContentsMargins(12, 10, 12, 10)
+        self.layout.setSpacing(6)
         
-        # Add title
+        # Add simplified title
         self.title_label = QLabel("Custom Options Required")
         self.title_label.setStyleSheet(f"""
-            font-size: 18px;
+            font-size: 14px;
             font-weight: bold;
             color: {colors['text']};
-            margin: 10px 0px;
+            margin: 0px;
+            padding: 0px;
+            border: none;
+            background-color: transparent;
         """)
         self.layout.addWidget(self.title_label)
-        
-        # Add description
-        self.desc_label = QLabel("This template requires custom options. Please select values below:")
-        self.desc_label.setStyleSheet(f"""
-            font-size: 12px;
-            color: {colors['secondary_text']};
-            margin-bottom: 15px;
-        """)
-        self.layout.addWidget(self.desc_label)
     
     def set_custom_options(self, custom_prompts):
         """Set the custom options and create UI controls"""
         self.custom_options = custom_prompts
         self.combo_widgets.clear()
         
-        # Clear existing option widgets (keep title and description)
+        # Clear existing option widgets (keep title)
         self._clear_option_widgets()
         
         # Create dropdown widgets for each custom option
+        option_count = 0
         for key, prompt_data in custom_prompts.items():
             # Handle both old format (direct list) and new format (dict with 'options' key)
             if isinstance(prompt_data, dict):
@@ -79,17 +74,24 @@ class BaseCustomOptionsWidget(QWidget):
                 
             if not options:
                 continue
+            
+            option_count += 1
+            # Use simple generic labels instead of showing file paths or complex names
+            if len(custom_prompts) == 1:
+                display_label = "Select option"
+            else:
+                display_label = f"Option {option_count}"
                 
-            self._create_option_widget(key, options)
+            self._create_option_widget(display_label, options, key)
     
     def _clear_option_widgets(self):
-        """Clear existing option widgets while preserving title and description"""
+        """Clear existing option widgets while preserving title"""
         items_to_remove = []
         for i in range(self.layout.count()):
             item = self.layout.itemAt(i)
             if item and item.widget():
                 widget = item.widget()
-                # Only remove option widgets, not title/description
+                # Only remove option widgets, not title
                 if (hasattr(widget, 'objectName') and 
                     widget.objectName() == 'custom_option_widget'):
                     items_to_remove.append(widget)
@@ -98,29 +100,34 @@ class BaseCustomOptionsWidget(QWidget):
             self.layout.removeWidget(widget)
             widget.setParent(None)
     
-    def _create_option_widget(self, key, options):
+    def _create_option_widget(self, display_key, options, actual_key):
         """Create a single option widget with label and dropdown"""
         # Create container for this option
         option_container = QWidget()
         option_container.setObjectName('custom_option_widget')
+        option_container.setStyleSheet("background-color: transparent; border: none;")
         option_layout = QVBoxLayout(option_container)
-        option_layout.setContentsMargins(0, 5, 0, 5)
-        option_layout.setSpacing(5)
+        option_layout.setContentsMargins(0, 2, 0, 2)
+        option_layout.setSpacing(3)
         
-        # Create label
-        label = QLabel(f"{key}:")
+        # Create clean label
+        label = QLabel(f"{display_key}:")
         label.setStyleSheet(f"""
             color: {colors['text']};
-            font-weight: bold;
-            margin-bottom: 5px;
+            font-weight: normal;
+            font-size: 12px;
+            margin: 0px;
+            padding: 0px;
+            border: none;
+            background-color: transparent;
         """)
         option_layout.addWidget(label)
         
-        # Create dropdown
+        # Create dropdown with clean styling
         combo = QComboBox()
         combo.addItems(options)
         combo.setStyleSheet(COMBOBOX_STYLE)
-        combo.setMinimumHeight(32)
+        combo.setMinimumHeight(28)
         
         # Connect to update preview if method exists
         if hasattr(self, '_update_preview'):
@@ -128,8 +135,8 @@ class BaseCustomOptionsWidget(QWidget):
         
         option_layout.addWidget(combo)
         
-        # Store the combo widget
-        self.combo_widgets[key] = combo
+        # Store the combo widget using the actual key
+        self.combo_widgets[actual_key] = combo
         
         # Add to main layout
         self.layout.addWidget(option_container)
@@ -161,7 +168,7 @@ class SimpleCustomOptionsWidget(BaseCustomOptionsWidget):
 
 
 class AnimatedCustomOptionsWidget(BaseCustomOptionsWidget):
-    """Animated custom options widget with slide-up/down animation and preview"""
+    """Animated custom options widget with slide-up/down animation"""
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -169,74 +176,23 @@ class AnimatedCustomOptionsWidget(BaseCustomOptionsWidget):
         # Set initial height to 0 for animation
         self.setFixedHeight(0)
         
-        # Add preview area after description
-        self.preview_label = QLabel("Preview: ")
-        self.preview_label.setStyleSheet(f"""
-            color: {colors['text']};
-            background-color: {colors['card_bg_alt']};
-            border: 2px solid {colors['border']};
-            border-radius: 6px;
-            padding: 12px;
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            font-weight: bold;
-            margin-bottom: 15px;
-            min-height: 20px;
-        """)
-        # Insert preview after description (index 2)
-        self.layout.insertWidget(2, self.preview_label)
-        
         # Setup animation
         self.animation = QPropertyAnimation(self, b"maximumHeight")
-        self.animation.setDuration(300)
+        self.animation.setDuration(250)
         self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
     
-    def _create_option_widget(self, key, options):
+    def _create_option_widget(self, display_key, options, actual_key):
         """Override to connect preview updates"""
-        super()._create_option_widget(key, options)
+        super()._create_option_widget(display_key, options, actual_key)
         # Connect the newly created combo to preview updates
-        if key in self.combo_widgets:
-            self.combo_widgets[key].currentTextChanged.connect(self._update_preview)
+        if actual_key in self.combo_widgets:
+            self.combo_widgets[actual_key].currentTextChanged.connect(self._update_preview)
     
     def _update_preview(self):
-        """Update the preview with current selections"""
-        if not hasattr(self, 'preview_pattern') or not self.preview_pattern:
-            return
-             
-        preview = self.preview_pattern
-        selections = self.get_selected_values()
-        
-        # Replace basic placeholders with sample values
-        preview = preview.replace('${PROJECT_NAME}', 'MyProject')
-        
-        # Handle date/time placeholders
-        now = datetime.datetime.now()
-        preview = preview.replace('${DATE}', now.strftime('%Y%m%d'))
-        preview = preview.replace('${TIME}', now.strftime('%H%M%S'))
-        
-        # Handle base name for files
-        if '${BASE}' in preview:
-            preview = preview.replace('${BASE}', 'example')
-        
-        # Handle custom placeholders with actual selections
-        custom_matches = re.findall(r'\$\{(CUSTOM\d*)\}', preview)
-        if custom_matches:
-            for match in custom_matches:
-                placeholder = f"${{{match}}}"
-                # Find the corresponding selection
-                for key, value in selections.items():
-                    if key.endswith(f"_{match}"):
-                        preview = preview.replace(placeholder, value)
-                        break
-                else:
-                    # If no selection found, replace with placeholder name
-                    preview = preview.replace(placeholder, f"[{match}]")
-        
-        # Handle file extension
-        if '${EXT}' in preview:
-            preview = preview.replace('${EXT}', '.prproj')
-        
-        self.preview_label.setText(f"Preview: {preview}")
+        """Update the preview with current selections - simplified version"""
+        # This method is called but we don't need to show preview in the widget itself
+        # The preview is handled elsewhere in the UI
+        pass
     
     def set_custom_options(self, custom_prompts):
         """Override to update preview after setting options"""
@@ -257,14 +213,7 @@ class AnimatedCustomOptionsWidget(BaseCustomOptionsWidget):
         self.adjustSize()
         target_height = self.sizeHint().height()
         
-        # Add extra height for multiple dropdowns
-        if len(self.combo_widgets) > 1:
-            extra_height = (len(self.combo_widgets) - 1) * 80
-            target_height += extra_height
-        
-        # Ensure minimum height for readability
-        target_height = max(target_height, 200)
-        
+        # Start animation
         self.animation.setStartValue(0)
         self.animation.setEndValue(target_height)
         self.animation.start()
@@ -276,11 +225,12 @@ class AnimatedCustomOptionsWidget(BaseCustomOptionsWidget):
             
         self.is_visible = False
         
+        # Animate to height 0, then hide
         self.animation.setStartValue(self.height())
         self.animation.setEndValue(0)
-        self.animation.finished.connect(self.hide)
+        self.animation.finished.connect(lambda: self.hide())
         self.animation.start()
     
     def _update_unified_preview(self):
-        """Alias for _update_preview for compatibility"""
+        """Update the unified preview (compatibility method)"""
         self._update_preview() 
