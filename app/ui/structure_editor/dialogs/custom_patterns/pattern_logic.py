@@ -288,27 +288,43 @@ class PatternLogic:
         if not pattern:
             return pattern
         
-        # Replace any separator characters between variables with the new separator
-        # This handles patterns like ${VAR1}_${VAR2}, ${VAR1}-${VAR2}, etc.
-        # Use a more robust pattern that handles multiple consecutive separators
-        updated_pattern = re.sub(
-            r'(\$\{[^}]+\})[_\-\.\s]+(\$\{[^}]+\})', 
-            f'\\1{new_separator}\\2', 
-            pattern
-        )
+        # Split pattern into tokens (variables and separators)
+        import re
         
-        # Apply the replacement multiple times to handle chains of variables
-        # e.g., ${A}_${B}_${C} -> ${A}X${B}X${C}
-        previous_pattern = ""
-        while previous_pattern != updated_pattern:
-            previous_pattern = updated_pattern
-            updated_pattern = re.sub(
-                r'(\$\{[^}]+\})[_\-\.\s]+(\$\{[^}]+\})', 
-                f'\\1{new_separator}\\2', 
-                updated_pattern
-            )
+        # Find all variables and their positions
+        variables = []
+        for match in re.finditer(r'\$\{[^}]+\}', pattern):
+            variables.append((match.start(), match.end(), match.group()))
         
-        return updated_pattern
+        if len(variables) < 2:
+            # No separators to replace if less than 2 variables
+            return pattern
+        
+        # Build new pattern by replacing separators between variables
+        result = []
+        last_end = 0
+        
+        for i, (start, end, var) in enumerate(variables):
+            # Add any text before this variable
+            if i == 0:
+                result.append(pattern[last_end:start])
+            else:
+                # This is the separator between variables - replace it
+                separator_text = pattern[last_end:start]
+                # Only replace if it's actually a separator (not other text)
+                if separator_text and all(c in '_-. ' for c in separator_text):
+                    result.append(new_separator)
+                else:
+                    result.append(separator_text)
+            
+            # Add the variable itself
+            result.append(var)
+            last_end = end
+        
+        # Add any remaining text after the last variable
+        result.append(pattern[last_end:])
+        
+        return ''.join(result)
 
     def apply_pattern_data(self, pattern_data, item, pattern_applier):
         """Apply pattern data to an item using the pattern applier"""
