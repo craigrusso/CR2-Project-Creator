@@ -338,7 +338,7 @@ class TemplateIO:
             template_data["cached_path"] = self.paths.get("cache_dir")
             
             # Preserve creation time if template already exists
-            sanitized_name = name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+            sanitized_name = sanitize_filename(name)
             file_path = os.path.join(self.paths["templates_dir"], f"{sanitized_name}.json")
             
             if os.path.exists(file_path):
@@ -372,7 +372,7 @@ class TemplateIO:
                 if original_name and original_name != name:
                     print(f"DEBUG: TemplateIO: Detected rename from '{original_name}' to '{name}'")
                     # Generate old file path
-                    sanitized_old_name = original_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+                    sanitized_old_name = sanitize_filename(original_name)
                     old_file_path = os.path.join(self.paths["templates_dir"], f"{sanitized_old_name}.json")
                     
                     # Remove old file if it exists

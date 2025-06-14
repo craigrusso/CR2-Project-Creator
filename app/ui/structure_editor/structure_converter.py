@@ -125,160 +125,77 @@ class StructureConverter:
     
     def _add_item_to_structure(self, item, parent_list):
         """
-        Add an item to the structure
+        Add a tree widget item to the structure list
         
         Args:
-            item: Tree widget item
-            parent_list: Parent list to add the item to
-            
-        Returns:
-            dict: Item structure or None if it should be skipped
+            item: The tree widget item to add
+            parent_list: The list to add the item to
         """
-        # Skip None items
-        if item is None:
-            print(f"DEBUG: Skipping None item")
+        if not item:
             return None
+            
+        # Get item data
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
+        item_name = item.text(0)
         
-        # Get item data and type
-        item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
-        item_type = item_data.get('type', None)
-        
-        # If type is not specified in data, infer it from child count
-        if not item_type:
+        # Determine item type
+        item_type = None
+        if isinstance(item_data, dict) and 'type' in item_data:
+            item_type = item_data.get('type')
+        else:
+            # Guess type based on children
             item_type = 'folder' if item.childCount() > 0 else 'file'
         
+        print(f"DEBUG: Processing item '{item_name}' of type '{item_type}'")
+        
         if item_type == 'folder':
-            # Handle folder
-            folder_name = item_data.get('name', item.text(0))
-            
-            # Skip folders with empty names, arrays or placeholder names
-            if not folder_name or folder_name == '[]' or folder_name == 'name' or folder_name == '':
-                print(f"DEBUG: Skipping folder with empty/invalid name: {folder_name}")
-                return None
-            
-            # Convert folder_name to string if it's a list
-            if isinstance(folder_name, list):
-                # Only use first item if it exists and is not empty
-                if len(folder_name) > 0 and folder_name[0]:
-                    folder_name = str(folder_name[0])
-                else:
-                    print(f"DEBUG: Skipping folder with empty name array: {folder_name}")
-                    return None
-            
-            # Ensure folder_name is a string
-            folder_name = str(folder_name)
-            
             # Create folder structure
             folder_structure = {
-                'name': folder_name,
-                'type': 'folder'
+                'type': 'folder',
+                'name': item_name
             }
             
-            # Add path if available
-            if 'path' in item_data:
-                folder_structure['path'] = item_data.get('path')
+            # Preserve custom pattern data for folders
+            if isinstance(item_data, dict):
+                for key in ['pattern', 'sequence', 'custom_options', 'uses_custom_pattern', 'rename_flag']:
+                    if key in item_data:
+                        folder_structure[key] = item_data[key]
+                        print(f"DEBUG: Preserved {key} for folder '{item_name}': {item_data[key]}")
             
-            # Process children
+            # Add children
             children = []
             for i in range(item.childCount()):
                 child_item = item.child(i)
-                child_structure = self._add_item_to_structure(child_item, children)
-                if child_structure:
-                    children.append(child_structure)
+                self._add_item_to_structure(child_item, children)
             
-            # Add children list if there are any
             if children:
                 folder_structure['children'] = children
             
-            # Don't add empty folders unless specifically allowed
-            if not children and not self.keep_empty_folders:
-                print(f"DEBUG: Skipping empty folder: {folder_name}")
-                return None
-            
-            # Add to parent list
+            parent_list.append(folder_structure)
             return folder_structure
             
-        elif item_type == 'file':
-            # Add a file
-            file_name = item_data.get('name', item.text(0))
-            file_path = item_data.get('path', '')
-            is_binary = item_data.get('is_binary', False)
-            original_path = item_data.get('original_path', '')
-            cached_path = item_data.get('cached_path', '')
-            
-            # Skip items with empty name arrays or values or name placeholders
-            if not file_name or file_name == [] or file_name == 'name' or file_name == '' or (isinstance(file_name, list) and len(file_name) == 0):
-                print(f"DEBUG: Skipping file with empty/invalid name: {item_data}")
-                return None
-            
-            # Ensure file_name is a string, not a list or other data type
-            if isinstance(file_name, list):
-                if len(file_name) > 0 and file_name[0]:
-                    file_name = str(file_name[0])
-                else:
-                    print(f"DEBUG: Skipping file with empty name array: {item_data}")
-                    return None
-            
-            # Convert file_name to string if it's not already
-            file_name = str(file_name)
-            
-            # Clean up file_name - remove [] if present
-            if file_name == '[]':
-                print(f"DEBUG: Skipping file with empty name: {item_data}")
-                return None
-            
-            # Ensure is_binary is a boolean
-            if isinstance(is_binary, list):
-                is_binary = bool(is_binary[0]) if is_binary else False
-            elif not isinstance(is_binary, bool):
-                is_binary = bool(is_binary)
-            
+        else:
             # Create file structure
             file_structure = {
-                'name': file_name,
                 'type': 'file',
-                'is_binary': is_binary
+                'name': item_name
             }
             
-            # Add paths if available - ensure they are strings
-            if original_path:
-                file_structure['original_path'] = str(original_path) if not isinstance(original_path, list) else (str(original_path[0]) if original_path else '')
+            # Preserve all file-related data
+            if isinstance(item_data, dict):
+                # Preserve custom pattern data for files
+                for key in ['pattern', 'custom_options', 'uses_custom_pattern', 'rename_flag']:
+                    if key in item_data:
+                        file_structure[key] = item_data[key]
+                        print(f"DEBUG: Preserved {key} for file '{item_name}': {item_data[key]}")
+                
+                # Preserve other file-related data
+                for key in ['original_path', 'cache_path', 'is_binary', 'content', 'uses_project_name']:
+                    if key in item_data:
+                        file_structure[key] = item_data[key]
             
-            if file_path and file_path != original_path:
-                file_structure['path'] = str(file_path) if not isinstance(file_path, list) else (str(file_path[0]) if file_path else '')
-            
-            if cached_path:
-                file_structure['cached_path'] = str(cached_path) if not isinstance(cached_path, list) else (str(cached_path[0]) if cached_path else '')
-            
-            # Add file content if available
-            if 'content' in item_data:
-                content = item_data.get('content')
-                if content is not None:
-                    file_structure['content'] = str(content) if not isinstance(content, list) else (str(content[0]) if content else '')
-            
-            # Add binary data if available
-            if 'data' in item_data:
-                data = item_data.get('data')
-                if data:
-                    file_structure['data'] = data
-            
-            # Add cached hash if available
-            if 'cache_hash' in item_data:
-                cache_hash = item_data.get('cache_hash')
-                if cache_hash:
-                    file_structure['cache_hash'] = str(cache_hash) if not isinstance(cache_hash, list) else (str(cache_hash[0]) if cache_hash else '')
-            
-            # Skip items that have empty values or [] as their value for any field
-            for key, val in list(file_structure.items()):
-                if val == [] or val == '[]' or (isinstance(val, list) and len(val) == 0):
-                    print(f"DEBUG: Removing empty array for key {key} in file structure")
-                    file_structure.pop(key)
-            
+            parent_list.append(file_structure)
             return file_structure
-        
-        # Unknown item type
-        print(f"DEBUG: Skipping unknown item type: {item_type}")
-        return None
     
     def load_structure(self, structure):
         """
@@ -446,12 +363,27 @@ class StructureConverter:
                         tree_item = QTreeWidgetItem(parent_item)
                         print(f"DEBUG: Added file '{file_name}' as child of '{parent_item.text(0)}'")
                     
-                    # Check if this file uses the project name placeholder
-                    uses_project_name = item.get('uses_project_name', False) or item.get('rename_flag', False)
+                    # Check if this file uses custom patterns or project name placeholder
+                    # First check for custom patterns in nested user_data
+                    uses_custom_pattern = item.get('uses_custom_pattern', False)
+                    if not uses_custom_pattern and 'user_data' in item:
+                        uses_custom_pattern = item['user_data'].get('uses_custom_pattern', False)
                     
-                    # If using project name, display the placeholder instead of original name
+                    # Only check for project name if not using custom pattern
+                    uses_project_name = False
+                    if not uses_custom_pattern:
+                        uses_project_name = item.get('uses_project_name', False) or item.get('rename_flag', False)
+                    
+                    # Determine display name based on pattern type
                     display_name = file_name
-                    if uses_project_name:
+                    if uses_custom_pattern:
+                        # Use the custom pattern as display name
+                        pattern = item.get('pattern', file_name)
+                        if pattern == file_name and 'user_data' in item:
+                            pattern = item['user_data'].get('pattern', file_name)
+                        display_name = pattern
+                        print(f"DEBUG: Using custom pattern display for file: {display_name} (original: {file_name})")
+                    elif uses_project_name:
                         # Get the project name mode
                         project_name_mode = item.get('project_name_mode', 'replace')
                         
@@ -518,8 +450,16 @@ class StructureConverter:
                     from .utils import get_file_icon_for_type
                     tree_item.setIcon(0, get_file_icon_for_type(file_name))
                     
-                    # Apply styling for project name files
-                    if uses_project_name:
+                    # Apply styling for custom pattern and project name files
+                    if uses_custom_pattern:
+                        font = tree_item.font(0)
+                        font.setItalic(True)
+                        tree_item.setFont(0, font)
+                        
+                        # Use a purple color for custom pattern files
+                        from PyQt6.QtGui import QBrush, QColor
+                        tree_item.setForeground(0, QBrush(QColor("#9A4AFF")))
+                    elif uses_project_name:
                         font = tree_item.font(0)
                         font.setItalic(True)
                         tree_item.setFont(0, font)

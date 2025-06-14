@@ -494,14 +494,20 @@ def main():
             info("Example templates already deployed for current version.")
         
         # Create and show the main window
+        info("Creating ProjectCreatorApp instance...")
         main_window = ProjectCreatorApp()
+        info("ProjectCreatorApp instance created successfully")
+        
         # Store the instance for future reference
         ProjectCreatorApp._instance = main_window
         
+        info("Initializing CategoryUpdateManager...")
         category_manager = get_category_update_manager_instance(main_window)
-        info(f"Initialized CategoryUpdateManager for the application: {category_manager}")
+        info(f"CategoryUpdateManager initialized: {category_manager}")
         
+        info("Showing main window...")
         main_window.show()
+        info("Main window shown successfully")
         
         styled_count = apply_styling_to_all_tree_widgets(main_window)
         

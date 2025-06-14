@@ -4,7 +4,7 @@ import shutil
 import time
 from pathlib import Path
 
-from app.templates.template_utils import _guess_file_type # Import necessary utils
+from app.templates.template_utils import _guess_file_type, sanitize_filename # Import necessary utils
 
 # Import utility functions
 try:
@@ -413,7 +413,6 @@ class TemplateStructureOps:
         # Sanitize the filename for disk operations
         # Use the utility function for consistency if available, otherwise basic replace
         try:
-            from .template_utils import sanitize_filename
             sanitized_name = sanitize_filename(name) 
         except ImportError:
             print("WARN: template_utils not found, using basic sanitization for structure filename.")
@@ -615,45 +614,25 @@ class TemplateStructureOps:
     
     def delete_custom_structure(self, name):
         """Delete a custom folder structure file and remove from memory."""
-        
         custom_structures_dir = self.paths.get("custom_structures_dir")
-        # It's okay if the directory isn't configured; we just won't delete any files.
-        # The memory deletion part will still proceed if the item is found there.
-
         structure_to_delete = None
-        key_to_delete_in_memory = None # Changed from index_to_delete
-
-        # Iterate through dictionary items (key, value)
+        key_to_delete_in_memory = None
         for mem_key, s_data in self.custom_structures.items():
             if isinstance(s_data, dict) and s_data.get("name") == name:
                  structure_to_delete = s_data
-                 key_to_delete_in_memory = mem_key # Store the key for deletion
+                 key_to_delete_in_memory = mem_key
                  break
-
-        if not key_to_delete_in_memory: # If not found by name
+        if not key_to_delete_in_memory:
             print(f"WARN: Custom structure '{name}' not found in memory. Attempting file deletion if path configured.")
-            # Try to find by sanitized name as key if original name wasn't the key
-            # This might happen if it was added with sanitized_name as key
-            # This part could be complex if naming conventions for keys varied.
-            # For now, we rely on the loop above.
-        
-        # Determine filename (use sanitization)
-        try:
-            from .template_utils import sanitize_filename
-            sanitized_name = sanitize_filename(name) 
-        except ImportError:
-            sanitized_name = name.replace(' ', '_').replace('/', '-').replace('\\', '-')
-
+        sanitized_name = sanitize_filename(name)
         if not sanitized_name:
-             print(f"ERROR: Could not determine sanitized filename for structure '{name}'. Cannot delete file.")
-             # If we found it in memory, still remove it from memory
-             if key_to_delete_in_memory: # Check if we found it in memory
-                 del self.custom_structures[key_to_delete_in_memory]
-                 print(f"INFO: Removed structure '{name}' (key: {key_to_delete_in_memory}) from memory despite file deletion issues.")
-             return False
-
+            print(f"ERROR: Could not determine sanitized filename for structure '{name}'. Cannot delete file.")
+            if key_to_delete_in_memory:
+                del self.custom_structures[key_to_delete_in_memory]
+                print(f"INFO: Removed structure '{name}' (key: {key_to_delete_in_memory}) from memory despite file deletion issues.")
+            return False
         file_deleted = False
-        if custom_structures_dir: # Only attempt file operations if directory is configured
+        if custom_structures_dir:
             file_path = os.path.join(custom_structures_dir, f"{sanitized_name}.json")
             try:
                 if os.path.exists(file_path):
@@ -662,29 +641,16 @@ class TemplateStructureOps:
                     file_deleted = True
                 else:
                     print(f"WARN: Custom structure file not found at {file_path}. It might have been already deleted or never saved correctly.")
-                    if not key_to_delete_in_memory: # Not in memory and not on disk (if dir was checked)
-                        return False 
-
-                # Legacy cache dir deletion attempt can also be conditional
-                # cache_dir = os.path.join(self.paths.get("templates_dir", ""), "cache", sanitized_name)
-                # if os.path.exists(cache_dir) and os.path.isdir(cache_dir):
-                #     shutil.rmtree(cache_dir)
-
+                    if not key_to_delete_in_memory:
+                        return False
             except OSError as e:
                 print(f"ERROR: Failed to delete structure file {file_path}: {e}")
-                # Don't return False yet, still try to remove from memory if it was found
             except Exception as e:
                 print(f"ERROR: Unexpected error deleting structure file for {name}: {e}")
-        else:
-            print(f"INFO: custom_structures_dir not configured. Skipping file deletion for '{name}'.")
-
-        # Remove from in-memory list if found by its key
         if key_to_delete_in_memory:
             del self.custom_structures[key_to_delete_in_memory]
-            print(f"INFO: Removed custom structure '{name}' (key: {key_to_delete_in_memory}) from in-memory list.")
-        
-        # Return True if either file was deleted or memory entry was removed
-        return file_deleted or (key_to_delete_in_memory is not None)
+            print(f"INFO: Removed structure '{name}' (key: {key_to_delete_in_memory}) from memory after file deletion.")
+        return file_deleted or key_to_delete_in_memory is not None
 
     def _normalize_structure_format(self, structure_items):
         """Normalize the structure format to ensure consistency.

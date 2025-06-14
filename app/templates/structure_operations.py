@@ -673,38 +673,25 @@ class StructureOperations:
     def sanitize_filename(self, name):
         """
         Sanitize a name for use as a filename.
-        
         Args:
             name (str): The name to sanitize
-            
         Returns:
             str: A sanitized filename that is safe to use on the filesystem
         """
         if not name:
             return "untitled"
-            
-        # Normalize the name - remove extra whitespace
-        name = name.strip()
-        
+        # Replace characters not allowed in filenames across platforms
+        unsafe_chars = [":", "/", "\\", "?", "*", "\"", "<", ">", "|", "'"]
+        safe_filename = name
+        for char in unsafe_chars:
+            safe_filename = safe_filename.replace(char, "-")
         # Replace spaces with underscores
-        name = name.replace(' ', '_')
-        
-        # Remove invalid filename characters
-        import re
-        name = re.sub(r'[\\/*?:"<>|]', '', name)
-        
-        # Ensure we don't have consecutive underscores
-        name = re.sub(r'_+', '_', name)
-        
+        safe_filename = safe_filename.replace(" ", "_")
         # Limit length (optional)
-        if len(name) > 100:
-            name = name[:100]
-            
+        if len(safe_filename) > 100:
+            safe_filename = safe_filename[:100]
         # Ensure we don't end with an underscore or period
-        name = name.rstrip('_').rstrip('.')
-        
-        # Provide a fallback name if we end up with an empty string
-        if not name:
+        safe_filename = safe_filename.rstrip('_').rstrip('.')
+        if not safe_filename:
             return "untitled"
-            
-        return name 
+        return safe_filename 

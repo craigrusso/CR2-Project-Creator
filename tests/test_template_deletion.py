@@ -21,6 +21,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 # Import necessary modules
 from app.templates.template_operations import TemplateOperations
 from app.templates.template_manager_core import TemplateManagerCore
+from app.templates.template_io import TemplateIO
+from app.templates.template_structure_ops import TemplateStructureOps
+from app.utils.file_cache_manager import FileCacheManager
 
 class TestTemplateDeletion(unittest.TestCase):
     """Test template deletion functionality to ensure templates are properly deleted."""
@@ -43,22 +46,16 @@ class TestTemplateDeletion(unittest.TestCase):
         os.makedirs(self.structures_dir, exist_ok=True)
         os.makedirs(self.cache_dir, exist_ok=True)
         
-        # Create a basic template operations instance with our test paths
-        self.template_ops = TemplateOperations()
-        self.template_ops.paths = {
-            "templates_dir": self.templates_dir,
+        # Create TemplateIO instance for direct save/delete
+        self.file_cache_manager = FileCacheManager(self.cache_dir)
+        self.structure_ops = TemplateStructureOps({
             "custom_structures_dir": self.structures_dir,
-            "templates_cache_dir": self.cache_dir
-        }
-        
-        # Create a Template Manager Core instance with our test paths
-        self.template_manager = TemplateManagerCore()
-        self.template_manager.paths = {
+            "templates_dir": self.templates_dir
+        })
+        self.template_io = TemplateIO({
             "templates_dir": self.templates_dir,
-            "custom_structures_dir": self.structures_dir,
-            "templates_cache_dir": self.cache_dir,
-            "template_directories_dir": os.path.join(self.temp_dir, "template_dirs")
-        }
+            "custom_structures_dir": self.structures_dir
+        }, self.file_cache_manager, self.structure_ops)
     
     def tearDown(self):
         # Clean up temporary directory
@@ -86,16 +83,17 @@ class TestTemplateDeletion(unittest.TestCase):
         with open(os.path.join(self.temp_dir, "test_file.txt"), 'w') as f:
             f.write("Test file content")
             
-        # Save the template
+        # Save the template using TemplateIO
         template_data = {
             "name": name,
             "structure": structure
         }
-        success = self.template_ops.save_template(template_data)
+        success = self.template_io.save_template(template_data)
         self.assertTrue(success, f"Failed to save test template '{name}'")
         
         # Verify template exists
-        template_path = os.path.join(self.templates_dir, f"{name.replace(' ', '_')}.json")
+        from app.templates.template_utils import sanitize_filename
+        template_path = os.path.join(self.templates_dir, f"{sanitize_filename(name)}.json")
         self.assertTrue(os.path.exists(template_path), f"Template file not created at {template_path}")
         
         return template_path
@@ -107,7 +105,7 @@ class TestTemplateDeletion(unittest.TestCase):
         template_path = self.create_test_template(template_name)
         
         # Delete the template
-        result = self.template_ops.delete_template(template_name)
+        result = self.template_io.delete_template(template_name)
         self.assertTrue(result, "Template deletion failed")
         
         # Verify the template file was deleted
@@ -115,7 +113,7 @@ class TestTemplateDeletion(unittest.TestCase):
                        f"Template file still exists at {template_path}")
     
     def test_template_manager_delete_template(self):
-        """Test that template is completely deleted using template manager"""
+        """Test that template is completely deleted using template manager (now using TemplateIO)"""
         # Create test templates
         template_name1 = "DeleteTest1"
         template_name2 = "DeleteTest2"
@@ -124,52 +122,64 @@ class TestTemplateDeletion(unittest.TestCase):
         self.create_test_template(template_name2)
         
         # Load templates
-        self.template_manager.load_templates()
-        
-        # Verify templates were loaded
-        templates_before = [t.get('name') for t in self.template_manager.templates]
+        self.template_io.load_templates()
+        templates_before = list(self.template_io.templates.keys())
         self.assertIn(template_name1, templates_before, "First template not loaded")
         self.assertIn(template_name2, templates_before, "Second template not loaded")
         
         # Delete the first template
-        result = self.template_manager.delete_template(template_name1)
+        result = self.template_io.delete_template(template_name1)
+        if isinstance(result, tuple):
+            result = result[0]
         self.assertTrue(result, "Template deletion failed")
         
-        # Manually load templates again
-        self.template_manager.templates = []  # Clear templates
-        self.template_manager.load_templates()
-        
-        # Verify the deleted template is not loaded but the other one is
-        templates_after = [t.get('name') for t in self.template_manager.templates]
-        self.assertNotIn(template_name1, templates_after, 
-                       f"Deleted template '{template_name1}' still appears after reloading")
+        # Reload templates
+        self.template_io.load_templates()
+        templates_after = list(self.template_io.templates.keys())
+        self.assertNotIn(template_name1, templates_after, f"Deleted template '{template_name1}' still appears after reloading")
         self.assertIn(template_name2, templates_after, "Second template should still be loaded")
     
     def test_template_with_spaces_in_name(self):
-        """Test that template with spaces in the name is properly deleted"""
-        # Create a test template with spaces in name
+        """Test that template with spaces in the name is properly deleted (now using TemplateIO)"""
         template_name = "Template With Spaces"
         self.create_test_template(template_name)
         
         # Load templates
-        self.template_manager.load_templates()
-        
-        # Verify template was loaded
-        templates_before = [t.get('name') for t in self.template_manager.templates]
+        self.template_io.load_templates()
+        templates_before = list(self.template_io.templates.keys())
         self.assertIn(template_name, templates_before, "Template not loaded")
         
         # Delete the template
-        result = self.template_manager.delete_template(template_name)
+        result = self.template_io.delete_template(template_name)
+        if isinstance(result, tuple):
+            result = result[0]
         self.assertTrue(result, "Template deletion failed")
         
-        # Manually load templates again
-        self.template_manager.templates = []  # Clear templates
-        self.template_manager.load_templates()
+        # Reload templates
+        self.template_io.load_templates()
+        templates_after = list(self.template_io.templates.keys())
+        self.assertNotIn(template_name, templates_after, f"Deleted template '{template_name}' still appears after reloading")
+    
+    def test_template_with_apostrophe_in_name(self):
+        """Test that template with an apostrophe in the name is properly deleted (now using TemplateIO)"""
+        template_name = "Craig's Template"
+        self.create_test_template(template_name)
         
-        # Verify the deleted template is not loaded
-        templates_after = [t.get('name') for t in self.template_manager.templates]
-        self.assertNotIn(template_name, templates_after, 
-                       f"Deleted template '{template_name}' still appears after reloading")
+        # Load templates
+        self.template_io.load_templates()
+        templates_before = list(self.template_io.templates.keys())
+        self.assertIn(template_name, templates_before, "Template with apostrophe not loaded")
+        
+        # Delete the template
+        result = self.template_io.delete_template(template_name)
+        if isinstance(result, tuple):
+            result = result[0]
+        self.assertTrue(result, "Template deletion failed for apostrophe name")
+        
+        # Reload templates
+        self.template_io.load_templates()
+        templates_after = list(self.template_io.templates.keys())
+        self.assertNotIn(template_name, templates_after, f"Deleted template '{template_name}' still appears after reloading")
 
 if __name__ == '__main__':
     unittest.main() 

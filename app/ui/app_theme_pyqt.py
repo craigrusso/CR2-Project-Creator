@@ -194,6 +194,9 @@ def configure_styles(app):
         /* Apply QLineEdit styling */
         {LINEEDIT_STYLE}
         
+        /* Apply QComboBox styling */
+        {COMBOBOX_STYLE}
+        
         /* Force macOS menu bar to use dark theme */
         QMenuBar {{
             background-color: {colors['card_bg']};

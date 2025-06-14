@@ -390,14 +390,22 @@ class ProjectBuilder:
             template_name = "Empty"
             # print("Using empty template")
         
-        # Placeholders for variable replacement
-        placeholders = {
-            "PROJECT_NAME": project_name,
-            "PROJECT_TYPE": project_type,
-            "DATE": datetime.datetime.now().strftime("%Y-%m-%d"),
-            "TIME": datetime.datetime.now().strftime("%H:%M:%S"),
-            "YEAR": datetime.datetime.now().strftime("%Y")
-        }
+        # Collect custom options from template if needed
+        custom_values = self._collect_custom_options(template_data)
+        if custom_values is None:
+            # User cancelled custom options dialog
+            return False, "Project creation cancelled by user"
+        
+        # Extract date and time formats from template
+        date_format, time_format = self._extract_datetime_formats(template_data)
+        
+        # Create placeholders with custom values and date/time formats
+        placeholders = self._create_placeholders(
+            project_name, 
+            custom_values=custom_values,
+            date_format=date_format,
+            time_format=time_format
+        )
         
         # Get structure data
         structure_data = self._get_structure_data(template_data, structure_name)
@@ -464,11 +472,12 @@ class ProjectBuilder:
         # Process the template structure
         # print(f"Creating project structure with {len(structure_data)} top-level items")
         try:
-            # Process each root item in the structure
-            self._process_template(project_dir, structure_data, placeholders, created_paths)
+            # Process the template - check if we should process files separately
+            has_files_array = template_data and 'files' in template_data and template_data['files']
+            has_structure_with_files = self._structure_contains_files(structure_data)
             
-            # Process the files array if present in template
-            if template_data and 'files' in template_data:
+            if has_files_array and not has_structure_with_files:
+                # Only process files array if structure doesn't contain files (avoid duplication)
                 # Apply flags from structure to files if applicable
                 template_data['files'] = self._apply_structure_flags_to_files(
                     structure_data, template_data['files']
@@ -489,6 +498,9 @@ class ProjectBuilder:
                         created_paths.extend(copied_files)
                 else:
                     return False, f"Failed to copy files: {copied_files}"
+            
+            # Process structure (folders and embedded files)
+            self._process_template(project_dir, structure_data, placeholders, created_paths)
             
             # Return success with project directory
             # print(f"Project '{project_name}' created successfully at: {project_dir}")
@@ -1168,794 +1180,258 @@ class ProjectBuilder:
     def _process_file(self, parent_output_path, item, placeholders=None, dry_run=False):
         """
         Process a file item from the structure, copying it to the output path with placeholders applied
-        
+
         Args:
             parent_output_path: The output path for the parent directory
             item: The file item to process
             placeholders: Dictionary of placeholder replacements
             dry_run: If True, don't actually create files, just check structure
-            
+
         Returns:
             str or None: The output file path if successful, None if failed
         """
-        # Default placeholders to empty dict if None
         if placeholders is None:
             placeholders = {}
-        
-        # Get file name from item
+
         if isinstance(item, dict):
-            # Get the original name from the name field
             item_name = item.get('name')
-            
-            # Normalize name if it's an array
             if isinstance(item_name, list):
                 if item_name and item_name[0]:
                     item_name = str(item_name[0])
                 else:
-                    # print(f"WARNING: Skipping file with empty name array: {item}")
                     return None
-                
-            # Skip files with empty or placeholder names
             if not item_name or item_name == '[]' or item_name == 'name':
-                # print(f"WARNING: Skipping file with empty/invalid name: {item}")
                 return None
-            
-            # Initialize output_name with item_name as a fallback
+
             output_name = item_name
-            
-            # Check if this file should use the project name based on the flag
-            # Prefer rename_flag, but fall back to uses_project_name for backward compatibility
             rename_flag = item.get('rename_flag', False)
             uses_project_name = item.get('uses_project_name', False)
-            
-            # First check if the filename contains a placeholder
-            if "${PROJECT_NAME}" in item_name:
-                # Apply placeholder replacement directly
-                output_name = self._replace_placeholders(item_name, placeholders)
-            elif rename_flag or uses_project_name:
-                # Get the project name
-                project_name = placeholders.get("PROJECT_NAME", "Unknown")
+            pattern = item.get('pattern', None)
+            sequence = item.get('sequence', None)
+
+            # --- Sequence support ---
+            if pattern and sequence and "${COUNTER}" in pattern:
+                created_paths = []
+                for i in range(sequence['start'], sequence['start'] + sequence['count']):
+                    local_placeholders = placeholders.copy()
+                    local_placeholders['COUNTER'] = str(i).zfill(sequence['padding'])
+                    
+                    # Handle custom options for this specific item (using nested extraction)
+                    def extract_pattern_data(data, depth=0, max_depth=5):
+                        """Recursively extract pattern and custom options from nested data"""
+                        if depth > max_depth or not isinstance(data, dict):
+                            return [], ''
+                        
+                        found_options = data.get('custom_options', [])
+                        found_pattern = data.get('pattern', '')
+                        
+                        # If we found both, return them
+                        if found_options and found_pattern:
+                            return found_options, found_pattern
+                        
+                        # Otherwise, check user_data recursively
+                        if 'user_data' in data and isinstance(data['user_data'], dict):
+                            nested_options, nested_pattern = extract_pattern_data(data['user_data'], depth + 1, max_depth)
+                            if not found_options and nested_options:
+                                found_options = nested_options
+                            if not found_pattern and nested_pattern:
+                                found_pattern = nested_pattern
+                        
+                        return found_options, found_pattern
+                    
+                    custom_options, _ = extract_pattern_data(item)
+                    if custom_options and "${CUSTOM}" in pattern:
+                        # Find the custom value for this specific item
+                        item_path = self._get_item_path(parent_output_path, item, placeholders)
+                        custom_key = f"{item_path}_CUSTOM"
+                        if custom_key in placeholders:
+                            local_placeholders['CUSTOM'] = placeholders[custom_key]
+                    
+                    output_name = self._process_custom_pattern(pattern, local_placeholders, item)
+                    file_path = os.path.join(parent_output_path, output_name)
+                    
+                    if dry_run:
+                        created_paths.append(file_path)
+                        continue
+                    
+                    if os.path.exists(file_path) and not self._verify_overwrite(file_path):
+                        continue
+                    
+                    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                    
+                    if source_path and os.path.exists(source_path):
+                        is_binary = item.get('is_binary', False)
+                        if is_binary:
+                            try:
+                                shutil.copy2(source_path, file_path)
+                            except Exception as e:
+                                self.logger.error(f"Error copying binary file {source_path} to {file_path}: {e}")
+                                continue
+                        else:
+                            try:
+                                with open(source_path, 'r', encoding='utf-8') as f:
+                                    content = f.read()
+                                processed_content = self._replace_placeholders(content, local_placeholders)
+                                with open(file_path, 'w', encoding='utf-8') as f:
+                                    f.write(processed_content)
+                            except Exception as e:
+                                self.logger.error(f"Error processing file {source_path} to {file_path}: {e}")
+                                continue
+                    else:
+                        try:
+                            with open(file_path, 'w', encoding='utf-8') as f:
+                                f.write("")
+                        except Exception as e:
+                            self.logger.error(f"Error creating empty file {file_path}: {e}")
+                            continue
+                    
+                    created_paths.append(file_path)
                 
-                # Extract file extension
+                return created_paths
+            
+            # --- End sequence support ---
+
+            # Original single-file logic (for non-sequence files)
+            # Handle custom options for single files/folders
+            local_placeholders = placeholders.copy()
+            
+            # Helper function to recursively search for pattern data
+            def extract_pattern_data(data, depth=0, max_depth=5):
+                """Recursively extract pattern and custom options from nested data"""
+                if depth > max_depth or not isinstance(data, dict):
+                    return [], ''
+                
+                found_options = data.get('custom_options', [])
+                found_pattern = data.get('pattern', '')
+                
+                # If we found both, return them
+                if found_options and found_pattern:
+                    return found_options, found_pattern
+                
+                # Otherwise, check user_data recursively
+                if 'user_data' in data and isinstance(data['user_data'], dict):
+                    nested_options, nested_pattern = extract_pattern_data(data['user_data'], depth + 1, max_depth)
+                    if not found_options and nested_options:
+                        found_options = nested_options
+                    if not found_pattern and nested_pattern:
+                        found_pattern = nested_pattern
+                
+                return found_options, found_pattern
+            
+            # Extract pattern data from the item (override previous pattern if found)
+            custom_options, nested_pattern = extract_pattern_data(item)
+            if nested_pattern:
+                pattern = nested_pattern
+            
+            if custom_options and pattern and "${CUSTOM}" in pattern:
+                # Find the custom value for this specific item
+                item_path = self._get_item_path(parent_output_path, item, placeholders)
+                custom_key = f"{item_path}_CUSTOM"
+                print(f"DEBUG: Looking for custom value with key: '{custom_key}'")
+                print(f"DEBUG: Available placeholders: {list(placeholders.keys())}")
+                if custom_key in placeholders:
+                    local_placeholders['CUSTOM'] = placeholders[custom_key]
+                    print(f"DEBUG: Set local_placeholders['CUSTOM'] = '{placeholders[custom_key]}'")
+                elif 'CUSTOM' in placeholders:
+                    local_placeholders['CUSTOM'] = placeholders['CUSTOM']
+                    print(f"DEBUG: Using global CUSTOM value: '{placeholders['CUSTOM']}'")
+                else:
+                    print(f"DEBUG: No CUSTOM value found for key '{custom_key}' or global 'CUSTOM'")
+            
+            # Determine output name - prioritize custom patterns
+            if pattern:
+                # Use custom pattern with enhanced features (highest priority)
+                output_name = self._process_custom_pattern(pattern, local_placeholders, item)
+                print(f"DEBUG: Used custom pattern processing, result: '{output_name}'")
+            elif "${PROJECT_NAME}" in item_name:
+                # Check if the filename contains a placeholder
+                output_name = self._replace_placeholders(item_name, local_placeholders)
+            elif rename_flag or uses_project_name:
+                project_name = local_placeholders.get("PROJECT_NAME", "Unknown")
                 name_parts = os.path.splitext(item_name)
                 if len(name_parts) == 2:
                     base_name, ext = name_parts
-                    # Replace base name with project name
-                    output_name = f"{project_name}{ext}"
+                    if uses_project_name:
+                        output_name = f"{project_name}_{base_name}{ext}"
+                    else:
+                        output_name = f"{base_name}_{project_name}{ext}"
                 else:
-                    # No extension, use project name directly
-                    output_name = project_name
-                
-                # Handle special case for ${PROJECT_NAME} in the name (legacy support)
-                if "${PROJECT_NAME}" in output_name:
-                    project_name = placeholders.get("PROJECT_NAME", "Unknown")
-                    output_name = output_name.replace("${PROJECT_NAME}", project_name)
-            
-            # Get output file path
+                    if uses_project_name:
+                        output_name = f"{project_name}_{item_name}"
+                    else:
+                        output_name = f"{item_name}_{project_name}"
+            else:
+                output_name = item_name
+
             file_path = os.path.join(parent_output_path, output_name)
-            
-            # Handle string items
             source_path = None
             content = None
-            
-            # Check if we have path or cached_path for the file
             if 'original_path' in item:
                 source_path = item['original_path']
             elif 'path' in item:
                 source_path = item['path']
             elif 'cached_path' in item:
                 source_path = item['cached_path']
-                
-            # Skip if we're in dry run mode
+
             if dry_run:
                 return file_path
-                
-            # If the file already exists, verify overwrite
             if os.path.exists(file_path) and not self._verify_overwrite(file_path):
-                # print(f"WARNING: Not overwriting existing file: {file_path}")
                 return None
-                
-            # Create parent directory if needed
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            
-            # Process file content
             if source_path and os.path.exists(source_path):
-                # Binary files are copied directly
                 is_binary = item.get('is_binary', False)
-                
                 if is_binary:
-                    # For binary files, just copy the file
                     try:
-                        # Use shutil.copy2 to copy file with metadata
                         shutil.copy2(source_path, file_path)
-                        # print(f"Copied binary file to {file_path}")
-                        
-                        # Log the renaming operation for debugging
-                        if output_name != item_name:
-                            # print(f"✅ Successfully renamed binary file: {item_name} -> {output_name}")
-                            pass
-                            
                         return file_path
                     except Exception as e:
-                        error_message = f"Failed to copy binary file {source_path} to {file_path}: {str(e)}"
-                        # print(f"ERROR: {error_message}")
-                        self._add_error(error_message)
+                        self.logger.error(f"Error copying binary file {source_path} to {file_path}: {e}")
                         return None
                 else:
-                    # For text files, replace placeholders
                     try:
-                        # Read the file
-                        with open(source_path, 'r', encoding='utf-8', errors='replace') as f:
+                        with open(source_path, 'r', encoding='utf-8') as f:
                             content = f.read()
-                            
-                        # Replace placeholders if they exist
-                        if placeholders and self._might_contain_placeholders(source_path):
-                            content = self._replace_placeholders(content, placeholders)
-                            
-                        # Write the file
+                        processed_content = self._replace_placeholders(content, local_placeholders)
                         with open(file_path, 'w', encoding='utf-8') as f:
-                            f.write(content)
-                            
-                        # Log the renaming operation for debugging
-                        if output_name != item_name:
-                            # print(f"✅ Successfully renamed text file: {item_name} -> {output_name}")
-                            pass
-                            
-                        # print(f"Created file with placeholders: {file_path}")
+                            f.write(processed_content)
                         return file_path
-                    except UnicodeDecodeError:
-                        # If Unicode decoding fails, treat as binary and copy directly
-                        try:
-                            shutil.copy2(source_path, file_path)
-                            # print(f"Copied file (binary after Unicode decode error) to {file_path}")
-                            
-                            # Log the renaming operation for debugging
-                            if output_name != item_name:
-                                # print(f"✅ Successfully renamed file after Unicode decode error: {item_name} -> {output_name}")
-                                pass
-                                
-                            return file_path
-                        except Exception as e:
-                            error_message = f"Failed to copy file {source_path} to {file_path}: {str(e)}"
-                            # print(f"ERROR: {error_message}")
-                            self._add_error(error_message)
-                            return None
                     except Exception as e:
-                        error_message = f"Failed to process file {source_path} to {file_path}: {str(e)}"
-                        # print(f"ERROR: {error_message}")
-                        self._add_error(error_message)
+                        self.logger.error(f"Error processing file {source_path} to {file_path}: {e}")
                         return None
             elif 'content' in item or content:
-                # Direct file content provided
                 file_content = content or item.get('content', '')
-                
-                # Apply placeholders
                 if placeholders:
                     file_content = self._replace_placeholders(file_content, placeholders)
-                    
-                # Write the content to the file
                 try:
                     with open(file_path, 'w', encoding='utf-8') as f:
                         f.write(file_content)
-                        
-                    # Log the renaming operation for debugging
-                    if output_name != item_name:
-                        # print(f"✅ Successfully renamed file with direct content: {item_name} -> {output_name}")
-                        pass
-                        
-                    # print(f"Created file with content: {file_path}")
                     return file_path
                 except Exception as e:
-                    error_message = f"Failed to write content to {file_path}: {str(e)}"
-                    # print(f"ERROR: {error_message}")
-                    self._add_error(error_message)
+                    self.logger.error(f"Error writing content to {file_path}: {e}")
                     return None
             else:
-                # No content or source path, create an empty file
                 try:
                     with open(file_path, 'w') as f:
                         pass
-                        
-                    # Log the renaming operation for debugging
-                    if output_name != item_name:
-                        # print(f"✅ Successfully renamed empty file: {item_name} -> {output_name}")
-                        pass
-                        
-                    # print(f"Created empty file: {file_path}")
                     return file_path
                 except Exception as e:
-                    error_message = f"Failed to create empty file {file_path}: {str(e)}"
-                    # print(f"ERROR: {error_message}")
-                    self._add_error(error_message)
+                    self.logger.error(f"Error creating empty file {file_path}: {e}")
                     return None
         elif isinstance(item, str):
-            # Simple string item - just create an empty file with the name
             file_path = os.path.join(parent_output_path, item)
-            
-            # Skip if we're in dry run mode
             if dry_run:
                 return file_path
-                
-            # Create parent directory if needed
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            
-            # Create the file
             try:
                 with open(file_path, 'w') as f:
                     pass
-                    
-                # Log the renaming operation for debugging
-                if output_name != item:
-                    # print(f"✅ Successfully renamed empty file: {item} -> {output_name}")
-                    pass
-                    
-                # print(f"Created empty file: {file_path}")
                 return file_path
             except Exception as e:
-                error_message = f"Failed to create empty file {file_path}: {str(e)}"
-                # print(f"ERROR: {error_message}")
-                self._add_error(error_message)
+                self.logger.error(f"Error creating empty file {file_path}: {e}")
                 return None
         else:
-            # print(f"WARNING: Unrecognized file item format: {item}")
             return None
-    
-    def start_batch_creation(self, project_names, output_dir, template_file=None, project_type="Standard", 
-                            structure_name=None, use_version_control=False, create_backup=True, callback=None,
-                            selected_template=None):
-        """
-        Set up a batch creation of multiple projects
-        
-        Args:
-            project_names: List of project names to create
-            output_dir: Directory to create projects in
-            template_file: Optional template file to use
-            project_type: Type of project
-            structure_name: Custom structure to use (optional)
-            use_version_control: Whether to use version control
-            create_backup: Whether to create backups
-            callback: Function to call when batch process completes
-            selected_template: The selected template object (used for gallery templates)
-        """
-        if not project_names or not output_dir:
-            return False
-        
-        # Create queue of projects to create
-        self.project_queue = [(name.strip(), output_dir, template_file, project_type, 
-                             use_version_control, create_backup, structure_name, selected_template) 
-                             for name in project_names if name.strip()]
-        
-        # Start batch processing thread
-        self.is_building = True
-        
-        # Use threading to prevent UI freeze
-        thread = threading.Thread(target=self._process_batch_queue, args=(callback,))
-        thread.daemon = True  # Make thread daemon so it doesn't block application exit
-        thread.start()
-        
-        return True
-    
-    def _process_batch_queue(self, callback=None):
-        """Process the batch queue of projects to create"""
-        results = []
-        
-        # Progress indicator for CLI usage
-        # print(f"Starting batch processing of {len(self.project_queue)} projects...")
-        
-        # Process all projects in the queue
-        for i, (name, output_dir, template_file, project_type, 
-               use_version_control, create_backup, structure_name, selected_template) in enumerate(self.project_queue):
-            
-            # Log progress
-            # print(f"Creating project {i+1}/{len(self.project_queue)}: {name}")
-            
-            # Add debug info about the template being used
-            if template_file == "gallery_template":
-                # print(f"Using gallery template with structure: {structure_name}")
-                # print(f"Project name: {name}, Output dir: {output_dir}")
-                
-                # Special handling for gallery template - use the actual template name
-                # instead of the generic "gallery_template" string
-                if selected_template and isinstance(selected_template, dict) and 'name' in selected_template:
-                    actual_template_name = selected_template['name']
-                    # print(f"Using actual template name '{actual_template_name}' instead of 'gallery_template'")
-                    template_file = actual_template_name
-            else:
-                # print(f"Using template file: {template_file}")
-                if template_file and not os.path.exists(template_file):
-                    # print(f"Warning: Template file does not exist: {template_file}")
-                    pass
-            
-            # Create project
-            # print(f"Creating project: {name} in {output_dir}")
 
-            # Run the create_project method
-            success, result = self.create_project(
-                project_name=name,
-                output_dir=output_dir,
-                template_file=template_file if template_file else structure_name,
-                structure_name=structure_name,
-                use_cached_files=True
-            )
-            
-            results.append((name, success, result))
-        
-        # Completed
-        self.is_building = False
-        self.project_queue = []
-        
-        # print("Batch processing completed.")
-        
-        # Call callback with results - this will happen in the main thread
-        if callback:
-            callback(results)
-
-        # Return results for potential direct use
-        return results
-
-    def _replace_placeholders(self, text, placeholders):
-        """
-        Replace placeholders in text with values from dictionary
-        
-        Args:
-            text (str): Text to process
-            placeholders (dict): Dictionary of placeholders to replace
-            
-        Returns:
-            str: Text with placeholders replaced
-        """
-        if not text or not placeholders:
-            return text
-            
-        result = text
-        
-        # First, handle ${NAME} format (standard format)
-        for placeholder, value in placeholders.items():
-            variable = "${" + placeholder + "}"
-            result = result.replace(variable, str(value))
-            
-        # Second, handle {{NAME}} format (alternate format)
-        for placeholder, value in placeholders.items():
-            variable = "{{" + placeholder + "}}"
-            result = result.replace(variable, str(value))
-            
-        # Third, handle $NAME format without braces (legacy format)
-        for placeholder, value in placeholders.items():
-            # Only replace if it's a standalone word with a non-alphanumeric character
-            # before or after (or start/end of string) to avoid replacing substrings
-            pattern = r'(\$)(' + re.escape(placeholder) + r')(\W|$)'
-            result = re.sub(pattern, lambda m: str(value) + m.group(3), result)
-        
-        return result
-        
-    def _add_error(self, error_message):
-        """
-        Add an error message to the error log
-        
-        Args:
-            error_message: Error message to add
-        """
-        if not hasattr(self, '_errors'):
-            self._errors = []
-            
-        self._errors.append(error_message)
-        # print(f"ERROR: {error_message}")
-
-    def _verify_overwrite(self, file_path):
-        """
-        Verify if an existing file should be overwritten
-        
-        Args:
-            file_path: Path to the file to check
-            
-        Returns:
-            bool: True if the file should be overwritten, False otherwise
-        """
-        # By default, allow overwriting files during project creation
-        # This is a simple implementation; in the real app UI, 
-        # this could prompt the user or check preferences
-        return True
-        
-    def batch_create_projects(self, project_names, template_name=None, structure_name=None, output_dir=None, use_cached_files=True, template_data=None):
-        """
-        Create multiple projects from a list of project names
-        
-        Args:
-            project_names (list): List of project names to create
-            template_name (str, optional): Template to use for projects
-            structure_name (str, optional): Structure to use for projects
-            output_dir (str, optional): Directory to create projects in
-            use_cached_files (bool, optional): Whether to use cached files
-            template_data (dict, optional): Template data to use instead of loading from file
-            
-        Returns:
-            dict: Results dictionary with success/failure information
-        """
-        # Validate input
-        if not isinstance(project_names, list):
-            error_msg = "Project names must be provided as a list"
-            # print(f"ERROR: {error_msg}")
-            return {
-                "error": error_msg,
-                "successful_count": 0,
-                "total_count": 0,
-                "success_rate": "0/0 (0%)"
-            }
-            
-        # Ensure output directory is provided
-        if not output_dir:
-            error_msg = "Output directory must be provided for batch creation"
-            # print(f"ERROR: {error_msg}")
-            return {
-                "error": error_msg,
-                "successful_count": 0,
-                "total_count": 0,
-                "success_rate": "0/0 (0%)"
-            }
-        
-        # Use security-scoped bookmarks on macOS if available
-        use_bookmark = False
-        if platform.system() == "Darwin":
-            try:
-                from app.utils.security_bookmarks import BookmarkAccessContext
-                use_bookmark = True
-            except ImportError:
-                # print("WARNING: Could not import security_bookmarks module for batch operation.")
-                pass
-        
-        # Process batch using security-scoped bookmark if on macOS
-        if use_bookmark:
-            try:
-                with BookmarkAccessContext(output_dir):
-                    return self._batch_create_projects_internal(
-                        project_names, template_name, structure_name, output_dir,
-                        use_cached_files, template_data
-                    )
-            except Exception as e:
-                # print(f"ERROR: Failed to access directory with security bookmark for batch: {e}")
-                # Try without bookmark as fallback
-                # print("Falling back to standard directory access for batch...")
-                return self._batch_create_projects_internal(
-                    project_names, template_name, structure_name, output_dir,
-                    use_cached_files, template_data
-                )
-        else:
-            # Standard project creation for non-macOS platforms
-            return self._batch_create_projects_internal(
-                project_names, template_name, structure_name, output_dir,
-                use_cached_files, template_data
-            )
-    
-    def _batch_create_projects_internal(self, project_names, template_name, structure_name, output_dir, use_cached_files, template_data):
-        """Internal implementation of batch project creation."""
-        # Ensure the output directory exists
-        try:
-            os.makedirs(output_dir, exist_ok=True)
-        except Exception as e:
-            error_msg = f"Failed to create output directory: {e}"
-            # print(f"ERROR: {error_msg}")
-            return {
-                "error": error_msg,
-                "successful_count": 0,
-                "total_count": 0,
-                "success_rate": "0/0 (0%)"
-            }
-            
-        # Initialize results
-        results = {
-            "results": [],  # List of tuples (project_name, success, message)
-            "successful_count": 0,
-            "total_count": len(project_names),
-            "success_rate": "0/0 (0%)",
-            "no_structure": True  # Default to True, will set to False if any project has a structure
-        }
-        
-        # Track if all projects were created without structure
-        all_no_structure = True
-        
-        # Process each project name
-        for project_name in project_names:
-            # print(f"Creating project: {project_name} in {output_dir}")
-            
-            # Create project directory
-            project_dir = os.path.join(output_dir, project_name)
-            try:
-                # Run the create_project method
-                success, result = self.create_project(
-                    project_name=project_name,
-                    output_dir=output_dir,
-                    template_file=template_data if template_data else template_name,
-                    structure_name=structure_name,
-                    use_cached_files=use_cached_files
-                )
-                
-                # Check if the result is a dictionary with a no_structure flag
-                if success:
-                    results["successful_count"] += 1
-                    if isinstance(result, dict):
-                        if result.get("no_structure", False):
-                            # Project was created without structure
-                            results["results"].append((project_name, True, result))
-                        else:
-                            # Project was created with structure
-                            results["results"].append((project_name, True, result["project_dir"]))
-                            # At least one project had a structure
-                            all_no_structure = False
-                    else:
-                        # Result is just a string (project directory)
-                        results["results"].append((project_name, True, result))
-                        # Assume it has a structure
-                        all_no_structure = False
-                else:
-                    # Failed to create project
-                    results["results"].append((project_name, False, result))
-                    
-            except Exception as e:
-                # print(f"ERROR creating project {project_name}: {e}")
-                import traceback
-                traceback.print_exc()
-                results["results"].append((project_name, False, str(e)))
-        
-        # Update no_structure flag based on results
-        results["no_structure"] = all_no_structure
-        
-        # Calculate success rate
-        if results["total_count"] > 0:
-            success_rate = results["successful_count"] / results["total_count"] * 100
-            results["success_rate"] = f"{results['successful_count']}/{results['total_count']} ({success_rate:.0f}%)"
-        
-        return results
-
-    def _process_files_array(self, project_dir, files_array, placeholders, use_cached_files=True, template_name=None):
-        """
-        Process the files array and copy files to the project
-        
-        Args:
-            project_dir: Base project directory
-            files_array: Array of file objects
-            placeholders: Dictionary of placeholders for variable substitution
-            use_cached_files: Whether to use cached files when available
-            template_name: Name of the template (used for cache lookup)
-            
-        Returns:
-            tuple: (success, result) where result is either the list of copied files or an error message
-        """
-        copied_files = []
-        error_messages = []
-        
-        # --- Access Cache Manager
-        cache_manager = None
-        if hasattr(self, 'template_manager') and hasattr(self.template_manager, 'file_cache_manager'):
-             cache_manager = self.template_manager.file_cache_manager
-
-        if not files_array:
-            return True, copied_files
-
-        # print(f"Processing {len(files_array)} files from files array for template: {template_name}")
-        # print(f"Current platform: {platform.system()}")
-
-        for file_index, file_data in enumerate(files_array):
-            source_path_used = "None" # Debugging
-            source_path = None      # Reset for each file
-            cached_path_attempted = None # Debugging
-            original_path_attempted = None # Debugging
-
-            try:
-                # Get file info
-                file_name = file_data.get('file_name')
-                original_path = file_data.get('original_path')
-                cached_path = file_data.get('cached_path')  # Get cached_path directly from file_data
-                folder = file_data.get('folder', '')
-                rename_flag = file_data.get('rename_flag', False)
-                uses_project_name = file_data.get('uses_project_name', False)
-                file_type = file_data.get('file_type', 'other')
-                is_binary = file_data.get('is_binary', False)
-
-                if not file_name:
-                    error_msg = f"WARNING: File data missing file_name in index {file_index}: {file_data}"
-                    print(error_msg)
-                    error_messages.append(error_msg)
-                    continue
-                
-                original_filename_for_debug = file_name # Store before potential rename
-                
-                # First check if the filename contains a placeholder
-                if "${PROJECT_NAME}" in file_name:
-                    # Apply placeholder replacement directly
-                    file_name = self._replace_placeholders(file_name, placeholders)
-                # Apply placeholders to file name if either flag is set
-                elif rename_flag or uses_project_name:
-                    project_name = placeholders.get("PROJECT_NAME", "Unknown")
-                    
-                    # Get the original file name components
-                    name_parts = os.path.splitext(file_name)
-                    if len(name_parts) == 2:
-                        base_name, ext = name_parts
-                    else:
-                        base_name, ext = file_name, ""
-                    
-                    # Check for project_name_mode in file_data
-                    name_mode = file_data.get('project_name_mode', 'replace')
-                    
-                    # Get custom separator if available
-                    separator = file_data.get('custom_separator', '.')
-                    
-                    # Apply naming pattern based on mode
-                    if name_mode == 'prepend':
-                        file_name = f"{project_name}{separator}{base_name}{ext}"
-                    elif name_mode == 'append':
-                        file_name = f"{base_name}{separator}{project_name}{ext}"
-                    elif name_mode == 'pattern':
-                        # Use custom pattern if available
-                        pattern = file_data.get('custom_pattern', '$project$ext')
-                        
-                        # Replace placeholders in the pattern
-                        pattern_map = {
-                            '$project': project_name,
-                            '$base': base_name,
-                            '$ext': ext,
-                            '$sep': separator
-                        }
-                        
-                        # Apply pattern substitutions
-                        for key, value in pattern_map.items():
-                            pattern = pattern.replace(key, value)
-                        
-                        file_name = pattern
-                    else:  # Default to 'replace' mode for backward compatibility
-                        file_name = f"{project_name}{ext}"
-
-                # Apply placeholders to folder path
-                folder = self._replace_placeholders(folder, placeholders)
-
-                # Create folder structure if it doesn't exist
-                folder_path = os.path.join(project_dir, folder)
-                os.makedirs(folder_path, exist_ok=True)
-
-                # Determine destination path
-                dest_path = os.path.join(folder_path, file_name)
-
-                # Determine source file path - prioritize cached files, then original files
-                source_path = None
-                source_path_used = None
-                cached_path_attempted = None
-                original_path_attempted = None
-
-                # 1. PRIORITY 1: Check cached_path directly from file_data
-                if cached_path and os.path.exists(cached_path):
-                    source_path = cached_path
-                    source_path_used = "Direct Cache"
-                    cached_path_attempted = cached_path
-                    if cache_manager and hasattr(cache_manager, 'cache_stats'): 
-                        cache_manager.cache_stats['hits'] += 1
-                
-                # 2. PRIORITY 2: Try looking up in cache manager using original_path
-                elif use_cached_files and not source_path and template_name and cache_manager:
-                    try:
-                        # Use original_path as the key to find the file in the specific template's cache metadata
-                        file_info_from_cache = cache_manager.get_cached_file(template_name, file_path=original_path)
-                        lookup_cached_path = None
-                        if file_info_from_cache:
-                            lookup_cached_path = file_info_from_cache.get('cached_path')
-                        
-                        cached_path_attempted = lookup_cached_path # Store for logging
-                        
-                        if lookup_cached_path and os.path.exists(lookup_cached_path):
-                            source_path = lookup_cached_path
-                            source_path_used = "Cache Lookup"
-                            if hasattr(cache_manager, 'cache_stats'): 
-                                cache_manager.cache_stats['hits'] += 1
-                    except Exception as cache_err:
-                        cached_path_attempted = f"Error: {cache_err}" # Store error for logging
-
-                # 3. PRIORITY 3: Fall back to original path
-                if not source_path and original_path:
-                    original_path_attempted = original_path # Store for logging
-                    if os.path.exists(original_path):
-                        source_path = original_path
-                        source_path_used = "Original"
-                        if cache_manager and hasattr(cache_manager, 'cache_stats'): 
-                            cache_manager.cache_stats['misses'] += 1
-                    else:
-                        # Check if path might be using wrong separators
-                        alt_path = original_path.replace('\\', '/') if '\\' in original_path else original_path.replace('/', '\\')
-                        if os.path.exists(alt_path):
-                            source_path = alt_path
-                            source_path_used = "Original (Alt Separator)"
-                            if cache_manager and hasattr(cache_manager, 'cache_stats'): 
-                                cache_manager.cache_stats['misses'] += 1
-                    
-                # 4. PRIORITY 4: Special handling for imported files
-                if not source_path and original_path and "Imported from:" in str(original_path) and cached_path:
-                    # For imported files, always try the cached path as last resort
-                    if os.path.exists(cached_path):
-                        source_path = cached_path
-                        source_path_used = "Import Cache"
-                        if cache_manager and hasattr(cache_manager, 'cache_stats'): 
-                            cache_manager.cache_stats['hits'] += 1
-
-                # Final check - Skip if no valid source path found
-                if not source_path:
-                    error_msg = f"ERROR: No valid source path found for file '{original_filename_for_debug}'."
-                    print(error_msg)
-                    error_messages.append(error_msg)
-                    continue
-
-                # Copy the file
-                try:
-                    # Verify that the source file exists before copying
-                    if not os.path.exists(source_path):
-                        error_msg = f"ERROR: Source file does not exist: {source_path}"
-                        print(error_msg)
-                        error_messages.append(error_msg)
-                        continue
-                    
-                    # Check source file size before copying
-                    source_size = os.path.getsize(source_path)
-                    
-                    # Ensure destination directory exists (double check)
-                    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-                    
-                    # Use shutil.copy2 for the actual file copy
-                    shutil.copy2(source_path, dest_path)
-                    
-                    # Check destination file size after copying
-                    if os.path.exists(dest_path):
-                        dest_size = os.path.getsize(dest_path)
-                        
-                        if source_size != dest_size:
-                            error_msg = f"ERROR: File size mismatch! Source: {source_size}, Dest: {dest_size}"
-                            print(error_msg)
-                            error_messages.append(error_msg)
-                            continue
-                    else:
-                        error_msg = f"ERROR: Destination file was not created: {dest_path}"
-                        print(error_msg)
-                        error_messages.append(error_msg)
-                        continue
-                    
-                    copied_files.append(dest_path)
-
-                    # Replace placeholders in text files only, not in binary files
-                    if not is_binary and placeholders and self._might_contain_placeholders(source_path):
-                        try:
-                            with open(dest_path, 'r', encoding='utf-8', errors='replace') as f:
-                                content = f.read()
-                            content = self._replace_placeholders(content, placeholders)
-                            with open(dest_path, 'w', encoding='utf-8') as f:
-                                f.write(content)
-                        except Exception as e:
-                            print(f"WARNING: Error replacing placeholders in {dest_path}: {str(e)}")
-                except Exception as e:
-                    # More specific copy error logging
-                    error_msg = f"ERROR: Failed to copy file using {source_path_used} path."
-                    print(error_msg)
-                    print(f"  Source: {source_path}")
-                    print(f"  Destination: {dest_path}")
-                    print(f"  Error Details: {str(e)}")
-                    error_messages.append(f"{error_msg} - {str(e)}")
-                    import traceback
-                    traceback.print_exc() # Keep traceback for detailed debugging
-
-            except Exception as e:
-                error_msg = f"ERROR processing file data block: {file_data}. Error: {str(e)}"
-                print(error_msg)
-                error_messages.append(error_msg)
-                import traceback
-                traceback.print_exc()
-
-        # Save cache stats after processing
-        if cache_manager:
-            cache_manager._save_stats()
-        
-        # Return success status with copied files or error message
-        if error_messages and not copied_files:
-            return False, f"Failed to copy files: {'; '.join(error_messages)}"
-        elif error_messages and copied_files:
-            return True, copied_files  # Partial success
-        else:
-            return True, copied_files  # Full success
-        
     def _might_contain_placeholders(self, file_path):
         """
         Check if a file might contain placeholders by reading the first few KB.
@@ -2027,3 +1503,766 @@ class ProjectBuilder:
             import traceback
             traceback.print_exc()
             return False
+
+
+
+    def _extract_datetime_formats(self, template_data):
+        """
+        Extract date and time format preferences from template structure
+        
+        Args:
+            template_data: The template data dictionary
+            
+        Returns:
+            tuple: (date_format, time_format) or (None, None) if not found
+        """
+        def search_structure(structure):
+            """Recursively search for date/time formats in structure"""
+            for item in structure:
+                if isinstance(item, dict):
+                    # Check for date_format and time_format in item
+                    date_format = item.get('date_format')
+                    time_format = item.get('time_format')
+                    
+                    if date_format or time_format:
+                        return date_format, time_format
+                    
+                    # Check in user_data (nested structures)
+                    user_data = item.get('user_data', {})
+                    if isinstance(user_data, dict):
+                        date_format = user_data.get('date_format')
+                        time_format = user_data.get('time_format')
+                        
+                        if date_format or time_format:
+                            return date_format, time_format
+                        
+                        # Check double-nested user_data
+                        nested_user_data = user_data.get('user_data', {})
+                        if isinstance(nested_user_data, dict):
+                            date_format = nested_user_data.get('date_format')
+                            time_format = nested_user_data.get('time_format')
+                            
+                            if date_format or time_format:
+                                return date_format, time_format
+                    
+                    # Recursively check children
+                    children = item.get('children', [])
+                    if children:
+                        result = search_structure(children)
+                        if result != (None, None):
+                            return result
+            
+            return None, None
+        
+        structure = template_data.get('structure', [])
+        return search_structure(structure)
+
+    def _collect_custom_options(self, template_data):
+        """
+        Collect all custom options needed for this project creation
+        
+        Args:
+            template_data: The template data dictionary
+            
+        Returns:
+            dict: Dictionary mapping custom variable names to selected values, or None if cancelled
+        """
+        # Try to get custom values from the main app's animated widget first
+        try:
+            from app.core.app_module_pyqt import ProjectCreatorApp
+            app_instance = ProjectCreatorApp.get_instance()
+            print(f"DEBUG: ProjectBuilder._collect_custom_options - app_instance found: {app_instance is not None}")
+            if app_instance and hasattr(app_instance, 'get_custom_values_from_widget'):
+                print(f"DEBUG: ProjectBuilder._collect_custom_options - calling get_custom_values_from_widget()")
+                custom_values = app_instance.get_custom_values_from_widget()
+                print(f"DEBUG: ProjectBuilder._collect_custom_options - received custom_values: {custom_values}")
+                if custom_values:
+                    print(f"DEBUG: ProjectBuilder._collect_custom_options - returning custom values from widget: {custom_values}")
+                    return custom_values
+                else:
+                    print(f"DEBUG: ProjectBuilder._collect_custom_options - no custom values from widget, falling back to dialog")
+        except Exception as e:
+            print(f"Warning: Could not get custom values from animated widget: {e}")
+        
+        # Fallback to collecting custom options and showing dialog (for compatibility)
+        custom_prompts = {}
+        
+        def collect_from_structure(structure, path=""):
+            """Recursively collect custom options from structure"""
+            for item in structure:
+                if isinstance(item, dict):
+                    item_name = item.get('name', '')
+                    item_path = f"{path}/{item_name}" if path else item_name
+                    
+                    # Helper function to recursively search for pattern data
+                    def extract_pattern_data(data, depth=0, max_depth=5):
+                        """Recursively extract pattern and custom options from nested data"""
+                        if depth > max_depth or not isinstance(data, dict):
+                            return [], ''
+                        
+                        found_options = data.get('custom_options', [])
+                        found_pattern = data.get('pattern', '')
+                        
+                        # If we found both, return them
+                        if found_options and found_pattern:
+                            return found_options, found_pattern
+                        
+                        # Otherwise, check user_data recursively
+                        if 'user_data' in data and isinstance(data['user_data'], dict):
+                            nested_options, nested_pattern = extract_pattern_data(data['user_data'], depth + 1, max_depth)
+                            if not found_options and nested_options:
+                                found_options = nested_options
+                            if not found_pattern and nested_pattern:
+                                found_pattern = nested_pattern
+                        
+                        return found_options, found_pattern
+                    
+                    # Extract pattern data from the item
+                    custom_options, pattern = extract_pattern_data(item)
+                    
+                    # Check for any CUSTOM placeholders in the pattern
+                    if custom_options and pattern:
+                        import re
+                        custom_matches = re.findall(r'\$\{(CUSTOM\d*)\}', pattern)
+                        if custom_matches:
+                            # Handle both old format (list) and new format (dict)
+                            if isinstance(custom_options, dict):
+                                # New format - each placeholder has its own options
+                                for custom_placeholder in custom_matches:
+                                    if custom_placeholder in custom_options:
+                                        custom_key = f"{item_path}_{custom_placeholder}"
+                                        if custom_key not in custom_prompts:
+                                            custom_prompts[custom_key] = {
+                                                'item_path': item_path,
+                                                'item_name': item_name,
+                                                'options': custom_options[custom_placeholder],
+                                                'pattern': pattern,
+                                                'placeholder': custom_placeholder
+                                            }
+                            else:
+                                # Old format - single list of options, create entries for each placeholder
+                                for i, custom_placeholder in enumerate(custom_matches):
+                                    custom_key = f"{item_path}_{custom_placeholder}"
+                                    if custom_key not in custom_prompts:
+                                        # Use different option based on placeholder index
+                                        if i < len(custom_options):
+                                            option_list = [custom_options[i]]
+                                        else:
+                                            # If we don't have enough options, use all options for this placeholder
+                                            option_list = custom_options
+                                        
+                                        custom_prompts[custom_key] = {
+                                            'item_path': item_path,
+                                            'item_name': item_name,
+                                            'options': option_list if len(option_list) > 1 else custom_options,
+                                            'pattern': pattern,
+                                            'placeholder': custom_placeholder
+                                        }
+                    
+                    # Recursively check children
+                    children = item.get('children', [])
+                    if children:
+                        collect_from_structure(children, item_path)
+        
+        # Collect all custom options needed
+        structure = template_data.get('structure', [])
+        collect_from_structure(structure)
+        
+        # If no custom options needed, return empty dict
+        if not custom_prompts:
+            return {}
+        
+        # If we reach here, show the fallback dialog
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QComboBox, QPushButton, QHBoxLayout
+        from PyQt6.QtCore import Qt
+        
+        class CustomOptionsDialog(QDialog):
+            def __init__(self, parent, custom_prompts):
+                super().__init__(parent)
+                self.custom_prompts = custom_prompts
+                self.selected_values = {}
+                self.init_ui()
+            
+            def init_ui(self):
+                from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
+                self.setWindowTitle("Custom Options")
+                self.setMinimumSize(400, 300)
+                self.setStyleSheet(f"""
+                    QDialog {{
+                        background-color: {colors['bg']};
+                        color: {colors['text']};
+                    }}
+                """)
+                
+                layout = QVBoxLayout(self)
+                layout.setContentsMargins(20, 20, 20, 20)
+                layout.setSpacing(15)
+                
+                title = QLabel("Select Custom Options for Project Creation")
+                title.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {colors['text']};")
+                layout.addWidget(title)
+                
+                self.combos = {}
+                for key, prompt_data in self.custom_prompts.items():
+                    item_label = QLabel(f"For '{prompt_data['item_path']}':")
+                    item_label.setStyleSheet(f"color: {colors['text']};")
+                    layout.addWidget(item_label)
+                    
+                    combo = QComboBox()
+                    combo.addItems(prompt_data['options'])
+                    combo.setStyleSheet(f"""
+                        QComboBox {{
+                            background-color: {colors['card_bg']};
+                            color: {colors['text']};
+                            border: 1px solid {colors['border']};
+                            padding: 8px;
+                            border-radius: 4px;
+                        }}
+                    """)
+                    self.combos[key] = combo
+                    layout.addWidget(combo)
+                
+                # Buttons
+                button_layout = QHBoxLayout()
+                cancel_btn = QPushButton("Cancel")
+                cancel_btn.clicked.connect(self.reject)
+                cancel_btn.setStyleSheet(BUTTON_STYLE)
+                
+                ok_btn = QPushButton("OK")
+                ok_btn.clicked.connect(self.accept)
+                ok_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
+                ok_btn.setDefault(True)
+                
+                button_layout.addWidget(cancel_btn)
+                button_layout.addStretch()
+                button_layout.addWidget(ok_btn)
+                layout.addLayout(button_layout)
+            
+            def get_selected_values(self):
+                return {key: combo.currentText() for key, combo in self.combos.items()}
+        
+        # Show dialog to collect custom values
+        dialog = CustomOptionsDialog(None, custom_prompts)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            return dialog.get_selected_values()
+        else:
+            return None  # User cancelled
+
+    def _create_placeholders(self, project_name, custom_values=None, date_format=None, time_format=None):
+        """
+        Create placeholders dictionary for variable replacement
+        
+        Args:
+            project_name: Name of the project
+            custom_values: Dictionary of custom values selected by user
+            date_format: Custom date format string (e.g., "YYYY_MM_DD (2024_01_15)")
+            time_format: Custom time format string (e.g., "HH_MM_SS (14_30_22)")
+            
+        Returns:
+            dict: Dictionary of placeholder replacements
+        """
+        import datetime
+        
+        now = datetime.datetime.now()
+        
+        # Format date based on custom format
+        if date_format:
+            if "YYYYMMDD" in date_format:
+                date_str = now.strftime('%Y%m%d')
+            elif "YYYY_MM_DD" in date_format:
+                date_str = now.strftime('%Y_%m_%d')
+            elif "YYYY-MM-DD" in date_format:
+                date_str = now.strftime('%Y-%m-%d')
+            elif "YYYY.MM.DD" in date_format:
+                date_str = now.strftime('%Y.%m.%d')
+            elif "YYYY MM DD" in date_format:
+                date_str = now.strftime('%Y %m %d')
+            elif "MM_DD_YYYY" in date_format:
+                date_str = now.strftime('%m_%d_%Y')
+            elif "MM-DD-YYYY" in date_format:
+                date_str = now.strftime('%m-%d-%Y')
+            elif "MM.DD.YYYY" in date_format:
+                date_str = now.strftime('%m.%d.%Y')
+            elif "MM DD YYYY" in date_format:
+                date_str = now.strftime('%m %d %Y')
+            elif "DD_MM_YYYY" in date_format:
+                date_str = now.strftime('%d_%m_%Y')
+            elif "DD-MM-YYYY" in date_format:
+                date_str = now.strftime('%d-%m-%Y')
+            elif "DD.MM.YYYY" in date_format:
+                date_str = now.strftime('%d.%m.%Y')
+            elif "DD MM YYYY" in date_format:
+                date_str = now.strftime('%d %m %Y')
+            else:
+                date_str = now.strftime('%Y%m%d')  # Default
+        else:
+            date_str = now.strftime('%Y%m%d')  # Default
+        
+        # Format time based on custom format
+        if time_format:
+            if "HHMMSS" in time_format:
+                time_str = now.strftime('%H%M%S')
+            elif "HH_MM_SS" in time_format:
+                time_str = now.strftime('%H_%M_%S')
+            elif "HH-MM-SS" in time_format:
+                time_str = now.strftime('%H-%M-%S')
+            elif "HH.MM.SS" in time_format:
+                time_str = now.strftime('%H.%M.%S')
+            elif "HH MM SS" in time_format:
+                time_str = now.strftime('%H %M %S')
+            elif "HHMM" in time_format:
+                time_str = now.strftime('%H%M')
+            elif "HH_MM" in time_format:
+                time_str = now.strftime('%H_%M')
+            elif "HH-MM" in time_format:
+                time_str = now.strftime('%H-%M')
+            elif "HH.MM" in time_format:
+                time_str = now.strftime('%H.%M')
+            elif "HH MM" in time_format:
+                time_str = now.strftime('%H %M')
+            else:
+                time_str = now.strftime('%H%M%S')  # Default
+        else:
+            time_str = now.strftime('%H%M%S')  # Default
+        
+        placeholders = {
+            'PROJECT_NAME': project_name,
+            'DATE': date_str,
+            'TIME': time_str
+        }
+        
+        # Add custom values if provided
+        if custom_values:
+            print(f"DEBUG: Processing custom_values in _create_placeholders: {custom_values}")
+            for key, value in custom_values.items():
+                print(f"DEBUG: Processing custom value - key: '{key}', value: '{value}'")
+                # Extract the placeholder type from the key
+                if '_CUSTOM' in key:
+                    # Handle both legacy CUSTOM and new CUSTOM1, CUSTOM2, etc.
+                    placeholder_part = key.split('_')[-1]  # Gets 'CUSTOM', 'CUSTOM1', etc.
+                    
+                    # Set the specific placeholder
+                    placeholders[placeholder_part] = value
+                    print(f"DEBUG: Set placeholders['{placeholder_part}'] = '{value}'")
+                    
+                    # For backwards compatibility, also set generic CUSTOM if it's the base CUSTOM
+                    if placeholder_part == 'CUSTOM':
+                        placeholders['CUSTOM'] = value
+                        print(f"DEBUG: Set placeholders['CUSTOM'] = '{value}' (backwards compatibility)")
+                    
+                    # Also store with the full key for specific replacements
+                    placeholders[key] = value
+                    print(f"DEBUG: Set placeholders['{key}'] = '{value}'")
+        
+        print(f"DEBUG: Final placeholders in _create_placeholders: {placeholders}")
+        return placeholders
+
+    def _replace_placeholders(self, text, placeholders):
+        """
+        Replace placeholders in text with actual values
+        
+        Args:
+            text: Text containing placeholders
+            placeholders: Dictionary of placeholder replacements
+            
+        Returns:
+            str: Text with placeholders replaced
+        """
+        if not text or not placeholders:
+            return text
+        
+        result = text
+        for key, value in placeholders.items():
+            placeholder = f"${{{key}}}"
+            result = result.replace(placeholder, str(value))
+        
+        return result
+
+    def _process_custom_pattern(self, pattern, placeholders, item):
+        """
+        Process custom pattern with enhanced features:
+        - Automatic extension preservation for files
+        - Date/time placement options
+        - Separator-aware formatting
+        
+        Args:
+            pattern: The pattern string
+            placeholders: Dictionary of placeholder replacements
+            item: The item dictionary containing metadata
+            
+        Returns:
+            str: Processed filename/foldername
+        """
+        print(f"DEBUG: _process_custom_pattern called with pattern: '{pattern}'")
+        print(f"DEBUG: _process_custom_pattern placeholders: {placeholders}")
+        print(f"DEBUG: _process_custom_pattern item type: {item.get('type')}")
+        print(f"DEBUG: _process_custom_pattern item name: {item.get('name')}")
+        print(f"DEBUG: _process_custom_pattern item original_name: {item.get('original_name')}")
+        
+        result = pattern
+        
+        # Get separator information from item
+        separator = item.get('separator', '_')  # Default to underscore
+        print(f"DEBUG: _process_custom_pattern - using separator: '{separator}'")
+        
+        # Check if user manually added separators in pattern
+        manual_separators = self._detect_manual_separators_in_pattern(pattern)
+        print(f"DEBUG: _process_custom_pattern - manual separators detected: {manual_separators}")
+        
+        # Auto-adjust date/time formats to match separator if not manually set
+        if not manual_separators and separator != "_":
+            # Update placeholders with separator-adjusted formats
+            if 'DATE' in placeholders:
+                placeholders = placeholders.copy()  # Don't modify original
+                if separator == "-":
+                    # Convert date to dash format
+                    date_val = placeholders['DATE']
+                    if len(date_val) == 8 and date_val.isdigit():  # YYYYMMDD format
+                        placeholders['DATE'] = f"{date_val[:4]}-{date_val[4:6]}-{date_val[6:]}"
+                elif separator == ".":
+                    # Convert date to dot format
+                    date_val = placeholders['DATE']
+                    if len(date_val) == 8 and date_val.isdigit():  # YYYYMMDD format
+                        placeholders['DATE'] = f"{date_val[:4]}.{date_val[4:6]}.{date_val[6:]}"
+                elif separator == " ":
+                    # Convert date to space format
+                    date_val = placeholders['DATE']
+                    if len(date_val) == 8 and date_val.isdigit():  # YYYYMMDD format
+                        placeholders['DATE'] = f"{date_val[:4]} {date_val[4:6]} {date_val[6:]}"
+            
+            if 'TIME' in placeholders:
+                if 'DATE' not in placeholders:  # Only copy if not already copied above
+                    placeholders = placeholders.copy()
+                if separator == "-":
+                    # Convert time to dash format
+                    time_val = placeholders['TIME']
+                    if len(time_val) == 6 and time_val.isdigit():  # HHMMSS format
+                        placeholders['TIME'] = f"{time_val[:2]}-{time_val[2:4]}-{time_val[4:]}"
+                elif separator == ".":
+                    # Convert time to dot format
+                    time_val = placeholders['TIME']
+                    if len(time_val) == 6 and time_val.isdigit():  # HHMMSS format
+                        placeholders['TIME'] = f"{time_val[:2]}.{time_val[2:4]}.{time_val[4:]}"
+                elif separator == " ":
+                    # Convert time to space format
+                    time_val = placeholders['TIME']
+                    if len(time_val) == 6 and time_val.isdigit():  # HHMMSS format
+                        placeholders['TIME'] = f"{time_val[:2]} {time_val[2:4]} {time_val[4:]}"
+        
+        # Handle date/time placement
+        datetime_prefix = item.get('datetime_prefix', False)
+        
+        if datetime_prefix and ('${DATE}' in result or '${TIME}' in result):
+            # Extract date/time and place at beginning
+            date_str = placeholders.get('DATE', '')
+            time_str = placeholders.get('TIME', '')
+            
+            datetime_part = ""
+            if '${DATE}' in result:
+                datetime_part += date_str
+            if '${TIME}' in result:
+                if datetime_part:
+                    datetime_part += separator
+                datetime_part += time_str
+            
+            # Remove date/time placeholders from pattern
+            result = result.replace('${DATE}', '').replace('${TIME}', '')
+            # Clean up multiple consecutive separators
+            while f'{separator}{separator}' in result:
+                result = result.replace(f'{separator}{separator}', separator)
+            # Clean up leading/trailing separators
+            result = result.strip(separator)
+            # Add datetime at the beginning
+            result = f"{datetime_part}{separator}{result}" if result else datetime_part
+        
+        # Replace remaining placeholders
+        result = self._replace_placeholders(result, placeholders)
+        
+        # Handle automatic extension preservation for files
+        if item.get('type') == 'file':
+            original_name = item.get('original_name') or item.get('name', '')
+            print(f"DEBUG: _process_custom_pattern - file processing, original_name: '{original_name}'")
+            if '.' in original_name:
+                _, ext = os.path.splitext(original_name)
+                print(f"DEBUG: _process_custom_pattern - extracted extension: '{ext}'")
+                print(f"DEBUG: _process_custom_pattern - result before extension: '{result}'")
+                # Only add extension if not already present
+                if not result.endswith(ext):
+                    result += ext
+                    print(f"DEBUG: _process_custom_pattern - added extension, result: '{result}'")
+                else:
+                    print(f"DEBUG: _process_custom_pattern - extension already present")
+            else:
+                print(f"DEBUG: _process_custom_pattern - no extension found in original_name")
+        
+        print(f"DEBUG: _process_custom_pattern - final result: '{result}'")
+        return result
+    
+    def _detect_manual_separators_in_pattern(self, pattern):
+        """Detect if user has manually added separators in the pattern"""
+        import re
+        variables = re.findall(r'\$\{[A-Z_]+\}', pattern)
+        if len(variables) < 2:
+            return False
+        
+        # Check for separators between consecutive variables
+        for i in range(len(variables) - 1):
+            var1_end = pattern.find(variables[i]) + len(variables[i])
+            var2_start = pattern.find(variables[i + 1], var1_end)
+            between_text = pattern[var1_end:var2_start]
+            if between_text.strip():  # If there's text between variables
+                return True
+        return False
+
+    def _get_item_path(self, parent_path, item, placeholders):
+        """
+        Get the item path for custom option lookup
+        
+        Args:
+            parent_path: The parent directory path
+            item: The item dictionary
+            placeholders: Dictionary of placeholder replacements
+            
+        Returns:
+            str: The item path for custom option lookup
+        """
+        item_name = item.get('name', '')
+        if isinstance(item_name, list):
+            if item_name and item_name[0]:
+                item_name = item_name[0]
+            else:
+                item_name = 'unnamed'
+        
+        # Replace placeholders in the item name for path construction
+        if placeholders:
+            item_name = self._replace_placeholders(item_name, placeholders)
+        
+        # Get relative path from project root
+        # This is a simplified version - in practice you might need more sophisticated path tracking
+        return item_name
+
+    def _structure_contains_files(self, structure_data):
+        """
+        Check if structure contains embedded files (to avoid duplication)
+        
+        Args:
+            structure_data: The structure data to check
+            
+        Returns:
+            bool: True if structure contains files, False otherwise
+        """
+        if not structure_data:
+            return False
+            
+        def check_items(items):
+            """Recursively check items for files"""
+            if not items:
+                return False
+                
+            for item in items:
+                if isinstance(item, dict):
+                    # Check if this item is a file
+                    if item.get('type') == 'file':
+                        return True
+                    
+                    # Check children recursively
+                    children = item.get('children', [])
+                    if children and check_items(children):
+                        return True
+            
+            return False
+        
+        # Handle different structure formats
+        if isinstance(structure_data, list):
+            return check_items(structure_data)
+        elif isinstance(structure_data, dict):
+            if 'folders' in structure_data:
+                return check_items(structure_data['folders'])
+            else:
+                return check_items(list(structure_data.values()))
+        
+        return False
+
+    def _process_files_array(self, project_dir, files_array, placeholders, use_cached_files=True, template_name=None):
+        """
+        Process an array of files, copying them to the project directory with placeholders applied
+        
+        Args:
+            project_dir: The project directory to copy files to
+            files_array: Array of file information dictionaries
+            placeholders: Dictionary of placeholder replacements
+            use_cached_files: Whether to use cached files if available
+            template_name: Name of the template (for caching)
+            
+        Returns:
+            tuple: (success, copied_files_list)
+        """
+        if not files_array:
+            return True, []
+            
+        copied_files = []
+        
+        try:
+            for file_info in files_array:
+                if not isinstance(file_info, dict):
+                    continue
+                    
+                file_name = file_info.get('file_name', '')
+                folder = file_info.get('folder', '')
+                original_path = file_info.get('original_path', '')
+                cached_path = file_info.get('cached_path', '')
+                is_binary = file_info.get('is_binary', False)
+                rename_flag = file_info.get('rename_flag', False)
+                uses_project_name = file_info.get('uses_project_name', False)
+                
+                if not file_name:
+                    continue
+                
+                # Determine source path - prefer cached if available and use_cached_files is True
+                source_path = None
+                if use_cached_files and cached_path and os.path.exists(cached_path):
+                    source_path = cached_path
+                elif original_path and os.path.exists(original_path):
+                    source_path = original_path
+                
+                if not source_path:
+                    # print(f"Warning: Could not find source file for {file_name}")
+                    continue
+                
+                # Build destination path
+                folder_path = folder.rstrip('/') if folder else ''
+                dest_dir = os.path.join(project_dir, folder_path) if folder_path else project_dir
+                
+                # Apply placeholders to filename if needed
+                final_filename = file_name
+                if rename_flag or uses_project_name or '${' in file_name:
+                    final_filename = self._replace_placeholders(file_name, placeholders)
+                
+                dest_path = os.path.join(dest_dir, final_filename)
+                
+                # Create destination directory
+                os.makedirs(dest_dir, exist_ok=True)
+                
+                # Copy the file
+                try:
+                    if is_binary:
+                        # Binary file - direct copy
+                        shutil.copy2(source_path, dest_path)
+                    else:
+                        # Text file - process placeholders in content
+                        with open(source_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                        
+                        # Apply placeholders to content
+                        processed_content = self._replace_placeholders(content, placeholders)
+                        
+                        with open(dest_path, 'w', encoding='utf-8') as f:
+                            f.write(processed_content)
+                    
+                    copied_files.append(dest_path)
+                    
+                except Exception as e:
+                    # print(f"Error copying file {file_name}: {e}")
+                    continue
+            
+            return True, copied_files
+            
+        except Exception as e:
+            return False, f"Error processing files array: {str(e)}"
+
+    def batch_create_projects(self, project_names, template_name=None, structure_name=None, 
+                            output_dir=None, template_data=None, use_cached_files=True):
+        """
+        Create multiple projects in batch from a template
+        
+        Args:
+            project_names (list): List of project names to create
+            template_name (str, optional): Name of the template to use
+            structure_name (str, optional): Name of the structure to use
+            output_dir (str): Directory where projects should be created
+            template_data (dict, optional): Template data dictionary
+            use_cached_files (bool, optional): Whether to use cached files
+            
+        Returns:
+            dict: Results of batch creation with format:
+                {
+                    "successful_count": int,
+                    "total_count": int,
+                    "results": [(project_name, success, path_or_error), ...]
+                }
+        """
+        if not project_names:
+            return {"error": "No project names provided", "successful_count": 0, "total_count": 0}
+        
+        if not output_dir:
+            return {"error": "No output directory provided", "successful_count": 0, "total_count": 0}
+        
+        # Initialize results tracking
+        results = []
+        successful_count = 0
+        total_count = len(project_names)
+        
+        # Show progress window if we have many projects
+        progress_window = None
+        if total_count > 1:
+            try:
+                progress_window = BatchProgressWindow(total_count)
+                progress_window.show()
+                QApplication.processEvents()
+            except Exception as e:
+                print(f"Warning: Could not create progress window: {e}")
+        
+        # Create each project
+        for i, project_name in enumerate(project_names):
+            try:
+                # Update progress
+                if progress_window:
+                    progress_window.update_status(f"Creating project '{project_name}'...")
+                    progress_window.update_progress(i)
+                    QApplication.processEvents()
+                
+                # Create the individual project
+                success, result = self.create_project(
+                    project_name=project_name,
+                    output_dir=output_dir,
+                    template_file=template_data,
+                    project_type="Standard",
+                    structure_name=structure_name,
+                    create_backup=True,
+                    use_cached_files=use_cached_files
+                )
+                
+                if success:
+                    successful_count += 1
+                    # Handle different result formats
+                    if isinstance(result, dict):
+                        project_path = result.get("project_dir", output_dir)
+                        results.append((project_name, True, result))
+                    else:
+                        # Result is a path string
+                        results.append((project_name, True, result))
+                else:
+                    # Failed to create project
+                    results.append((project_name, False, result))
+                    
+            except Exception as e:
+                # Exception during project creation
+                error_msg = f"Exception during creation: {str(e)}"
+                results.append((project_name, False, error_msg))
+                print(f"Error creating project '{project_name}': {e}")
+        
+        # Update final progress
+        if progress_window:
+            progress_window.update_progress(total_count)
+            progress_window.update_status(f"Completed: {successful_count}/{total_count} projects created")
+            QApplication.processEvents()
+            
+            # Close progress window after a short delay
+            QTimer.singleShot(1000, progress_window.close)
+        
+        # Return results in the expected format
+        return {
+            "successful_count": successful_count,
+            "total_count": total_count,
+            "results": results
+        }

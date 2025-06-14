@@ -14,13 +14,17 @@ from PyQt6.QtWidgets import (
     QMenu, QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, 
     QLineEdit, QSpinBox, QComboBox, QTextEdit, QDateEdit, QCheckBox,
     QTabWidget, QWidget, QFormLayout, QListWidget, QMessageBox,
-    QTreeWidgetItem, QApplication, QSpacerItem, QSizePolicy
+    QTreeWidgetItem, QApplication, QSpacerItem, QSizePolicy, QGroupBox
 )
 from PyQt6.QtCore import Qt, QDate, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont, QBrush, QColor
+import re
 
 # Import binary file handler
 from app.utils.binary_file_handler import BinaryFileHandler
+
+# Import styling
+from app.ui.color_scheme_pyqt import colors, COMBOBOX_STYLE, BUTTON_STYLE, ACCENT_BUTTON_STYLE
 
 # Constants for file types
 FILE_TYPES = {
@@ -523,15 +527,25 @@ class FileOperations:
                 delete_action = menu.addAction(delete_text)
                 delete_action.triggered.connect(lambda: self._delete_selected_items(selected_items))
                 
-                # Check if we have any files selected
+                # Check if we have any files or folders selected
                 file_items = []
+                folder_items = []
                 for item in selected_items:
                     try:
                         item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
-                        if isinstance(item_data, dict) and item_data.get('type') == 'file':
-                            file_items.append(item)
+                        if isinstance(item_data, dict):
+                            if item_data.get('type') == 'file':
+                                file_items.append(item)
+                            elif item_data.get('type') == 'folder':
+                                folder_items.append(item)
                     except (RuntimeError, AttributeError):
                         continue
+                
+                # Handle folder-specific actions
+                if folder_items and len(selected_items) == 1:
+                    # Single folder selected
+                    menu.addSeparator()
+                    self._add_folder_context_actions(menu, folder_items[0])
                 
                 if file_items:
                     menu.addSeparator()
@@ -674,14 +688,19 @@ class FileOperations:
         try:
             item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
             
-            # Apply styling for project name files
-            if item_data.get('uses_project_name') or item_data.get('rename_flag'):
+            # Apply styling based on item properties
+            if item_data.get('uses_custom_pattern'):
+                # Custom pattern files - purple and italic
                 font = item.font(0)
                 font.setItalic(True)
                 item.setFont(0, font)
-                
-                # Use a blue color for project name files
-                item.setForeground(0, QBrush(QColor("#4A9BFF")))
+                item.setForeground(0, QBrush(QColor("#9A4AFF")))  # Purple for custom patterns
+            elif item_data.get('uses_project_name') or item_data.get('rename_flag'):
+                # Project name files - blue and italic
+                font = item.font(0)
+                font.setItalic(True)
+                item.setFont(0, font)
+                item.setForeground(0, QBrush(QColor("#4A9BFF")))  # Blue for project name
             else:
                 # Reset to normal styling
                 font = item.font(0)
@@ -764,12 +783,38 @@ class FileOperations:
     def _apply_pattern_to_item(self, item, pattern_data):
         """Apply custom pattern to item"""
         data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+        
+        # Store original name if not already stored
+        if 'original_name' not in data:
+            data['original_name'] = item.text(0)
+        
+        # Update data with pattern information
         data.update(pattern_data)
+        data['uses_custom_pattern'] = True
+        data['rename_flag'] = True
+        # Clear conflicting flags
+        data['uses_project_name'] = False
+        
         item.setData(0, Qt.ItemDataRole.UserRole, data)
         
-        # Update display
+        # Update display to show the pattern
         if pattern_data.get('pattern'):
+            # Display the pattern as-is for template editing
             item.setText(0, pattern_data['pattern'])
+            
+            # Apply styling to indicate this item uses a custom pattern
+            font = item.font(0)
+            font.setItalic(True)
+            item.setFont(0, font)
+            
+            # Use a different color for custom pattern files
+            from PyQt6.QtGui import QBrush, QColor
+            item.setForeground(0, QBrush(QColor("#9A4AFF")))  # Purple for custom patterns
+            
+            print(f"DEBUG: Applied custom pattern '{pattern_data['pattern']}' to item '{data.get('original_name', item.text(0))}'")
+        
+        # Update visual styling
+        self._update_item_display(item)
     
     def _apply_versioning_to_item(self, item, versioning_data):
         """Apply versioning configuration to item"""
@@ -1311,30 +1356,23 @@ class FileOperations:
         """Add folder-specific context menu actions"""
         # Versioning operations for folders
         versioning_menu = menu.addMenu("Versioning")
-        
-        # Apply versioning to the folder itself
         date_folder_action = versioning_menu.addAction("Date Sequences (This Folder)...")
         date_folder_action.triggered.connect(lambda: self._configure_date_sequences(item))
-        
         versioning_menu.addSeparator()
-        
-        # Apply versioning to files within folder
         folder_files_menu = versioning_menu.addMenu("Apply to All Files in Folder")
-        
         date_action = folder_files_menu.addAction("Date Sequences...")
         date_action.triggered.connect(lambda: self._configure_date_sequences_for_folder(item))
-        
-        # Project name operations for all files in folder
         project_menu = folder_files_menu.addMenu("Project Name")
-        
         prepend_folder_action = project_menu.addAction("Prepend Project Name")
         prepend_folder_action.triggered.connect(lambda: self._apply_project_name_to_folder(item, 'prepend'))
-        
         append_folder_action = project_menu.addAction("Append Project Name")
         append_folder_action.triggered.connect(lambda: self._apply_project_name_to_folder(item, 'append'))
-        
         replace_folder_action = project_menu.addAction("Replace with Project Name")
         replace_folder_action.triggered.connect(lambda: self._apply_project_name_to_folder(item, 'replace'))
+        # --- Add custom pattern for folders ---
+        menu.addSeparator()
+        custom_pattern_action = menu.addAction("Custom Naming Pattern...")
+        custom_pattern_action.triggered.connect(lambda: self._configure_custom_patterns(item))
 
     def _delete_selected_items(self, items):
         """Delete multiple selected items"""
@@ -1488,36 +1526,38 @@ class FileOperations:
 
 class CustomPatternsDialog(QDialog):
     """Dialog for configuring custom naming patterns"""
-    
     def __init__(self, parent, item):
         super().__init__(parent)
         self.item = item
         self.pattern_data = {}
+        self.is_folder = self._is_folder_item(item)
         self.init_ui()
-    
+        self._load_existing_pattern_data()
+
+    def _is_folder_item(self, item):
+        """Check if the item is a folder"""
+        item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+        return item_data.get('type') == 'folder' or item.childCount() > 0
+
     def init_ui(self):
         """Initialize the user interface"""
-        # Import styling
         from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
-        
         self.setWindowTitle("Custom Naming Patterns")
-        self.setMinimumSize(600, 500)
-        self.resize(700, 600)
-        
-        # Apply dialog styling
+        self.setMinimumSize(900, 1000)
+        self.resize(1000, 1100)
         self.setStyleSheet(f"""
             QDialog {{
                 background-color: {colors['bg']};
                 color: {colors['text']};
             }}
         """)
-        
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(20)
+        layout.setContentsMargins(25, 25, 25, 25)
+        layout.setSpacing(15)
         
-        # Title - no box/border, just clean text
-        title = QLabel("Custom File Naming Patterns")
+        # Title
+        item_type = "Folder" if self.is_folder else "File"
+        title = QLabel(f"Custom {item_type} Naming Patterns")
         title.setFont(QFont("Arial", 16, QFont.Weight.Bold))
         title.setStyleSheet(f"""
             color: {colors['text']};
@@ -1528,7 +1568,7 @@ class CustomPatternsDialog(QDialog):
         """)
         layout.addWidget(title)
         
-        # Available Variables section - clean header without box
+        # Available variables
         variables_header = QLabel("Available Variables:")
         variables_header.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         variables_header.setStyleSheet(f"""
@@ -1540,25 +1580,36 @@ class CustomPatternsDialog(QDialog):
         """)
         layout.addWidget(variables_header)
         
-        # Clickable tag buttons in a grid layout
+        # Tags widget
         tags_widget = QWidget()
         tags_widget.setStyleSheet(f"background-color: transparent; border: none;")
         tags_layout = QGridLayout(tags_widget)
         tags_layout.setSpacing(8)
         
-        # Define available tags with descriptions
-        self.tags = [
-            ("${PROJECT_NAME}", "Project name"),
-            ("${BASE}", "Original filename without extension"),
-            ("${EXT}", "File extension"),
-            ("${VERSION}", "Version number (v01, v02, etc.)"),
-            ("${DATE}", "Current date (YYYYMMDD)"),
-            ("${TIME}", "Current time (HHMMSS)"),
-            ("${COUNTER}", "Incremental counter (001, 002, etc.)"),
-            ("${CUSTOM}", "Custom text field")
-        ]
+        # Different tags for files vs folders
+        if self.is_folder:
+            self.tags = [
+                ("${PROJECT_NAME}", "Project name"),
+                ("${DATE}", "Current date (YYYYMMDD)"),
+                ("${TIME}", "Current time (HHMMSS)"),
+                ("${COUNTER}", "Incremental counter (001, 002, etc.)"),
+                ("${CUSTOM}", "Custom dropdown options"),
+                ("${CUSTOM1}", "First custom option"),
+                ("${CUSTOM2}", "Second custom option"),
+                ("${CUSTOM3}", "Third custom option")
+            ]
+        else:
+            self.tags = [
+                ("${PROJECT_NAME}", "Project name"),
+                ("${BASE}", "Original filename without extension"),
+                ("${DATE}", "Current date (YYYYMMDD)"),
+                ("${TIME}", "Current time (HHMMSS)"),
+                ("${CUSTOM}", "Custom dropdown options"),
+                ("${CUSTOM1}", "First custom option"),
+                ("${CUSTOM2}", "Second custom option"),
+                ("${CUSTOM3}", "Third custom option")
+            ]
         
-        # Create clickable buttons for each tag
         for i, (tag, description) in enumerate(self.tags):
             tag_button = QPushButton(tag)
             tag_button.setToolTip(description)
@@ -1576,7 +1627,7 @@ class CustomPatternsDialog(QDialog):
                     max-height: 20px;
                 }}
                 QPushButton:hover {{
-                    background-color: {colors['hover_bg']};
+                    background-color: {colors['accent']};
                     border: 1px solid {colors['highlight_border']};
                 }}
                 QPushButton:pressed {{
@@ -1584,40 +1635,70 @@ class CustomPatternsDialog(QDialog):
                     color: {colors['highlight_text']};
                 }}
             """)
-            # Arrange in 2 columns
-            row = i // 2
-            col = i % 2
+            row = i // 3
+            col = i % 3
             tags_layout.addWidget(tag_button, row, col)
-        
         layout.addWidget(tags_widget)
         
-        # Add spacer
-        layout.addItem(QSpacerItem(20, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding))
-        
-        # Preview section
-        preview_header = QLabel("Preview:")
-        preview_header.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-        preview_header.setStyleSheet(f"""
+        # Separator options
+        separator_header = QLabel("Choose separator for pattern elements:")
+        separator_header.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        separator_header.setStyleSheet(f"""
             color: {colors['text']};
             background-color: transparent;
             border: none;
             padding: 0px;
+            margin-top: 10px;
             margin-bottom: 5px;
         """)
-        layout.addWidget(preview_header)
+        layout.addWidget(separator_header)
         
-        self.preview_label = QLabel("Preview will appear here once you create a pattern below")
-        self.preview_label.setStyleSheet(f"""
-            background-color: {colors['card_bg']};
-            color: {colors['text']};
-            padding: 12px;
-            border-radius: 4px;
-            border: 1px solid {colors['border']};
-            font-family: 'Courier New', monospace;
+        # Separator selection widget
+        separator_widget = QWidget()
+        separator_widget.setStyleSheet(f"background-color: transparent; border: none;")
+        separator_layout = QHBoxLayout(separator_widget)
+        separator_layout.setSpacing(10)
+        
+        self.separator_combo = QComboBox()
+        self.separator_combo.addItems([
+            "_ (underscore)",
+            "- (dash)", 
+            ". (dot)",
+            "  (space)",
+            "Custom..."
+        ])
+        self.separator_combo.setCurrentIndex(0)  # Default to underscore
+        self.separator_combo.setStyleSheet(COMBOBOX_STYLE)
+        self.separator_combo.currentTextChanged.connect(self._on_separator_changed)
+        separator_layout.addWidget(self.separator_combo)
+        
+        # Custom separator input (hidden by default)
+        self.custom_separator_edit = QLineEdit()
+        self.custom_separator_edit.setPlaceholderText("Enter custom separator...")
+        self.custom_separator_edit.setMaxLength(3)  # Limit to 3 characters
+        self.custom_separator_edit.setVisible(False)
+        self.custom_separator_edit.textChanged.connect(self._on_custom_separator_changed)
+        self.custom_separator_edit.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
+                border-radius: 4px;
+                padding: 8px 12px;
+                font-size: 14px;
+                min-width: 100px;
+                max-width: 100px;
+            }}
+            QLineEdit:focus {{
+                border: 2px solid {colors['accent']};
+            }}
         """)
-        layout.addWidget(self.preview_label)
+        separator_layout.addWidget(self.custom_separator_edit)
         
-        # Pattern input at the bottom
+        separator_layout.addStretch()
+        layout.addWidget(separator_widget)
+        
+        # Pattern input
         pattern_header = QLabel("Enter your naming pattern:")
         pattern_header.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         pattern_header.setStyleSheet(f"""
@@ -1631,7 +1712,10 @@ class CustomPatternsDialog(QDialog):
         layout.addWidget(pattern_header)
         
         self.pattern_edit = QLineEdit()
-        self.pattern_edit.setPlaceholderText("Click tags above or type pattern like: ${PROJECT_NAME}_${VERSION}_${DATE}")
+        if self.is_folder:
+            self.pattern_edit.setPlaceholderText("e.g., ${PROJECT_NAME}_${CUSTOM}_Folder or Shot_${COUNTER}")
+        else:
+            self.pattern_edit.setPlaceholderText("e.g., ${PROJECT_NAME}_${CUSTOM}_TRAILER (extension auto-added)")
         self.pattern_edit.textChanged.connect(self.update_preview)
         self.pattern_edit.setStyleSheet(f"""
             QLineEdit {{
@@ -1650,70 +1734,886 @@ class CustomPatternsDialog(QDialog):
         """)
         layout.addWidget(self.pattern_edit)
         
-        # Buttons at the bottom
+        # Custom options group (hidden by default)
+        self.custom_options_group = QGroupBox("Custom Dropdown Options")
+        self.custom_options_group.setVisible(False)
+        self.custom_options_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                border: 2px solid {colors['border']};
+                border-radius: 8px;
+                margin-top: 10px;
+                padding-top: 10px;
+                color: {colors['text']};
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 8px 0 8px;
+                color: {colors['text']};
+                background-color: {colors['bg']};
+            }}
+        """)
+        custom_layout = QVBoxLayout()
+        
+        custom_help = QLabel("Configure options for each CUSTOM placeholder:")
+        custom_help.setStyleSheet(f"""
+            color: {colors['secondary_text']};
+            background-color: transparent;
+            border: none;
+            padding: 5px 0px;
+        """)
+        custom_layout.addWidget(custom_help)
+        
+        # Container for custom option editors - will be populated dynamically
+        self.custom_editors_container = QWidget()
+        self.custom_editors_layout = QVBoxLayout(self.custom_editors_container)
+        self.custom_editors_layout.setContentsMargins(0, 0, 0, 0)
+        self.custom_editors_layout.setSpacing(10)
+        custom_layout.addWidget(self.custom_editors_container)
+        
+        # Store custom option editors
+        self.custom_option_editors = {}
+        
+        self.custom_options_group.setLayout(custom_layout)
+        layout.addWidget(self.custom_options_group)
+        
+        # Date format options group (hidden by default)
+        self.date_format_group = QGroupBox("Date Format Options (for ${DATE})")
+        self.date_format_group.setVisible(False)
+        self.date_format_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                border: 2px solid {colors['border']};
+                border-radius: 8px;
+                margin-top: 10px;
+                padding-top: 10px;
+                color: {colors['text']};
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 8px 0 8px;
+                color: {colors['text']};
+                background-color: {colors['bg']};
+            }}
+        """)
+        date_layout = QVBoxLayout()
+        
+        date_help = QLabel("Choose how the ${DATE} tag will be formatted:")
+        date_help.setStyleSheet(f"""
+            color: {colors['secondary_text']};
+            background-color: transparent;
+            border: none;
+            padding: 5px 0px;
+        """)
+        date_layout.addWidget(date_help)
+        
+        self.date_format_combo = QComboBox()
+        self.date_format_combo.addItems([
+            "YYYYMMDD (20240115)",
+            "YYYY_MM_DD (2024_01_15)",
+            "YYYY-MM-DD (2024-01-15)",
+            "YYYY.MM.DD (2024.01.15)",
+            "YYYY MM DD (2024 01 15)",
+            "MM_DD_YYYY (01_15_2024)",
+            "MM-DD-YYYY (01-15-2024)",
+            "MM.DD.YYYY (01.15.2024)",
+            "MM DD YYYY (01 15 2024)",
+            "DD_MM_YYYY (15_01_2024)",
+            "DD-MM-YYYY (15-01-2024)",
+            "DD.MM.YYYY (15.01.2024)",
+            "DD MM YYYY (15 01 2024)"
+        ])
+        self.date_format_combo.setStyleSheet(COMBOBOX_STYLE)
+        self.date_format_combo.currentTextChanged.connect(self.update_preview)
+        date_layout.addWidget(self.date_format_combo)
+        
+        self.date_format_group.setLayout(date_layout)
+        layout.addWidget(self.date_format_group)
+        
+        # Time format options group (hidden by default)
+        self.time_format_group = QGroupBox("Time Format Options (for ${TIME})")
+        self.time_format_group.setVisible(False)
+        self.time_format_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                border: 2px solid {colors['border']};
+                border-radius: 8px;
+                margin-top: 10px;
+                padding-top: 10px;
+                color: {colors['text']};
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 8px 0 8px;
+                color: {colors['text']};
+                background-color: {colors['bg']};
+            }}
+        """)
+        time_layout = QVBoxLayout()
+        
+        time_help = QLabel("Choose how the ${TIME} tag will be formatted:")
+        time_help.setStyleSheet(f"""
+            color: {colors['secondary_text']};
+            background-color: transparent;
+            border: none;
+            padding: 5px 0px;
+        """)
+        time_layout.addWidget(time_help)
+        
+        self.time_format_combo = QComboBox()
+        self.time_format_combo.addItems([
+            "HHMMSS (143022)",
+            "HH_MM_SS (14_30_22)",
+            "HH-MM-SS (14-30-22)",
+            "HH.MM.SS (14.30.22)",
+            "HH MM SS (14 30 22)",
+            "HHMM (1430)",
+            "HH_MM (14_30)",
+            "HH-MM (14-30)",
+            "HH.MM (14.30)",
+            "HH MM (14 30)"
+        ])
+        self.time_format_combo.setStyleSheet(COMBOBOX_STYLE)
+        self.time_format_combo.currentTextChanged.connect(self.update_preview)
+        time_layout.addWidget(self.time_format_combo)
+        
+        self.time_format_group.setLayout(time_layout)
+        layout.addWidget(self.time_format_group)
+        
+        # Sequence settings group (hidden by default, only for folders)
+        if self.is_folder:
+            self.sequence_group = QGroupBox("Sequence Settings (for ${COUNTER})")
+            self.sequence_group.setVisible(False)
+            self.sequence_group.setStyleSheet(f"""
+                QGroupBox {{
+                    font-weight: bold;
+                    border: 2px solid {colors['border']};
+                    border-radius: 8px;
+                    margin-top: 10px;
+                    padding-top: 10px;
+                    color: {colors['text']};
+                }}
+                QGroupBox::title {{
+                    subcontrol-origin: margin;
+                    left: 10px;
+                    padding: 0 8px 0 8px;
+                    color: {colors['text']};
+                    background-color: {colors['bg']};
+                }}
+            """)
+            seq_layout = QHBoxLayout()
+            self.seq_start = QSpinBox(); self.seq_start.setMinimum(1); self.seq_start.setValue(1)
+            self.seq_count = QSpinBox(); self.seq_count.setMinimum(1); self.seq_count.setValue(5)
+            self.seq_padding = QSpinBox(); self.seq_padding.setMinimum(1); self.seq_padding.setMaximum(10); self.seq_padding.setValue(3)
+            seq_layout.addWidget(QLabel("Start:")); seq_layout.addWidget(self.seq_start)
+            seq_layout.addWidget(QLabel("Count:")); seq_layout.addWidget(self.seq_count)
+            seq_layout.addWidget(QLabel("Padding:")); seq_layout.addWidget(self.seq_padding)
+            self.sequence_group.setLayout(seq_layout)
+            layout.addWidget(self.sequence_group)
+        
+        # Preview
+        preview_header = QLabel("Preview:")
+        preview_header.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        preview_header.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            margin-bottom: 5px;
+        """)
+        layout.addWidget(preview_header)
+        
+        self.preview_label = QLabel("Preview will appear here once you create a pattern above")
+        self.preview_label.setMinimumHeight(60)
+        self.preview_label.setWordWrap(True)
+        self.preview_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.preview_label.setStyleSheet(f"""
+            background-color: {colors['card_bg_alt']};
+            color: {colors['text']};
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid {colors['border']};
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        """)
+        layout.addWidget(self.preview_label)
+        
+        # Buttons
         button_layout = QHBoxLayout()
-        button_layout.setSpacing(10)
+        button_layout.setSpacing(15)
+        button_layout.setContentsMargins(0, 20, 0, 0)  # Add top margin
         
         cancel_button = QPushButton("Cancel")
         cancel_button.clicked.connect(self.reject)
         cancel_button.setStyleSheet(BUTTON_STYLE)
+        cancel_button.setMinimumSize(120, 40)
         button_layout.addWidget(cancel_button)
         
         button_layout.addStretch()
         
         apply_button = QPushButton("Apply Pattern")
-        apply_button.clicked.connect(self.accept)
+        apply_button.clicked.connect(self.on_apply)
         apply_button.setDefault(True)
-        apply_button.setStyleSheet(ACCENT_BUTTON_STYLE)  # Blue button as requested
+        apply_button.setStyleSheet(ACCENT_BUTTON_STYLE)
+        apply_button.setMinimumSize(140, 40)
         button_layout.addWidget(apply_button)
-        
         layout.addLayout(button_layout)
         
-        # Focus on the pattern input
         self.pattern_edit.setFocus()
+
+    def _on_separator_changed(self):
+        """Handle separator selection change"""
+        separator_text = self.separator_combo.currentText()
+        if separator_text == "Custom...":
+            self.custom_separator_edit.setVisible(True)
+            self.custom_separator_edit.setFocus()
+        else:
+            self.custom_separator_edit.setVisible(False)
+        
+        # Auto-update existing pattern to use new separator
+        self._update_pattern_separators()
+        self.update_preview()
     
+    def _on_custom_separator_changed(self):
+        """Handle custom separator text change"""
+        # Auto-update existing pattern to use new custom separator
+        self._update_pattern_separators()
+        self.update_preview()
+    
+    def _update_pattern_separators(self):
+        """Update existing pattern to use the currently selected separator as master switch"""
+        current_pattern = self.pattern_edit.text()
+        if not current_pattern:
+            return
+        
+        # Get the new separator
+        new_separator = self._get_current_separator()
+        
+        # Update pattern separators between variables
+        self._update_pattern_variable_separators(current_pattern, new_separator)
+        
+        # Update date and time format dropdowns to match separator (master switch)
+        self._update_datetime_formats_to_separator(new_separator)
+    
+    def _update_pattern_variable_separators(self, current_pattern, new_separator):
+        """Update separators between variables in the pattern"""
+        import re
+        variables = re.findall(r'\$\{[A-Z_]+\}', current_pattern)
+        if len(variables) < 2:
+            return  # No need to add separators for single variables
+        
+        pattern = current_pattern
+        
+        # Replace all separators between variables with new separator
+        for i in range(len(variables) - 1):
+            var1 = variables[i]
+            var2 = variables[i + 1]
+            
+            var1_end = pattern.find(var1) + len(var1)
+            var2_start = pattern.find(var2, var1_end)
+            
+            if var2_start > var1_end:
+                # There's something between variables, replace it with new separator
+                between_text = pattern[var1_end:var2_start]
+                # Replace any separator characters with new separator
+                if re.match(r'^[_\-\.\s]+$', between_text):
+                    pattern = pattern[:var1_end] + new_separator + pattern[var2_start:]
+                    # Recalculate positions after replacement
+                    variables = re.findall(r'\$\{[A-Z_]+\}', pattern)
+            elif var2_start == var1_end:
+                # Variables are consecutive, add separator
+                pattern = pattern[:var1_end] + new_separator + pattern[var2_start:]
+                # Recalculate positions after insertion
+                variables = re.findall(r'\$\{[A-Z_]+\}', pattern)
+        
+        self.pattern_edit.setText(pattern)
+    
+    def _update_datetime_formats_to_separator(self, separator):
+        """Update date and time format dropdowns to match the separator (master switch)"""
+        # Update date format to match separator
+        if "${DATE}" in self.pattern_edit.text():
+            current_date_format = self.date_format_combo.currentText()
+            new_date_format = self._convert_format_to_separator(current_date_format, separator, is_date=True)
+            
+            # Find and set the matching format in dropdown
+            for i in range(self.date_format_combo.count()):
+                dropdown_format = self.date_format_combo.itemText(i).split(' (')[0]
+                if dropdown_format == new_date_format:
+                    self.date_format_combo.setCurrentIndex(i)
+                    break
+        
+        # Update time format to match separator  
+        if "${TIME}" in self.pattern_edit.text():
+            current_time_format = self.time_format_combo.currentText()
+            new_time_format = self._convert_format_to_separator(current_time_format, separator, is_date=False)
+            
+            # Find and set the matching format in dropdown
+            for i in range(self.time_format_combo.count()):
+                dropdown_format = self.time_format_combo.itemText(i).split(' (')[0]
+                if dropdown_format == new_time_format:
+                    self.time_format_combo.setCurrentIndex(i)
+                    break
+    
+    def _convert_format_to_separator(self, current_format, new_separator, is_date=True):
+        """Convert a date/time format to use the new separator"""
+        # Extract the format pattern from the display text (before the parentheses)
+        format_pattern = current_format.split(' (')[0]
+        
+        if is_date:
+            # Date format conversion - match exact dropdown options
+            if format_pattern == "YYYYMMDD":
+                return "YYYYMMDD"  # No separator format stays the same
+            elif format_pattern.startswith("YYYY"):
+                return f"YYYY{new_separator}MM{new_separator}DD"
+            elif format_pattern.startswith("MM"):
+                return f"MM{new_separator}DD{new_separator}YYYY"
+            elif format_pattern.startswith("DD"):
+                return f"DD{new_separator}MM{new_separator}YYYY"
+        else:
+            # Time format conversion - match exact dropdown options
+            if format_pattern == "HHMMSS":
+                return "HHMMSS"  # No separator format stays the same
+            elif format_pattern == "HHMM":
+                return "HHMM"  # No separator format stays the same
+            elif "SS" in format_pattern:  # Has seconds
+                return f"HH{new_separator}MM{new_separator}SS"
+            else:  # Just hours and minutes
+                return f"HH{new_separator}MM"
+        
+        return format_pattern  # Return original if no conversion needed
+    
+    def _get_current_separator(self):
+        """Get the currently selected separator"""
+        separator_text = self.separator_combo.currentText()
+        if separator_text == "Custom...":
+            return self.custom_separator_edit.text() or "_"
+        elif separator_text.startswith("_ "):
+            return "_"
+        elif separator_text.startswith("- "):
+            return "-"
+        elif separator_text.startswith(". "):
+            return "."
+        elif separator_text.startswith("  "):
+            return " "
+        else:
+            return "_"  # Default fallback
+    
+    def _detect_manual_separators(self, pattern):
+        """Detect if user has manually added separators in the pattern"""
+        # Check if pattern contains separators between variables
+        import re
+        variables = re.findall(r'\$\{[A-Z_]+\}', pattern)
+        if len(variables) < 2:
+            return False
+        
+        # Check for separators between consecutive variables
+        for i in range(len(variables) - 1):
+            var1_end = pattern.find(variables[i]) + len(variables[i])
+            var2_start = pattern.find(variables[i + 1], var1_end)
+            between_text = pattern[var1_end:var2_start]
+            if between_text.strip():  # If there's text between variables
+                return True
+        return False
+
     def insert_tag(self, tag):
-        """Insert a tag at the cursor position in the pattern edit field"""
         cursor_pos = self.pattern_edit.cursorPosition()
         current_text = self.pattern_edit.text()
         
-        # Insert the tag at cursor position
+        # Check if we should add separator automatically
+        separator = self._get_current_separator()
+        
+        # If there's already text and we're not at the beginning, add separator
+        if current_text and cursor_pos > 0 and not current_text[cursor_pos-1] in ['_', '-', '.', ' ']:
+            # Don't add separator if user has manually added separators
+            if not self._detect_manual_separators(current_text):
+                tag = separator + tag
+        
         new_text = current_text[:cursor_pos] + tag + current_text[cursor_pos:]
         self.pattern_edit.setText(new_text)
-        
-        # Move cursor to after the inserted tag
         self.pattern_edit.setCursorPosition(cursor_pos + len(tag))
-        
-        # Return focus to the input field
         self.pattern_edit.setFocus()
-    
+        self.update_preview()
+
     def update_preview(self):
-        """Update the preview based on current pattern"""
         pattern = self.pattern_edit.text()
         if not pattern:
-            self.preview_label.setText("Preview will appear here once you create a pattern below")
+            self.preview_label.setText("Preview will appear here once you create a pattern above")
+            self.custom_options_group.setVisible(False)
+            self.date_format_group.setVisible(False)
+            self.time_format_group.setVisible(False)
+            if hasattr(self, 'sequence_group'):
+                self.sequence_group.setVisible(False)
             return
         
-        # Create preview with sample data
-        preview = pattern
-        preview = preview.replace('${PROJECT_NAME}', 'MyProject')
-        preview = preview.replace('${BASE}', 'filename')
-        preview = preview.replace('${EXT}', '.txt')
-        preview = preview.replace('${VERSION}', 'v01')
-        preview = preview.replace('${DATE}', datetime.datetime.now().strftime('%Y%m%d'))
-        preview = preview.replace('${TIME}', datetime.datetime.now().strftime('%H%M%S'))
-        preview = preview.replace('${COUNTER}', '001')
-        preview = preview.replace('${CUSTOM}', 'custom')
+        # Check for any custom placeholders (CUSTOM, CUSTOM1, CUSTOM2, etc.)
+        import re
+        custom_matches = re.findall(r'\$\{CUSTOM\d*\}', pattern)
+        has_custom = len(custom_matches) > 0
         
-        self.preview_label.setText(f"Preview: {preview}")
+        # Show custom options group if any ${CUSTOM} variants are present
+        if has_custom:
+            self.custom_options_group.setVisible(True)
+            self._update_custom_editors(custom_matches)
+        else:
+            self.custom_options_group.setVisible(False)
+            self._clear_custom_editors()
+        
+        # Show date format group if ${DATE} is present
+        if "${DATE}" in pattern:
+            self.date_format_group.setVisible(True)
+        else:
+            self.date_format_group.setVisible(False)
+        
+        # Show time format group if ${TIME} is present
+        if "${TIME}" in pattern:
+            self.time_format_group.setVisible(True)
+        else:
+            self.time_format_group.setVisible(False)
+        
+        # Show sequence group if ${COUNTER} is present and this is a folder
+        if self.is_folder and "${COUNTER}" in pattern:
+            self.sequence_group.setVisible(True)
+            start = self.seq_start.value()
+            count = self.seq_count.value()
+            padding = self.seq_padding.value()
+            preview = []
+            for i in range(start, start + min(count, 5)):
+                counter_str = str(i).zfill(padding)
+                sample_preview = self._generate_sample_preview(pattern.replace("${COUNTER}", counter_str))
+                preview.append(sample_preview)
+            self.preview_label.setText("\n".join(preview))
+        else:
+            if hasattr(self, 'sequence_group'):
+                self.sequence_group.setVisible(False)
+            preview = self._generate_sample_preview(pattern)
+            self.preview_label.setText(f"Preview: {preview}")
     
-    def get_pattern_data(self):
-        """Get the configured pattern data"""
-        return {
+    def _update_custom_editors(self, custom_placeholders):
+        """Update the custom option editors based on placeholders found in pattern"""
+        from app.ui.color_scheme_pyqt import colors
+        
+        # Clear existing editors
+        self._clear_custom_editors()
+        
+        # Create editor for each unique placeholder
+        unique_placeholders = list(set(custom_placeholders))
+        unique_placeholders.sort()  # Sort for consistent order
+        
+        for placeholder in unique_placeholders:
+            placeholder_name = placeholder.replace('${', '').replace('}', '')  # Remove ${ }
+            
+            # Create container for this placeholder's editor
+            editor_widget = QWidget()
+            editor_layout = QVBoxLayout(editor_widget)
+            editor_layout.setContentsMargins(0, 0, 0, 0)
+            editor_layout.setSpacing(5)
+            
+            # Label for this placeholder
+            label = QLabel(f"Options for {placeholder}:")
+            label.setStyleSheet(f"""
+                color: {colors['text']};
+                font-weight: bold;
+                background-color: transparent;
+                border: none;
+            """)
+            editor_layout.addWidget(label)
+            
+            # Text editor for options
+            text_edit = QTextEdit()
+            text_edit.setPlaceholderText(f"Enter options for {placeholder} (one per line):\nROUGH\nFINAL\nREVIEW")
+            text_edit.setMinimumHeight(80)
+            text_edit.setMaximumHeight(120)
+            text_edit.setStyleSheet(f"""
+                QTextEdit {{
+                    background-color: {colors['card_bg']};
+                    color: {colors['text']};
+                    border: 1px solid {colors['border']};
+                    border-radius: 4px;
+                    padding: 8px;
+                    font-size: 13px;
+                }}
+            """)
+            text_edit.textChanged.connect(self.update_preview)
+            editor_layout.addWidget(text_edit)
+            
+            # Store the editor
+            self.custom_option_editors[placeholder_name] = text_edit
+            
+            # Add to layout
+            self.custom_editors_layout.addWidget(editor_widget)
+    
+    def _clear_custom_editors(self):
+        """Clear all custom option editors"""
+        # Remove all widgets from layout
+        for i in reversed(range(self.custom_editors_layout.count())):
+            child = self.custom_editors_layout.itemAt(i).widget()
+            if child:
+                child.setParent(None)
+        
+        # Clear the editors dictionary
+        self.custom_option_editors.clear()
+
+    def _generate_sample_preview(self, pattern):
+        """Generate a sample preview for the pattern"""
+        preview = pattern
+        
+        # Get formatted date/time values based on user selection
+        now = datetime.datetime.now()
+        separator = self._get_current_separator()
+        
+        # Auto-adjust date/time formats to match separator if not manually set
+        manual_separators = self._detect_manual_separators(pattern)
+        
+        # Format date based on selection or auto-adjust to separator
+        if "${DATE}" in pattern:
+            date_format_text = self.date_format_combo.currentText()
+            
+            # If user hasn't manually set separators, auto-adjust format to match separator
+            if not manual_separators and separator != "_":
+                if separator == "-":
+                    date_str = now.strftime('%Y-%m-%d')
+                elif separator == ".":
+                    date_str = now.strftime('%Y.%m.%d')
+                elif separator == " ":
+                    date_str = now.strftime('%Y %m %d')
+                else:
+                    date_str = now.strftime('%Y_%m_%d')  # Default to underscore
+            else:
+                # Use user's explicit format choice
+                if "YYYYMMDD" in date_format_text:
+                    date_str = now.strftime('%Y%m%d')
+                elif "YYYY_MM_DD" in date_format_text:
+                    date_str = now.strftime('%Y_%m_%d')
+                elif "YYYY-MM-DD" in date_format_text:
+                    date_str = now.strftime('%Y-%m-%d')
+                elif "YYYY.MM.DD" in date_format_text:
+                    date_str = now.strftime('%Y.%m.%d')
+                elif "YYYY MM DD" in date_format_text:
+                    date_str = now.strftime('%Y %m %d')
+                elif "MM_DD_YYYY" in date_format_text:
+                    date_str = now.strftime('%m_%d_%Y')
+                elif "MM-DD-YYYY" in date_format_text:
+                    date_str = now.strftime('%m-%d-%Y')
+                elif "MM.DD.YYYY" in date_format_text:
+                    date_str = now.strftime('%m.%d.%Y')
+                elif "MM DD YYYY" in date_format_text:
+                    date_str = now.strftime('%m %d %Y')
+                elif "DD_MM_YYYY" in date_format_text:
+                    date_str = now.strftime('%d_%m_%Y')
+                elif "DD-MM-YYYY" in date_format_text:
+                    date_str = now.strftime('%d-%m-%Y')
+                elif "DD.MM.YYYY" in date_format_text:
+                    date_str = now.strftime('%d.%m.%Y')
+                elif "DD MM YYYY" in date_format_text:
+                    date_str = now.strftime('%d %m %Y')
+                else:
+                    date_str = now.strftime('%Y%m%d')  # Default
+        else:
+            date_str = now.strftime('%Y%m%d')
+        
+        # Format time based on selection or auto-adjust to separator
+        if "${TIME}" in pattern:
+            time_format_text = self.time_format_combo.currentText()
+            
+            # If user hasn't manually set separators, auto-adjust format to match separator
+            if not manual_separators and separator != "_":
+                if separator == "-":
+                    time_str = now.strftime('%H-%M-%S')
+                elif separator == ".":
+                    time_str = now.strftime('%H.%M.%S')
+                elif separator == " ":
+                    time_str = now.strftime('%H %M %S')
+                else:
+                    time_str = now.strftime('%H_%M_%S')  # Default to underscore
+            else:
+                # Use user's explicit format choice
+                if "HHMMSS" in time_format_text:
+                    time_str = now.strftime('%H%M%S')
+                elif "HH_MM_SS" in time_format_text:
+                    time_str = now.strftime('%H_%M_%S')
+                elif "HH-MM-SS" in time_format_text:
+                    time_str = now.strftime('%H-%M-%S')
+                elif "HH.MM.SS" in time_format_text:
+                    time_str = now.strftime('%H.%M.%S')
+                elif "HH MM SS" in time_format_text:
+                    time_str = now.strftime('%H %M %S')
+                elif "HHMM" in time_format_text:
+                    time_str = now.strftime('%H%M')
+                elif "HH_MM" in time_format_text:
+                    time_str = now.strftime('%H_%M')
+                elif "HH-MM" in time_format_text:
+                    time_str = now.strftime('%H-%M')
+                elif "HH.MM" in time_format_text:
+                    time_str = now.strftime('%H.%M')
+                elif "HH MM" in time_format_text:
+                    time_str = now.strftime('%H %M')
+                else:
+                    time_str = now.strftime('%H%M%S')  # Default
+        else:
+            time_str = now.strftime('%H%M%S')
+        
+        # Replace basic placeholders
+        preview = preview.replace('${PROJECT_NAME}', 'MyProject')
+        preview = preview.replace('${DATE}', date_str)
+        preview = preview.replace('${TIME}', time_str)
+        
+        if not self.is_folder:
+            # For files, use original filename parts and auto-add extension
+            original_name = self.item.text(0)
+            if '.' in original_name:
+                base, ext = os.path.splitext(original_name)
+                preview = preview.replace('${BASE}', base)
+                # Automatically append extension if not already present
+                if not preview.endswith(ext):
+                    preview += ext
+            else:
+                preview = preview.replace('${BASE}', original_name)
+        
+        # Handle custom options - support multiple CUSTOM placeholders with dedicated editors
+        import re
+        custom_matches = re.findall(r'\$\{(CUSTOM\d*)\}', preview)
+        if custom_matches:
+            for match in custom_matches:
+                placeholder = f"${{{match}}}"
+                
+                # Get options from the specific editor for this placeholder
+                if match in self.custom_option_editors:
+                    editor = self.custom_option_editors[match]
+                    custom_options = editor.toPlainText().strip().split('\n')
+                    custom_options = [opt.strip() for opt in custom_options if opt.strip()]
+                    
+                    if custom_options:
+                        # Use the first option as preview
+                        replacement = custom_options[0]
+                    else:
+                        replacement = f"[{match}]"
+                else:
+                    replacement = f"[{match}]"
+                
+                preview = preview.replace(placeholder, replacement)
+        
+        return preview
+
+    def validate_pattern(self):
+        pattern = self.pattern_edit.text()
+        errors = []
+        sequence = None
+        custom_options = []
+        
+        # Validate sequence settings for folders
+        if self.is_folder and "${COUNTER}" in pattern:
+            sequence = {
+                'start': self.seq_start.value(),
+                'count': self.seq_count.value(),
+                'padding': self.seq_padding.value()
+            }
+            if not all(isinstance(sequence[k], int) and sequence[k] > 0 for k in ("start", "count", "padding")):
+                errors.append("All sequence fields must be positive integers.")
+        
+        # Validate custom options - support multiple CUSTOM placeholders with dedicated editors
+        import re
+        custom_matches = re.findall(r'\$\{CUSTOM\d*\}', pattern)
+        if custom_matches:
+            # Check each placeholder has options
+            for match in custom_matches:
+                placeholder_name = match.replace('CUSTOM', 'CUSTOM') if match == 'CUSTOM' else match
+                
+                if placeholder_name in self.custom_option_editors:
+                    editor = self.custom_option_editors[placeholder_name]
+                    custom_text = editor.toPlainText().strip()
+                    
+                    if not custom_text:
+                        errors.append(f"Options are required for ${{{match}}}.")
+                    else:
+                        placeholder_options = [opt.strip() for opt in custom_text.split('\n') if opt.strip()]
+                        if not placeholder_options:
+                            errors.append(f"At least one option is required for ${{{match}}}.")
+                        # Store options for this specific placeholder
+                        if not custom_options:
+                            custom_options = {}
+                        custom_options[match] = placeholder_options
+                else:
+                    errors.append(f"No options configured for ${{{match}}}.")
+        
+        # Check for unsupported variables
+        if self.is_folder:
+            allowed_vars = ("PROJECT_NAME", "DATE", "TIME", "COUNTER", "CUSTOM", "CUSTOM1", "CUSTOM2", "CUSTOM3")
+        else:
+            allowed_vars = ("PROJECT_NAME", "BASE", "DATE", "TIME", "CUSTOM", "CUSTOM1", "CUSTOM2", "CUSTOM3")
+        
+        for var in re.findall(r"\$\{([A-Z_\d]+)\}", pattern):
+            if var not in allowed_vars:
+                if var in ("COUNTER", "VERSION") and not self.is_folder:
+                    errors.append(f"${{{var}}} is only available for folders, not files.")
+                else:
+                    errors.append(f"Unsupported variable: ${{{var}}}")
+        
+        return errors, sequence, custom_options
+
+    def on_apply(self):
+        errors, sequence, custom_options = self.validate_pattern()
+        if errors:
+            self.preview_label.setText("Validation error:\n" + "\n".join(errors))
+            self.preview_label.setStyleSheet("color: red;")
+            return
+        
+        self.pattern_data = {
             'pattern': self.pattern_edit.text(),
             'uses_custom_pattern': True,
             'rename_flag': True
         }
+        
+        if sequence:
+            self.pattern_data['sequence'] = sequence
+        
+        if custom_options:
+            self.pattern_data['custom_options'] = custom_options
+        
+        # Save date format preference
+        if "${DATE}" in self.pattern_edit.text():
+            self.pattern_data['date_format'] = self.date_format_combo.currentText()
+        
+        # Save time format preference
+        if "${TIME}" in self.pattern_edit.text():
+            self.pattern_data['time_format'] = self.time_format_combo.currentText()
+        
+        # Save separator preference
+        self.pattern_data['separator'] = self._get_current_separator()
+        self.pattern_data['separator_choice'] = self.separator_combo.currentText()
+        if self.separator_combo.currentText() == "Custom...":
+            self.pattern_data['custom_separator'] = self.custom_separator_edit.text()
+        
+        # --- Save pattern to item data for persistence ---
+        item_data = self.item.data(0, Qt.ItemDataRole.UserRole) or {}
+        item_data.update(self.pattern_data)
+        self.item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+        self.accept()
+
+    def get_pattern_data(self):
+        return self.pattern_data
+
+    def _load_existing_pattern_data(self):
+        """Load existing pattern data from the item if available"""
+        if not self.item:
+            return
+        
+        print(f"DEBUG: Loading existing pattern: {self.pattern_edit.text()}")
+        
+        # Get item data safely
+        item_data = self.item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(item_data, dict):
+            print(f"DEBUG: No valid item data found")
+            return
+        
+        # Check for pattern data in multiple locations with safety checks
+        pattern_data = None
+        
+        # Try to get from user_data first
+        user_data = item_data.get('user_data')
+        if isinstance(user_data, dict):
+            # Look for pattern data
+            if 'pattern' in user_data:
+                pattern_data = user_data
+                print(f"DEBUG: Found pattern data in user_data")
+            # Also check for nested user_data (avoid infinite recursion)
+            elif 'user_data' in user_data and isinstance(user_data['user_data'], dict):
+                nested_data = user_data['user_data']
+                if 'pattern' in nested_data:
+                    pattern_data = nested_data
+                    print(f"DEBUG: Found pattern data in nested user_data")
+        
+        # If no pattern data found, return early
+        if not pattern_data:
+            print(f"DEBUG: No existing pattern data found in item")
+            return
+        
+        # Load pattern safely
+        pattern = pattern_data.get('pattern', '')
+        if pattern:
+            print(f"DEBUG: Loading existing pattern: {pattern}")
+            self.pattern_edit.setText(pattern)
+        
+        # Load custom options safely
+        custom_options = pattern_data.get('custom_options', [])
+        if custom_options:
+            print(f"DEBUG: Loading existing custom options: {custom_options}")
+            # Handle both old format (list) and new format (dict)
+            if isinstance(custom_options, dict):
+                # New format - each placeholder has its own options
+                for placeholder, options in custom_options.items():
+                    if placeholder in self.custom_option_editors:
+                        editor = self.custom_option_editors[placeholder]
+                        if isinstance(options, list):
+                            editor.setPlainText('\n'.join(options))
+            elif isinstance(custom_options, list):
+                # Old format - single list of options, apply to first editor if available
+                if self.custom_option_editors:
+                    first_editor = next(iter(self.custom_option_editors.values()))
+                    first_editor.setPlainText('\n'.join(custom_options))
+        
+        # Load other settings safely
+        self._load_format_settings(pattern_data)
+        self._load_sequence_settings(pattern_data)
+        self._load_separator_settings(pattern_data)
+        
+        # Update preview to show loaded data
+        try:
+            self.update_preview()
+        except Exception as e:
+            print(f"DEBUG: Error updating preview after loading data: {e}")
+        
+        print(f"DEBUG: Successfully loaded pattern data from item")
+    
+    def _load_format_settings(self, pattern_data):
+        """Load date/time format settings safely"""
+        try:
+            # Load date format preference
+            date_format = pattern_data.get('date_format', '')
+            if date_format and hasattr(self, 'date_format_combo'):
+                index = self.date_format_combo.findText(date_format)
+                if index >= 0:
+                    self.date_format_combo.setCurrentIndex(index)
+            
+            # Load time format preference
+            time_format = pattern_data.get('time_format', '')
+            if time_format and hasattr(self, 'time_format_combo'):
+                index = self.time_format_combo.findText(time_format)
+                if index >= 0:
+                    self.time_format_combo.setCurrentIndex(index)
+        except Exception as e:
+            print(f"DEBUG: Error loading format settings: {e}")
+    
+    def _load_sequence_settings(self, pattern_data):
+        """Load sequence settings safely"""
+        try:
+            sequence = pattern_data.get('sequence', {})
+            if self.is_folder and hasattr(self, 'seq_start') and sequence:
+                self.seq_start.setValue(sequence.get('start', 1))
+                self.seq_count.setValue(sequence.get('count', 5))
+                self.seq_padding.setValue(sequence.get('padding', 3))
+        except Exception as e:
+            print(f"DEBUG: Error loading sequence settings: {e}")
+    
+    def _load_separator_settings(self, pattern_data):
+        """Load separator settings safely"""
+        try:
+            separator_choice = pattern_data.get('separator_choice', '_ (underscore)')
+            custom_separator = pattern_data.get('custom_separator', '')
+            
+            if separator_choice and hasattr(self, 'separator_combo'):
+                index = self.separator_combo.findText(separator_choice)
+                if index >= 0:
+                    self.separator_combo.setCurrentIndex(index)
+                    if (separator_choice == "Custom..." and 
+                        custom_separator and 
+                        hasattr(self, 'custom_separator_edit')):
+                        self.custom_separator_edit.setText(custom_separator)
+                        self.custom_separator_edit.setVisible(True)
+        except Exception as e:
+            print(f"DEBUG: Error loading separator settings: {e}")
 
 
 class VersioningDialog(QDialog):
@@ -1726,18 +2626,43 @@ class VersioningDialog(QDialog):
     
     def init_ui(self):
         """Initialize the user interface"""
+        from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
         self.setWindowTitle("Configure Versioning")
-        self.setMinimumSize(500, 400)
+        self.setMinimumSize(500, 500)
+        self.resize(600, 600)
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {colors['bg']};
+                color: {colors['text']};
+            }}
+        """)
         
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(20)
         
         # Title
         title = QLabel("File Versioning Configuration")
-        title.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        title.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        title.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            margin-bottom: 10px;
+        """)
         layout.addWidget(title)
         
         # Versioning format
         format_label = QLabel("Version Format:")
+        format_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        format_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            margin-bottom: 5px;
+        """)
         layout.addWidget(format_label)
         
         self.format_combo = QComboBox()
@@ -1750,35 +2675,145 @@ class VersioningDialog(QDialog):
             "001, 002, 003...",
             "_001, _002, _003..."
         ])
+        self.format_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
+                border-radius: 4px;
+                padding: 8px 30px 8px 12px;
+                font-size: 14px;
+                min-height: 20px;
+            }}
+            QComboBox:focus {{
+                border: 2px solid {colors['accent']};
+            }}
+            QComboBox:hover {{
+                border: 2px solid {colors['accent_hover']};
+            }}
+            QComboBox::drop-down {{
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 25px;
+                border: none;
+                border-top-right-radius: 3px;
+                border-bottom-right-radius: 3px;
+                background-color: {colors['card_bg_alt']};
+            }}
+            QComboBox::drop-down:hover {{
+                background-color: {colors['accent']};
+            }}
+            QComboBox::down-arrow {{
+                width: 12px;
+                height: 12px;
+                background: transparent;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 6px solid {colors['text']};
+                margin-top: 2px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                selection-background-color: {colors['accent']};
+                selection-color: {colors['text']};
+                outline: none;
+            }}
+        """)
         layout.addWidget(self.format_combo)
         
         # Starting number
         start_label = QLabel("Starting Number:")
+        start_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        start_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            margin-top: 10px;
+            margin-bottom: 5px;
+        """)
         layout.addWidget(start_label)
         
         self.start_spin = QSpinBox()
         self.start_spin.setMinimum(1)
         self.start_spin.setMaximum(999)
         self.start_spin.setValue(1)
+        self.start_spin.setStyleSheet(f"""
+            QSpinBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
+                border-radius: 4px;
+                padding: 8px;
+                font-size: 14px;
+            }}
+            QSpinBox:focus {{
+                border: 2px solid {colors['accent']};
+            }}
+        """)
         layout.addWidget(self.start_spin)
         
         # Number of versions
         count_label = QLabel("Number of Versions to Generate:")
+        count_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        count_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            margin-top: 10px;
+            margin-bottom: 5px;
+        """)
         layout.addWidget(count_label)
         
         self.count_spin = QSpinBox()
         self.count_spin.setMinimum(1)
         self.count_spin.setMaximum(50)
         self.count_spin.setValue(5)
+        self.count_spin.setStyleSheet(f"""
+            QSpinBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
+                border-radius: 4px;
+                padding: 8px;
+                font-size: 14px;
+            }}
+            QSpinBox:focus {{
+                border: 2px solid {colors['accent']};
+            }}
+        """)
         layout.addWidget(self.count_spin)
         
         # Preview
         preview_label = QLabel("Preview:")
+        preview_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        preview_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            margin-top: 10px;
+            margin-bottom: 5px;
+        """)
         layout.addWidget(preview_label)
         
         self.preview_text = QTextEdit()
         self.preview_text.setMaximumHeight(120)
         self.preview_text.setReadOnly(True)
+        self.preview_text.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 4px;
+                padding: 12px;
+                font-family: 'Courier New', monospace;
+                font-size: 12px;
+            }}
+        """)
         layout.addWidget(self.preview_text)
         
         # Connect signals
@@ -1791,13 +2826,19 @@ class VersioningDialog(QDialog):
         
         # Buttons
         button_layout = QHBoxLayout()
+        button_layout.setSpacing(10)
+        button_layout.addStretch()  # Push buttons to the right
         
         cancel_button = QPushButton("Cancel")
         cancel_button.clicked.connect(self.reject)
+        cancel_button.setStyleSheet(BUTTON_STYLE)
+        cancel_button.setMinimumSize(100, 35)
         button_layout.addWidget(cancel_button)
         
         apply_button = QPushButton("Apply Versioning")
         apply_button.clicked.connect(self.accept)
+        apply_button.setStyleSheet(ACCENT_BUTTON_STYLE)
+        apply_button.setMinimumSize(150, 35)
         button_layout.addWidget(apply_button)
         
         layout.addLayout(button_layout)
@@ -1870,77 +2911,323 @@ class DateSequenceDialog(QDialog):
     
     def init_ui(self):
         """Initialize the user interface"""
+        from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
+        self.setWindowTitle("Date Sequence Configuration")
+        self.setMinimumSize(500, 600)
+        self.resize(600, 700)
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {colors['bg']};
+                color: {colors['text']};
+            }}
+        """)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(20)
         
         # Title
         title = QLabel("Date Sequence Configuration")
-        title.setFont(QFont("Arial", 14, QFont.Weight.Bold))
+        title.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        title.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            margin-bottom: 10px;
+        """)
         layout.addWidget(title)
         
         # Date format
         format_label = QLabel("Date Format:")
+        format_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        format_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            margin-bottom: 5px;
+        """)
         layout.addWidget(format_label)
         
         self.format_combo = QComboBox()
         self.format_combo.addItems([
-            "YYYY-MM-DD",
+            "YYYY_MM_DD",
             "YYYYMMDD", 
+            "MM_DD_YYYY",
+            "DD_MM_YYYY",
+            "YYYY-MM-DD",
             "MM-DD-YYYY",
             "DD-MM-YYYY",
-            "YYYY/MM/DD",
-            "MM/DD/YYYY",
-            "DD/MM/YYYY",
-            "Mon DD, YYYY",
-            "DD Mon YYYY"
+            "YYYY.MM.DD",
+            "MM.DD.YYYY",
+            "DD.MM.YYYY",
+            "YYYY MM DD",
+            "MM DD YYYY",
+            "DD MM YYYY"
         ])
+        self.format_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
+                border-radius: 4px;
+                padding: 8px 30px 8px 12px;
+                font-size: 14px;
+                min-height: 20px;
+            }}
+            QComboBox:focus {{
+                border: 2px solid {colors['accent']};
+            }}
+            QComboBox:hover {{
+                border: 2px solid {colors['accent_hover']};
+            }}
+            QComboBox::drop-down {{
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 25px;
+                border: none;
+                border-top-right-radius: 3px;
+                border-bottom-right-radius: 3px;
+                background-color: {colors['card_bg_alt']};
+            }}
+            QComboBox::drop-down:hover {{
+                background-color: {colors['accent']};
+            }}
+            QComboBox::down-arrow {{
+                width: 12px;
+                height: 12px;
+                background: transparent;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 6px solid {colors['text']};
+                margin-top: 2px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                selection-background-color: {colors['accent']};
+                selection-color: {colors['text']};
+                outline: none;
+            }}
+        """)
         layout.addWidget(self.format_combo)
         
         # Date range
+        range_label = QLabel("Date Range:")
+        range_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        range_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            margin-top: 10px;
+            margin-bottom: 5px;
+        """)
+        layout.addWidget(range_label)
+        
         range_layout = QHBoxLayout()
+        range_layout.setSpacing(15)
         
         start_label = QLabel("Start Date:")
+        start_label.setStyleSheet(f"color: {colors['text']};")
         range_layout.addWidget(start_label)
         
         self.start_date = QDateEdit()
         self.start_date.setDate(QDate.currentDate())
         self.start_date.setCalendarPopup(True)
+        self.start_date.setStyleSheet(f"""
+            QDateEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
+                border-radius: 4px;
+                padding: 8px;
+                font-size: 14px;
+            }}
+            QDateEdit:focus {{
+                border: 2px solid {colors['accent']};
+            }}
+        """)
         range_layout.addWidget(self.start_date)
         
         end_label = QLabel("End Date:")
+        end_label.setStyleSheet(f"color: {colors['text']};")
         range_layout.addWidget(end_label)
         
         self.end_date = QDateEdit()
         self.end_date.setDate(QDate.currentDate().addDays(7))
         self.end_date.setCalendarPopup(True)
+        self.end_date.setStyleSheet(f"""
+            QDateEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
+                border-radius: 4px;
+                padding: 8px;
+                font-size: 14px;
+            }}
+            QDateEdit:focus {{
+                border: 2px solid {colors['accent']};
+            }}
+        """)
         range_layout.addWidget(self.end_date)
         
         layout.addLayout(range_layout)
         
         # Interval
-        interval_layout = QHBoxLayout()
+        interval_header = QLabel("Interval:")
+        interval_header.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        interval_header.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            margin-top: 10px;
+            margin-bottom: 5px;
+        """)
+        layout.addWidget(interval_header)
         
-        interval_label = QLabel("Interval:")
+        interval_layout = QHBoxLayout()
+        interval_layout.setSpacing(15)
+        
+        interval_label = QLabel("Every:")
+        interval_label.setStyleSheet(f"color: {colors['text']};")
         interval_layout.addWidget(interval_label)
         
         self.interval_spin = QSpinBox()
         self.interval_spin.setMinimum(1)
         self.interval_spin.setMaximum(365)
         self.interval_spin.setValue(1)
+        self.interval_spin.setStyleSheet(f"""
+            QSpinBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
+                border-radius: 4px;
+                padding: 8px;
+                font-size: 14px;
+            }}
+            QSpinBox:focus {{
+                border: 2px solid {colors['accent']};
+            }}
+        """)
         interval_layout.addWidget(self.interval_spin)
         
         self.interval_combo = QComboBox()
         self.interval_combo.addItems(["Days", "Weeks", "Months"])
+        self.interval_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
+                border-radius: 4px;
+                padding: 8px 30px 8px 12px;
+                font-size: 14px;
+                min-height: 20px;
+            }}
+            QComboBox:focus {{
+                border: 2px solid {colors['accent']};
+            }}
+            QComboBox:hover {{
+                border: 2px solid {colors['accent_hover']};
+            }}
+            QComboBox::drop-down {{
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 25px;
+                border: none;
+                border-top-right-radius: 3px;
+                border-bottom-right-radius: 3px;
+                background-color: {colors['card_bg_alt']};
+            }}
+            QComboBox::drop-down:hover {{
+                background-color: {colors['accent']};
+            }}
+            QComboBox::down-arrow {{
+                width: 12px;
+                height: 12px;
+                background: transparent;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 6px solid {colors['text']};
+                margin-top: 2px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                selection-background-color: {colors['accent']};
+                selection-color: {colors['text']};
+                outline: none;
+            }}
+        """)
         interval_layout.addWidget(self.interval_combo)
         
         layout.addLayout(interval_layout)
         
+        # Date/Time placement options
+        placement_header = QLabel("Date/Time Placement:")
+        placement_header.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        placement_header.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            margin-top: 10px;
+            margin-bottom: 5px;
+        """)
+        layout.addWidget(placement_header)
+        
+        placement_help = QLabel("Choose where to place date/time relative to PROJECT_NAME:")
+        placement_help.setStyleSheet(f"color: {colors['secondary_text']};")
+        layout.addWidget(placement_help)
+        
+        from PyQt6.QtWidgets import QRadioButton, QButtonGroup
+        self.datetime_button_group = QButtonGroup()
+        
+        self.datetime_prefix_radio = QRadioButton("Before PROJECT_NAME (e.g., 20240115_MyProject)")
+        self.datetime_suffix_radio = QRadioButton("After PROJECT_NAME (e.g., MyProject_20240115)")
+        self.datetime_suffix_radio.setChecked(True)  # Default to suffix
+        
+        self.datetime_button_group.addButton(self.datetime_prefix_radio, 0)
+        self.datetime_button_group.addButton(self.datetime_suffix_radio, 1)
+        
+        self.datetime_prefix_radio.toggled.connect(self.update_preview)
+        self.datetime_suffix_radio.toggled.connect(self.update_preview)
+        
+        placement_layout = QVBoxLayout()
+        placement_layout.addWidget(self.datetime_prefix_radio)
+        placement_layout.addWidget(self.datetime_suffix_radio)
+        layout.addLayout(placement_layout)
+        
         # Preview
         preview_label = QLabel("Preview (first 10 dates):")
+        preview_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        preview_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            margin-top: 10px;
+            margin-bottom: 5px;
+        """)
         layout.addWidget(preview_label)
         
         self.preview_text = QTextEdit()
         self.preview_text.setMaximumHeight(150)
         self.preview_text.setReadOnly(True)
+        self.preview_text.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                border-radius: 4px;
+                padding: 12px;
+                font-family: 'Courier New', monospace;
+                font-size: 12px;
+            }}
+        """)
         layout.addWidget(self.preview_text)
         
         # Connect signals
@@ -1955,13 +3242,19 @@ class DateSequenceDialog(QDialog):
         
         # Buttons
         button_layout = QHBoxLayout()
+        button_layout.setSpacing(10)
+        button_layout.addStretch()  # Push buttons to the right
         
         cancel_button = QPushButton("Cancel")
         cancel_button.clicked.connect(self.reject)
+        cancel_button.setStyleSheet(BUTTON_STYLE)
+        cancel_button.setMinimumSize(100, 35)
         button_layout.addWidget(cancel_button)
         
         apply_button = QPushButton("Apply Date Sequence")
         apply_button.clicked.connect(self.accept)
+        apply_button.setStyleSheet(ACCENT_BUTTON_STYLE)
+        apply_button.setMinimumSize(150, 35)
         button_layout.addWidget(apply_button)
         
         layout.addLayout(button_layout)
@@ -2001,23 +3294,42 @@ class DateSequenceDialog(QDialog):
             while current_date <= end_date and len(dates) < 10:  # Limit preview to 10 items
                 # Format date according to selected format
                 format_text = self.format_combo.currentText()
-                if format_text == "YYYY-MM-DD":
-                    date_str = current_date.strftime("%Y-%m-%d")
+                if format_text == "YYYY_MM_DD":
+                    date_str = current_date.strftime("%Y_%m_%d")
                 elif format_text == "YYYYMMDD":
                     date_str = current_date.strftime("%Y%m%d")
+                elif format_text == "MM_DD_YYYY":
+                    date_str = current_date.strftime("%m_%d_%Y")
+                elif format_text == "DD_MM_YYYY":
+                    date_str = current_date.strftime("%d_%m_%Y")
+                elif format_text == "YYYY-MM-DD":
+                    date_str = current_date.strftime("%Y-%m-%d")
                 elif format_text == "MM-DD-YYYY":
                     date_str = current_date.strftime("%m-%d-%Y")
                 elif format_text == "DD-MM-YYYY":
                     date_str = current_date.strftime("%d-%m-%Y")
-                elif format_text == "YYYY/MM/DD":
-                    date_str = current_date.strftime("%Y/%m/%d")
-                elif format_text == "MM/DD/YYYY":
-                    date_str = current_date.strftime("%m/%d/%Y")
+                elif format_text == "YYYY.MM.DD":
+                    date_str = current_date.strftime("%Y.%m.%d")
+                elif format_text == "MM.DD.YYYY":
+                    date_str = current_date.strftime("%m.%d.%Y")
+                elif format_text == "DD.MM.YYYY":
+                    date_str = current_date.strftime("%d.%m.%Y")
+                elif format_text == "YYYY MM DD":
+                    date_str = current_date.strftime("%Y %m %d")
+                elif format_text == "MM DD YYYY":
+                    date_str = current_date.strftime("%m %d %Y")
+                elif format_text == "DD MM YYYY":
+                    date_str = current_date.strftime("%d %m %Y")
                 else:
-                    date_str = current_date.strftime("%Y-%m-%d")  # Default
+                    date_str = current_date.strftime("%Y_%m_%d")  # Default to underscore
                 
-                # Create example filename
-                example_filename = f"{base_name}_{date_str}{extension}"
+                # Create example filename with placement logic
+                datetime_prefix = hasattr(self, 'datetime_prefix_radio') and self.datetime_prefix_radio.isChecked()
+                
+                if datetime_prefix:
+                    example_filename = f"{date_str}_{base_name}{extension}"
+                else:
+                    example_filename = f"{base_name}_{date_str}{extension}"
                 dates.append(example_filename)
                 
                 # Move to next date
@@ -2058,6 +3370,7 @@ class DateSequenceDialog(QDialog):
             'date_end_iso': end_date.isoformat(),      # Store string version for JSON
             'date_interval_value': self.interval_spin.value(),
             'date_interval_type': self.interval_combo.currentText(),
+            'datetime_prefix': hasattr(self, 'datetime_prefix_radio') and self.datetime_prefix_radio.isChecked(),
             'uses_date_sequence': True,
             'rename_flag': True
         }
@@ -2134,35 +3447,81 @@ class FileDetailsDialog(QDialog):
         layout.addLayout(button_layout)
         
         # Apply styles
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #2D2D30;
-                color: #FFFFFF;
-            }
-            QLabel {
-                color: #FFFFFF;
-            }
-            QLineEdit, QComboBox {
-                background-color: #3E3E42;
-                color: #FFFFFF;
-                border: 1px solid #3F3F46;
-                border-radius: 3px;
-                padding: 5px;
-            }
-            QComboBox::drop-down {
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {colors['bg']};
+                color: {colors['text']};
+            }}
+            QLabel {{
+                color: {colors['text']};
+            }}
+            QLineEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
+                border-radius: 4px;
+                padding: 8px;
+                font-size: 14px;
+            }}
+            QLineEdit:focus {{
+                border: 2px solid {colors['accent']};
+            }}
+            QComboBox {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
+                border-radius: 4px;
+                padding: 8px 30px 8px 12px;
+                font-size: 14px;
+                min-height: 20px;
+            }}
+            QComboBox:focus {{
+                border: 2px solid {colors['accent']};
+            }}
+            QComboBox:hover {{
+                border: 2px solid {colors['accent_hover']};
+            }}
+            QComboBox::drop-down {{
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 25px;
                 border: none;
-                background-color: #007ACC;
-            }
-            QPushButton {
-                background-color: #3E3E42;
-                color: #FFFFFF;
-                border: 1px solid #3F3F46;
-                border-radius: 3px;
-                padding: 5px 15px;
-            }
-            QPushButton:hover {
-                background-color: #4E4E52;
-            }
+                border-top-right-radius: 3px;
+                border-bottom-right-radius: 3px;
+                background-color: {colors['card_bg_alt']};
+            }}
+            QComboBox::drop-down:hover {{
+                background-color: {colors['accent']};
+            }}
+            QComboBox::down-arrow {{
+                width: 12px;
+                height: 12px;
+                background: transparent;
+                border-left: 4px solid transparent;
+                border-right: 4px solid transparent;
+                border-top: 6px solid {colors['text']};
+                margin-top: 2px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 1px solid {colors['border']};
+                selection-background-color: {colors['accent']};
+                selection-color: {colors['text']};
+                outline: none;
+            }}
+            QPushButton {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
+                border-radius: 4px;
+                padding: 8px 15px;
+                font-size: 14px;
+            }}
+            QPushButton:hover {{
+                background-color: {colors['accent']};
+                border: 2px solid {colors['accent']};
+            }}
         """)
     
     def _on_type_changed(self, index):

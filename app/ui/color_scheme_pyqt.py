@@ -265,16 +265,14 @@ COMBOBOX_STYLE = f"""
         subcontrol-origin: padding;
         subcontrol-position: top right;
         width: 20px;
-        border-left-width: 1px;
-        border-left-color: {colors['border']};
-        border-left-style: solid;
+        border: none;
+        border-left: 1px solid {colors['border']};
         border-top-right-radius: 3px;
         border-bottom-right-radius: 3px;
     }}
     
     QComboBox::drop-down:hover {{
         background-color: {colors['accent']};
-        border-left-color: {colors['accent']};
     }}
     
     /* Arrow styling with explicit paths */

@@ -10,6 +10,6 @@ __author__ = "Craig P. Russo / CR2 Creative"
 
 # Import key components for easier access if needed
 from app.core.app_config import APP_NAME, APP_VERSION_NUMBER
-from app.core.app_module import ProjectCreatorApp
+from app.core.app_module_pyqt import ProjectCreatorApp
 from app.core.project_builder import ProjectBuilder
 from app.templates.template_manager import TemplateManager 

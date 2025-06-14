@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QStatusBar, QFrame, QSplitter, QScrollArea, QSizePolicy,
                            QApplication, QGroupBox, QListView, QTextEdit, QLayout, QGridLayout,
                            QWIDGETSIZE_MAX, QCheckBox, QDateEdit, QSpinBox, QToolButton)
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex, QPoint, QUrl, QMimeData, QSettings, QObject, QThread, QDate
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex, QPoint, QUrl, QMimeData, QSettings, QObject, QThread, QDate, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, QPixmap, QDesktopServices, QCursor, QDragEnterEvent, QDropEvent, QFontMetrics, QStandardItemModel, QStandardItem, QAction, QTextCharFormat
 
 from app.core.app_config import APP_NAME, RECENT_TEMPLATES_MAX
@@ -151,6 +151,7 @@ class ProjectCreatorApp(QMainWindow):
     
     def __init__(self):
         """Initialize the application"""
+        print("DEBUG: ProjectCreatorApp.__init__() started")
         super().__init__()
         
         # Debug: Print unique identifiers for all created CardFrames
@@ -174,8 +175,12 @@ class ProjectCreatorApp(QMainWindow):
         self.set_app_icon()
         
         # Initialize instance variables
+        print("DEBUG: Initializing TemplateManager...")
         self.template_manager = TemplateManager()
+        print("DEBUG: TemplateManager initialized")
+        print("DEBUG: Initializing ProjectBuilder...")
         self.project_builder = ProjectBuilder(self.template_manager)
+        print("DEBUG: ProjectBuilder initialized")
         self.status_message_timer = QTimer()
         self.status_message_timer.timeout.connect(self._reset_status_bar)
         
@@ -191,8 +196,12 @@ class ProjectCreatorApp(QMainWindow):
         self.app_version = APP_VERSION_NUMBER
         
         # Setup UI components
+        print("DEBUG: Setting up UI...")
         self._setup_ui()
+        print("DEBUG: UI setup complete")
+        print("DEBUG: Updating UI from config...")
         self._update_ui_from_config()
+        print("DEBUG: UI config update complete")
         
         # Connect signals
         self.template_updated.connect(self.trigger_template_updated)
@@ -208,8 +217,7 @@ class ProjectCreatorApp(QMainWindow):
         # Schedule initial update check
         self._initial_update_check()
         
-        # Show app (make visible)
-        self.show()
+        # Note: Window will be shown by main.py, not here
         
     def closeEvent(self, event):
         """Handle application close event - clean up resources"""
@@ -218,6 +226,7 @@ class ProjectCreatorApp(QMainWindow):
     
     def _setup_ui(self):
         """Set up the main application UI"""
+        print("DEBUG: Creating central widget...")
         # Create central widget and layout
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -225,9 +234,12 @@ class ProjectCreatorApp(QMainWindow):
         self.main_layout.setContentsMargins(10, 10, 10, 10)
         self.main_layout.setSpacing(10)
         
+        print("DEBUG: Creating menu bar...")
         # Create menu bar
         self.create_menu()
+        print("DEBUG: Menu bar created")
         
+        print("DEBUG: Creating status bar...")
         # Create status bar
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
@@ -245,17 +257,23 @@ class ProjectCreatorApp(QMainWindow):
                 padding-left: 8px;
             }
         """)
+        print("DEBUG: Status bar created")
         
+        print("DEBUG: Setting minimum window size...")
         # Set minimum window size to ensure all elements are visible
         self.setMinimumSize(1000, 600)
         
+        print("DEBUG: Creating main splitter...")
         # Add main horizontal splitter
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.main_layout.addWidget(self.main_splitter)
+        print("DEBUG: Main splitter created")
         
+        print("DEBUG: Creating left panel (CardFrame)...")
         # Create left panel with project settings
         self.left_panel = CardFrame()
         self.left_layout = self.left_panel.main_layout
+        print("DEBUG: Left panel created")
         
         # Project settings header
         self.settings_header = QLabel("Project Settings")
@@ -317,6 +335,14 @@ class ProjectCreatorApp(QMainWindow):
         
         # Add the expandable middle section
         self.left_layout.addWidget(middle_container, 1)  # Use stretch factor of 1
+        
+        print("DEBUG: Creating AnimatedCustomOptionsWidget...")
+        # Add animated custom options widget (initially hidden)
+        from app.ui.custom_options_widgets import AnimatedCustomOptionsWidget
+        self.custom_options_widget = AnimatedCustomOptionsWidget(self)
+        print("DEBUG: AnimatedCustomOptionsWidget created")
+        self.custom_options_widget.hide()
+        self.left_layout.addWidget(self.custom_options_widget)
         
         # Add versioning options section
         versioning_container = QWidget()
@@ -387,9 +413,11 @@ class ProjectCreatorApp(QMainWindow):
         self.sequence_type.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.sequence_type.currentTextChanged.connect(self._update_versioning_options)
         
+        print("DEBUG: Applying hover delegate to sequence_type...")
         # Apply hover delegate for proper hover effects
         from app.ui.custom_delegates import apply_hover_delegate
         apply_hover_delegate(self.sequence_type)
+        print("DEBUG: Hover delegate applied to sequence_type")
         
         type_layout.addWidget(self.sequence_type)
         
@@ -988,9 +1016,14 @@ class ProjectCreatorApp(QMainWindow):
         self.right_layout = QVBoxLayout(self.right_panel)
         self.right_layout.setContentsMargins(0, 0, 0, 0)
         
+        print("DEBUG: Creating TemplateGallery...")
         # Create template gallery
         self.template_gallery = TemplateGallery(app=self)
+        print("DEBUG: TemplateGallery created successfully")
         self.right_layout.addWidget(self.template_gallery)
+        
+        # Connect template selection signal to check for custom options
+        self.template_gallery.template_selected.connect(self.check_template_for_custom_options)
         
         # Apply theme to template gallery
         apply_dark_theme_to_template_gallery(self.template_gallery)
@@ -1804,6 +1837,9 @@ class ProjectCreatorApp(QMainWindow):
         
         # Stop the timer since we're processing the results now
         self.batch_check_timer.stop()
+        
+        # Don't reset the custom options widget here - let the user continue using the same template
+        # The widget will be reset when they select a different template or close the app
             
         # Extract error message if present
         error_message = results.get("error", None)
@@ -1890,6 +1926,8 @@ class ProjectCreatorApp(QMainWindow):
         if enabled:
             self.versioning_options.show()
             self.options_container.show()
+            # Check for conflicts with custom patterns when versioning is enabled
+            self._check_custom_pattern_conflicts()
         else:
             self.versioning_options.hide()
             self.options_container.hide()
@@ -1906,6 +1944,9 @@ class ProjectCreatorApp(QMainWindow):
         # Show relevant options
         if sequence_type == "Date Sequences":
             self.date_options.show()
+            # Check for conflicts when switching to date sequences
+            if self.enable_versioning.isChecked():
+                self._check_custom_pattern_conflicts()
         elif sequence_type == "Version Numbers":
             self.version_options.show()
         elif sequence_type == "Sequential Numbers":
@@ -2042,6 +2083,57 @@ class ProjectCreatorApp(QMainWindow):
             QMessageBox.warning(self, "Warning", "No valid project names found.")
             return
         
+        # Check if current template has custom options and show slide-up widget if needed
+        if hasattr(self, 'template_gallery') and self.template_gallery:
+            # Try to get the selected template using different methods
+            current_template = None
+            
+            # Method 1: Try get_primary_selected_template
+            if hasattr(self.template_gallery, 'get_primary_selected_template'):
+                current_template = self.template_gallery.get_primary_selected_template()
+            
+            # Method 2: Try selection_manager
+            elif hasattr(self.template_gallery, 'selection_manager') and hasattr(self.template_gallery.selection_manager, 'selected_template'):
+                current_template = self.template_gallery.selection_manager.selected_template
+            
+            # Method 3: Try selected_template attribute
+            elif hasattr(self.template_gallery, 'selected_template'):
+                current_template = self.template_gallery.selected_template
+            
+            print(f"DEBUG: Found current_template for batch creation: {current_template.get('name') if current_template else 'None'}")
+            
+            if current_template:
+                self.check_template_for_custom_options(current_template)
+                
+                # If custom options are required, check if user has made valid selections
+                if (hasattr(self, 'custom_options_widget') and 
+                    self.custom_options_widget and 
+                    self.custom_options_widget.is_visible and 
+                    len(self.custom_options_widget.combo_widgets) > 0):
+                    
+                    # Check if user has made valid selections for all required custom options
+                    selected_values = self.custom_options_widget.get_selected_values()
+                    has_valid_selections = True
+                    
+                    # Check each combo widget to ensure a valid selection is made
+                    for combo_key, combo_widget in self.custom_options_widget.combo_widgets.items():
+                        current_text = combo_widget.currentText()
+                        # Check if selection is empty or placeholder text
+                        if not current_text or current_text.startswith("Select ") or current_text == "":
+                            has_valid_selections = False
+                            break
+                    
+                    if not has_valid_selections:
+                        # Custom options are required but user hasn't made selections
+                        QMessageBox.information(
+                            self, 
+                            "Custom Options Required", 
+                            "This template requires custom options. Please make your selections below and then try creating projects again."
+                        )
+                        return
+                    
+                    print(f"DEBUG: Custom options validated successfully: {selected_values}")
+        
         # Generate final list with sequences if enabled
         final_projects = []
         for base_name in project_names:
@@ -2092,6 +2184,279 @@ class ProjectCreatorApp(QMainWindow):
             self.batch_check_timer.timeout.connect(self.check_batch_results)
         
         self.batch_check_timer.start(500)  # Check every 500ms
+    
+    def check_template_for_custom_options(self, template_data):
+        """Check if template requires custom options and show/hide the animated widget"""
+        # Track the current template to detect changes
+        current_template_name = template_data.get('name') if template_data else None
+        previous_template_name = getattr(self, '_current_template_name', None)
+        
+        # If template changed, reset the widget first
+        if previous_template_name and previous_template_name != current_template_name:
+            print(f"DEBUG: Template changed from '{previous_template_name}' to '{current_template_name}', resetting widget")
+            if hasattr(self, 'custom_options_widget') and self.custom_options_widget:
+                self.custom_options_widget.combo_widgets.clear()
+        
+        # Store current template name for next comparison
+        self._current_template_name = current_template_name
+        
+        if not template_data:
+            if hasattr(self, 'custom_options_widget') and self.custom_options_widget.is_visible:
+                self.custom_options_widget.slide_down()
+            return
+        
+        # Check if template has custom options
+        custom_prompts = self._collect_custom_options_from_template(template_data)
+        
+        if custom_prompts:
+            print(f"DEBUG: Template has {len(custom_prompts)} custom prompts, showing slide-up widget")
+            # Find the preview pattern for the custom options
+            preview_pattern = self._find_preview_pattern_from_template(template_data)
+            # Show the animated widget with the custom options
+            self.custom_options_widget.set_custom_options(custom_prompts)
+            if preview_pattern:
+                self.custom_options_widget.preview_pattern = preview_pattern
+                self.custom_options_widget._update_unified_preview()
+            # Only slide up if not already visible to preserve state
+            if not self.custom_options_widget.is_visible:
+                print(f"DEBUG: Sliding up custom options widget")
+                self.custom_options_widget.slide_up()
+            else:
+                print(f"DEBUG: Custom options widget already visible")
+        else:
+            print(f"DEBUG: Template has no custom options, hiding widget if visible")
+            # Hide the widget if no custom options needed
+            if hasattr(self, 'custom_options_widget') and self.custom_options_widget.is_visible:
+                self.custom_options_widget.slide_down()
+    
+    def _collect_custom_options_from_template(self, template_data):
+        """Collect custom options from template data for the slide-up widget"""
+        custom_prompts = {}
+        
+        def collect_from_structure(structure, path=""):
+            """Recursively collect custom options from structure"""
+            for item in structure:
+                if isinstance(item, dict):
+                    item_name = item.get('name', '')
+                    item_path = f"{path}/{item_name}" if path else item_name
+                    
+                    # Helper function to recursively search for pattern data
+                    def extract_pattern_data(data, depth=0, max_depth=5):
+                        """Recursively extract pattern and custom options from nested data"""
+                        if depth > max_depth or not isinstance(data, dict):
+                            return [], ''
+                        
+                        found_options = data.get('custom_options', [])
+                        found_pattern = data.get('pattern', '')
+                        
+                        # If we found both, return them
+                        if found_options and found_pattern:
+                            return found_options, found_pattern
+                        
+                        # Otherwise, check user_data recursively
+                        if 'user_data' in data and isinstance(data['user_data'], dict):
+                            nested_options, nested_pattern = extract_pattern_data(data['user_data'], depth + 1, max_depth)
+                            if not found_options and nested_options:
+                                found_options = nested_options
+                            if not found_pattern and nested_pattern:
+                                found_pattern = nested_pattern
+                        
+                        return found_options, found_pattern
+                    
+                    # Extract pattern data from the item
+                    custom_options, pattern = extract_pattern_data(item)
+                    
+                    # Check for any CUSTOM placeholders in the pattern
+                    if custom_options and pattern:
+                        import re
+                        custom_matches = re.findall(r'\$\{(CUSTOM\d*)\}', pattern)
+                        if custom_matches:
+                            # Handle both old format (list) and new format (dict)
+                            if isinstance(custom_options, dict):
+                                # New format - each placeholder has its own options
+                                for custom_placeholder in custom_matches:
+                                    if custom_placeholder in custom_options:
+                                        custom_key = f"{item_path}_{custom_placeholder}"
+                                        if custom_key not in custom_prompts:
+                                            custom_prompts[custom_key] = {
+                                                'item_path': item_path,
+                                                'item_name': item_name,
+                                                'options': custom_options[custom_placeholder],
+                                                'pattern': pattern,
+                                                'placeholder': custom_placeholder
+                                            }
+                            else:
+                                # Old format - single list of options, create entries for each placeholder
+                                for i, custom_placeholder in enumerate(custom_matches):
+                                    custom_key = f"{item_path}_{custom_placeholder}"
+                                    if custom_key not in custom_prompts:
+                                        # Use different option based on placeholder index
+                                        if i < len(custom_options):
+                                            option_list = [custom_options[i]]
+                                        else:
+                                            # If we don't have enough options, use all options for this placeholder
+                                            option_list = custom_options
+                                        
+                                        custom_prompts[custom_key] = {
+                                            'item_path': item_path,
+                                            'item_name': item_name,
+                                            'options': option_list if len(option_list) > 1 else custom_options,
+                                            'pattern': pattern,
+                                            'placeholder': custom_placeholder
+                                        }
+                    
+                    # Recursively check children
+                    children = item.get('children', [])
+                    if children:
+                        collect_from_structure(children, item_path)
+        
+        # Collect all custom options needed
+        structure = template_data.get('structure', [])
+        collect_from_structure(structure)
+        return custom_prompts
+    
+    def get_custom_values_from_widget(self):
+        """Get custom values from the animated widget"""
+        # Always try to get values from the widget, regardless of visibility
+        # The widget retains its values even when hidden
+        if hasattr(self, 'custom_options_widget') and self.custom_options_widget:
+            values = self.custom_options_widget.get_selected_values()
+            print(f"DEBUG: Widget combo_widgets keys: {list(self.custom_options_widget.combo_widgets.keys())}")
+            print(f"DEBUG: Widget get_selected_values returned: {values}")
+            if values:
+                print(f"DEBUG: Retrieved custom values from widget: {values}")
+                return values
+        print(f"DEBUG: No custom values found in widget")
+        return {}
+    
+    def _find_preview_pattern_from_template(self, template_data):
+        """Find a preview pattern from template data for the slide-up widget"""
+        def find_first_pattern(structure):
+            """Recursively find the first pattern with custom options"""
+            for item in structure:
+                if isinstance(item, dict):
+                    # Helper function to recursively search for pattern data
+                    def extract_pattern_data(data, depth=0, max_depth=5):
+                        """Recursively extract pattern and custom options from nested data"""
+                        if depth > max_depth or not isinstance(data, dict):
+                            return [], ''
+                        
+                        found_options = data.get('custom_options', [])
+                        found_pattern = data.get('pattern', '')
+                        
+                        # If we found both, return them
+                        if found_options and found_pattern:
+                            return found_options, found_pattern
+                        
+                        # Otherwise, check user_data recursively
+                        if 'user_data' in data and isinstance(data['user_data'], dict):
+                            nested_options, nested_pattern = extract_pattern_data(data['user_data'], depth + 1, max_depth)
+                            if not found_options and nested_options:
+                                found_options = nested_options
+                            if not found_pattern and nested_pattern:
+                                found_pattern = nested_pattern
+                        
+                        return found_options, found_pattern
+                    
+                    # Extract pattern data from the item
+                    custom_options, pattern = extract_pattern_data(item)
+                    
+                    # If we found custom options and pattern, return the pattern
+                    if custom_options and pattern:
+                        return pattern
+                    
+                    # Recursively check children
+                    if 'children' in item and isinstance(item['children'], list):
+                        result = find_first_pattern(item['children'])
+                        if result:
+                            return result
+        
+        # Check the main structure
+        if 'structure' in template_data:
+            return find_first_pattern(template_data['structure'])
+        
+        return ""
+    
+    def reset_custom_options_widget(self):
+        """Reset the custom options widget state after project creation"""
+        if hasattr(self, 'custom_options_widget') and self.custom_options_widget:
+            print(f"DEBUG: Resetting custom options widget state")
+            # Clear the widget's internal state
+            self.custom_options_widget.combo_widgets.clear()
+            # Hide the widget if it's visible
+            if self.custom_options_widget.is_visible:
+                self.custom_options_widget.slide_down()
+            print(f"DEBUG: Custom options widget reset complete")
+    
+    def _check_custom_pattern_conflicts(self):
+        """Check for conflicts between custom patterns and sequence creation settings"""
+        if not hasattr(self, 'custom_options_widget') or not self.custom_options_widget:
+            return
+        
+        # Only check if custom options widget is visible (meaning there are custom patterns)
+        if not self.custom_options_widget.is_visible:
+            return
+        
+        # Check if sequence creation is enabled
+        if not self.enable_versioning.isChecked():
+            return
+        
+        sequence_type = self.sequence_type.currentText()
+        
+        # Check for conflicts with date sequences
+        if sequence_type == "Date Sequences":
+            # Check if any custom patterns contain ${DATE} or ${PROJECT_NAME}
+            conflicts = []
+            
+            # Get the current template data to check for patterns
+            try:
+                from app.templates.template_manager_core import TemplateManagerCore
+                template_manager = TemplateManagerCore()
+                
+                # Get currently selected template
+                if hasattr(self, 'template_gallery') and self.template_gallery:
+                    selected_templates = self.template_gallery.get_selected_templates()
+                    if selected_templates:
+                        template_name = selected_templates[0]
+                        template_data = template_manager.get_template_by_name(template_name)
+                        
+                        if template_data:
+                            # Check for ${DATE} in custom patterns
+                            custom_prompts = self._collect_custom_options_from_template(template_data)
+                            for key, prompt_data in custom_prompts.items():
+                                pattern = prompt_data.get('pattern', '')
+                                if '${DATE}' in pattern:
+                                    conflicts.append(f"Custom pattern '{pattern}' contains ${{DATE}}")
+                                if '${PROJECT_NAME}' in pattern:
+                                    conflicts.append(f"Custom pattern '{pattern}' contains ${{PROJECT_NAME}}")
+            except Exception as e:
+                print(f"DEBUG: Error checking for pattern conflicts: {e}")
+                return
+            
+            # Show warning if conflicts found
+            if conflicts:
+                from PyQt6.QtWidgets import QMessageBox
+                conflict_text = "\n".join(conflicts)
+                
+                reply = QMessageBox.question(
+                    self,
+                    "Pattern Conflict Detected",
+                    f"The selected template has custom patterns that may conflict with sequence creation:\n\n"
+                    f"{conflict_text}\n\n"
+                    f"When using 'Date Sequences':\n"
+                    f"• Sequence dates will be added to project names\n"
+                    f"• Custom ${{DATE}} patterns will use current date\n"
+                    f"• Custom ${{PROJECT_NAME}} will include the sequence date\n\n"
+                    f"This may result in duplicate dates in filenames.\n\n"
+                    f"Do you want to continue with sequence creation?",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No
+                )
+                
+                if reply == QMessageBox.StandardButton.No:
+                    # Disable versioning
+                    self.enable_versioning.setChecked(False)
+                    return
 
     def _export_all(self):
         """Export all settings and templates"""
@@ -2126,4 +2491,4 @@ class ProjectCreatorApp(QMainWindow):
         self.gallery_preference_changed.emit(preference_key)
 
 # Add a class variable to hold the single instance
-ProjectCreatorApp._instance = None 
+ProjectCreatorApp._instance = None
