@@ -126,8 +126,8 @@ class CustomOptionsManager:
         # Find all CUSTOM placeholders
         custom_placeholders = []
         
-        # Look for ${CUSTOM}, ${CUSTOM1}, ${CUSTOM2}, ${CUSTOM3}
-        matches = re.findall(r'\$\{(CUSTOM\d*)\}', pattern)
+        # Look for ${CUSTOM1}, ${CUSTOM2}, ${CUSTOM3}, ${CUSTOM4}
+        matches = re.findall(r'\$\{(CUSTOM\d+)\}', pattern)
         for match in matches:
             placeholder = f"${{{match}}}"
             if placeholder not in custom_placeholders:

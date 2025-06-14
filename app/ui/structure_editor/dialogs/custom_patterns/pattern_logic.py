@@ -187,7 +187,7 @@ class PatternLogic:
         # Check for unknown placeholders
         known_placeholders = [
             '${PROJECT_NAME}', '${BASE}', '${DATE}', '${TIME}', 
-            '${COUNTER}', '${CUSTOM}', '${CUSTOM1}', '${CUSTOM2}', '${CUSTOM3}'
+            '${COUNTER}', '${CUSTOM1}', '${CUSTOM2}', '${CUSTOM3}', '${CUSTOM4}'
         ]
         
         # Find all placeholders in pattern

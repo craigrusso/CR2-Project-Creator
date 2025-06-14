@@ -1885,17 +1885,12 @@ class ProjectBuilder:
                 print(f"DEBUG: Processing custom value - key: '{key}', value: '{value}'")
                 # Extract the placeholder type from the key
                 if '_CUSTOM' in key:
-                    # Handle both legacy CUSTOM and new CUSTOM1, CUSTOM2, etc.
-                    placeholder_part = key.split('_')[-1]  # Gets 'CUSTOM', 'CUSTOM1', etc.
+                    # Handle numbered CUSTOM placeholders (CUSTOM1, CUSTOM2, CUSTOM3, CUSTOM4)
+                    placeholder_part = key.split('_')[-1]  # Gets 'CUSTOM1', 'CUSTOM2', etc.
                     
                     # Set the specific placeholder
                     placeholders[placeholder_part] = value
                     print(f"DEBUG: Set placeholders['{placeholder_part}'] = '{value}'")
-                    
-                    # For backwards compatibility, also set generic CUSTOM if it's the base CUSTOM
-                    if placeholder_part == 'CUSTOM':
-                        placeholders['CUSTOM'] = value
-                        print(f"DEBUG: Set placeholders['CUSTOM'] = '{value}' (backwards compatibility)")
                     
                     # Also store with the full key for specific replacements
                     placeholders[key] = value
@@ -2058,7 +2053,7 @@ class ProjectBuilder:
 
 
         # --- Custom Options ---
-        # Find all ${CUSTOM...} placeholders in the pattern
+        # Find all ${CUSTOM...} placeholders in the pattern (${CUSTOM1}, ${CUSTOM2}, ${CUSTOM3}, ${CUSTOM4})
         custom_placeholders = re.findall(r'\$\{CUSTOM\d+\}', pattern)
         for placeholder in custom_placeholders:
             # Get the value from the placeholders (which contains the selected values)

@@ -80,10 +80,10 @@ class PatternUIComponents:
                 ("${DATE}", "Current date (YYYYMMDD)"),
                 ("${TIME}", "Current time (HHMMSS)"),
                 ("${COUNTER}", "Incremental counter (001, 002, etc.)"),
-                ("${CUSTOM}", "Custom dropdown options"),
                 ("${CUSTOM1}", "First custom option"),
                 ("${CUSTOM2}", "Second custom option"),
-                ("${CUSTOM3}", "Third custom option")
+                ("${CUSTOM3}", "Third custom option"),
+                ("${CUSTOM4}", "Fourth custom option")
             ]
         else:
             tags = [
@@ -91,10 +91,10 @@ class PatternUIComponents:
                 ("${BASE}", "Original filename without extension"),
                 ("${DATE}", "Current date (YYYYMMDD)"),
                 ("${TIME}", "Current time (HHMMSS)"),
-                ("${CUSTOM}", "Custom dropdown options"),
                 ("${CUSTOM1}", "First custom option"),
                 ("${CUSTOM2}", "Second custom option"),
-                ("${CUSTOM3}", "Third custom option")
+                ("${CUSTOM3}", "Third custom option"),
+                ("${CUSTOM4}", "Fourth custom option")
             ]
         
         tag_buttons = []
@@ -223,9 +223,9 @@ class PatternUIComponents:
         
         pattern_edit = QLineEdit()
         if is_folder:
-            pattern_edit.setPlaceholderText("e.g., ${PROJECT_NAME}_${CUSTOM}_Folder or Shot_${COUNTER}")
+            pattern_edit.setPlaceholderText("e.g., ${PROJECT_NAME}_${CUSTOM1}_Folder or Shot_${COUNTER}")
         else:
-            pattern_edit.setPlaceholderText("e.g., ${PROJECT_NAME}_${CUSTOM}_TRAILER (extension auto-added)")
+            pattern_edit.setPlaceholderText("e.g., ${PROJECT_NAME}_${CUSTOM1}_TRAILER (extension auto-added)")
         
         pattern_edit.setStyleSheet(f"""
             QLineEdit {{
