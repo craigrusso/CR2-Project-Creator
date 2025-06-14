@@ -1828,7 +1828,8 @@ class ProjectBuilder:
         placeholders = {
             'PROJECT_NAME': project_name,
             'DATE': date_str,
-            'TIME': time_str
+            'TIME': time_str,
+            'COUNTER': '001'  # Default counter value
         }
         
         # Add custom values if provided
@@ -1974,6 +1975,26 @@ class ProjectBuilder:
             result = result.strip(separator)
             # Add datetime at the beginning
             result = f"{datetime_part}{separator}{result}" if result else datetime_part
+        
+        # Add BASE placeholder if it's used in the pattern
+        if '${BASE}' in result:
+            placeholders = placeholders.copy()  # Don't modify original
+            
+            # Get the base name (original filename without extension)
+            original_name = item.get('original_name') or item.get('name', '')
+            if original_name:
+                if '.' in original_name:
+                    base_name, _ = os.path.splitext(original_name)
+                    placeholders['BASE'] = base_name
+                    print(f"DEBUG: _process_custom_pattern - Added BASE placeholder: '{base_name}' from '{original_name}'")
+                else:
+                    # No extension, use the whole name as base
+                    placeholders['BASE'] = original_name
+                    print(f"DEBUG: _process_custom_pattern - Added BASE placeholder: '{original_name}' (no extension)")
+            else:
+                # Fallback if no original name available
+                placeholders['BASE'] = 'filename'
+                print(f"DEBUG: _process_custom_pattern - Added fallback BASE placeholder: 'filename'")
         
         # Replace remaining placeholders
         result = self._replace_placeholders(result, placeholders)
