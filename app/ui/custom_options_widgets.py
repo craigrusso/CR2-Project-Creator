@@ -210,18 +210,14 @@ class AnimatedCustomOptionsWidget(BaseCustomOptionsWidget):
     
     def slide_up(self):
         """Animate the widget sliding up"""
-        print(f"DEBUG: slide_up called, is_visible={self.is_visible}, isVisible()={self.isVisible()}")
-        
         # Cancel any pending slide down
         self._pending_slide_down = False
         self._stability_timer.stop()
         
-        # Check both our flag and Qt's actual visibility
-        if self.is_visible and self.isVisible():
-            print(f"DEBUG: Widget already visible, returning early")
+        # Use Qt's actual visibility state as the source of truth
+        if self.isVisible():
             return
             
-        print(f"DEBUG: Proceeding with slide up animation")
         self.is_visible = True
         self.show()
         
@@ -251,16 +247,13 @@ class AnimatedCustomOptionsWidget(BaseCustomOptionsWidget):
     
     def _execute_pending_slide_down(self):
         """Execute the actual slide down animation"""
-        print(f"DEBUG: _execute_pending_slide_down called, is_visible={self.is_visible}")
-        
         # Reset pending flag
         self._pending_slide_down = False
         
-        if not self.is_visible:
-            print(f"DEBUG: Widget already hidden, returning early")
+        # Use Qt's actual visibility state as the source of truth
+        if not self.isVisible():
             return
             
-        print(f"DEBUG: Proceeding with slide down animation")
         self.is_visible = False
         
         # Disconnect any previous connections to avoid multiple calls
@@ -277,11 +270,9 @@ class AnimatedCustomOptionsWidget(BaseCustomOptionsWidget):
     
     def _on_slide_down_finished(self):
         """Called when slide down animation completes"""
-        print(f"DEBUG: Slide down animation finished, setting is_visible=False")
         self.hide()
         # Ensure is_visible flag is properly set
         self.is_visible = False
-        print(f"DEBUG: After slide down finished, is_visible={self.is_visible}, isVisible()={self.isVisible()}")
     
     def _update_unified_preview(self):
         """Update the unified preview (compatibility method)"""

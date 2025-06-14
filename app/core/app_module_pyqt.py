@@ -2273,7 +2273,7 @@ class ProjectCreatorApp(QMainWindow):
     
     def check_template_for_custom_options(self, template_data):
         """Check if template requires custom options and show/hide the animated widget"""
-        print(f"DEBUG: check_template_for_custom_options called with template_data: {template_data}")
+
         # Track the current template to detect changes
         current_template_name = template_data.get('name') if template_data else None
         previous_template_name = getattr(self, '_current_template_name', None)
@@ -2298,8 +2298,7 @@ class ProjectCreatorApp(QMainWindow):
         
         if not template_data:
             # Hide the widget when no template is selected (clicking off templates)
-            if hasattr(self, 'custom_options_widget') and self.custom_options_widget.is_visible:
-                print(f"DEBUG: No template data, hiding custom options widget")
+            if hasattr(self, 'custom_options_widget') and self.custom_options_widget.isVisible():
                 self.custom_options_widget.slide_down(delay_ms=0)
             return
         
@@ -2307,7 +2306,7 @@ class ProjectCreatorApp(QMainWindow):
         custom_prompts = self._collect_custom_options_from_template(template_data)
         
         if custom_prompts:
-            print(f"DEBUG: Template has {len(custom_prompts)} custom prompts, showing slide-up widget")
+
             # Find the preview pattern for the custom options
             preview_pattern = self._find_preview_pattern_from_template(template_data)
             
@@ -2325,17 +2324,11 @@ class ProjectCreatorApp(QMainWindow):
                     self.custom_options_widget.preview_pattern = preview_pattern
                     self.custom_options_widget._update_unified_preview()
             
-            # Only slide up if not already visible to preserve state
-            print(f"DEBUG: Widget state check - is_visible={self.custom_options_widget.is_visible}, isVisible()={self.custom_options_widget.isVisible()}")
-            if not (self.custom_options_widget.is_visible and self.custom_options_widget.isVisible()):
-                print(f"DEBUG: Sliding up custom options widget")
-                self.custom_options_widget.slide_up()
-            else:
-                print(f"DEBUG: Custom options widget already visible, keeping it open")
+            # Always slide up when template has custom options - let the widget handle its own state
+            self.custom_options_widget.slide_up()
         else:
-            print(f"DEBUG: Template has no custom options, hiding widget if visible")
             # Hide the widget with delay to allow for selection stabilization
-            if hasattr(self, 'custom_options_widget') and self.custom_options_widget.is_visible:
+            if hasattr(self, 'custom_options_widget') and self.custom_options_widget.isVisible():
                 self.custom_options_widget.slide_down()  # Use default delay
     
     def _collect_custom_options_from_template(self, template_data):
