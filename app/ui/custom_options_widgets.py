@@ -277,10 +277,11 @@ class AnimatedCustomOptionsWidget(BaseCustomOptionsWidget):
     
     def _on_slide_down_finished(self):
         """Called when slide down animation completes"""
-        print(f"DEBUG: Slide down animation finished")
+        print(f"DEBUG: Slide down animation finished, setting is_visible=False")
         self.hide()
         # Ensure is_visible flag is properly set
         self.is_visible = False
+        print(f"DEBUG: After slide down finished, is_visible={self.is_visible}, isVisible()={self.isVisible()}")
     
     def _update_unified_preview(self):
         """Update the unified preview (compatibility method)"""

@@ -2326,7 +2326,8 @@ class ProjectCreatorApp(QMainWindow):
                     self.custom_options_widget._update_unified_preview()
             
             # Only slide up if not already visible to preserve state
-            if not self.custom_options_widget.is_visible:
+            print(f"DEBUG: Widget state check - is_visible={self.custom_options_widget.is_visible}, isVisible()={self.custom_options_widget.isVisible()}")
+            if not (self.custom_options_widget.is_visible and self.custom_options_widget.isVisible()):
                 print(f"DEBUG: Sliding up custom options widget")
                 self.custom_options_widget.slide_up()
             else:
