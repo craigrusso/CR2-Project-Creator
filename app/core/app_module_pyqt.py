@@ -2176,18 +2176,29 @@ class ProjectCreatorApp(QMainWindow):
         current_template_name = template_data.get('name') if template_data else None
         previous_template_name = getattr(self, '_current_template_name', None)
         
-        # If template changed, reset the widget first
-        if previous_template_name and previous_template_name != current_template_name:
-            print(f"DEBUG: Template changed from '{previous_template_name}' to '{current_template_name}', resetting widget")
+        # Only reset if we have a genuine template change (not None -> template or template -> None)
+        genuine_template_change = (
+            previous_template_name and 
+            current_template_name and 
+            previous_template_name != current_template_name
+        )
+        
+        if genuine_template_change:
+            print(f"DEBUG: Genuine template change from '{previous_template_name}' to '{current_template_name}', resetting widget")
             if hasattr(self, 'custom_options_widget') and self.custom_options_widget:
                 self.custom_options_widget.combo_widgets.clear()
+                # Hide the widget immediately for template changes
+                if self.custom_options_widget.is_visible:
+                    self.custom_options_widget.slide_down(delay_ms=0)
         
         # Store current template name for next comparison
         self._current_template_name = current_template_name
         
         if not template_data:
-            if hasattr(self, 'custom_options_widget') and self.custom_options_widget.is_visible:
-                self.custom_options_widget.slide_down()
+            # Only hide if we don't have a previous template (avoid hiding during selection updates)
+            if not previous_template_name and hasattr(self, 'custom_options_widget') and self.custom_options_widget.is_visible:
+                print(f"DEBUG: No template data and no previous template, hiding widget")
+                self.custom_options_widget.slide_down(delay_ms=0)
             return
         
         # Check if template has custom options
@@ -2197,22 +2208,32 @@ class ProjectCreatorApp(QMainWindow):
             print(f"DEBUG: Template has {len(custom_prompts)} custom prompts, showing slide-up widget")
             # Find the preview pattern for the custom options
             preview_pattern = self._find_preview_pattern_from_template(template_data)
-            # Show the animated widget with the custom options
-            self.custom_options_widget.set_custom_options(custom_prompts)
-            if preview_pattern:
-                self.custom_options_widget.preview_pattern = preview_pattern
-                self.custom_options_widget._update_unified_preview()
+            
+            # Only update options if this is a new template or the widget is empty
+            should_update_options = (
+                genuine_template_change or 
+                not hasattr(self.custom_options_widget, 'combo_widgets') or 
+                not self.custom_options_widget.combo_widgets
+            )
+            
+            if should_update_options:
+                print(f"DEBUG: Updating custom options for template")
+                self.custom_options_widget.set_custom_options(custom_prompts)
+                if preview_pattern:
+                    self.custom_options_widget.preview_pattern = preview_pattern
+                    self.custom_options_widget._update_unified_preview()
+            
             # Only slide up if not already visible to preserve state
             if not self.custom_options_widget.is_visible:
                 print(f"DEBUG: Sliding up custom options widget")
                 self.custom_options_widget.slide_up()
             else:
-                print(f"DEBUG: Custom options widget already visible")
+                print(f"DEBUG: Custom options widget already visible, keeping it open")
         else:
             print(f"DEBUG: Template has no custom options, hiding widget if visible")
-            # Hide the widget if no custom options needed
+            # Hide the widget with delay to allow for selection stabilization
             if hasattr(self, 'custom_options_widget') and self.custom_options_widget.is_visible:
-                self.custom_options_widget.slide_down()
+                self.custom_options_widget.slide_down()  # Use default delay
     
     def _collect_custom_options_from_template(self, template_data):
         """Collect custom options from template data for the slide-up widget"""
@@ -2383,9 +2404,9 @@ class ProjectCreatorApp(QMainWindow):
             print(f"DEBUG: Resetting custom options widget state")
             # Clear the widget's internal state
             self.custom_options_widget.combo_widgets.clear()
-            # Hide the widget if it's visible
+            # Hide the widget immediately after project creation
             if self.custom_options_widget.is_visible:
-                self.custom_options_widget.slide_down()
+                self.custom_options_widget.slide_down(delay_ms=0)
             print(f"DEBUG: Custom options widget reset complete")
     
     def _check_custom_pattern_conflicts(self):

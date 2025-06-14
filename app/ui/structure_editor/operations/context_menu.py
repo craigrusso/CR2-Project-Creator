@@ -275,21 +275,72 @@ class ContextMenuOperations:
 
     def _bulk_set_project_name_mode(self, items, mode):
         """Set project name mode for multiple items - delegates to editor"""
-        if self.editor and hasattr(self.editor, '_set_project_name_mode'):
+        print(f"DEBUG: _bulk_set_project_name_mode called with {len(items)} items, mode: {mode}")
+        
+        # Try multiple delegation paths
+        if self.editor and hasattr(self.editor, 'file_operations') and hasattr(self.editor.file_operations, '_set_project_name_mode'):
+            # Delegate to file_operations module
             for item in items:
                 try:
-                    self.editor._set_project_name_mode(item, mode)
-                except (RuntimeError, AttributeError):
+                    print(f"DEBUG: Calling file_operations._set_project_name_mode for item: {item.text(0)}")
+                    self.editor.file_operations._set_project_name_mode(item, mode)
+                except (RuntimeError, AttributeError) as e:
+                    print(f"DEBUG: Error setting project name mode via file_operations: {e}")
                     continue
+        elif self.editor and hasattr(self.editor, '_set_project_name_mode'):
+            # Direct delegation to editor
+            for item in items:
+                try:
+                    print(f"DEBUG: Calling editor._set_project_name_mode for item: {item.text(0)}")
+                    self.editor._set_project_name_mode(item, mode)
+                except (RuntimeError, AttributeError) as e:
+                    print(f"DEBUG: Error setting project name mode via editor: {e}")
+                    continue
+        else:
+            print(f"DEBUG: No suitable method found for setting project name mode. Editor: {self.editor}")
+            if self.editor:
+                print(f"DEBUG: Editor attributes: {[attr for attr in dir(self.editor) if not attr.startswith('_')]}")
+                if hasattr(self.editor, 'file_operations'):
+                    print(f"DEBUG: File operations attributes: {[attr for attr in dir(self.editor.file_operations) if not attr.startswith('_')]}")
 
     def _bulk_revert_to_original(self, items):
         """Revert items to original names - delegates to editor"""
-        if self.editor and hasattr(self.editor, '_revert_to_original_name'):
+        print(f"DEBUG: _bulk_revert_to_original called with {len(items)} items")
+        
+        # Try multiple delegation paths
+        if self.editor and hasattr(self.editor, 'file_operations') and hasattr(self.editor.file_operations, '_revert_to_original_name'):
+            # Delegate to file_operations module
             for item in items:
                 try:
-                    self.editor._revert_to_original_name(item)
-                except (RuntimeError, AttributeError):
+                    print(f"DEBUG: Calling file_operations._revert_to_original_name for item: {item.text(0)}")
+                    self.editor.file_operations._revert_to_original_name(item)
+                except (RuntimeError, AttributeError) as e:
+                    print(f"DEBUG: Error reverting to original name via file_operations: {e}")
                     continue
+        elif self.editor and hasattr(self.editor, '_revert_to_original_name'):
+            # Direct delegation to editor
+            for item in items:
+                try:
+                    print(f"DEBUG: Calling editor._revert_to_original_name for item: {item.text(0)}")
+                    self.editor._revert_to_original_name(item)
+                except (RuntimeError, AttributeError) as e:
+                    print(f"DEBUG: Error reverting to original name via editor: {e}")
+                    continue
+        else:
+            # Fallback: try to use _toggle_project_name_for_file to revert
+            if self.editor and hasattr(self.editor, '_toggle_project_name_for_file'):
+                for item in items:
+                    try:
+                        # Check if item is currently using project name
+                        item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+                        if item_data.get('rename_flag') or item_data.get('uses_project_name'):
+                            print(f"DEBUG: Using _toggle_project_name_for_file to revert item: {item.text(0)}")
+                            self.editor._toggle_project_name_for_file(item)
+                    except (RuntimeError, AttributeError) as e:
+                        print(f"DEBUG: Error reverting via toggle method: {e}")
+                        continue
+            else:
+                print(f"DEBUG: No suitable method found for reverting to original names. Editor: {self.editor}")
 
     def _configure_custom_patterns(self, item):
         """Configure custom naming patterns for file"""
@@ -346,18 +397,22 @@ class ContextMenuOperations:
 
     def _apply_pattern_to_item(self, item, pattern_data):
         """Apply custom pattern to item - delegates to editor"""
-        if self.editor and hasattr(self.editor, '_apply_pattern_to_item'):
+        if self.editor and hasattr(self.editor, 'file_operations') and hasattr(self.editor.file_operations, '_apply_pattern_to_item'):
+            # Delegate to file_operations module (preferred)
+            self.editor.file_operations._apply_pattern_to_item(item, pattern_data)
+        elif self.editor and hasattr(self.editor, '_apply_pattern_to_item'):
+            # Fallback to direct editor method
             self.editor._apply_pattern_to_item(item, pattern_data)
-        elif self.editor and hasattr(self.editor, 'file_operations'):
-            # Try to delegate to file operations
-            if hasattr(self.editor.file_operations, '_apply_pattern_to_item'):
-                self.editor.file_operations._apply_pattern_to_item(item, pattern_data)
+        else:
+            print(f"DEBUG: No suitable method found for applying pattern to item")
 
     def _apply_date_sequence_to_item(self, item, date_data):
         """Apply date sequence to item - delegates to editor"""
-        if self.editor and hasattr(self.editor, '_apply_date_sequence_to_item'):
+        if self.editor and hasattr(self.editor, 'file_operations') and hasattr(self.editor.file_operations, '_apply_date_sequence_to_item'):
+            # Delegate to file_operations module (preferred)
+            self.editor.file_operations._apply_date_sequence_to_item(item, date_data)
+        elif self.editor and hasattr(self.editor, '_apply_date_sequence_to_item'):
+            # Fallback to direct editor method
             self.editor._apply_date_sequence_to_item(item, date_data)
-        elif self.editor and hasattr(self.editor, 'file_operations'):
-            # Try to delegate to file operations
-            if hasattr(self.editor.file_operations, '_apply_date_sequence_to_item'):
-                self.editor.file_operations._apply_date_sequence_to_item(item, date_data) 
+        else:
+            print(f"DEBUG: No suitable method found for applying date sequence to item") 

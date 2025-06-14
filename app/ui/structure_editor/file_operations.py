@@ -199,7 +199,11 @@ class FileOperations:
     def _update_item_display(self, item):
         """Update item display"""
         return self.item_operations.update_item_display(item)
-
+    
+    def _revert_to_original_name(self, item):
+        """Revert an item to its original name - delegates to item_operations"""
+        return self.item_operations.reset_item_to_original(item)
+    
     def _copy_folder_children(self, source_folder, target_folder):
         """Copy folder children"""
         return self.pattern_applier.copy_folder_children(source_folder, target_folder)

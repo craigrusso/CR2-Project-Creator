@@ -180,6 +180,13 @@ class AnimatedCustomOptionsWidget(BaseCustomOptionsWidget):
         self.animation = QPropertyAnimation(self, b"maximumHeight")
         self.animation.setDuration(250)
         self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+        # Add stability timer to prevent rapid hide/show cycles
+        from PyQt6.QtCore import QTimer
+        self._stability_timer = QTimer()
+        self._stability_timer.setSingleShot(True)
+        self._stability_timer.timeout.connect(self._execute_pending_slide_down)
+        self._pending_slide_down = False
     
     def _create_option_widget(self, display_key, options, actual_key):
         """Override to connect preview updates"""
@@ -203,6 +210,10 @@ class AnimatedCustomOptionsWidget(BaseCustomOptionsWidget):
     
     def slide_up(self):
         """Animate the widget sliding up"""
+        # Cancel any pending slide down
+        self._pending_slide_down = False
+        self._stability_timer.stop()
+        
         if self.is_visible:
             return
             
@@ -218,8 +229,27 @@ class AnimatedCustomOptionsWidget(BaseCustomOptionsWidget):
         self.animation.setEndValue(target_height)
         self.animation.start()
     
-    def slide_down(self):
-        """Animate the widget sliding down"""
+    def slide_down(self, delay_ms=500):
+        """Animate the widget sliding down with optional delay for stability"""
+        if not self.is_visible:
+            return
+        
+        # If delay is requested, use stability timer
+        if delay_ms > 0:
+            self._pending_slide_down = True
+            self._stability_timer.start(delay_ms)
+            return
+        
+        # Execute immediate slide down
+        self._execute_pending_slide_down()
+    
+    def _execute_pending_slide_down(self):
+        """Execute the actual slide down animation"""
+        if not self._pending_slide_down and hasattr(self, '_pending_slide_down'):
+            return
+            
+        self._pending_slide_down = False
+        
         if not self.is_visible:
             return
             
