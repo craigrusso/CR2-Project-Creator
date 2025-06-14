@@ -399,12 +399,16 @@ class ProjectBuilder:
         # Extract date and time formats from template
         date_format, time_format = self._extract_datetime_formats(template_data)
         
+        # Check if this project name contains sequence date information
+        sequence_date_info = self._extract_sequence_date_from_project_name(project_name)
+        
         # Create placeholders with custom values and date/time formats
         placeholders = self._create_placeholders(
             project_name, 
             custom_values=custom_values,
             date_format=date_format,
-            time_format=time_format
+            time_format=time_format,
+            sequence_date_info=sequence_date_info
         )
         
         # Get structure data
@@ -1506,6 +1510,73 @@ class ProjectBuilder:
 
 
 
+    def _extract_sequence_date_from_project_name(self, project_name):
+        """
+        Extract sequence date information from project name if it contains date sequences.
+        
+        Args:
+            project_name (str): The project name that may contain date sequences
+            
+        Returns:
+            dict or None: Dictionary with date info if found, None otherwise
+                {
+                    'date': datetime.date object,
+                    'date_format': format string used,
+                    'position': 'prefix' or 'suffix'
+                }
+        """
+        import re
+        import datetime
+        
+        # Common date patterns to look for in project names
+        date_patterns = [
+            # YYYY-MM-DD formats
+            (r'(\d{4}-\d{2}-\d{2})', '%Y-%m-%d'),
+            # YYYYMMDD formats  
+            (r'(\d{8})', '%Y%m%d'),
+            # MM-DD-YYYY formats
+            (r'(\d{2}-\d{2}-\d{4})', '%m-%d-%Y'),
+            # DD-MM-YYYY formats
+            (r'(\d{2}-\d{2}-\d{4})', '%d-%m-%Y'),
+            # YYYY/MM/DD formats
+            (r'(\d{4}/\d{2}/\d{2})', '%Y/%m/%d'),
+            # MM/DD/YYYY formats
+            (r'(\d{2}/\d{2}/\d{4})', '%m/%d/%Y'),
+        ]
+        
+        for pattern, date_format in date_patterns:
+            # Check for date at the beginning (prefix)
+            prefix_match = re.match(f'^{pattern}_', project_name)
+            if prefix_match:
+                try:
+                    date_str = prefix_match.group(1)
+                    parsed_date = datetime.datetime.strptime(date_str, date_format).date()
+                    return {
+                        'date': parsed_date,
+                        'date_format': date_format,
+                        'position': 'prefix',
+                        'date_string': date_str
+                    }
+                except ValueError:
+                    continue
+            
+            # Check for date at the end (suffix)
+            suffix_match = re.search(f'_{pattern}$', project_name)
+            if suffix_match:
+                try:
+                    date_str = suffix_match.group(1)
+                    parsed_date = datetime.datetime.strptime(date_str, date_format).date()
+                    return {
+                        'date': parsed_date,
+                        'date_format': date_format,
+                        'position': 'suffix',
+                        'date_string': date_str
+                    }
+                except ValueError:
+                    continue
+        
+        return None
+
     def _extract_datetime_formats(self, template_data):
         """
         Extract date and time format preferences from template structure
@@ -1750,7 +1821,7 @@ class ProjectBuilder:
         else:
             return None  # User cancelled
 
-    def _create_placeholders(self, project_name, custom_values=None, date_format=None, time_format=None):
+    def _create_placeholders(self, project_name, custom_values=None, date_format=None, time_format=None, sequence_date_info=None):
         """
         Create placeholders dictionary for variable replacement
         
@@ -1759,13 +1830,24 @@ class ProjectBuilder:
             custom_values: Dictionary of custom values selected by user
             date_format: Custom date format string (e.g., "YYYY_MM_DD (2024_01_15)")
             time_format: Custom time format string (e.g., "HH_MM_SS (14_30_22)")
+            sequence_date_info: Dictionary with sequence date info if project name contains date sequences
             
         Returns:
             dict: Dictionary of placeholder replacements
         """
         import datetime
         
-        now = datetime.datetime.now()
+        # Determine which date/time to use
+        if sequence_date_info and sequence_date_info.get('date'):
+            # Use the sequence date for both date and time placeholders
+            sequence_date = sequence_date_info['date']
+            # Create datetime object from date (use current time for time component)
+            current_time = datetime.datetime.now().time()
+            now = datetime.datetime.combine(sequence_date, current_time)
+            print(f"DEBUG: Using sequence date for placeholders: {sequence_date}")
+        else:
+            # Use current date/time as normal
+            now = datetime.datetime.now()
         
         # Format date based on custom format
         if date_format:
