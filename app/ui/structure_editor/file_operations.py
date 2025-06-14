@@ -1541,7 +1541,7 @@ class CustomPatternsDialog(QDialog):
 
     def init_ui(self):
         """Initialize the user interface"""
-        from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
+        from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE
         self.setWindowTitle("Custom Naming Patterns")
         self.setMinimumSize(900, 1000)
         self.resize(1000, 1100)
@@ -1825,7 +1825,12 @@ class CustomPatternsDialog(QDialog):
             "DD.MM.YYYY (15.01.2024)",
             "DD MM YYYY (15 01 2024)"
         ])
+        
+        # Apply styling directly instead of using utility function
+        from app.ui.color_scheme_pyqt import COMBOBOX_STYLE
+        from app.ui.custom_delegates import apply_hover_delegate
         self.date_format_combo.setStyleSheet(COMBOBOX_STYLE)
+        apply_hover_delegate(self.date_format_combo)
         self.date_format_combo.currentTextChanged.connect(self.update_preview)
         date_layout.addWidget(self.date_format_combo)
         
@@ -1876,7 +1881,12 @@ class CustomPatternsDialog(QDialog):
             "HH.MM (14.30)",
             "HH MM (14 30)"
         ])
+        
+        # Apply styling directly instead of using utility function
+        from app.ui.color_scheme_pyqt import COMBOBOX_STYLE
+        from app.ui.custom_delegates import apply_hover_delegate
         self.time_format_combo.setStyleSheet(COMBOBOX_STYLE)
+        apply_hover_delegate(self.time_format_combo)
         self.time_format_combo.currentTextChanged.connect(self.update_preview)
         time_layout.addWidget(self.time_format_combo)
         
@@ -2503,7 +2513,7 @@ class CustomPatternsDialog(QDialog):
         print(f"DEBUG: Loading existing pattern: {self.pattern_edit.text()}")
         
         # Get item data safely
-        item_data = self.item.data(Qt.ItemDataRole.UserRole)
+        item_data = self.item.data(0, Qt.ItemDataRole.UserRole)
         if not isinstance(item_data, dict):
             print(f"DEBUG: No valid item data found")
             return
@@ -2675,52 +2685,13 @@ class VersioningDialog(QDialog):
             "001, 002, 003...",
             "_001, _002, _003..."
         ])
-        self.format_combo.setStyleSheet(f"""
-            QComboBox {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 2px solid {colors['border']};
-                border-radius: 4px;
-                padding: 8px 30px 8px 12px;
-                font-size: 14px;
-                min-height: 20px;
-            }}
-            QComboBox:focus {{
-                border: 2px solid {colors['accent']};
-            }}
-            QComboBox:hover {{
-                border: 2px solid {colors['accent_hover']};
-            }}
-            QComboBox::drop-down {{
-                subcontrol-origin: padding;
-                subcontrol-position: top right;
-                width: 25px;
-                border: none;
-                border-top-right-radius: 3px;
-                border-bottom-right-radius: 3px;
-                background-color: {colors['card_bg_alt']};
-            }}
-            QComboBox::drop-down:hover {{
-                background-color: {colors['accent']};
-            }}
-            QComboBox::down-arrow {{
-                width: 12px;
-                height: 12px;
-                background: transparent;
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-top: 6px solid {colors['text']};
-                margin-top: 2px;
-            }}
-            QComboBox QAbstractItemView {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                selection-background-color: {colors['accent']};
-                selection-color: {colors['text']};
-                outline: none;
-            }}
-        """)
+        
+        # Apply styling directly instead of using utility function
+        from app.ui.color_scheme_pyqt import COMBOBOX_STYLE
+        from app.ui.custom_delegates import apply_hover_delegate
+        self.format_combo.setStyleSheet(COMBOBOX_STYLE)
+        apply_hover_delegate(self.format_combo)
+        
         layout.addWidget(self.format_combo)
         
         # Starting number
@@ -2912,6 +2883,7 @@ class DateSequenceDialog(QDialog):
     def init_ui(self):
         """Initialize the user interface"""
         from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
+        from PyQt6.QtCore import QTimer
         self.setWindowTitle("Date Sequence Configuration")
         self.setMinimumSize(500, 600)
         self.resize(600, 700)
@@ -2965,52 +2937,11 @@ class DateSequenceDialog(QDialog):
             "MM DD YYYY",
             "DD MM YYYY"
         ])
-        self.format_combo.setStyleSheet(f"""
-            QComboBox {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 2px solid {colors['border']};
-                border-radius: 4px;
-                padding: 8px 30px 8px 12px;
-                font-size: 14px;
-                min-height: 20px;
-            }}
-            QComboBox:focus {{
-                border: 2px solid {colors['accent']};
-            }}
-            QComboBox:hover {{
-                border: 2px solid {colors['accent_hover']};
-            }}
-            QComboBox::drop-down {{
-                subcontrol-origin: padding;
-                subcontrol-position: top right;
-                width: 25px;
-                border: none;
-                border-top-right-radius: 3px;
-                border-bottom-right-radius: 3px;
-                background-color: {colors['card_bg_alt']};
-            }}
-            QComboBox::drop-down:hover {{
-                background-color: {colors['accent']};
-            }}
-            QComboBox::down-arrow {{
-                width: 12px;
-                height: 12px;
-                background: transparent;
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-top: 6px solid {colors['text']};
-                margin-top: 2px;
-            }}
-            QComboBox QAbstractItemView {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                selection-background-color: {colors['accent']};
-                selection-color: {colors['text']};
-                outline: none;
-            }}
-        """)
+        # Apply styling directly instead of using utility function
+        from app.ui.color_scheme_pyqt import COMBOBOX_STYLE
+        from app.ui.custom_delegates import apply_hover_delegate
+        self.format_combo.setStyleSheet(COMBOBOX_STYLE)
+        apply_hover_delegate(self.format_combo)
         layout.addWidget(self.format_combo)
         
         # Date range
@@ -3049,6 +2980,19 @@ class DateSequenceDialog(QDialog):
                 border: 2px solid {colors['accent']};
             }}
         """)
+        
+        # Apply standardized calendar styling
+        def apply_start_calendar_style():
+            calendar = self.start_date.calendarWidget()
+            if calendar:
+                from app.ui.color_scheme_pyqt import apply_standard_calendar_styling
+                apply_standard_calendar_styling(calendar)
+        
+        # Connect to show calendar styling when popup opens
+        self.start_date.dateChanged.connect(lambda: QTimer.singleShot(10, apply_start_calendar_style))
+        
+        # Apply initial styling
+        QTimer.singleShot(100, apply_start_calendar_style)
         range_layout.addWidget(self.start_date)
         
         end_label = QLabel("End Date:")
@@ -3071,6 +3015,19 @@ class DateSequenceDialog(QDialog):
                 border: 2px solid {colors['accent']};
             }}
         """)
+        
+        # Apply standardized calendar styling
+        def apply_end_calendar_style():
+            calendar = self.end_date.calendarWidget()
+            if calendar:
+                from app.ui.color_scheme_pyqt import apply_standard_calendar_styling
+                apply_standard_calendar_styling(calendar)
+        
+        # Connect to show calendar styling when popup opens
+        self.end_date.dateChanged.connect(lambda: QTimer.singleShot(10, apply_end_calendar_style))
+        
+        # Apply initial styling
+        QTimer.singleShot(100, apply_end_calendar_style)
         range_layout.addWidget(self.end_date)
         
         layout.addLayout(range_layout)
@@ -3116,52 +3073,9 @@ class DateSequenceDialog(QDialog):
         
         self.interval_combo = QComboBox()
         self.interval_combo.addItems(["Days", "Weeks", "Months"])
-        self.interval_combo.setStyleSheet(f"""
-            QComboBox {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 2px solid {colors['border']};
-                border-radius: 4px;
-                padding: 8px 30px 8px 12px;
-                font-size: 14px;
-                min-height: 20px;
-            }}
-            QComboBox:focus {{
-                border: 2px solid {colors['accent']};
-            }}
-            QComboBox:hover {{
-                border: 2px solid {colors['accent_hover']};
-            }}
-            QComboBox::drop-down {{
-                subcontrol-origin: padding;
-                subcontrol-position: top right;
-                width: 25px;
-                border: none;
-                border-top-right-radius: 3px;
-                border-bottom-right-radius: 3px;
-                background-color: {colors['card_bg_alt']};
-            }}
-            QComboBox::drop-down:hover {{
-                background-color: {colors['accent']};
-            }}
-            QComboBox::down-arrow {{
-                width: 12px;
-                height: 12px;
-                background: transparent;
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-top: 6px solid {colors['text']};
-                margin-top: 2px;
-            }}
-            QComboBox QAbstractItemView {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                selection-background-color: {colors['accent']};
-                selection-color: {colors['text']};
-                outline: none;
-            }}
-        """)
+        # Apply styling directly instead of using utility function
+        self.interval_combo.setStyleSheet(COMBOBOX_STYLE)
+        apply_hover_delegate(self.interval_combo)
         interval_layout.addWidget(self.interval_combo)
         
         layout.addLayout(interval_layout)

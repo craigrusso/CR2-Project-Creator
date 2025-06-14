@@ -408,6 +408,11 @@ class ProjectCreatorApp(QMainWindow):
         
         self.sequence_type = QComboBox()
         self.sequence_type.addItems(["Date Sequences", "Version Numbers", "Sequential Numbers"])
+        self.sequence_type.setMinimumWidth(180)  # Minimum width to prevent text cutoff
+        self.sequence_type.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
+        self.sequence_type.currentTextChanged.connect(self._update_versioning_options)
+        
+        # Apply consistent styling using the utility function
         self.sequence_type.setStyleSheet(COMBOBOX_STYLE)
         self.sequence_type.setMinimumWidth(180)  # Minimum width to prevent text cutoff
         self.sequence_type.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
@@ -441,9 +446,10 @@ class ProjectCreatorApp(QMainWindow):
         
         self.name_position = QComboBox()
         self.name_position.addItems(["Suffix", "Prefix"])
-        self.name_position.setStyleSheet(COMBOBOX_STYLE)
         self.name_position.setMinimumWidth(100)  # Minimum width
         self.name_position.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
+        
+        self.name_position.setStyleSheet(COMBOBOX_STYLE)
         
         # Apply hover delegate for proper hover effects
         apply_hover_delegate(self.name_position)
@@ -495,8 +501,8 @@ class ProjectCreatorApp(QMainWindow):
         self.start_date.setDate(QDate.currentDate())
         self.start_date.setCalendarPopup(True)  # Enable calendar popup
         
-        # Simple calendar styling - no complex widget manipulation
-        def apply_simple_calendar_style():
+        # Apply standardized calendar styling
+        def apply_calendar_style():
             calendar = self.start_date.calendarWidget()
             if calendar:
                 # Set weekend text format to be dimmer grey
@@ -511,33 +517,12 @@ class ProjectCreatorApp(QMainWindow):
                 for day in [Qt.DayOfWeek.Monday, Qt.DayOfWeek.Tuesday, Qt.DayOfWeek.Wednesday, 
                            Qt.DayOfWeek.Thursday, Qt.DayOfWeek.Friday]:
                     calendar.setWeekdayTextFormat(day, weekday_format)
-                
-                # Apply simple stylesheet without complex widget targeting
-                calendar.setStyleSheet(f"""
-                    QCalendarWidget {{
-                        background-color: {colors['card_bg']};
-                        color: {colors['text']};
-                        border: 1px solid {colors['border']};
-                        font-size: 12px;
-                        min-width: 280px;
-                        min-height: 200px;
-                    }}
-                    QCalendarWidget QWidget {{
-                        background-color: {colors['card_bg']};
-                        color: {colors['text']};
-                    }}
-                    QCalendarWidget QAbstractItemView {{
-                        background-color: {colors['card_bg']};
-                        selection-background-color: {colors['accent']};
-                        gridline-color: {colors['border']};
-                    }}
-                """)
         
         # Connect to show calendar styling when popup opens
-        self.start_date.dateChanged.connect(lambda: QTimer.singleShot(10, apply_simple_calendar_style))
+        self.start_date.dateChanged.connect(lambda: QTimer.singleShot(10, apply_calendar_style))
         
         # Apply initial styling
-        QTimer.singleShot(100, apply_simple_calendar_style)
+        QTimer.singleShot(100, apply_calendar_style)
         
         self.start_date.setFixedWidth(120)
         self.start_date.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff

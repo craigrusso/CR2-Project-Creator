@@ -565,4 +565,114 @@ ACTION_LINK_STYLE = f"""
     QPushButton:pressed {{
         color: {colors['highlight_darker']};
     }}
-""" 
+"""
+
+# Create a reusable calendar styling function for app-wide consistency
+# TEMPORARILY DISABLED DUE TO STARTUP ISSUES
+# def apply_standard_calendar_styling(calendar_widget):
+#     """
+#     Apply standardized calendar styling to any QCalendarWidget.
+#     This ensures consistent appearance across the entire application.
+#     
+#     Args:
+#         calendar_widget: The QCalendarWidget to style
+#     """
+#     if not calendar_widget:
+#         return
+#     
+#     try:
+#         from PyQt6.QtGui import QTextCharFormat, QColor
+#         from PyQt6.QtCore import Qt
+#         
+#         # Set weekend text format to be dimmer grey (not red)
+#         weekend_format = QTextCharFormat()
+#         weekend_format.setForeground(QColor('#888888'))  # Dimmer grey for weekends
+#         calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Saturday, weekend_format)
+#         calendar_widget.setWeekdayTextFormat(Qt.DayOfWeek.Sunday, weekend_format)
+#         
+#         # Set weekday text format to standard app text color
+#         weekday_format = QTextCharFormat()
+#         weekday_format.setForeground(QColor(colors['text']))
+#         for day in [Qt.DayOfWeek.Monday, Qt.DayOfWeek.Tuesday, Qt.DayOfWeek.Wednesday, 
+#                    Qt.DayOfWeek.Thursday, Qt.DayOfWeek.Friday]:
+#             calendar_widget.setWeekdayTextFormat(day, weekday_format)
+#         
+#         # Apply consistent stylesheet
+#         calendar_widget.setStyleSheet(f"""
+#             QCalendarWidget {{
+#                 background-color: {colors['card_bg']};
+#                 color: {colors['text']};
+#                 border: 1px solid {colors['border']};
+#                 font-size: 12px;
+#                 min-width: 280px;
+#                 min-height: 200px;
+#             }}
+#             QCalendarWidget QWidget {{
+#                 background-color: {colors['card_bg']};
+#                 color: {colors['text']};
+#             }}
+#             QCalendarWidget QAbstractItemView {{
+#                 background-color: {colors['card_bg']};
+#                 selection-background-color: {colors['accent']};
+#                 gridline-color: {colors['border']};
+#             }}
+#             QCalendarWidget QAbstractItemView:enabled {{
+#                 color: {colors['text']};
+#                 background-color: {colors['card_bg']};
+#                 selection-background-color: {colors['accent']};
+#                 selection-color: white;
+#             }}
+#             QCalendarWidget QMenu {{
+#                 background-color: {colors['card_bg']};
+#                 color: {colors['text']};
+#                 border: 1px solid {colors['border']};
+#             }}
+#             QCalendarWidget QSpinBox {{
+#                 background-color: {colors['card_bg']};
+#                 color: {colors['text']};
+#                 border: 1px solid {colors['border']};
+#                 selection-background-color: {colors['accent']};
+#                 selection-color: white;
+#             }}
+#             QCalendarWidget QToolButton {{
+#                 background-color: {colors['card_bg']};
+#                 color: {colors['text']};
+#                 border: 1px solid {colors['border']};
+#                 border-radius: 3px;
+#                 padding: 2px;
+#             }}
+#             QCalendarWidget QToolButton:hover {{
+#                 background-color: {colors['hover_bg']};
+#                 border: 1px solid {colors['accent']};
+#             }}
+#             QCalendarWidget QToolButton:pressed {{
+#                 background-color: {colors['accent']};
+#                 color: white;
+#             }}
+#         """)
+#         
+#     except Exception as e:
+#         print(f"Error applying calendar styling: {e}")
+
+# TEMPORARILY DISABLED DUE TO STARTUP ISSUES  
+# def ensure_combobox_consistency(combobox):
+#     """
+#     Ensure a QComboBox has consistent styling and hover effects.
+#     This applies the app-wide COMBOBOX_STYLE and hover delegate.
+#     
+#     Args:
+#         combobox: The QComboBox to style consistently
+#     """
+#     if not combobox:
+#         return
+#     
+#     try:
+#         # Apply the standard combobox style
+#         combobox.setStyleSheet(COMBOBOX_STYLE)
+#         
+#         # Apply hover delegate for proper hover effects
+#         from app.ui.custom_delegates import apply_hover_delegate
+#         apply_hover_delegate(combobox)
+#         
+#     except Exception as e:
+#         print(f"Error applying combobox consistency: {e}") 
