@@ -214,8 +214,8 @@ class AnimatedCustomOptionsWidget(BaseCustomOptionsWidget):
         self._pending_slide_down = False
         self._stability_timer.stop()
         
-        # Use Qt's actual visibility state as the source of truth
-        if self.isVisible():
+        # Check if we're already fully visible and at the correct height
+        if self.isVisible() and self.height() > 0:
             return
             
         self.is_visible = True
