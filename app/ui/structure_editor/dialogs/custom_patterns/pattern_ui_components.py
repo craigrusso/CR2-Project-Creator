@@ -38,21 +38,23 @@ class PatternUIComponents:
         if not self.colors:
             self.setup_styles()
             
-        item_type = "Folder" if is_folder else "File"
-        title = QLabel(f"Custom {item_type} Naming Patterns")
-        title.setFont(QFont("Arial", 16, QFont.Weight.Bold))
-        title.setStyleSheet(f"""
+        title_text = "Custom Folder Naming Patterns" if is_folder else "Custom File Naming Patterns"
+        title_label = QLabel(title_text)
+        title_label.setFont(QFont("Arial", 16, QFont.Weight.Bold))
+        title_label.setStyleSheet(f"""
             color: {self.colors['text']};
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-bottom: 5px;
+            margin-bottom: 12px;
         """)
-        layout.addWidget(title)
-        return title
+        layout.addWidget(title_label)
         
     def create_variables_section(self, layout, is_folder=False):
-        """Create the available variables section"""
+        """Create the variables section with tag buttons"""
+        if not self.colors:
+            self.setup_styles()
+            
         variables_header = QLabel("Available Variables:")
         variables_header.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         variables_header.setStyleSheet(f"""
@@ -60,17 +62,18 @@ class PatternUIComponents:
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-bottom: 5px;
+            margin-top: 0px;
+            margin-bottom: 4px;
         """)
         layout.addWidget(variables_header)
         
-        # Tags widget
+        # Tag buttons in a grid layout
         tags_widget = QWidget()
         tags_widget.setStyleSheet(f"background-color: transparent; border: none;")
         tags_layout = QGridLayout(tags_widget)
         tags_layout.setSpacing(6)
+        tags_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Different tags for files vs folders
         if is_folder:
             tags = [
                 ("${PROJECT_NAME}", "Project name"),
@@ -125,10 +128,19 @@ class PatternUIComponents:
             tag_buttons.append(tag_button)
         
         layout.addWidget(tags_widget)
+        
+        # Add small space after variables section
+        spacer = QWidget()
+        spacer.setFixedHeight(4)
+        layout.addWidget(spacer)
+        
         return tags, tag_buttons
         
     def create_separator_section(self, layout):
         """Create the separator selection section"""
+        if not self.colors:
+            self.setup_styles()
+            
         separator_header = QLabel("Choose separator for pattern elements:")
         separator_header.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         separator_header.setStyleSheet(f"""
@@ -136,8 +148,8 @@ class PatternUIComponents:
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-top: 8px;
-            margin-bottom: 5px;
+            margin-top: 0px;
+            margin-bottom: 2px;
         """)
         layout.addWidget(separator_header)
         
@@ -146,6 +158,7 @@ class PatternUIComponents:
         separator_widget.setStyleSheet(f"background-color: transparent; border: none;")
         separator_layout = QHBoxLayout(separator_widget)
         separator_layout.setSpacing(10)
+        separator_layout.setContentsMargins(0, 0, 0, 0)
         
         separator_combo = QComboBox()
         separator_combo.addItems([
@@ -184,10 +197,18 @@ class PatternUIComponents:
         separator_layout.addStretch()
         layout.addWidget(separator_widget)
         
+        # Add small space after separator section
+        spacer = QWidget()
+        spacer.setFixedHeight(4)
+        layout.addWidget(spacer)
+        
         return separator_combo, custom_separator_edit
         
     def create_pattern_input_section(self, layout, is_folder=False):
         """Create the pattern input section"""
+        if not self.colors:
+            self.setup_styles()
+            
         pattern_header = QLabel("Enter your naming pattern:")
         pattern_header.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         pattern_header.setStyleSheet(f"""
@@ -195,8 +216,8 @@ class PatternUIComponents:
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-top: 8px;
-            margin-bottom: 5px;
+            margin-top: 0px;
+            margin-bottom: 4px;
         """)
         layout.addWidget(pattern_header)
         
@@ -222,6 +243,11 @@ class PatternUIComponents:
             }}
         """)
         layout.addWidget(pattern_edit)
+        
+        # Add small space after pattern section
+        spacer = QWidget()
+        spacer.setFixedHeight(8)
+        layout.addWidget(spacer)
         
         return pattern_edit
         

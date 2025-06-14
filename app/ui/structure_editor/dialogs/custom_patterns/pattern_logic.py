@@ -177,14 +177,25 @@ class PatternLogic:
         if not pattern:
             return pattern
         
-        # Define separator patterns to replace - more comprehensive patterns
-        separator_patterns = [
-            r'(\$\{[^}]+\})[_\-\.\s](\$\{[^}]+\})',  # Any separator between variables
-        ]
+        # Replace any separator characters between variables with the new separator
+        # This handles patterns like ${VAR1}_${VAR2}, ${VAR1}-${VAR2}, etc.
+        # Use a more robust pattern that handles multiple consecutive separators
+        updated_pattern = re.sub(
+            r'(\$\{[^}]+\})[_\-\.\s]+(\$\{[^}]+\})', 
+            f'\\1{new_separator}\\2', 
+            pattern
+        )
         
-        updated_pattern = pattern
-        for pattern_regex in separator_patterns:
-            updated_pattern = re.sub(pattern_regex, f'\\1{new_separator}\\2', updated_pattern)
+        # Apply the replacement multiple times to handle chains of variables
+        # e.g., ${A}_${B}_${C} -> ${A}X${B}X${C}
+        previous_pattern = ""
+        while previous_pattern != updated_pattern:
+            previous_pattern = updated_pattern
+            updated_pattern = re.sub(
+                r'(\$\{[^}]+\})[_\-\.\s]+(\$\{[^}]+\})', 
+                f'\\1{new_separator}\\2', 
+                updated_pattern
+            )
         
         return updated_pattern
 

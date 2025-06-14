@@ -7,7 +7,7 @@ Main coordinator for file and folder operations, context menus, and versioning
 """
 
 import os
-from PyQt6.QtWidgets import QTreeWidgetItem, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QWidget, QTextEdit
+from PyQt6.QtWidgets import QTreeWidgetItem, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QWidget, QTextEdit, QScrollArea
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from datetime import datetime
@@ -248,85 +248,124 @@ class CustomPatternsDialog(QDialog):
         """Initialize the dialog UI"""
         self.setWindowTitle("Custom Naming Patterns")
         self.setModal(True)
-        self.resize(650, 550)
+        self.resize(650, 600)
         
         # Apply consistent dialog styling
         self._apply_dialog_styling()
         
-        # Main layout with tighter spacing
+        # Main layout with minimal spacing
         main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(12)
+        main_layout.setSpacing(0)
         main_layout.setContentsMargins(20, 20, 20, 20)
         
-        # Determine if this is a folder
+        # Title section (fixed at top)
         is_folder = self._is_folder_item(self.item)
-        
-        # Create UI sections using the component methods
         self.ui_components.create_title_section(main_layout, is_folder)
         
-        # Variables section
-        self.tags, self.tag_buttons = self.ui_components.create_variables_section(main_layout, is_folder)
+        # Create scroll area for the main content
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setStyleSheet(f"""
+            QScrollArea {{
+                border: none;
+                background-color: transparent;
+            }}
+            QScrollBar:vertical {{
+                background-color: {self.ui_components.colors['bg']};
+                width: 12px;
+                border-radius: 6px;
+            }}
+            QScrollBar::handle:vertical {{
+                background-color: {self.ui_components.colors['border']};
+                border-radius: 6px;
+                min-height: 20px;
+            }}
+            QScrollBar::handle:vertical:hover {{
+                background-color: {self.ui_components.colors['accent']};
+            }}
+        """)
         
-        # Connect tag buttons to insert text
+        # Scrollable content widget
+        scroll_content = QWidget()
+        scroll_layout = QVBoxLayout(scroll_content)
+        scroll_layout.setSpacing(8)  # Tight spacing between sections
+        scroll_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Variables section with tighter spacing
+        self.tags, self.tag_buttons = self.ui_components.create_variables_section(scroll_layout, is_folder)
         for tag_button in self.tag_buttons:
             tag_button.clicked.connect(lambda checked, tag=tag_button.text(): self._insert_tag(tag))
         
-        # Separator section
-        self.separator_combo, self.custom_separator_edit = self.ui_components.create_separator_section(main_layout)
-        
-        # Connect separator combo change
+        # Separator section - tighter to variables
+        self.separator_combo, self.custom_separator_edit = self.ui_components.create_separator_section(scroll_layout)
         self.separator_combo.currentTextChanged.connect(self._on_separator_changed)
         self.custom_separator_edit.textChanged.connect(self._on_custom_separator_changed)
         
-        # Pattern input section
-        self.pattern_edit = self.ui_components.create_pattern_input_section(main_layout, is_folder)
+        # Pattern input section - tighter to separator
+        self.pattern_edit = self.ui_components.create_pattern_input_section(scroll_layout, is_folder)
         self.pattern_edit.textChanged.connect(self._update_preview)
         
-        # Custom options section - will be populated dynamically
+        # Custom options section - will be populated dynamically, tight spacing
         self.custom_options_group = self.ui_components.create_group_box("Custom Dropdown Options", visible=False)
         self.custom_options_layout = QVBoxLayout(self.custom_options_group)
+        self.custom_options_layout.setSpacing(6)
         
-        # Help text for custom options
+        # Help text for custom options with tighter margins
         help_text = QLabel("Enter one option per line for each custom placeholder:")
-        from app.ui.color_scheme_pyqt import colors
         help_text.setStyleSheet(f"""
-            QLabel {{
-                color: {colors['secondary_text']};
-                background-color: transparent;
-                border: none;
-                padding: 5px 0px;
-                font-style: italic;
-            }}
+            color: {self.ui_components.colors['secondary_text']};
+            background-color: transparent;
+            border: none;
+            padding: 2px 0px;
+            margin: 0px;
         """)
         self.custom_options_layout.addWidget(help_text)
         
         # Dictionary to store custom option text areas
         self.custom_text_areas = {}
         
-        main_layout.addWidget(self.custom_options_group)
+        scroll_layout.addWidget(self.custom_options_group)
         
-        # Date and time format sections - will be shown dynamically
-        self.date_format_group, self.date_combo = self.format_managers.create_date_format_group(main_layout)
-        self.time_format_group, self.time_combo = self.format_managers.create_time_format_group(main_layout)
+        # Date and time format sections - will be shown dynamically, tight spacing
+        self.date_format_group, self.date_combo = self.format_managers.create_date_format_group(scroll_layout)
+        self.time_format_group, self.time_combo = self.format_managers.create_time_format_group(scroll_layout)
         
         # Connect format combo changes to preview update
         self.date_combo.currentTextChanged.connect(self._update_preview)
         self.time_combo.currentTextChanged.connect(self._update_preview)
         
-        # Preview section with proper styling
+        # Add flexible space at bottom for dynamic content expansion
+        scroll_layout.addStretch(1)
+        
+        # Set scroll content
+        scroll_area.setWidget(scroll_content)
+        main_layout.addWidget(scroll_area, 1)  # Give scroll area the main space
+        
+        # Fixed bottom section - Preview and buttons (non-scrollable)
+        # Add separator line
+        separator_line = QWidget()
+        separator_line.setFixedHeight(1)
+        separator_line.setStyleSheet(f"background-color: {self.ui_components.colors['border']};")
+        main_layout.addWidget(separator_line)
+        
+        # Preview section (fixed at bottom)
+        bottom_widget = QWidget()
+        bottom_layout = QVBoxLayout(bottom_widget)
+        bottom_layout.setSpacing(8)
+        bottom_layout.setContentsMargins(0, 12, 0, 0)
+        
         preview_label = QLabel("Preview:")
         preview_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
         self._apply_label_styling(preview_label)
-        main_layout.addWidget(preview_label)
+        bottom_layout.addWidget(preview_label)
         
         self.preview_label = QLabel("Enter a pattern to see preview...")
         self._apply_preview_styling(self.preview_label)
-        main_layout.addWidget(self.preview_label)
+        bottom_layout.addWidget(self.preview_label)
         
-        # Add spacing before buttons
-        main_layout.addSpacing(6)
-        
-        # Buttons with proper styling and spacing
+        # Buttons with proper spacing
         button_layout = QHBoxLayout()
         button_layout.setSpacing(12)
         button_layout.addStretch()
@@ -344,7 +383,8 @@ class CustomPatternsDialog(QDialog):
         self._apply_button_styling(self.apply_button, is_accent=True)
         button_layout.addWidget(self.apply_button)
         
-        main_layout.addLayout(button_layout)
+        bottom_layout.addLayout(button_layout)
+        main_layout.addWidget(bottom_widget)
 
     def _insert_tag(self, tag):
         """Insert a tag into the pattern input using PatternLogic for automatic separator handling"""
@@ -360,32 +400,43 @@ class CustomPatternsDialog(QDialog):
         else:
             self.custom_separator_edit.setVisible(False)
         
+        # Get the new separator
+        new_separator = self.pattern_logic.get_current_separator(self.separator_combo, self.custom_separator_edit) if hasattr(self, 'pattern_logic') else self._get_current_separator()
+        
         # Act as master switch - update existing pattern separators
         if hasattr(self, 'pattern_edit') and hasattr(self, 'pattern_logic'):
             current_pattern = self.pattern_edit.text()
             if current_pattern.strip():
-                new_separator = self.pattern_logic.get_current_separator(self.separator_combo, self.custom_separator_edit)
                 updated_pattern = self.pattern_logic.update_pattern_separators(current_pattern, new_separator)
                 self.pattern_edit.setText(updated_pattern)
-                
-                # Also update date/time format separators to match
-                if hasattr(self, 'format_managers') and hasattr(self, 'date_combo') and hasattr(self, 'time_combo'):
-                    self.format_managers.update_datetime_formats_to_separator(new_separator, self.date_combo, self.time_combo)
+        
+        # CRITICAL FIX: Always update BOTH date AND time format separators to match
+        if hasattr(self, 'format_managers'):
+            if hasattr(self, 'date_combo') and self.date_combo:
+                self.format_managers.update_datetime_formats_to_separator(new_separator, self.date_combo, None)
+            if hasattr(self, 'time_combo') and self.time_combo:
+                self.format_managers.update_datetime_formats_to_separator(new_separator, None, self.time_combo)
                 
         self._update_preview()
         
     def _on_custom_separator_changed(self):
         """Handle custom separator input changes and act as master switch"""
+        # Get the new separator
+        new_separator = self.pattern_logic.get_current_separator(self.separator_combo, self.custom_separator_edit) if hasattr(self, 'pattern_logic') else self._get_current_separator()
+        
+        # Act as master switch - update existing pattern separators
         if hasattr(self, 'pattern_edit') and hasattr(self, 'pattern_logic'):
             current_pattern = self.pattern_edit.text()
             if current_pattern.strip():
-                new_separator = self.pattern_logic.get_current_separator(self.separator_combo, self.custom_separator_edit)
                 updated_pattern = self.pattern_logic.update_pattern_separators(current_pattern, new_separator)
                 self.pattern_edit.setText(updated_pattern)
-                
-                # Also update date/time format separators to match
-                if hasattr(self, 'format_managers') and hasattr(self, 'date_combo') and hasattr(self, 'time_combo'):
-                    self.format_managers.update_datetime_formats_to_separator(new_separator, self.date_combo, self.time_combo)
+        
+        # CRITICAL FIX: Always update BOTH date AND time format separators to match
+        if hasattr(self, 'format_managers'):
+            if hasattr(self, 'date_combo') and self.date_combo:
+                self.format_managers.update_datetime_formats_to_separator(new_separator, self.date_combo, None)
+            if hasattr(self, 'time_combo') and self.time_combo:
+                self.format_managers.update_datetime_formats_to_separator(new_separator, None, self.time_combo)
         
         self._update_preview()
         
