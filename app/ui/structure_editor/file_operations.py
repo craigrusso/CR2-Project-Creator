@@ -14,9 +14,9 @@ from PyQt6.QtCore import Qt
 from .utils.file_type_detector import FileTypeDetector
 from .utils.tree_item_helpers import TreeItemHelpers
 from .handlers.binary_file_handler import BinaryFileHandler
-from .operations.basic_file_operations import BasicFileOperations
+from .operations.file_operations import BasicFileOperations
 from .operations.import_operations import ImportOperations
-from .operations.context_menu_operations import ContextMenuOperations
+from .operations.context_menu import ContextMenuOperations
 from .operations.item_operations import ItemOperations
 from .operations.tree_operations import TreeOperations
 from .patterns.pattern_applier import PatternApplier

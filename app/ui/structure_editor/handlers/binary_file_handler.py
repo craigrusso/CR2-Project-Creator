@@ -9,8 +9,7 @@ Extracted from the monolithic file_operations.py for better organization.
 """
 
 import os
-from app.config.file_types import FILE_TYPES
-from ..utils.file_type_detector import FileTypeDetector
+from ..utils.file_type_detector import FileTypeDetector, FILE_TYPES
 
 
 class BinaryFileHandler:
