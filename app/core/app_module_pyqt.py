@@ -2217,6 +2217,7 @@ class ProjectCreatorApp(QMainWindow):
     def _collect_custom_options_from_template(self, template_data):
         """Collect custom options from template data for the slide-up widget"""
         custom_prompts = {}
+        print(f"DEBUG: _collect_custom_options_from_template called with template: {template_data.get('name', 'unknown') if template_data else 'None'}")
         
         def collect_from_structure(structure, path=""):
             """Recursively collect custom options from structure"""
@@ -2250,6 +2251,7 @@ class ProjectCreatorApp(QMainWindow):
                     
                     # Extract pattern data from the item
                     custom_options, pattern = extract_pattern_data(item)
+                    print(f"DEBUG: For item '{item_name}', found custom_options: {custom_options}, pattern: {pattern}")
                     
                     # Check for any CUSTOM placeholders in the pattern
                     if custom_options and pattern:
@@ -2260,13 +2262,25 @@ class ProjectCreatorApp(QMainWindow):
                             if isinstance(custom_options, dict):
                                 # New format - each placeholder has its own options
                                 for custom_placeholder in custom_matches:
-                                    if custom_placeholder in custom_options:
+                                    # Check both direct key and with ${} format
+                                    placeholder_keys = [
+                                        custom_placeholder,
+                                        f"${{{custom_placeholder}}}"
+                                    ]
+                                    
+                                    found_options = None
+                                    for key in placeholder_keys:
+                                        if key in custom_options:
+                                            found_options = custom_options[key]
+                                            break
+                                    
+                                    if found_options:
                                         custom_key = f"{item_path}_{custom_placeholder}"
                                         if custom_key not in custom_prompts:
                                             custom_prompts[custom_key] = {
                                                 'item_path': item_path,
                                                 'item_name': item_name,
-                                                'options': custom_options[custom_placeholder],
+                                                'options': found_options,
                                                 'pattern': pattern,
                                                 'placeholder': custom_placeholder
                                             }
@@ -2298,6 +2312,7 @@ class ProjectCreatorApp(QMainWindow):
         # Collect all custom options needed
         structure = template_data.get('structure', [])
         collect_from_structure(structure)
+        print(f"DEBUG: Final custom_prompts collected: {custom_prompts}")
         return custom_prompts
     
     def get_custom_values_from_widget(self):

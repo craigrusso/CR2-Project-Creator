@@ -7,7 +7,7 @@ Main coordinator for file and folder operations, context menus, and versioning
 """
 
 import os
-from PyQt6.QtWidgets import QTreeWidgetItem, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit
+from PyQt6.QtWidgets import QTreeWidgetItem, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QWidget, QTextEdit
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from datetime import datetime
@@ -244,12 +244,15 @@ class CustomPatternsDialog(QDialog):
         """Initialize the dialog UI"""
         self.setWindowTitle("Custom Naming Patterns")
         self.setModal(True)
-        self.resize(600, 500)
+        self.resize(650, 550)
         
-        # Main layout
+        # Apply consistent dialog styling
+        self._apply_dialog_styling()
+        
+        # Main layout with better spacing
         main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(15)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(20)
+        main_layout.setContentsMargins(25, 25, 25, 25)
         
         # Determine if this is a folder
         is_folder = self._is_folder_item(self.item)
@@ -275,57 +278,61 @@ class CustomPatternsDialog(QDialog):
         self.pattern_edit = self.ui_components.create_pattern_input_section(main_layout, is_folder)
         self.pattern_edit.textChanged.connect(self._update_preview)
         
-        # Custom options section
-        self.custom_options_group = self.ui_components.create_group_box("Custom Options", visible=False)
-        custom_options_layout = QVBoxLayout(self.custom_options_group)
+        # Custom options section - will be populated dynamically
+        self.custom_options_group = self.ui_components.create_group_box("Custom Dropdown Options", visible=False)
+        self.custom_options_layout = QVBoxLayout(self.custom_options_group)
         
-        # Custom option inputs
-        self.custom_inputs = []
-        for i in range(3):
-            custom_input = QLineEdit()
-            custom_input.setPlaceholderText(f"Custom option {i+1}")
-            custom_input.textChanged.connect(self._update_preview)
-            custom_options_layout.addWidget(custom_input)
-            self.custom_inputs.append(custom_input)
+        # Help text for custom options
+        help_text = QLabel("Enter one option per line for each custom placeholder:")
+        from app.ui.color_scheme_pyqt import colors
+        help_text.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['secondary_text']};
+                background-color: transparent;
+                border: none;
+                padding: 5px 0px;
+                font-style: italic;
+            }}
+        """)
+        self.custom_options_layout.addWidget(help_text)
+        
+        # Dictionary to store custom option text areas
+        self.custom_text_areas = {}
         
         main_layout.addWidget(self.custom_options_group)
         
-        # Preview section
+        # Preview section with proper styling
         preview_label = QLabel("Preview:")
         preview_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        self._apply_label_styling(preview_label)
         main_layout.addWidget(preview_label)
         
         self.preview_label = QLabel("Enter a pattern to see preview...")
-        self.preview_label.setStyleSheet("""
-            QLabel {
-                background-color: #2b2b2b;
-                color: #ffffff;
-                border: 1px solid #555555;
-                border-radius: 4px;
-                padding: 10px;
-                font-family: 'Courier New', monospace;
-                font-size: 12px;
-            }
-        """)
+        self._apply_preview_styling(self.preview_label)
         main_layout.addWidget(self.preview_label)
         
-        # Buttons
+        # Add spacing before buttons
+        main_layout.addSpacing(10)
+        
+        # Buttons with proper styling and spacing
         button_layout = QHBoxLayout()
+        button_layout.setSpacing(12)
         button_layout.addStretch()
         
         cancel_button = QPushButton("Cancel")
         cancel_button.clicked.connect(self.reject)
+        cancel_button.setMinimumSize(100, 32)
+        self._apply_button_styling(cancel_button, is_accent=False)
         button_layout.addWidget(cancel_button)
         
         self.apply_button = QPushButton("Apply Pattern")
         self.apply_button.clicked.connect(self.accept)
         self.apply_button.setEnabled(False)
+        self.apply_button.setMinimumSize(120, 32)
+        self._apply_button_styling(self.apply_button, is_accent=True)
         button_layout.addWidget(self.apply_button)
         
         main_layout.addLayout(button_layout)
-        
-        # Load existing pattern data if available
-        self._load_existing_pattern_data()
 
     def _insert_tag(self, tag):
         """Insert a tag into the pattern input"""
@@ -355,11 +362,11 @@ class CustomPatternsDialog(QDialog):
         if not pattern:
             self.preview_label.setText("Enter a pattern to see preview...")
             self.apply_button.setEnabled(False)
+            self._clear_custom_options()
             return
             
-        # Show/hide custom options based on pattern content
-        has_custom = any(tag in pattern for tag in ['${CUSTOM}', '${CUSTOM1}', '${CUSTOM2}', '${CUSTOM3}'])
-        self.custom_options_group.setVisible(has_custom)
+        # Update custom options based on pattern content
+        self._update_custom_options_for_pattern(pattern)
         
         # Generate preview using a simple approach since we don't have all the managers
         try:
@@ -375,18 +382,33 @@ class CustomPatternsDialog(QDialog):
         if not pattern:
             return "Enter a pattern to see preview"
         
+        # Import datetime if needed
+        from datetime import datetime
+        
+        # Get custom options data
+        custom_options = self._get_custom_options_data()
+        
         # Get sample values for different placeholders
         sample_values = {
             '${PROJECT_NAME}': 'MyProject',
             '${BASE}': 'filename',
             '${DATE}': datetime.now().strftime('%Y%m%d'),
             '${TIME}': datetime.now().strftime('%H%M%S'),
-            '${COUNTER}': '001',
-            '${CUSTOM}': 'Option1',
-            '${CUSTOM1}': 'Option1',
-            '${CUSTOM2}': 'Option2',
-            '${CUSTOM3}': 'Option3'
+            '${COUNTER}': '001'
         }
+        
+        # Add custom options with first option from each list
+        for placeholder, options in custom_options.items():
+            if options:  # If there are options available
+                sample_values[placeholder] = options[0]  # Use first option
+            else:
+                sample_values[placeholder] = f'[No options for {placeholder}]'
+        
+        # Add default values for custom placeholders that don't have options yet
+        custom_placeholders = self._get_custom_placeholders_from_pattern(pattern)
+        for placeholder in custom_placeholders:
+            if placeholder not in sample_values:
+                sample_values[placeholder] = f'[Enter options for {placeholder}]'
         
         # Replace placeholders in pattern
         preview = pattern
@@ -431,8 +453,123 @@ class CustomPatternsDialog(QDialog):
             
     def _load_existing_pattern_data(self):
         """Load existing pattern data if available"""
-        # This method can be implemented later if needed
-        pass
+        if not self.item:
+            print("DEBUG: No item provided to load pattern data")
+            return
+        
+        try:
+            # Get item data
+            item_data = self.item.data(0, Qt.ItemDataRole.UserRole)
+            if not isinstance(item_data, dict):
+                print(f"DEBUG: Item data is not a dict: {type(item_data)}")
+                return
+            
+            print(f"DEBUG: Loading pattern data from item_data keys: {list(item_data.keys())}")
+            
+            # Look for pattern in multiple possible locations
+            pattern = None
+            custom_options = None
+            separator = "_"
+            
+            # Check direct item_data level
+            if 'pattern' in item_data:
+                pattern = item_data['pattern']
+                custom_options = item_data.get('custom_options')
+                separator = item_data.get('separator', '_')
+                print(f"DEBUG: Found pattern at top level: {pattern}")
+                print(f"DEBUG: Found custom_options at top level: {custom_options}")
+            
+            # Check user_data level  
+            elif 'user_data' in item_data and isinstance(item_data['user_data'], dict):
+                user_data = item_data['user_data']
+                if 'pattern' in user_data:
+                    pattern = user_data['pattern']
+                    custom_options = user_data.get('custom_options')
+                    separator = user_data.get('separator', '_')
+                    print(f"DEBUG: Found pattern in user_data: {pattern}")
+                    print(f"DEBUG: Found custom_options in user_data: {custom_options}")
+                    
+                # Check if user_data has nested user_data
+                elif 'user_data' in user_data and isinstance(user_data['user_data'], dict):
+                    nested_user_data = user_data['user_data']
+                    if 'pattern' in nested_user_data:
+                        pattern = nested_user_data['pattern']
+                        custom_options = nested_user_data.get('custom_options')
+                        separator = nested_user_data.get('separator', '_')
+                        print(f"DEBUG: Found pattern in nested user_data: {pattern}")
+                        print(f"DEBUG: Found custom_options in nested user_data: {custom_options}")
+            
+            # If pattern found, load it
+            if pattern:
+                print(f"DEBUG: Loading pattern: {pattern}")
+                self.pattern_edit.setText(pattern)
+                
+                # Update custom options for this pattern
+                self._update_custom_options_for_pattern(pattern)
+                
+                # Load custom options data if available
+                if custom_options:
+                    print(f"DEBUG: Loading custom options: {custom_options}")
+                    self._load_custom_options_into_text_areas(custom_options)
+                
+                # Load separator settings
+                if separator:
+                    print(f"DEBUG: Loading separator: {separator}")
+                    separator_data = {'separator': separator}
+                    self._load_separator_settings(separator_data)
+                
+                # Update preview after loading
+                self._update_preview()
+            else:
+                print("DEBUG: No pattern found in item data")
+            
+        except Exception as e:
+            print(f"ERROR: Error loading existing pattern data: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _load_custom_options_into_text_areas(self, custom_options):
+        """Load custom options data into the text areas"""
+        if not isinstance(custom_options, dict):
+            return
+        
+        for placeholder, options in custom_options.items():
+            if placeholder in self.custom_text_areas:
+                text_area = self.custom_text_areas[placeholder]['text_area']
+                if isinstance(options, list):
+                    # Convert list to newline-separated text
+                    text_content = '\n'.join(options)
+                    text_area.setPlainText(text_content)
+                elif isinstance(options, str):
+                    text_area.setPlainText(options)
+    
+    def _load_separator_settings(self, item_data):
+        """Load separator settings from item data"""
+        separator = item_data.get('separator', '_')
+        
+        # Map separator to dropdown text
+        separator_map = {
+            '_': "_ (underscore)",
+            '-': "- (dash)",
+            '.': ". (dot)",
+            ' ': "  (space)"
+        }
+        
+        separator_text = separator_map.get(separator, "Custom...")
+        
+        # Find and set the separator in combo
+        for i in range(self.separator_combo.count()):
+            if self.separator_combo.itemText(i) == separator_text:
+                self.separator_combo.setCurrentIndex(i)
+                break
+        else:
+            # If not found, set to custom and show custom input
+            for i in range(self.separator_combo.count()):
+                if self.separator_combo.itemText(i) == "Custom...":
+                    self.separator_combo.setCurrentIndex(i)
+                    self.custom_separator_edit.setText(separator)
+                    self.custom_separator_edit.setVisible(True)
+                    break
         
     def validate_pattern(self):
         """Validate the current pattern"""
@@ -451,5 +588,209 @@ class CustomPatternsDialog(QDialog):
         return {
             'pattern': self.pattern_edit.text().strip(),
             'separator': self._get_current_separator(),
-            'custom_options': [input_field.text().strip() for input_field in self.custom_inputs if hasattr(self, 'custom_inputs')]
+            'custom_options': self._get_custom_options_data()
         }
+    
+    def _apply_dialog_styling(self):
+        """Apply consistent dialog styling"""
+        from app.ui.color_scheme_pyqt import colors
+        
+        self.setStyleSheet(f"""
+            QDialog {{
+                background-color: {colors['bg']};
+                color: {colors['text']};
+            }}
+        """)
+    
+    def _apply_label_styling(self, label):
+        """Apply consistent label styling"""
+        from app.ui.color_scheme_pyqt import colors
+        
+        label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['text']};
+                background-color: transparent;
+                border: none;
+                padding: 0px;
+            }}
+        """)
+    
+    def _apply_lineedit_styling(self, lineedit):
+        """Apply consistent line edit styling"""
+        from app.ui.color_scheme_pyqt import colors
+        
+        lineedit.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
+                border-radius: 4px;
+                padding: 8px 12px;
+                font-size: 14px;
+                min-height: 20px;
+            }}
+            QLineEdit:focus {{
+                border: 2px solid {colors['accent']};
+                background-color: {colors['highlight_bg_transparent']};
+            }}
+            QLineEdit:disabled {{
+                background-color: {colors['bg']};
+                color: {colors['secondary_text']};
+                border: 2px solid {colors['border']};
+            }}
+        """)
+    
+    def _apply_preview_styling(self, preview_label):
+        """Apply consistent preview label styling"""
+        from app.ui.color_scheme_pyqt import colors
+        
+        preview_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
+                border-radius: 6px;
+                padding: 12px;
+                font-family: 'Courier New', monospace;
+                font-size: 12px;
+                min-height: 40px;
+            }}
+        """)
+    
+    def _apply_button_styling(self, button, is_accent=False):
+        """Apply consistent button styling"""
+        from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
+        
+        if is_accent:
+            button.setStyleSheet(ACCENT_BUTTON_STYLE)
+        else:
+            button.setStyleSheet(BUTTON_STYLE)
+    
+    def _get_custom_placeholders_from_pattern(self, pattern):
+        """Extract CUSTOM placeholders from the pattern"""
+        import re
+        if not pattern:
+            return []
+        
+        # Find all CUSTOM placeholders: ${CUSTOM}, ${CUSTOM1}, ${CUSTOM2}, ${CUSTOM3}
+        matches = re.findall(r'\$\{(CUSTOM\d*)\}', pattern)
+        unique_placeholders = []
+        for match in matches:
+            placeholder = f"${{{match}}}"
+            if placeholder not in unique_placeholders:
+                unique_placeholders.append(placeholder)
+        
+        return sorted(unique_placeholders)
+    
+    def _update_custom_options_for_pattern(self, pattern):
+        """Update custom options text areas based on pattern placeholders"""
+        placeholders = self._get_custom_placeholders_from_pattern(pattern)
+        
+        if not placeholders:
+            self.custom_options_group.setVisible(False)
+            self._clear_custom_options()
+            return
+        
+        # Show the custom options group
+        self.custom_options_group.setVisible(True)
+        
+        # Remove text areas for placeholders no longer in use
+        for placeholder in list(self.custom_text_areas.keys()):
+            if placeholder not in placeholders:
+                self._remove_custom_text_area(placeholder)
+        
+        # Add text areas for new placeholders
+        for placeholder in placeholders:
+            if placeholder not in self.custom_text_areas:
+                self._add_custom_text_area(placeholder)
+    
+    def _add_custom_text_area(self, placeholder):
+        """Add a text area for a specific custom placeholder"""
+        from PyQt6.QtWidgets import QTextEdit
+        from app.ui.color_scheme_pyqt import colors
+        
+        # Create container for this placeholder
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 10, 0, 0)
+        container_layout.setSpacing(5)
+        
+        # Add label for this placeholder
+        label = QLabel(f"Options for {placeholder}:")
+        label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['text']};
+                background-color: transparent;
+                border: none;
+                font-weight: bold;
+                padding: 0px;
+            }}
+        """)
+        container_layout.addWidget(label)
+        
+        # Create text area
+        text_area = QTextEdit()
+        text_area.setPlaceholderText(f"Enter options for {placeholder}, one per line:\nOption 1\nOption 2\nOption 3")
+        text_area.setMaximumHeight(120)  # Limit height to keep dialog manageable
+        text_area.setMinimumHeight(80)   # Ensure minimum usable height
+        
+        # Apply consistent styling
+        text_area.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {colors['card_bg']};
+                color: {colors['text']};
+                border: 2px solid {colors['border']};
+                border-radius: 4px;
+                padding: 8px;
+                font-size: 14px;
+                font-family: 'Arial', sans-serif;
+            }}
+            QTextEdit:focus {{
+                border: 2px solid {colors['accent']};
+                background-color: {colors['highlight_bg_transparent']};
+            }}
+        """)
+        
+        # Connect to update preview
+        text_area.textChanged.connect(self._update_preview)
+        
+        container_layout.addWidget(text_area)
+        
+        # Store references
+        self.custom_text_areas[placeholder] = {
+            'container': container,
+            'text_area': text_area,
+            'label': label
+        }
+        
+        # Add to layout
+        self.custom_options_layout.addWidget(container)
+    
+    def _remove_custom_text_area(self, placeholder):
+        """Remove text area for a specific placeholder"""
+        if placeholder in self.custom_text_areas:
+            container = self.custom_text_areas[placeholder]['container']
+            self.custom_options_layout.removeWidget(container)
+            container.deleteLater()
+            del self.custom_text_areas[placeholder]
+    
+    def _clear_custom_options(self):
+        """Clear all custom option text areas"""
+        for placeholder in list(self.custom_text_areas.keys()):
+            self._remove_custom_text_area(placeholder)
+    
+    def _get_custom_options_data(self):
+        """Get custom options data from all text areas"""
+        custom_options = {}
+        
+        for placeholder, widgets in self.custom_text_areas.items():
+            text_area = widgets['text_area']
+            text_content = text_area.toPlainText().strip()
+            
+            if text_content:
+                # Split by lines and filter out empty lines
+                options = [line.strip() for line in text_content.split('\n') if line.strip()]
+                if options:
+                    custom_options[placeholder] = options
+        
+        return custom_options
