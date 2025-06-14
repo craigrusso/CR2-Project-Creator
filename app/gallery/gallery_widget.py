@@ -32,7 +32,7 @@ from app.core import config_manager # ADDED
 class TemplateGallery(QWidget):
     """Main widget for displaying and managing templates"""
     
-    template_selected = pyqtSignal(dict)
+    template_selected = pyqtSignal(object)
     folder_selected = pyqtSignal(str)
     
     def __init__(self, app, parent=None):
