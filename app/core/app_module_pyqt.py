@@ -906,6 +906,9 @@ class ProjectCreatorApp(QMainWindow):
         self.options_container.hide()
         self._update_versioning_options()  # Set initial state
         
+        # Setup animation for versioning options (after initial hide)
+        self._setup_versioning_animation()
+        
         self.left_layout.addWidget(versioning_container)
         
         # Create a fixed bottom section for output directory and create button
@@ -1906,16 +1909,114 @@ class ProjectCreatorApp(QMainWindow):
         # Pass the event to the parent class
         return super().eventFilter(obj, event) 
 
+    def _setup_versioning_animation(self):
+        """Setup animation for versioning options"""
+        from PyQt6.QtCore import QPropertyAnimation, QEasingCurve
+        
+        # Create animations for both widgets
+        self.versioning_options_animation = QPropertyAnimation(self.versioning_options, b"maximumHeight")
+        self.versioning_options_animation.setDuration(250)
+        self.versioning_options_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+        self.options_container_animation = QPropertyAnimation(self.options_container, b"maximumHeight")
+        self.options_container_animation.setDuration(250)
+        self.options_container_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        
+        # Track animation state
+        self._versioning_options_visible = False
+    
     def _toggle_versioning_options(self, enabled):
-        """Toggle visibility of versioning options"""
+        """Toggle visibility of versioning options with smooth animation"""
         if enabled:
-            self.versioning_options.show()
-            self.options_container.show()
+            self._slide_versioning_options_up()
             # Check for conflicts with custom patterns when versioning is enabled
             self._check_custom_pattern_conflicts()
         else:
-            self.versioning_options.hide()
-            self.options_container.hide()
+            self._slide_versioning_options_down()
+    
+    def _slide_versioning_options_up(self):
+        """Animate versioning options sliding up"""
+        if self._versioning_options_visible:
+            return
+            
+        self._versioning_options_visible = True
+        
+        # Disconnect any previous connections to avoid conflicts
+        try:
+            self.versioning_options_animation.finished.disconnect()
+        except TypeError:
+            pass  # No connections to disconnect
+        try:
+            self.options_container_animation.finished.disconnect()
+        except TypeError:
+            pass  # No connections to disconnect
+        
+        # Show widgets first and set initial height to 0
+        self.versioning_options.show()
+        self.options_container.show()
+        self.versioning_options.setMaximumHeight(0)
+        self.options_container.setMaximumHeight(0)
+        
+        # Calculate target heights based on content
+        # Temporarily remove height constraint to get natural size
+        self.versioning_options.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
+        self.options_container.setMaximumHeight(16777215)
+        self.versioning_options.adjustSize()
+        self.options_container.adjustSize()
+        
+        versioning_target_height = self.versioning_options.sizeHint().height()
+        options_target_height = self.options_container.sizeHint().height()
+        
+        # Reset to 0 for animation
+        self.versioning_options.setMaximumHeight(0)
+        self.options_container.setMaximumHeight(0)
+        
+        # Start animations
+        self.versioning_options_animation.setStartValue(0)
+        self.versioning_options_animation.setEndValue(versioning_target_height)
+        self.versioning_options_animation.finished.connect(
+            lambda: self.versioning_options.setMaximumHeight(16777215)
+        )
+        self.versioning_options_animation.start()
+        
+        self.options_container_animation.setStartValue(0)
+        self.options_container_animation.setEndValue(options_target_height)
+        self.options_container_animation.finished.connect(
+            lambda: self.options_container.setMaximumHeight(16777215)
+        )
+        self.options_container_animation.start()
+    
+    def _slide_versioning_options_down(self):
+        """Animate versioning options sliding down"""
+        if not self._versioning_options_visible:
+            return
+            
+        self._versioning_options_visible = False
+        
+        # Disconnect any previous connections to avoid conflicts
+        try:
+            self.versioning_options_animation.finished.disconnect()
+        except TypeError:
+            pass  # No connections to disconnect
+        try:
+            self.options_container_animation.finished.disconnect()
+        except TypeError:
+            pass  # No connections to disconnect
+        
+        # Get current heights
+        current_versioning_height = self.versioning_options.height()
+        current_options_height = self.options_container.height()
+        
+        # Animate to height 0, then hide
+        self.versioning_options_animation.setStartValue(current_versioning_height)
+        self.versioning_options_animation.setEndValue(0)
+        self.versioning_options_animation.finished.connect(lambda: self.versioning_options.hide())
+        self.versioning_options_animation.start()
+        
+        self.options_container_animation.setStartValue(current_options_height)
+        self.options_container_animation.setEndValue(0)
+        self.options_container_animation.finished.connect(lambda: self.options_container.hide())
+        self.options_container_animation.start()
     
     def _update_versioning_options(self):
         """Update which versioning options are visible based on sequence type"""
