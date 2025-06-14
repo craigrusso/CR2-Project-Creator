@@ -214,20 +214,37 @@ class AnimatedCustomOptionsWidget(BaseCustomOptionsWidget):
         self._pending_slide_down = False
         self._stability_timer.stop()
         
-        # Check if we're already fully visible and at the correct height
-        if self.isVisible() and self.height() > 0:
+        # Check if we're already fully visible and properly sized
+        if self.is_visible and self.isVisible() and self.height() > 0:
             return
             
         self.is_visible = True
+        
+        # Remove fixed height constraint to allow animation
+        self.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX
+        self.setMinimumHeight(0)
+        
+        # Show the widget
         self.show()
         
         # Calculate target height based on content
         self.adjustSize()
         target_height = self.sizeHint().height()
         
+        # Set maximum height to 0 initially for animation
+        self.setMaximumHeight(0)
+        
         # Start animation
         self.animation.setStartValue(0)
         self.animation.setEndValue(target_height)
+        
+        # Connect to restore maximum height after animation completes
+        try:
+            self.animation.finished.disconnect()
+        except:
+            pass
+        self.animation.finished.connect(lambda: self.setMaximumHeight(16777215))
+        
         self.animation.start()
     
     def slide_down(self, delay_ms=500):
@@ -271,6 +288,9 @@ class AnimatedCustomOptionsWidget(BaseCustomOptionsWidget):
     def _on_slide_down_finished(self):
         """Called when slide down animation completes"""
         self.hide()
+        # Reset height constraints for next animation
+        self.setMaximumHeight(0)
+        self.setMinimumHeight(0)
         # Ensure is_visible flag is properly set
         self.is_visible = False
     
