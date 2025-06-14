@@ -7,8 +7,10 @@ Main coordinator for file and folder operations, context menus, and versioning
 """
 
 import os
-from PyQt6.QtWidgets import QTreeWidgetItem, QDialog
+from PyQt6.QtWidgets import QTreeWidgetItem, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
+from datetime import datetime
 
 # Import all the refactored modules
 from .utils.file_type_detector import FileTypeDetector
@@ -48,7 +50,7 @@ class FileOperations:
         self.binary_handler = BinaryFileHandler()
         self.basic_operations = BasicFileOperations(self)
         self.import_operations = ImportOperations(self)
-        self.context_menu_operations = ContextMenuOperations(self)
+        self.context_menu_operations = ContextMenuOperations(tree_widget, editor)
         self.item_operations = ItemOperations(self)
         self.tree_operations = TreeOperations(self)
         self.pattern_applier = PatternApplier(self)
@@ -86,6 +88,27 @@ class FileOperations:
                 pass  # Connection might not exist
         
         self.tree_widget = tree_widget
+        print(f"DEBUG: FileOperations.set_tree_widget called with: {tree_widget}")
+        
+        # Update tree widget reference in all component modules that need it
+        if hasattr(self.context_menu_operations, 'set_tree_widget'):
+            self.context_menu_operations.set_tree_widget(tree_widget)
+            print(f"DEBUG: Updated context_menu_operations tree widget to: {tree_widget}")
+        if hasattr(self.basic_operations, 'set_tree_widget'):
+            self.basic_operations.set_tree_widget(tree_widget)
+        if hasattr(self.import_operations, 'set_tree_widget'):
+            self.import_operations.set_tree_widget(tree_widget)
+        if hasattr(self.item_operations, 'set_tree_widget'):
+            self.item_operations.set_tree_widget(tree_widget)
+        if hasattr(self.tree_operations, 'set_tree_widget'):
+            self.tree_operations.set_tree_widget(tree_widget)
+        if hasattr(self.pattern_applier, 'set_tree_widget'):
+            self.pattern_applier.set_tree_widget(tree_widget)
+        if hasattr(self.versioning_applier, 'set_tree_widget'):
+            self.versioning_applier.set_tree_widget(tree_widget)
+        if hasattr(self.date_applier, 'set_tree_widget'):
+            self.date_applier.set_tree_widget(tree_widget)
+        
         if self.tree_widget:
             self._connect_context_menu()
             print("DEBUG: Updated tree widget reference and connected context menu")
@@ -209,68 +232,224 @@ class CustomPatternsDialog(QDialog):
         self._load_existing_pattern_data()
 
     def _is_folder_item(self, item):
-        """Check if item is a folder"""
+        """Check if the item is a folder"""
         if not item:
             return False
-        item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
-        return item_data.get('is_folder', False)
+        item_data = item.data(0, Qt.ItemDataRole.UserRole)
+        if isinstance(item_data, dict):
+            return item_data.get('type') == 'folder'
+        return False
 
     def init_ui(self):
-        """Initialize the user interface"""
-        self.ui_components.init_ui()
-
-    def insert_tag(self, tag):
-        """Insert a tag at cursor position"""
-        self.pattern_logic.insert_tag(tag, self.pattern_edit)
-        self.update_preview()
-
-    def update_preview(self):
-        """Update the preview display"""
-        if not self.pattern_edit:
-            return
+        """Initialize the dialog UI"""
+        self.setWindowTitle("Custom Naming Patterns")
+        self.setModal(True)
+        self.resize(600, 500)
         
-        pattern = self.pattern_edit.text()
+        # Main layout
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(15)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Determine if this is a folder
         is_folder = self._is_folder_item(self.item)
         
-        preview = self.pattern_logic.generate_sample_preview(
-            pattern, self.custom_options_manager, self.format_managers,
-            self.date_combo, self.time_combo, is_folder
-        )
+        # Create UI sections using the component methods
+        self.ui_components.create_title_section(main_layout, is_folder)
         
-        # Update preview in UI
-        self.ui_components.update_preview_display(preview)
+        # Variables section
+        self.tags, self.tag_buttons = self.ui_components.create_variables_section(main_layout, is_folder)
+        
+        # Connect tag buttons to insert text
+        for tag_button in self.tag_buttons:
+            tag_button.clicked.connect(lambda checked, tag=tag_button.text(): self._insert_tag(tag))
+        
+        # Separator section
+        self.separator_combo, self.custom_separator_edit = self.ui_components.create_separator_section(main_layout)
+        
+        # Connect separator combo change
+        self.separator_combo.currentTextChanged.connect(self._on_separator_changed)
+        self.custom_separator_edit.textChanged.connect(self._update_preview)
+        
+        # Pattern input section
+        self.pattern_edit = self.ui_components.create_pattern_input_section(main_layout, is_folder)
+        self.pattern_edit.textChanged.connect(self._update_preview)
+        
+        # Custom options section
+        self.custom_options_group = self.ui_components.create_group_box("Custom Options", visible=False)
+        custom_options_layout = QVBoxLayout(self.custom_options_group)
+        
+        # Custom option inputs
+        self.custom_inputs = []
+        for i in range(3):
+            custom_input = QLineEdit()
+            custom_input.setPlaceholderText(f"Custom option {i+1}")
+            custom_input.textChanged.connect(self._update_preview)
+            custom_options_layout.addWidget(custom_input)
+            self.custom_inputs.append(custom_input)
+        
+        main_layout.addWidget(self.custom_options_group)
+        
+        # Preview section
+        preview_label = QLabel("Preview:")
+        preview_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
+        main_layout.addWidget(preview_label)
+        
+        self.preview_label = QLabel("Enter a pattern to see preview...")
+        self.preview_label.setStyleSheet("""
+            QLabel {
+                background-color: #2b2b2b;
+                color: #ffffff;
+                border: 1px solid #555555;
+                border-radius: 4px;
+                padding: 10px;
+                font-family: 'Courier New', monospace;
+                font-size: 12px;
+            }
+        """)
+        main_layout.addWidget(self.preview_label)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()
+        
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(cancel_button)
+        
+        self.apply_button = QPushButton("Apply Pattern")
+        self.apply_button.clicked.connect(self.accept)
+        self.apply_button.setEnabled(False)
+        button_layout.addWidget(self.apply_button)
+        
+        main_layout.addLayout(button_layout)
+        
+        # Load existing pattern data if available
+        self._load_existing_pattern_data()
 
+    def _insert_tag(self, tag):
+        """Insert a tag into the pattern input"""
+        if hasattr(self, 'pattern_edit'):
+            cursor_pos = self.pattern_edit.cursorPosition()
+            current_text = self.pattern_edit.text()
+            new_text = current_text[:cursor_pos] + tag + current_text[cursor_pos:]
+            self.pattern_edit.setText(new_text)
+            self.pattern_edit.setCursorPosition(cursor_pos + len(tag))
+            self._update_preview()
+            
+    def _on_separator_changed(self, text):
+        """Handle separator combo box changes"""
+        if text == "Custom...":
+            self.custom_separator_edit.setVisible(True)
+            self.custom_separator_edit.setFocus()
+        else:
+            self.custom_separator_edit.setVisible(False)
+        self._update_preview()
+        
+    def _update_preview(self):
+        """Update the preview display"""
+        if not hasattr(self, 'pattern_edit'):
+            return
+            
+        pattern = self.pattern_edit.text().strip()
+        if not pattern:
+            self.preview_label.setText("Enter a pattern to see preview...")
+            self.apply_button.setEnabled(False)
+            return
+            
+        # Show/hide custom options based on pattern content
+        has_custom = any(tag in pattern for tag in ['${CUSTOM}', '${CUSTOM1}', '${CUSTOM2}', '${CUSTOM3}'])
+        self.custom_options_group.setVisible(has_custom)
+        
+        # Generate preview using a simple approach since we don't have all the managers
+        try:
+            preview = self._generate_simple_preview(pattern)
+            self.preview_label.setText(f"Preview: {preview}")
+            self.apply_button.setEnabled(True)
+        except Exception as e:
+            self.preview_label.setText(f"Error: {str(e)}")
+            self.apply_button.setEnabled(False)
+            
+    def _generate_simple_preview(self, pattern):
+        """Generate a simple preview of the pattern"""
+        if not pattern:
+            return "Enter a pattern to see preview"
+        
+        # Get sample values for different placeholders
+        sample_values = {
+            '${PROJECT_NAME}': 'MyProject',
+            '${BASE}': 'filename',
+            '${DATE}': datetime.now().strftime('%Y%m%d'),
+            '${TIME}': datetime.now().strftime('%H%M%S'),
+            '${COUNTER}': '001',
+            '${CUSTOM}': 'Option1',
+            '${CUSTOM1}': 'Option1',
+            '${CUSTOM2}': 'Option2',
+            '${CUSTOM3}': 'Option3'
+        }
+        
+        # Replace placeholders in pattern
+        preview = pattern
+        for placeholder, value in sample_values.items():
+            preview = preview.replace(placeholder, value)
+        
+        # Add extension for files if not a folder
+        is_folder = self._is_folder_item(self.item)
+        if not is_folder and not any(preview.endswith(ext) for ext in ['.txt', '.mp4', '.jpg', '.png', '.pdf', '.prproj']):
+            # Try to preserve original extension if available
+            item_data = self.item.data(0, Qt.ItemDataRole.UserRole) if self.item else {}
+            if isinstance(item_data, dict) and 'name' in item_data:
+                original_name = item_data['name']
+                if '.' in original_name:
+                    ext = '.' + original_name.split('.')[-1]
+                    preview += ext
+                else:
+                    preview += '.txt'
+            else:
+                preview += '.txt'
+        
+        return preview
+        
+    def _get_current_separator(self):
+        """Get the currently selected separator"""
+        if not hasattr(self, 'separator_combo'):
+            return "_"
+            
+        separator_text = self.separator_combo.currentText()
+        if separator_text == "Custom...":
+            return self.custom_separator_edit.text() or "_"
+        elif separator_text == "_ (underscore)":
+            return "_"
+        elif separator_text == "- (dash)":
+            return "-"
+        elif separator_text == ". (dot)":
+            return "."
+        elif separator_text == "  (space)":
+            return " "
+        else:
+            return "_"
+            
+    def _load_existing_pattern_data(self):
+        """Load existing pattern data if available"""
+        # This method can be implemented later if needed
+        pass
+        
     def validate_pattern(self):
         """Validate the current pattern"""
-        pattern = self.pattern_edit.text() if self.pattern_edit else ""
-        errors = self.pattern_logic.validate_pattern(
-            pattern, self.custom_options_manager, self.format_managers,
-            self.date_combo, self.time_combo
-        )
-        
-        if errors:
-            self.pattern_logic.show_validation_errors(errors)
+        if not hasattr(self, 'pattern_edit'):
             return False
-        
+        pattern = self.pattern_edit.text().strip()
+        if not pattern:
+            return False
         return True
-
-    def on_apply(self):
-        """Handle apply button click"""
-        if self.validate_pattern():
-            self.accept()
-
+        
     def get_pattern_data(self):
         """Get all pattern data from the dialog"""
-        return self.pattern_data_handler.get_pattern_data(
-            self.pattern_edit, self.custom_options_manager, self.format_managers,
-            self.separator_combo, self.custom_separator_edit, 
-            self.date_combo, self.time_combo
-        )
-
-    def _load_existing_pattern_data(self):
-        """Load existing pattern data from item"""
-        self.pattern_data_handler.load_existing_pattern_data(
-            self.item, self.pattern_edit, self.custom_options_manager,
-            self.format_managers, self.separator_combo, self.custom_separator_edit,
-            self.date_combo, self.time_combo, self.custom_editors_layout
-        )
+        if not hasattr(self, 'pattern_edit'):
+            return {}
+            
+        return {
+            'pattern': self.pattern_edit.text().strip(),
+            'separator': self._get_current_separator(),
+            'custom_options': [input_field.text().strip() for input_field in self.custom_inputs if hasattr(self, 'custom_inputs')]
+        }

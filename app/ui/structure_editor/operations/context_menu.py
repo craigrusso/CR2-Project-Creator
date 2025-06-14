@@ -22,10 +22,13 @@ class ContextMenuOperations:
         
     def set_tree_widget(self, tree_widget):
         """Set or update the tree widget reference"""
+        print(f"DEBUG: ContextMenuOperations.set_tree_widget called with: {tree_widget}")
         self.tree_widget = tree_widget
+        print(f"DEBUG: ContextMenuOperations tree_widget set to: {self.tree_widget}")
         
     def set_editor(self, editor):
         """Set the editor reference"""
+        print(f"DEBUG: ContextMenuOperations.set_editor called with: {editor}")
         self.editor = editor
 
     def create_context_menu(self, position):
@@ -245,27 +248,52 @@ class ContextMenuOperations:
 
     def _add_folder_context_actions(self, menu, folder_item):
         """Add folder-specific context menu actions"""
-        # This will be implemented when we extract folder operations
-        pass
+        # Add folder-specific actions
+        expand_action = menu.addAction("Expand All")
+        expand_action.triggered.connect(lambda: self.tree_widget.expandItem(folder_item) if self.tree_widget else None)
+        
+        collapse_action = menu.addAction("Collapse All")
+        collapse_action.triggered.connect(lambda: self.tree_widget.collapseItem(folder_item) if self.tree_widget else None)
 
     def _delete_selected_items(self, items):
-        """Delete selected items - delegates to bulk operations"""
-        # This will be implemented when we extract bulk operations
-        pass
+        """Delete selected items - delegates to editor"""
+        if self.editor and hasattr(self.editor, 'delete_selected'):
+            self.editor.delete_selected()
+        elif self.tree_widget:
+            # Fallback: remove items directly from tree
+            for item in items:
+                try:
+                    parent = item.parent()
+                    if parent:
+                        parent.removeChild(item)
+                    else:
+                        index = self.tree_widget.indexOfTopLevelItem(item)
+                        if index >= 0:
+                            self.tree_widget.takeTopLevelItem(index)
+                except (RuntimeError, AttributeError):
+                    continue
 
     def _bulk_set_project_name_mode(self, items, mode):
-        """Set project name mode for multiple items - delegates to bulk operations"""
-        # This will be implemented when we extract bulk operations
-        pass
+        """Set project name mode for multiple items - delegates to editor"""
+        if self.editor and hasattr(self.editor, '_set_project_name_mode'):
+            for item in items:
+                try:
+                    self.editor._set_project_name_mode(item, mode)
+                except (RuntimeError, AttributeError):
+                    continue
 
     def _bulk_revert_to_original(self, items):
-        """Revert items to original names - delegates to bulk operations"""
-        # This will be implemented when we extract bulk operations
-        pass
+        """Revert items to original names - delegates to editor"""
+        if self.editor and hasattr(self.editor, '_revert_to_original_name'):
+            for item in items:
+                try:
+                    self.editor._revert_to_original_name(item)
+                except (RuntimeError, AttributeError):
+                    continue
 
     def _configure_custom_patterns(self, item):
         """Configure custom naming patterns for file"""
-        from ..dialogs.custom_patterns.pattern_dialog import CustomPatternsDialog
+        from ..file_operations import CustomPatternsDialog
         
         dialog = CustomPatternsDialog(self.tree_widget, item)
         
@@ -317,11 +345,19 @@ class ContextMenuOperations:
             print("DEBUG: Context menu policy restored after dialog")
 
     def _apply_pattern_to_item(self, item, pattern_data):
-        """Apply custom pattern to item - delegates to pattern applier"""
-        # This will be implemented when we extract pattern appliers
-        pass
+        """Apply custom pattern to item - delegates to editor"""
+        if self.editor and hasattr(self.editor, '_apply_pattern_to_item'):
+            self.editor._apply_pattern_to_item(item, pattern_data)
+        elif self.editor and hasattr(self.editor, 'file_operations'):
+            # Try to delegate to file operations
+            if hasattr(self.editor.file_operations, '_apply_pattern_to_item'):
+                self.editor.file_operations._apply_pattern_to_item(item, pattern_data)
 
     def _apply_date_sequence_to_item(self, item, date_data):
-        """Apply date sequence to item - delegates to pattern applier"""
-        # This will be implemented when we extract pattern appliers
-        pass 
+        """Apply date sequence to item - delegates to editor"""
+        if self.editor and hasattr(self.editor, '_apply_date_sequence_to_item'):
+            self.editor._apply_date_sequence_to_item(item, date_data)
+        elif self.editor and hasattr(self.editor, 'file_operations'):
+            # Try to delegate to file operations
+            if hasattr(self.editor.file_operations, '_apply_date_sequence_to_item'):
+                self.editor.file_operations._apply_date_sequence_to_item(item, date_data) 
