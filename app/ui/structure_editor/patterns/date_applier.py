@@ -161,10 +161,18 @@ class DateApplier:
             return date.strftime("%m-%d-%Y")
         elif date_format == "DD-MM-YYYY":
             return date.strftime("%d-%m-%Y")
-        elif date_format == "YYYY/MM/DD":
-            return date.strftime("%Y/%m/%d")
-        elif date_format == "MM/DD/YYYY":
-            return date.strftime("%m/%d/%Y")
+        elif date_format == "YYYY_MM_DD":
+            return date.strftime("%Y_%m_%d")
+        elif date_format == "MM_DD_YYYY":
+            return date.strftime("%m_%d_%Y")
+        elif date_format == "DD_MM_YYYY":
+            return date.strftime("%d_%m_%Y")
+        elif date_format == "YYYY.MM.DD":
+            return date.strftime("%Y.%m.%d")
+        elif date_format == "MM.DD.YYYY":
+            return date.strftime("%m.%d.%Y")
+        elif date_format == "DD.MM.YYYY":
+            return date.strftime("%d.%m.%Y")
         else:
             return date.strftime("%Y-%m-%d")  # Default format
 

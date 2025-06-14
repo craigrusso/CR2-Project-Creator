@@ -68,10 +68,18 @@ class SequenceGenerator:
             date_format = "%m-%d-%Y"
         elif "DD-MM-YYYY" in format_text:
             date_format = "%d-%m-%Y"
-        elif "YYYY/MM/DD" in format_text:
-            date_format = "%Y/%m/%d"
-        elif "MM/DD/YYYY" in format_text:
-            date_format = "%m/%d/%Y"
+        elif "YYYY_MM_DD" in format_text:
+            date_format = "%Y_%m_%d"
+        elif "MM_DD_YYYY" in format_text:
+            date_format = "%m_%d_%Y"
+        elif "DD_MM_YYYY" in format_text:
+            date_format = "%d_%m_%Y"
+        elif "YYYY.MM.DD" in format_text:
+            date_format = "%Y.%m.%d"
+        elif "MM.DD.YYYY" in format_text:
+            date_format = "%m.%d.%Y"
+        elif "DD.MM.YYYY" in format_text:
+            date_format = "%d.%m.%Y"
         else:
             date_format = "%Y-%m-%d"
         

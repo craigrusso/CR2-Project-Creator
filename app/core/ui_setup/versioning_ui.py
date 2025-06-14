@@ -129,7 +129,18 @@ class VersioningUI:
         
         # Format
         self.main_window.date_format = QComboBox()
-        self.main_window.date_format.addItems(["YYYY-MM-DD", "YYYYMMDD", "MM-DD-YYYY"])
+        self.main_window.date_format.addItems([
+            "YYYY-MM-DD (2025-01-15)", 
+            "YYYYMMDD (20250115)", 
+            "MM-DD-YYYY (01-15-2025)",
+            "DD-MM-YYYY (15-01-2025)",
+            "YYYY_MM_DD (2025_01_15)",
+            "MM_DD_YYYY (01_15_2025)",
+            "DD_MM_YYYY (15_01_2025)",
+            "YYYY.MM.DD (2025.01.15)",
+            "MM.DD.YYYY (01.15.2025)",
+            "DD.MM.YYYY (15.01.2025)"
+        ])
         layout.addWidget(self.main_window.date_format)
         
         layout.addStretch()

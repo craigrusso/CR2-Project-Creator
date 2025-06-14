@@ -1538,10 +1538,18 @@ class ProjectBuilder:
             (r'(\d{2}-\d{2}-\d{4})', '%m-%d-%Y'),
             # DD-MM-YYYY formats
             (r'(\d{2}-\d{2}-\d{4})', '%d-%m-%Y'),
-            # YYYY/MM/DD formats
-            (r'(\d{4}/\d{2}/\d{2})', '%Y/%m/%d'),
-            # MM/DD/YYYY formats
-            (r'(\d{2}/\d{2}/\d{4})', '%m/%d/%Y'),
+            # YYYY_MM_DD formats
+            (r'(\d{4}_\d{2}_\d{2})', '%Y_%m_%d'),
+            # MM_DD_YYYY formats
+            (r'(\d{2}_\d{2}_\d{4})', '%m_%d_%Y'),
+            # DD_MM_YYYY formats
+            (r'(\d{2}_\d{2}_\d{4})', '%d_%m_%Y'),
+            # YYYY.MM.DD formats
+            (r'(\d{4}\.\d{2}\.\d{2})', '%Y.%m.%d'),
+            # MM.DD.YYYY formats
+            (r'(\d{2}\.\d{2}\.\d{4})', '%m.%d.%Y'),
+            # DD.MM.YYYY formats
+            (r'(\d{2}\.\d{2}\.\d{4})', '%d.%m.%Y'),
         ]
         
         for pattern, date_format in date_patterns:
