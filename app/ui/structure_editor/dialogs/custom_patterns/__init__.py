@@ -9,4 +9,6 @@ from .custom_patterns_dialog import CustomPatternsDialog
 
 __all__ = [
     'CustomPatternsDialog'
-] 
+]
+
+# Custom patterns dialog components package 
