@@ -39,23 +39,16 @@ class FormatManagers:
         date_help = ui_components.create_help_label("Choose how the ${DATE} tag will be formatted:")
         date_layout.addWidget(date_help)
         
-        date_format_items = [
-            "YYYYMMDD (20240115)",
-            "YYYY_MM_DD (2024_01_15)",
-            "YYYY-MM-DD (2024-01-15)",
-            "YYYY.MM.DD (2024.01.15)",
-            "YYYY MM DD (2024 01 15)",
-            "MM_DD_YYYY (01_15_2024)",
-            "MM-DD-YYYY (01-15-2024)",
-            "MM.DD.YYYY (01.15.2024)",
-            "MM DD YYYY (01 15 2024)",
-            "DD_MM_YYYY (15_01_2024)",
-            "DD-MM-YYYY (15-01-2024)",
-            "DD.MM.YYYY (15.01.2024)",
-            "DD MM YYYY (15 01 2024)"
-        ]
+        # Get ALL format options (with all separator types)
+        date_format_items = self._get_all_date_format_options()
         
         date_format_combo = ui_components.create_styled_combo_box(date_format_items)
+        
+        # Set initial selection based on current master separator
+        initial_index = self._get_initial_date_format_index()
+        if 0 <= initial_index < len(date_format_items):
+            date_format_combo.setCurrentIndex(initial_index)
+        
         date_layout.addWidget(date_format_combo)
         
         date_format_group.setLayout(date_layout)
@@ -78,26 +71,99 @@ class FormatManagers:
         time_help = ui_components.create_help_label("Choose how the ${TIME} tag will be formatted:")
         time_layout.addWidget(time_help)
         
-        time_format_items = [
-            "HHMMSS (143022)",
-            "HH_MM_SS (14_30_22)",
-            "HH-MM-SS (14-30-22)",
-            "HH.MM.SS (14.30.22)",
-            "HH MM SS (14 30 22)",
-            "HHMM (1430)",
-            "HH_MM (14_30)",
-            "HH-MM (14-30)",
-            "HH.MM (14.30)",
-            "HH MM (14 30)"
-        ]
+        # Get ALL format options (with all separator types)
+        time_format_items = self._get_all_time_format_options()
         
         time_format_combo = ui_components.create_styled_combo_box(time_format_items)
+        
+        # Set initial selection based on current master separator
+        initial_index = self._get_initial_time_format_index()
+        if 0 <= initial_index < len(time_format_items):
+            time_format_combo.setCurrentIndex(initial_index)
+        
         time_layout.addWidget(time_format_combo)
         
         time_format_group.setLayout(time_layout)
         layout.addWidget(time_format_group)
         
         return time_format_group, time_format_combo
+
+    def _get_current_separator(self):
+        """Get the current separator from the dialog"""
+        if hasattr(self.dialog, 'separator_controller'):
+            return self.dialog.separator_controller.get_current_separator()
+        elif hasattr(self.dialog, 'pattern_logic') and hasattr(self.dialog, 'separator_combo') and hasattr(self.dialog, 'custom_separator_edit'):
+            return self.dialog.pattern_logic.get_current_separator(
+                self.dialog.separator_combo, 
+                self.dialog.custom_separator_edit
+            )
+        else:
+            return "_"  # Default fallback
+
+    def _get_all_date_format_options(self):
+        """Get all date format options (with all separator types)"""
+        if hasattr(self.dialog, 'separator_controller'):
+            return self.dialog.separator_controller.get_all_format_options(is_date=True)
+        else:
+            # Fallback to comprehensive hardcoded list
+            return [
+                "YYYYMMDD (20240115)",
+                "YYYY_MM_DD (2024_01_15)",
+                "MM_DD_YYYY (01_15_2024)",
+                "DD_MM_YYYY (15_01_2024)",
+                "YYYY-MM-DD (2024-01-15)",
+                "MM-DD-YYYY (01-15-2024)",
+                "DD-MM-YYYY (15-01-2024)",
+                "YYYY.MM.DD (2024.01.15)",
+                "MM.DD.YYYY (01.15.2024)",
+                "DD.MM.YYYY (15.01.2024)",
+                "YYYY MM DD (2024 01 15)",
+                "MM DD YYYY (01 15 2024)",
+                "DD MM YYYY (15 01 2024)"
+            ]
+
+    def _get_all_time_format_options(self):
+        """Get all time format options (with all separator types)"""
+        if hasattr(self.dialog, 'separator_controller'):
+            return self.dialog.separator_controller.get_all_format_options(is_date=False)
+        else:
+            # Fallback to comprehensive hardcoded list
+            return [
+                "HHMMSS (143022)",
+                "HHMM (1430)",
+                "HH_MM_SS (14_30_22)",
+                "HH_MM (14_30)",
+                "HH-MM-SS (14-30-22)",
+                "HH-MM (14-30)",
+                "HH.MM.SS (14.30.22)",
+                "HH.MM (14.30)",
+                "HH MM SS (14 30 22)",
+                "HH MM (14 30)"
+            ]
+
+    def _get_initial_date_format_index(self):
+        """Get the initial date format index based on current master separator"""
+        if hasattr(self.dialog, 'separator_controller'):
+            current_separator = self.dialog.separator_controller.get_current_separator()
+            return self.dialog.separator_controller.get_default_format_index_for_separator(current_separator, is_date=True)
+        else:
+            return 1  # Default to YYYY_MM_DD if no controller
+
+    def _get_initial_time_format_index(self):
+        """Get the initial time format index based on current master separator"""
+        if hasattr(self.dialog, 'separator_controller'):
+            current_separator = self.dialog.separator_controller.get_current_separator()
+            return self.dialog.separator_controller.get_default_format_index_for_separator(current_separator, is_date=False)
+        else:
+            return 2  # Default to HH_MM_SS if no controller
+
+    def _get_date_format_items_for_separator(self, separator):
+        """Get date format items using the specified separator (DEPRECATED - use _get_all_date_format_options)"""
+        return self._get_all_date_format_options()
+
+    def _get_time_format_items_for_separator(self, separator):
+        """Get time format items using the specified separator (DEPRECATED - use _get_all_time_format_options)"""
+        return self._get_all_time_format_options()
 
     def has_date_placeholder(self, pattern):
         """Check if pattern contains ${DATE} placeholder"""
@@ -220,12 +286,16 @@ class FormatManagers:
         """Update combo box formats to use the specified separator"""
         current_index = combo.currentIndex()
         
-        # Get all items and convert them
-        new_items = []
-        for i in range(combo.count()):
-            item_text = combo.itemText(i)
-            new_format = self._convert_format_to_separator(item_text, separator, is_date)
-            new_items.append(new_format)
+        # Get new format items using the separator controller if available
+        if hasattr(self.dialog, 'separator_controller'):
+            new_items = self.dialog.separator_controller.create_formats_with_separator(separator, is_date)
+        else:
+            # Fallback to manual conversion
+            new_items = []
+            for i in range(combo.count()):
+                item_text = combo.itemText(i)
+                new_format = self._convert_format_to_separator(item_text, separator, is_date)
+                new_items.append(new_format)
         
         # Update combo box
         combo.clear()

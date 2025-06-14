@@ -50,6 +50,117 @@ class PatternLogic:
         
         # Move cursor to after the inserted tag
         pattern_edit.setCursorPosition(cursor_pos + len(tag_to_insert))
+        
+        # CRITICAL: When DATE or TIME tags are inserted, ensure format dropdowns
+        # are created and initialized with the correct separator-based selection
+        if hasattr(self, 'dialog') and self.dialog:
+            if tag == '${DATE}' and hasattr(self.dialog, 'format_managers'):
+                self._ensure_date_format_with_separator(current_separator)
+            elif tag == '${TIME}' and hasattr(self.dialog, 'format_managers'):
+                self._ensure_time_format_with_separator(current_separator)
+    
+    def _ensure_date_format_with_separator(self, separator):
+        """Ensure date format dropdown exists and is properly initialized with separator"""
+        try:
+            # Check if date format group already exists
+            if not hasattr(self.dialog, 'date_combo') or not self.dialog.date_combo:
+                # Create the date format group
+                main_content_layout = self._get_main_content_layout()
+                if main_content_layout:
+                    date_group, date_combo = self.dialog.format_managers.create_date_format_group(main_content_layout)
+                    
+                    # Store references
+                    self.dialog.date_format_group = date_group
+                    self.dialog.date_combo = date_combo
+                    
+                    # Make visible and ensure proper selection
+                    date_group.setVisible(True)
+                    self._select_format_for_separator(date_combo, separator, is_date=True)
+            else:
+                # Format group exists, just ensure proper selection and visibility
+                self.dialog.date_format_group.setVisible(True)
+                self._select_format_for_separator(self.dialog.date_combo, separator, is_date=True)
+                
+        except Exception as e:
+            print(f"Error ensuring date format: {e}")
+    
+    def _ensure_time_format_with_separator(self, separator):
+        """Ensure time format dropdown exists and is properly initialized with separator"""
+        try:
+            # Check if time format group already exists
+            if not hasattr(self.dialog, 'time_combo') or not self.dialog.time_combo:
+                # Create the time format group
+                main_content_layout = self._get_main_content_layout()
+                if main_content_layout:
+                    time_group, time_combo = self.dialog.format_managers.create_time_format_group(main_content_layout)
+                    
+                    # Store references
+                    self.dialog.time_format_group = time_group
+                    self.dialog.time_combo = time_combo
+                    
+                    # Make visible and ensure proper selection
+                    time_group.setVisible(True)
+                    self._select_format_for_separator(time_combo, separator, is_date=False)
+            else:
+                # Format group exists, just ensure proper selection and visibility
+                self.dialog.time_format_group.setVisible(True)
+                self._select_format_for_separator(self.dialog.time_combo, separator, is_date=False)
+                
+        except Exception as e:
+            print(f"Error ensuring time format: {e}")
+    
+    def _get_main_content_layout(self):
+        """Get the main content layout where format groups should be added"""
+        try:
+            # Try to find the scroll content layout
+            if hasattr(self.dialog, 'scroll_content') and self.dialog.scroll_content:
+                return self.dialog.scroll_content.layout()
+            # Fallback to main layout
+            elif hasattr(self.dialog, 'layout') and callable(self.dialog.layout):
+                return self.dialog.layout()
+            return None
+        except Exception:
+            return None
+    
+    def _select_format_for_separator(self, combo, separator, is_date=True):
+        """Select the appropriate format in the combo that matches the separator"""
+        try:
+            if not combo or not separator:
+                return
+                
+            # Get the target pattern for this separator
+            if is_date:
+                if separator == "_":
+                    target_start = "YYYY_MM_DD"
+                elif separator == "-":
+                    target_start = "YYYY-MM-DD"
+                elif separator == ".":
+                    target_start = "YYYY.MM.DD"
+                elif separator == " ":
+                    target_start = "YYYY MM DD"
+                else:
+                    target_start = "YYYYMMDD"  # No separator
+            else:  # time
+                if separator == "_":
+                    target_start = "HH_MM_SS"
+                elif separator == "-":
+                    target_start = "HH-MM-SS"
+                elif separator == ".":
+                    target_start = "HH.MM.SS"
+                elif separator == " ":
+                    target_start = "HH MM SS"
+                else:
+                    target_start = "HHMMSS"  # No separator
+            
+            # Find and select the matching format
+            for i in range(combo.count()):
+                item_text = combo.itemText(i)
+                if item_text.startswith(target_start + " "):
+                    combo.setCurrentIndex(i)
+                    break
+                    
+        except Exception as e:
+            print(f"Error selecting format for separator: {e}")
 
     def validate_pattern(self, pattern, custom_options_manager, format_managers, date_combo, time_combo):
         """Validate the pattern and return any errors"""

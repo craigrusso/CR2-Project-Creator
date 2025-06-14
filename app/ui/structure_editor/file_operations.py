@@ -224,6 +224,10 @@ class CustomPatternsDialog(QDialog):
         self.pattern_logic = PatternLogic(self)
         self.pattern_data_handler = PatternDataHandler(self)
         
+        # Initialize separator controller for centralized separator management
+        from .dialogs.custom_patterns.separator_controller import SeparatorController
+        self.separator_controller = SeparatorController(self)
+        
         # UI elements will be set by init_ui
         self.pattern_edit = None
         self.separator_combo = None
@@ -385,6 +389,10 @@ class CustomPatternsDialog(QDialog):
         
         bottom_layout.addLayout(button_layout)
         main_layout.addWidget(bottom_widget)
+        
+        # Initialize separator controller after UI is created
+        if hasattr(self, 'separator_controller'):
+            self.separator_controller.initialize_from_ui(self.separator_combo, self.custom_separator_edit)
 
     def _insert_tag(self, tag):
         """Insert a tag into the pattern input using PatternLogic for automatic separator handling"""
@@ -400,45 +408,63 @@ class CustomPatternsDialog(QDialog):
         else:
             self.custom_separator_edit.setVisible(False)
         
-        # Get the new separator
-        new_separator = self.pattern_logic.get_current_separator(self.separator_combo, self.custom_separator_edit) if hasattr(self, 'pattern_logic') else self._get_current_separator()
-        
-        # Act as master switch - update existing pattern separators
-        if hasattr(self, 'pattern_edit') and hasattr(self, 'pattern_logic'):
-            current_pattern = self.pattern_edit.text()
-            if current_pattern.strip():
-                updated_pattern = self.pattern_logic.update_pattern_separators(current_pattern, new_separator)
-                self.pattern_edit.setText(updated_pattern)
-        
-        # CRITICAL FIX: Always update BOTH date AND time format separators to match
-        if hasattr(self, 'format_managers'):
-            if hasattr(self, 'date_combo') and self.date_combo:
-                self.format_managers.update_datetime_formats_to_separator(new_separator, self.date_combo, None)
-            if hasattr(self, 'time_combo') and self.time_combo:
-                self.format_managers.update_datetime_formats_to_separator(new_separator, None, self.time_combo)
-                
-        self._update_preview()
-        
+        # Use the separator controller to handle the change
+        if hasattr(self, 'separator_controller'):
+            # Initialize from UI first if not already done
+            if not hasattr(self, '_separator_initialized'):
+                self.separator_controller.initialize_from_ui(self.separator_combo, self.custom_separator_edit)
+                self._separator_initialized = True
+            
+            # Get the new separator
+            separator_text = self.separator_combo.currentText()
+            if separator_text == "_ (underscore)":
+                new_separator = "_"
+            elif separator_text == "- (dash)":
+                new_separator = "-"
+            elif separator_text == ". (dot)":
+                new_separator = "."
+            elif separator_text == "  (space)":
+                new_separator = " "
+            elif separator_text == "Custom...":
+                new_separator = self.custom_separator_edit.text() or "_"
+            else:
+                new_separator = "_"
+            
+            # Set the master separator (this will update all dependent components)
+            self.separator_controller.set_master_separator(new_separator)
+        else:
+            # Fallback to old behavior if controller not available
+            new_separator = self.pattern_logic.get_current_separator(self.separator_combo, self.custom_separator_edit) if hasattr(self, 'pattern_logic') else self._get_current_separator()
+            
+            # Update existing pattern separators
+            if hasattr(self, 'pattern_edit') and hasattr(self, 'pattern_logic'):
+                current_pattern = self.pattern_edit.text()
+                if current_pattern.strip():
+                    updated_pattern = self.pattern_logic.update_pattern_separators(current_pattern, new_separator)
+                    self.pattern_edit.setText(updated_pattern)
+            
+            # Update preview
+            self._update_preview()
+
     def _on_custom_separator_changed(self):
         """Handle custom separator input changes and act as master switch"""
-        # Get the new separator
-        new_separator = self.pattern_logic.get_current_separator(self.separator_combo, self.custom_separator_edit) if hasattr(self, 'pattern_logic') else self._get_current_separator()
-        
-        # Act as master switch - update existing pattern separators
-        if hasattr(self, 'pattern_edit') and hasattr(self, 'pattern_logic'):
-            current_pattern = self.pattern_edit.text()
-            if current_pattern.strip():
-                updated_pattern = self.pattern_logic.update_pattern_separators(current_pattern, new_separator)
-                self.pattern_edit.setText(updated_pattern)
-        
-        # CRITICAL FIX: Always update BOTH date AND time format separators to match
-        if hasattr(self, 'format_managers'):
-            if hasattr(self, 'date_combo') and self.date_combo:
-                self.format_managers.update_datetime_formats_to_separator(new_separator, self.date_combo, None)
-            if hasattr(self, 'time_combo') and self.time_combo:
-                self.format_managers.update_datetime_formats_to_separator(new_separator, None, self.time_combo)
-        
-        self._update_preview()
+        # Use the separator controller to handle the change
+        if hasattr(self, 'separator_controller'):
+            custom_text = self.custom_separator_edit.text() or "_"
+            self.separator_controller.set_master_separator(custom_text)
+        else:
+            # Fallback to old behavior if controller not available
+            new_separator = self.pattern_logic.get_current_separator(self.separator_combo, self.custom_separator_edit) if hasattr(self, 'pattern_logic') else self._get_current_separator()
+            
+            # Update existing pattern separators
+            if hasattr(self, 'pattern_edit') and hasattr(self, 'pattern_logic'):
+                current_pattern = self.pattern_edit.text()
+                if current_pattern.strip():
+                    updated_pattern = self.pattern_logic.update_pattern_separators(current_pattern, new_separator)
+                    self.pattern_edit.setText(updated_pattern)
+            
+            # Update preview
+            self._update_preview()
         
     def _update_preview(self):
         """Update the preview display"""
