@@ -1859,61 +1859,15 @@ class ProjectBuilder:
         
         # Format date based on custom format
         if date_format:
-            if "YYYYMMDD" in date_format:
-                date_str = now.strftime('%Y%m%d')
-            elif "YYYY_MM_DD" in date_format:
-                date_str = now.strftime('%Y_%m_%d')
-            elif "YYYY-MM-DD" in date_format:
-                date_str = now.strftime('%Y-%m-%d')
-            elif "YYYY.MM.DD" in date_format:
-                date_str = now.strftime('%Y.%m.%d')
-            elif "YYYY MM DD" in date_format:
-                date_str = now.strftime('%Y %m %d')
-            elif "MM_DD_YYYY" in date_format:
-                date_str = now.strftime('%m_%d_%Y')
-            elif "MM-DD-YYYY" in date_format:
-                date_str = now.strftime('%m-%d-%Y')
-            elif "MM.DD.YYYY" in date_format:
-                date_str = now.strftime('%m.%d.%Y')
-            elif "MM DD YYYY" in date_format:
-                date_str = now.strftime('%m %d %Y')
-            elif "DD_MM_YYYY" in date_format:
-                date_str = now.strftime('%d_%m_%Y')
-            elif "DD-MM-YYYY" in date_format:
-                date_str = now.strftime('%d-%m-%Y')
-            elif "DD.MM.YYYY" in date_format:
-                date_str = now.strftime('%d.%m.%Y')
-            elif "DD MM YYYY" in date_format:
-                date_str = now.strftime('%d %m %Y')
-            else:
-                date_str = now.strftime('%Y%m%d')  # Default
+            # Use dynamic format conversion instead of hardcoded patterns
+            date_str = self._convert_custom_date_format(date_format, now)
         else:
             date_str = now.strftime('%Y%m%d')  # Default
         
         # Format time based on custom format
         if time_format:
-            if "HHMMSS" in time_format:
-                time_str = now.strftime('%H%M%S')
-            elif "HH_MM_SS" in time_format:
-                time_str = now.strftime('%H_%M_%S')
-            elif "HH-MM-SS" in time_format:
-                time_str = now.strftime('%H-%M-%S')
-            elif "HH.MM.SS" in time_format:
-                time_str = now.strftime('%H.%M.%S')
-            elif "HH MM SS" in time_format:
-                time_str = now.strftime('%H %M %S')
-            elif "HHMM" in time_format:
-                time_str = now.strftime('%H%M')
-            elif "HH_MM" in time_format:
-                time_str = now.strftime('%H_%M')
-            elif "HH-MM" in time_format:
-                time_str = now.strftime('%H-%M')
-            elif "HH.MM" in time_format:
-                time_str = now.strftime('%H.%M')
-            elif "HH MM" in time_format:
-                time_str = now.strftime('%H %M')
-            else:
-                time_str = now.strftime('%H%M%S')  # Default
+            # Use dynamic format conversion instead of hardcoded patterns
+            time_str = self._convert_custom_time_format(time_format, now)
         else:
             time_str = now.strftime('%H%M%S')  # Default
         
@@ -1950,6 +1904,82 @@ class ProjectBuilder:
         print(f"DEBUG: Final placeholders in _create_placeholders: {placeholders}")
         return placeholders
 
+    def _convert_custom_date_format(self, date_format, datetime_obj):
+        """
+        Convert custom date format to strftime format and apply it
+        
+        Args:
+            date_format: Format string like "mo_DD_YY (01_15_24)"
+            datetime_obj: datetime object to format
+            
+        Returns:
+            str: Formatted date string
+        """
+        try:
+            # Extract format pattern from combo text (before parentheses)
+            if '(' in date_format:
+                format_pattern = date_format.split('(')[0].strip()
+            else:
+                format_pattern = date_format.strip()
+            
+            # Map custom patterns to strftime patterns
+            format_mapping = {
+                'YYYY': '%Y',
+                'YY': '%y',    # 2-digit year
+                'MM': '%m',    # Month with leading zero
+                'mo': '%m',    # Month (same as MM)
+                'DD': '%d',    # Day with leading zero
+            }
+            
+            # Convert format pattern to strftime format
+            strftime_format = format_pattern
+            for pattern, replacement in format_mapping.items():
+                strftime_format = strftime_format.replace(pattern, replacement)
+            
+            # Apply the format
+            return datetime_obj.strftime(strftime_format)
+            
+        except Exception as e:
+            print(f"DEBUG: Error converting date format '{date_format}': {e}")
+            return datetime_obj.strftime('%Y%m%d')  # Fallback to default
+
+    def _convert_custom_time_format(self, time_format, datetime_obj):
+        """
+        Convert custom time format to strftime format and apply it
+        
+        Args:
+            time_format: Format string like "HH_MM (14_30)"
+            datetime_obj: datetime object to format
+            
+        Returns:
+            str: Formatted time string
+        """
+        try:
+            # Extract format pattern from combo text (before parentheses)
+            if '(' in time_format:
+                format_pattern = time_format.split('(')[0].strip()
+            else:
+                format_pattern = time_format.strip()
+            
+            # Map custom patterns to strftime patterns
+            format_mapping = {
+                'HH': '%H',    # Hour (24-hour format)
+                'MM': '%M',    # Minute with leading zero
+                'SS': '%S',    # Second with leading zero
+            }
+            
+            # Convert format pattern to strftime format
+            strftime_format = format_pattern
+            for pattern, replacement in format_mapping.items():
+                strftime_format = strftime_format.replace(pattern, replacement)
+            
+            # Apply the format
+            return datetime_obj.strftime(strftime_format)
+            
+        except Exception as e:
+            print(f"DEBUG: Error converting time format '{time_format}': {e}")
+            return datetime_obj.strftime('%H%M%S')  # Fallback to default
+
     def _replace_placeholders(self, text, placeholders):
         """
         Replace placeholders in text with actual values
@@ -1973,144 +2003,106 @@ class ProjectBuilder:
 
     def _process_custom_pattern(self, pattern, placeholders, item):
         """
-        Process custom pattern with enhanced features:
-        - Automatic extension preservation for files
-        - Date/time placement options
-        - Separator-aware formatting
-        
-        Args:
-            pattern: The pattern string
-            placeholders: Dictionary of placeholder replacements
-            item: The item dictionary containing metadata
-            
-        Returns:
-            str: Processed filename/foldername
+        Processes a custom pattern string, replacing placeholders.
+        It now intelligently handles date and time formats based on item data.
         """
-        print(f"DEBUG: _process_custom_pattern called with pattern: '{pattern}'")
-        print(f"DEBUG: _process_custom_pattern placeholders: {placeholders}")
-        print(f"DEBUG: _process_custom_pattern item type: {item.get('type')}")
-        print(f"DEBUG: _process_custom_pattern item name: {item.get('name')}")
-        print(f"DEBUG: _process_custom_pattern item original_name: {item.get('original_name')}")
+        if not pattern or not isinstance(pattern, str):
+            return ""
+
+        # Get the custom date and time formats directly from the item's data
+        item_data = item if isinstance(item, dict) else {}
+        date_format_text = item_data.get("date_format_text")
+        time_format_text = item_data.get("time_format_text")
+
+        # Fallback to placeholders if not in item_data (for older templates)
+        if not date_format_text:
+            date_format_text = placeholders.get('DATE_FORMAT_STRING', 'YYYY_MM_DD')
+        if not time_format_text:
+            time_format_text = placeholders.get('TIME_FORMAT_STRING', 'HH_MM_SS')
+
+        now = datetime.datetime.now()
         
-        result = pattern
-        
-        # Get separator information from item
-        separator = item.get('separator', '_')  # Default to underscore
-        print(f"DEBUG: _process_custom_pattern - using separator: '{separator}'")
-        
-        # Check if user manually added separators in pattern
-        manual_separators = self._detect_manual_separators_in_pattern(pattern)
-        print(f"DEBUG: _process_custom_pattern - manual separators detected: {manual_separators}")
-        
-        # Auto-adjust date/time formats to match separator if not manually set
-        if not manual_separators and separator != "_":
-            # Update placeholders with separator-adjusted formats
-            if 'DATE' in placeholders:
-                placeholders = placeholders.copy()  # Don't modify original
-                if separator == "-":
-                    # Convert date to dash format
-                    date_val = placeholders['DATE']
-                    if len(date_val) == 8 and date_val.isdigit():  # YYYYMMDD format
-                        placeholders['DATE'] = f"{date_val[:4]}-{date_val[4:6]}-{date_val[6:]}"
-                elif separator == ".":
-                    # Convert date to dot format
-                    date_val = placeholders['DATE']
-                    if len(date_val) == 8 and date_val.isdigit():  # YYYYMMDD format
-                        placeholders['DATE'] = f"{date_val[:4]}.{date_val[4:6]}.{date_val[6:]}"
-                elif separator == " ":
-                    # Convert date to space format
-                    date_val = placeholders['DATE']
-                    if len(date_val) == 8 and date_val.isdigit():  # YYYYMMDD format
-                        placeholders['DATE'] = f"{date_val[:4]} {date_val[4:6]} {date_val[6:]}"
-            
-            if 'TIME' in placeholders:
-                if 'DATE' not in placeholders:  # Only copy if not already copied above
-                    placeholders = placeholders.copy()
-                if separator == "-":
-                    # Convert time to dash format
-                    time_val = placeholders['TIME']
-                    if len(time_val) == 6 and time_val.isdigit():  # HHMMSS format
-                        placeholders['TIME'] = f"{time_val[:2]}-{time_val[2:4]}-{time_val[4:]}"
-                elif separator == ".":
-                    # Convert time to dot format
-                    time_val = placeholders['TIME']
-                    if len(time_val) == 6 and time_val.isdigit():  # HHMMSS format
-                        placeholders['TIME'] = f"{time_val[:2]}.{time_val[2:4]}.{time_val[4:]}"
-                elif separator == " ":
-                    # Convert time to space format
-                    time_val = placeholders['TIME']
-                    if len(time_val) == 6 and time_val.isdigit():  # HHMMSS format
-                        placeholders['TIME'] = f"{time_val[:2]} {time_val[2:4]} {time_val[4:]}"
-        
-        # Handle date/time placement
-        datetime_prefix = item.get('datetime_prefix', False)
-        
-        if datetime_prefix and ('${DATE}' in result or '${TIME}' in result):
-            # Extract date/time and place at beginning
-            date_str = placeholders.get('DATE', '')
-            time_str = placeholders.get('TIME', '')
-            
-            datetime_part = ""
-            if '${DATE}' in result:
-                datetime_part += date_str
-            if '${TIME}' in result:
-                if datetime_part:
-                    datetime_part += separator
-                datetime_part += time_str
-            
-            # Remove date/time placeholders from pattern
-            result = result.replace('${DATE}', '').replace('${TIME}', '')
-            # Clean up multiple consecutive separators
-            while f'{separator}{separator}' in result:
-                result = result.replace(f'{separator}{separator}', separator)
-            # Clean up leading/trailing separators
-            result = result.strip(separator)
-            # Add datetime at the beginning
-            result = f"{datetime_part}{separator}{result}" if result else datetime_part
-        
-        # Add BASE placeholder if it's used in the pattern
-        if '${BASE}' in result:
-            placeholders = placeholders.copy()  # Don't modify original
-            
-            # Get the base name (original filename without extension)
-            original_name = item.get('original_name') or item.get('name', '')
-            if original_name:
-                if '.' in original_name:
-                    base_name, _ = os.path.splitext(original_name)
-                    placeholders['BASE'] = base_name
-                    print(f"DEBUG: _process_custom_pattern - Added BASE placeholder: '{base_name}' from '{original_name}'")
-                else:
-                    # No extension, use the whole name as base
-                    placeholders['BASE'] = original_name
-                    print(f"DEBUG: _process_custom_pattern - Added BASE placeholder: '{original_name}' (no extension)")
+        # --- Date Formatting ---
+        if "${DATE}" in pattern:
+            # Extract the core format pattern (e.g., "YYYY_MM_DD") from the text
+            date_format_match = re.match(r'([^(]+)', date_format_text)
+            if date_format_match:
+                date_format_string = date_format_match.group(1).strip()
+                try:
+                    formatted_date = self._convert_custom_date_format(date_format_string, now)
+                    pattern = pattern.replace("${DATE}", formatted_date)
+                except Exception as e:
+                    print(f"Error formatting date with '{date_format_string}': {e}")
+                    # Fallback to a default format if conversion fails
+                    pattern = pattern.replace("${DATE}", now.strftime("%Y_%m_%d"))
             else:
-                # Fallback if no original name available
-                placeholders['BASE'] = 'filename'
-                print(f"DEBUG: _process_custom_pattern - Added fallback BASE placeholder: 'filename'")
-        
-        # Replace remaining placeholders
-        result = self._replace_placeholders(result, placeholders)
-        
-        # Handle automatic extension preservation for files
-        if item.get('type') == 'file':
-            original_name = item.get('original_name') or item.get('name', '')
-            print(f"DEBUG: _process_custom_pattern - file processing, original_name: '{original_name}'")
-            if '.' in original_name:
-                _, ext = os.path.splitext(original_name)
-                print(f"DEBUG: _process_custom_pattern - extracted extension: '{ext}'")
-                print(f"DEBUG: _process_custom_pattern - result before extension: '{result}'")
-                # Only add extension if not already present
-                if not result.endswith(ext):
-                    result += ext
-                    print(f"DEBUG: _process_custom_pattern - added extension, result: '{result}'")
-                else:
-                    print(f"DEBUG: _process_custom_pattern - extension already present")
+                 # Fallback if regex fails to parse
+                 pattern = pattern.replace("${DATE}", now.strftime("%Y_%m_%d"))
+
+        # --- Time Formatting ---
+        if "${TIME}" in pattern:
+            # Extract the core format pattern (e.g., "HH_MM_SS") from the text
+            time_format_match = re.match(r'([^(]+)', time_format_text)
+            if time_format_match:
+                time_format_string = time_format_match.group(1).strip()
+                try:
+                    formatted_time = self._convert_custom_time_format(time_format_string, now)
+                    pattern = pattern.replace("${TIME}", formatted_time)
+                except Exception as e:
+                    print(f"Error formatting time with '{time_format_string}': {e}")
+                    # Fallback to a default format if conversion fails
+                    pattern = pattern.replace("${TIME}", now.strftime("%H_%M_%S"))
             else:
-                print(f"DEBUG: _process_custom_pattern - no extension found in original_name")
+                # Fallback if regex fails to parse
+                pattern = pattern.replace("${TIME}", now.strftime("%H_%M_%S"))
+
+
+        # --- Custom Options ---
+        # Find all ${CUSTOM...} placeholders in the pattern
+        custom_placeholders = re.findall(r'\$\{CUSTOM\d+\}', pattern)
+        for placeholder in custom_placeholders:
+            # Get the value from the placeholders (which contains the selected values)
+            # First try the specific placeholder (e.g., "CUSTOM1")
+            placeholder_key = placeholder.replace("${", "").replace("}", "")  # Convert "${CUSTOM1}" to "CUSTOM1"
+            value = placeholders.get(placeholder_key, "")
+            
+            # If not found, try the full placeholder format
+            if not value:
+                value = placeholders.get(placeholder, "")
+            
+            # Ensure value is a string
+            if isinstance(value, list):
+                # If it's still a list, take the first item or empty string
+                value = value[0] if value else ""
+            elif value is None:
+                value = ""
+            
+            pattern = pattern.replace(placeholder, str(value))
+
+        # --- Base Placeholders ---
+        # Replace other standard placeholders like ${PROJECT_NAME} and ${BASE}
+        # The base name is the item's original name before applying the pattern
+        original_name = item_data.get('name', '')
         
-        print(f"DEBUG: _process_custom_pattern - final result: '{result}'")
-        return result
-    
+        # Handle cases where the original name might itself contain placeholders
+        if "${PROJECT_NAME}" in original_name:
+            original_name = original_name.replace("${PROJECT_NAME}", placeholders.get("PROJECT_NAME", ""))
+
+        # Split the original name into base name and extension
+        import os
+        base_name, extension = os.path.splitext(original_name)
+        
+        # Replace placeholders in the pattern
+        pattern = pattern.replace("${PROJECT_NAME}", placeholders.get("PROJECT_NAME", ""))
+        pattern = pattern.replace("${BASE}", base_name)
+        
+        # Automatically append the original file extension to the final result
+        # This ensures files keep their proper extensions (e.g., .prproj, .txt, etc.)
+        if extension:
+            pattern = pattern + extension
+        
+        return pattern
+
     def _detect_manual_separators_in_pattern(self, pattern):
         """Detect if user has manually added separators in the pattern"""
         import re

@@ -157,7 +157,7 @@ class StructureConverter:
             
             # Preserve custom pattern data for folders
             if isinstance(item_data, dict):
-                for key in ['pattern', 'sequence', 'custom_options', 'uses_custom_pattern', 'rename_flag']:
+                for key in ['pattern', 'sequence', 'custom_options', 'uses_custom_pattern', 'rename_flag', 'date_format', 'time_format', 'separator', 'separator_type', 'custom_separator']:
                     if key in item_data:
                         folder_structure[key] = item_data[key]
                         print(f"DEBUG: Preserved {key} for folder '{item_name}': {item_data[key]}")
@@ -184,7 +184,7 @@ class StructureConverter:
             # Preserve all file-related data
             if isinstance(item_data, dict):
                 # Preserve custom pattern data for files
-                for key in ['pattern', 'custom_options', 'uses_custom_pattern', 'rename_flag']:
+                for key in ['pattern', 'custom_options', 'uses_custom_pattern', 'rename_flag', 'date_format', 'time_format', 'separator', 'separator_type', 'custom_separator']:
                     if key in item_data:
                         file_structure[key] = item_data[key]
                         print(f"DEBUG: Preserved {key} for file '{item_name}': {item_data[key]}")
@@ -368,6 +368,23 @@ class StructureConverter:
                     uses_custom_pattern = item.get('uses_custom_pattern', False)
                     if not uses_custom_pattern and 'user_data' in item:
                         uses_custom_pattern = item['user_data'].get('uses_custom_pattern', False)
+                        
+                        # Check even deeper in nested user_data if needed
+                        if not uses_custom_pattern and 'user_data' in item['user_data'] and isinstance(item['user_data']['user_data'], dict):
+                            uses_custom_pattern = item['user_data']['user_data'].get('uses_custom_pattern', False)
+                    
+                    # Also check if there's a pattern field (which indicates custom pattern usage)
+                    if not uses_custom_pattern:
+                        pattern = item.get('pattern')
+                        if not pattern and 'user_data' in item:
+                            pattern = item['user_data'].get('pattern')
+                            # Check even deeper in nested user_data if needed
+                            if not pattern and 'user_data' in item['user_data'] and isinstance(item['user_data']['user_data'], dict):
+                                pattern = item['user_data']['user_data'].get('pattern')
+                        
+                        # If we found a pattern, assume custom pattern usage
+                        if pattern and pattern != file_name:
+                            uses_custom_pattern = True
                     
                     # Only check for project name if not using custom pattern
                     uses_project_name = False
@@ -381,6 +398,9 @@ class StructureConverter:
                         pattern = item.get('pattern', file_name)
                         if pattern == file_name and 'user_data' in item:
                             pattern = item['user_data'].get('pattern', file_name)
+                            # Check even deeper in nested user_data if needed
+                            if pattern == file_name and 'user_data' in item['user_data'] and isinstance(item['user_data']['user_data'], dict):
+                                pattern = item['user_data']['user_data'].get('pattern', file_name)
                         display_name = pattern
                         print(f"DEBUG: Using custom pattern display for file: {display_name} (original: {file_name})")
                     elif uses_project_name:
@@ -899,8 +919,9 @@ class StructureConverter:
                         if key in item_user_data:
                             file_item[key] = item_user_data[key]
                     
-                    # Store the complete user_data for later extraction
-                    file_item['user_data'] = item_user_data
+                    # Extract essential data from user_data without nesting
+                    essential_data = self._extract_essential_user_data(item_user_data)
+                    file_item.update(essential_data)
                     
                     # Ensure original_path is set if path is available but original_path isn't
                     if 'path' in item_user_data and item_user_data['path'] and 'original_path' not in file_item:
@@ -923,8 +944,9 @@ class StructureConverter:
                     if key in item_user_data:
                         file_item[key] = item_user_data[key]
                 
-                # Store the complete user_data for later extraction
-                file_item['user_data'] = item_user_data
+                # Extract essential data from user_data without nesting
+                essential_data = self._extract_essential_user_data(item_user_data)
+                file_item.update(essential_data)
                         
                 # Ensure original_path is set if path is available but original_path isn't
                 if 'path' in item_user_data and item_user_data['path'] and 'original_path' not in file_item:
@@ -935,6 +957,36 @@ class StructureConverter:
                 print(f"DEBUG: File {name} has original_path: {file_item['original_path']}")
             
             return file_item
+
+    def _extract_essential_user_data(self, user_data, depth=0):
+        """Extract essential data from user_data without creating nested structures"""
+        if depth > 10 or not isinstance(user_data, dict):
+            return {}
+        
+        essential = {}
+        essential_keys = [
+            'pattern', 'separator', 'custom_separator', 'date_format_text',
+            'time_format_text', 'uses_custom_pattern', 'custom_options',
+            'cache_hash', 'relative_path', 'should_embed', 'template_name'
+        ]
+        
+        for key in essential_keys:
+            if key in user_data:
+                # Special handling for custom_options which can be a dict
+                if key == 'custom_options':
+                    essential[key] = user_data[key]
+                elif not isinstance(user_data[key], dict):
+                    essential[key] = user_data[key]
+        
+        # If there's nested user_data, extract from it too (but don't create nesting)
+        if 'user_data' in user_data and isinstance(user_data['user_data'], dict):
+            nested_essential = self._extract_essential_user_data(user_data['user_data'], depth + 1)
+            # Only add keys that aren't already present
+            for key, value in nested_essential.items():
+                if key not in essential:
+                    essential[key] = value
+        
+        return essential
 
     def _normalize_structure_format(self, structure):
         """

@@ -87,18 +87,30 @@ class SeparatorController:
                 ("YYYY_MM_DD", "2024_01_15"),
                 ("MM_DD_YYYY", "01_15_2024"),
                 ("DD_MM_YYYY", "15_01_2024"),
+                ("mo_DD_YY", "01_15_24"),  # Month, day, 2-digit year
+                ("DD_mo_YY", "15_01_24"),  # Day, month, 2-digit year
+                ("YY_MM_DD", "24_01_15"),  # 2-digit year first
                 # Dash formats
                 ("YYYY-MM-DD", "2024-01-15"),
                 ("MM-DD-YYYY", "01-15-2024"),
                 ("DD-MM-YYYY", "15-01-2024"),
+                ("mo-DD-YY", "01-15-24"),
+                ("DD-mo-YY", "15-01-24"),
+                ("YY-MM-DD", "24-01-15"),
                 # Dot formats
                 ("YYYY.MM.DD", "2024.01.15"),
                 ("MM.DD.YYYY", "01.15.2024"),
                 ("DD.MM.YYYY", "15.01.2024"),
+                ("mo.DD.YY", "01.15.24"),
+                ("DD.mo.YY", "15.01.24"),
+                ("YY.MM.DD", "24.01.15"),
                 # Space formats
                 ("YYYY MM DD", "2024 01 15"),
                 ("MM DD YYYY", "01 15 2024"),
-                ("DD MM YYYY", "15 01 2024")
+                ("DD MM YYYY", "15 01 2024"),
+                ("mo DD YY", "01 15 24"),
+                ("DD mo YY", "15 01 24"),
+                ("YY MM DD", "24 01 15")
             ]
         else:
             base_formats = [
@@ -218,7 +230,7 @@ class SeparatorController:
         components = [c for c in components if c]  # Remove empty strings
         
         # Determine if it's a date or time pattern
-        is_date = any(comp in ['YYYY', 'MM', 'DD'] for comp in components)
+        is_date = any(comp in ['YYYY', 'YY', 'MM', 'mo', 'DD'] for comp in components)
         
         return components, is_date
     

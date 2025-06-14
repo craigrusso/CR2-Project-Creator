@@ -47,7 +47,7 @@ class TemplateCreationForm(QDialog):
         self.last_category_update = 0
         
         # Set the window flags to make it modal
-        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
         
         # Set window title based on mode
         if self.is_editing:
@@ -563,6 +563,138 @@ class TemplateCreationForm(QDialog):
         
         # Process events to ensure UI is updated
         QApplication.processEvents()
+
+    def get_structure_from_tree(self):
+        """Extract structure data from the tree widget"""
+        if not hasattr(self, 'structure_tree'):
+            return []
+        
+        structure = []
+        root = self.structure_tree.invisibleRootItem()
+        
+        for i in range(root.childCount()):
+            item = root.child(i)
+            structure.append(self._build_structure_from_item(item))
+        
+        return structure
+    
+    def _build_structure_from_item(self, item):
+        """Build structure dictionary from a tree item"""
+        item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+        
+        # Create clean structure dictionary
+        structure_dict = {
+            'name': item.text(0),
+            'type': 'folder' if item.childCount() > 0 else 'file'
+        }
+        
+        # Copy only essential data, avoiding nested user_data
+        essential_keys = [
+            'original_path', 'path', 'rename_flag', 'uses_project_name',
+            'is_binary', 'pattern', 'separator', 'custom_separator',
+            'date_format_text', 'time_format_text', 'uses_custom_pattern'
+        ]
+        
+        for key in essential_keys:
+            if key in item_data and key != 'user_data':
+                structure_dict[key] = item_data[key]
+        
+        # Handle children for folders
+        if item.childCount() > 0:
+            children = []
+            for i in range(item.childCount()):
+                child = item.child(i)
+                children.append(self._build_structure_from_item(child))
+            structure_dict['children'] = children
+        
+        return structure_dict
+    
+    def load_files(self):
+        """Load files from template data"""
+        # This method would populate the files tab if it exists
+        # For now, it's a placeholder to prevent AttributeError
+        pass
+    
+    def load_structure(self):
+        """Load structure from template data into the tree widget"""
+        if not hasattr(self, 'structure_tree') or not self.template:
+            return
+        
+        structure = self.template.get('structure', [])
+        if not structure:
+            return
+        
+        self.structure_tree.clear()
+        
+        for item_data in structure:
+            self._add_structure_item_to_tree(item_data, self.structure_tree.invisibleRootItem())
+        
+        self.structure_tree.expandAll()
+    
+    def _add_structure_item_to_tree(self, item_data, parent_item):
+        """Add a structure item to the tree widget"""
+        if not isinstance(item_data, dict):
+            return
+        
+        name = item_data.get('name', 'Unknown')
+        item = QTreeWidgetItem([name, item_data.get('type', 'file')])
+        
+        # Store clean data without nested user_data
+        clean_data = {}
+        for key, value in item_data.items():
+            if key not in ['children', 'user_data'] and not isinstance(value, dict) or key in ['custom_options']:
+                clean_data[key] = value
+        
+        item.setData(0, Qt.ItemDataRole.UserRole, clean_data)
+        
+        if parent_item == self.structure_tree.invisibleRootItem():
+            self.structure_tree.addTopLevelItem(item)
+        else:
+            parent_item.addChild(item)
+        
+        # Add children if they exist
+        children = item_data.get('children', [])
+        for child_data in children:
+            self._add_structure_item_to_tree(child_data, item)
+    
+    def add_folder(self):
+        """Add a new folder to the structure tree"""
+        if not hasattr(self, 'structure_tree'):
+            return
+        
+        from PyQt6.QtWidgets import QInputDialog
+        
+        folder_name, ok = QInputDialog.getText(self, 'Add Folder', 'Enter folder name:')
+        if ok and folder_name.strip():
+            item = QTreeWidgetItem([folder_name.strip(), 'folder'])
+            item.setData(0, Qt.ItemDataRole.UserRole, {'type': 'folder'})
+            
+            # Add to selected item or root
+            selected_items = self.structure_tree.selectedItems()
+            if selected_items:
+                parent = selected_items[0]
+                # If selected item is a file, add to its parent
+                if parent.childCount() == 0 and parent.parent():
+                    parent = parent.parent()
+                parent.addChild(item)
+                parent.setExpanded(True)
+            else:
+                self.structure_tree.addTopLevelItem(item)
+    
+    def remove_structure_item(self):
+        """Remove selected item from structure tree"""
+        if not hasattr(self, 'structure_tree'):
+            return
+        
+        selected_items = self.structure_tree.selectedItems()
+        for item in selected_items:
+            parent = item.parent()
+            if parent:
+                parent.removeChild(item)
+            else:
+                index = self.structure_tree.indexOfTopLevelItem(item)
+                if index >= 0:
+                    self.structure_tree.takeTopLevelItem(index)
 
 def show_template_creation_form(parent):
     """Show the enhanced template creation form"""

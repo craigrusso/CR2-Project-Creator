@@ -105,7 +105,7 @@ class FormatManagers:
         if hasattr(self.dialog, 'separator_controller'):
             return self.dialog.separator_controller.get_all_format_options(is_date=True)
         else:
-            # Fallback to comprehensive hardcoded list
+            # Fallback to comprehensive hardcoded list with more format options
             return [
                 "YYYYMMDD (20240115)",
                 "YYYY_MM_DD (2024_01_15)",
@@ -119,7 +119,7 @@ class FormatManagers:
                 "DD.MM.YYYY (15.01.2024)",
                 "YYYY MM DD (2024 01 15)",
                 "MM DD YYYY (01 15 2024)",
-                "DD MM YYYY (15 01 2024)"
+                "DD MM YYYY (15 01 2024)",
             ]
 
     def _get_all_time_format_options(self):
@@ -127,7 +127,7 @@ class FormatManagers:
         if hasattr(self.dialog, 'separator_controller'):
             return self.dialog.separator_controller.get_all_format_options(is_date=False)
         else:
-            # Fallback to comprehensive hardcoded list
+            # Fallback to comprehensive hardcoded list with more format options
             return [
                 "HHMMSS (143022)",
                 "HHMM (1430)",
@@ -202,7 +202,9 @@ class FormatManagers:
         # Map format patterns to strftime patterns
         format_mapping = {
             'YYYY': '%Y',
+            'YY': '%y',    # 2-digit year
             'MM': '%m',
+            'mo': '%m',    # Month (same as MM for now)
             'DD': '%d',
             'HH': '%H',
             'SS': '%S'
@@ -240,42 +242,33 @@ class FormatManagers:
             return "143022"  # Fallback
 
     def get_format_settings(self, date_combo, time_combo):
-        """Get current format settings"""
-        settings = {}
-        
-        if date_combo:
-            settings['date_format'] = self.get_date_format_string(date_combo.currentText())
-        
-        if time_combo:
-            settings['time_format'] = self.get_time_format_string(time_combo.currentText())
-        
-        return settings
+        """Get current date and time format settings from UI"""
+        return {
+            "date_format_text": date_combo.currentText() if date_combo and date_combo.currentText() else "",
+            "time_format_text": time_combo.currentText() if time_combo and time_combo.currentText() else ""
+        }
 
     def load_format_settings(self, pattern_data, date_combo, time_combo):
-        """Load format settings from pattern data"""
-        if not pattern_data:
-            return
-            
-        # Load date format
-        if date_combo and 'date_format' in pattern_data:
-            date_format = pattern_data['date_format']
-            for i in range(date_combo.count()):
-                item_text = date_combo.itemText(i)
-                if self.get_date_format_string(item_text) == date_format:
-                    date_combo.setCurrentIndex(i)
-                    break
-        
-        # Load time format
-        if time_combo and 'time_format' in pattern_data:
-            time_format = pattern_data['time_format']
-            for i in range(time_combo.count()):
-                item_text = time_combo.itemText(i)
-                if self.get_time_format_string(item_text) == time_format:
-                    time_combo.setCurrentIndex(i)
-                    break
+        """Load date and time format settings into UI from pattern_data"""
+        if pattern_data and isinstance(pattern_data, dict):
+            date_format_text = pattern_data.get("date_format_text")
+            if date_format_text:
+                # Find the index of the text in the combo box and set it
+                index = date_combo.findText(date_format_text)
+                if index != -1:
+                    date_combo.setCurrentIndex(index)
+
+            time_format_text = pattern_data.get("time_format_text")
+            if time_format_text:
+                index = time_combo.findText(time_format_text)
+                if index != -1:
+                    time_combo.setCurrentIndex(index)
 
     def update_datetime_formats_to_separator(self, separator, date_combo, time_combo):
-        """Update date and time formats to use the specified separator"""
+        """
+        Updates the available date and time formats based on the selected separator.
+        (DEPRECATED - all formats are now shown regardless of separator)
+        """
         if date_combo:
             self._update_combo_formats_to_separator(date_combo, separator, is_date=True)
         

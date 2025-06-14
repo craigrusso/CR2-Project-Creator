@@ -593,14 +593,20 @@ class CustomPatternsDialog(QDialog):
             pattern = None
             custom_options = None
             separator = "_"
+            date_format = None
+            time_format = None
             
             # Check direct item_data level
             if 'pattern' in item_data:
                 pattern = item_data['pattern']
                 custom_options = item_data.get('custom_options')
                 separator = item_data.get('separator', '_')
+                date_format_text = item_data.get('date_format_text')
+                time_format_text = item_data.get('time_format_text')
                 print(f"DEBUG: Found pattern at top level: {pattern}")
                 print(f"DEBUG: Found custom_options at top level: {custom_options}")
+                print(f"DEBUG: Found date_format_text at top level: {date_format_text}")
+                print(f"DEBUG: Found time_format_text at top level: {time_format_text}")
             
             # Check user_data level  
             elif 'user_data' in item_data and isinstance(item_data['user_data'], dict):
@@ -609,8 +615,12 @@ class CustomPatternsDialog(QDialog):
                     pattern = user_data['pattern']
                     custom_options = user_data.get('custom_options')
                     separator = user_data.get('separator', '_')
+                    date_format_text = user_data.get('date_format_text')
+                    time_format_text = user_data.get('time_format_text')
                     print(f"DEBUG: Found pattern in user_data: {pattern}")
                     print(f"DEBUG: Found custom_options in user_data: {custom_options}")
+                    print(f"DEBUG: Found date_format_text in user_data: {date_format_text}")
+                    print(f"DEBUG: Found time_format_text in user_data: {time_format_text}")
                     
                 # Check if user_data has nested user_data
                 elif 'user_data' in user_data and isinstance(user_data['user_data'], dict):
@@ -619,8 +629,12 @@ class CustomPatternsDialog(QDialog):
                         pattern = nested_user_data['pattern']
                         custom_options = nested_user_data.get('custom_options')
                         separator = nested_user_data.get('separator', '_')
+                        date_format_text = nested_user_data.get('date_format_text')
+                        time_format_text = nested_user_data.get('time_format_text')
                         print(f"DEBUG: Found pattern in nested user_data: {pattern}")
                         print(f"DEBUG: Found custom_options in nested user_data: {custom_options}")
+                        print(f"DEBUG: Found date_format_text in nested user_data: {date_format_text}")
+                        print(f"DEBUG: Found time_format_text in nested user_data: {time_format_text}")
             
             # If pattern found, load it
             if pattern:
@@ -640,6 +654,16 @@ class CustomPatternsDialog(QDialog):
                     print(f"DEBUG: Loading separator: {separator}")
                     separator_data = {'separator': separator}
                     self._load_separator_settings(separator_data)
+                
+                # Load date/time format settings
+                if date_format_text or time_format_text:
+                    print(f"DEBUG: Loading format settings - date: {date_format_text}, time: {time_format_text}")
+                    format_data = {}
+                    if date_format_text:
+                        format_data['date_format_text'] = date_format_text
+                    if time_format_text:
+                        format_data['time_format_text'] = time_format_text
+                    self.format_managers.load_format_settings(format_data, self.date_combo, self.time_combo)
                 
                 # Update preview after loading
                 self._update_preview()
@@ -707,12 +731,19 @@ class CustomPatternsDialog(QDialog):
         """Get all pattern data from the dialog"""
         if not hasattr(self, 'pattern_edit'):
             return {}
-            
-        return {
+        
+        pattern_data = {
             'pattern': self.pattern_edit.text().strip(),
             'separator': self._get_current_separator(),
             'custom_options': self._get_custom_options_data()
         }
+        
+        # Add date and time format settings if available
+        if hasattr(self, 'format_managers') and hasattr(self, 'date_combo') and hasattr(self, 'time_combo'):
+            format_settings = self.format_managers.get_format_settings(self.date_combo, self.time_combo)
+            pattern_data.update(format_settings)
+        
+        return pattern_data
     
     def _apply_dialog_styling(self):
         """Apply consistent dialog styling"""

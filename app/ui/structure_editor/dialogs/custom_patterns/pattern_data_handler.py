@@ -146,7 +146,7 @@ class PatternDataHandler:
             pattern_keys = [
                 'pattern', 'uses_custom_pattern', 'rename_flag',
                 'separator', 'separator_type', 'custom_separator',
-                'custom_options', 'date_format', 'time_format'
+                'custom_options', 'date_format_text', 'time_format_text'
             ]
             
             for key in pattern_keys:
