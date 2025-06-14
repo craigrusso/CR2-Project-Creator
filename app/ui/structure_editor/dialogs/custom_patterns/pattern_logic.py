@@ -18,20 +18,38 @@ class PatternLogic:
         """Initialize pattern logic handler"""
         self.dialog = dialog
         
-    def insert_tag(self, tag, pattern_edit):
-        """Insert a tag at the cursor position in pattern edit"""
+    def insert_tag(self, tag, pattern_edit, separator_combo, custom_separator_edit):
+        """Insert a tag at the cursor position in pattern edit with automatic separator handling"""
         if not pattern_edit:
             return
             
         cursor_pos = pattern_edit.cursorPosition()
         current_text = pattern_edit.text()
         
-        # Insert the tag at cursor position
-        new_text = current_text[:cursor_pos] + tag + current_text[cursor_pos:]
+        # Get the current separator
+        current_separator = self.get_current_separator(separator_combo, custom_separator_edit)
+        
+        # Check if we need to add separator before or after
+        tag_to_insert = tag
+        
+        # Check what's before the cursor
+        text_before = current_text[:cursor_pos].rstrip()
+        text_after = current_text[cursor_pos:].lstrip()
+        
+        # If there's a variable before cursor, add separator before tag
+        if text_before and text_before.endswith('}'):
+            tag_to_insert = current_separator + tag_to_insert
+        
+        # If there's a variable after cursor, add separator after tag
+        if text_after and text_after.startswith('${'):
+            tag_to_insert = tag_to_insert + current_separator
+        
+        # Insert the tag with separator at cursor position
+        new_text = current_text[:cursor_pos] + tag_to_insert + current_text[cursor_pos:]
         pattern_edit.setText(new_text)
         
         # Move cursor to after the inserted tag
-        pattern_edit.setCursorPosition(cursor_pos + len(tag))
+        pattern_edit.setCursorPosition(cursor_pos + len(tag_to_insert))
 
     def validate_pattern(self, pattern, custom_options_manager, format_managers, date_combo, time_combo):
         """Validate the pattern and return any errors"""

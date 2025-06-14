@@ -46,7 +46,7 @@ class PatternUIComponents:
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
         """)
         layout.addWidget(title)
         return title
@@ -60,7 +60,7 @@ class PatternUIComponents:
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-bottom: 5px;
+            margin-bottom: 3px;
         """)
         layout.addWidget(variables_header)
         
@@ -68,7 +68,7 @@ class PatternUIComponents:
         tags_widget = QWidget()
         tags_widget.setStyleSheet(f"background-color: transparent; border: none;")
         tags_layout = QGridLayout(tags_widget)
-        tags_layout.setSpacing(8)
+        tags_layout.setSpacing(6)
         
         # Different tags for files vs folders
         if is_folder:
@@ -136,8 +136,8 @@ class PatternUIComponents:
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-top: 10px;
-            margin-bottom: 5px;
+            margin-top: 6px;
+            margin-bottom: 3px;
         """)
         layout.addWidget(separator_header)
         
@@ -195,8 +195,8 @@ class PatternUIComponents:
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-top: 10px;
-            margin-bottom: 5px;
+            margin-top: 6px;
+            margin-bottom: 3px;
         """)
         layout.addWidget(pattern_header)
         

@@ -253,10 +253,10 @@ class CustomPatternsDialog(QDialog):
         # Apply consistent dialog styling
         self._apply_dialog_styling()
         
-        # Main layout with better spacing
+        # Main layout with tighter spacing
         main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(20)
-        main_layout.setContentsMargins(25, 25, 25, 25)
+        main_layout.setSpacing(12)
+        main_layout.setContentsMargins(20, 20, 20, 20)
         
         # Determine if this is a folder
         is_folder = self._is_folder_item(self.item)
@@ -276,7 +276,7 @@ class CustomPatternsDialog(QDialog):
         
         # Connect separator combo change
         self.separator_combo.currentTextChanged.connect(self._on_separator_changed)
-        self.custom_separator_edit.textChanged.connect(self._update_preview)
+        self.custom_separator_edit.textChanged.connect(self._on_custom_separator_changed)
         
         # Pattern input section
         self.pattern_edit = self.ui_components.create_pattern_input_section(main_layout, is_folder)
@@ -316,7 +316,7 @@ class CustomPatternsDialog(QDialog):
         main_layout.addWidget(self.preview_label)
         
         # Add spacing before buttons
-        main_layout.addSpacing(10)
+        main_layout.addSpacing(6)
         
         # Buttons with proper styling and spacing
         button_layout = QHBoxLayout()
@@ -339,22 +339,38 @@ class CustomPatternsDialog(QDialog):
         main_layout.addLayout(button_layout)
 
     def _insert_tag(self, tag):
-        """Insert a tag into the pattern input"""
-        if hasattr(self, 'pattern_edit'):
-            cursor_pos = self.pattern_edit.cursorPosition()
-            current_text = self.pattern_edit.text()
-            new_text = current_text[:cursor_pos] + tag + current_text[cursor_pos:]
-            self.pattern_edit.setText(new_text)
-            self.pattern_edit.setCursorPosition(cursor_pos + len(tag))
+        """Insert a tag into the pattern input using PatternLogic for automatic separator handling"""
+        if hasattr(self, 'pattern_edit') and hasattr(self, 'pattern_logic'):
+            self.pattern_logic.insert_tag(tag, self.pattern_edit, self.separator_combo, self.custom_separator_edit)
             self._update_preview()
             
     def _on_separator_changed(self, text):
-        """Handle separator combo box changes"""
+        """Handle separator combo box changes and act as master switch"""
         if text == "Custom...":
             self.custom_separator_edit.setVisible(True)
             self.custom_separator_edit.setFocus()
         else:
             self.custom_separator_edit.setVisible(False)
+        
+        # Act as master switch - update existing pattern separators
+        if hasattr(self, 'pattern_edit') and hasattr(self, 'pattern_logic'):
+            current_pattern = self.pattern_edit.text()
+            if current_pattern.strip():
+                new_separator = self.pattern_logic.get_current_separator(self.separator_combo, self.custom_separator_edit)
+                updated_pattern = self.pattern_logic.update_pattern_separators(current_pattern, new_separator)
+                self.pattern_edit.setText(updated_pattern)
+                
+        self._update_preview()
+        
+    def _on_custom_separator_changed(self):
+        """Handle custom separator input changes and act as master switch"""
+        if hasattr(self, 'pattern_edit') and hasattr(self, 'pattern_logic'):
+            current_pattern = self.pattern_edit.text()
+            if current_pattern.strip():
+                new_separator = self.pattern_logic.get_current_separator(self.separator_combo, self.custom_separator_edit)
+                updated_pattern = self.pattern_logic.update_pattern_separators(current_pattern, new_separator)
+                self.pattern_edit.setText(updated_pattern)
+        
         self._update_preview()
         
     def _update_preview(self):
