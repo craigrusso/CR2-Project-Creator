@@ -241,13 +241,12 @@ class AnimatedCustomOptionsWidget(BaseCustomOptionsWidget):
             return
         
         # Execute immediate slide down
+        self._pending_slide_down = True  # Set flag for immediate execution too
         self._execute_pending_slide_down()
     
     def _execute_pending_slide_down(self):
         """Execute the actual slide down animation"""
-        if not self._pending_slide_down and hasattr(self, '_pending_slide_down'):
-            return
-            
+        # Reset pending flag
         self._pending_slide_down = False
         
         if not self.is_visible:

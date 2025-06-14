@@ -2273,6 +2273,7 @@ class ProjectCreatorApp(QMainWindow):
     
     def check_template_for_custom_options(self, template_data):
         """Check if template requires custom options and show/hide the animated widget"""
+        print(f"DEBUG: check_template_for_custom_options called with template_data: {template_data}")
         # Track the current template to detect changes
         current_template_name = template_data.get('name') if template_data else None
         previous_template_name = getattr(self, '_current_template_name', None)
