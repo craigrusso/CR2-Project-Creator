@@ -1710,15 +1710,17 @@ class ProjectBuilder:
                     
                     combo = QComboBox()
                     combo.addItems(prompt_data['options'])
-                    combo.setStyleSheet(f"""
-                        QComboBox {{
-                            background-color: {colors['card_bg']};
-                            color: {colors['text']};
-                            border: 1px solid {colors['border']};
-                            padding: 8px;
-                            border-radius: 4px;
-                        }}
-                    """)
+                    # Use the standard combo box styling for consistency
+                    from app.ui.color_scheme_pyqt import COMBOBOX_STYLE
+                    combo.setStyleSheet(COMBOBOX_STYLE)
+                    
+                    # Apply hover delegate for proper blue hover effects
+                    try:
+                        from app.ui.custom_delegates import apply_hover_delegate
+                        apply_hover_delegate(combo)
+                    except ImportError:
+                        pass
+                    
                     self.combos[key] = combo
                     layout.addWidget(combo)
                 

@@ -129,6 +129,13 @@ class BaseCustomOptionsWidget(QWidget):
         combo.setStyleSheet(COMBOBOX_STYLE)
         combo.setMinimumHeight(28)
         
+        # Apply hover delegate for proper blue hover effects
+        try:
+            from app.ui.custom_delegates import apply_hover_delegate
+            apply_hover_delegate(combo)
+        except ImportError:
+            pass
+        
         # Connect to update preview if method exists
         if hasattr(self, '_update_preview'):
             combo.currentTextChanged.connect(self._update_preview)
