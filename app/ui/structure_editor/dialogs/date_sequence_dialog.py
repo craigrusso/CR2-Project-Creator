@@ -44,8 +44,8 @@ class DateSequenceDialog(QDialog):
     def init_ui(self):
         """Initialize the user interface"""
         self.setWindowTitle("Date Sequence Configuration")
-        self.setMinimumSize(500, 600)
-        self.resize(600, 700)
+        self.setMinimumSize(500, 700)  # Increased height from 650 to 700 to prevent button overlap
+        self.resize(600, 750)          # Increased height from 700 to 750
         self.setStyleSheet(f"""
             QDialog {{
                 background-color: {colors['bg']};
@@ -54,7 +54,7 @@ class DateSequenceDialog(QDialog):
         """)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(20)
+        layout.setSpacing(10)  # Reduced from 20 to 10
         
         # Title
         title = QLabel("Date Sequence Configuration")
@@ -64,7 +64,6 @@ class DateSequenceDialog(QDialog):
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-bottom: 10px;
         """)
         layout.addWidget(title)
         
@@ -76,7 +75,6 @@ class DateSequenceDialog(QDialog):
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-bottom: 5px;
         """)
         layout.addWidget(format_label)
         
@@ -101,6 +99,9 @@ class DateSequenceDialog(QDialog):
         apply_hover_delegate(self.format_combo)
         layout.addWidget(self.format_combo)
         
+        # Add some spacing before next section
+        layout.addSpacing(5)
+        
         # Date range
         range_label = QLabel("Date Range:")
         range_label.setFont(QFont("Arial", 12, QFont.Weight.Bold))
@@ -109,8 +110,6 @@ class DateSequenceDialog(QDialog):
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-top: 10px;
-            margin-bottom: 5px;
         """)
         layout.addWidget(range_label)
         
@@ -187,6 +186,9 @@ class DateSequenceDialog(QDialog):
         
         layout.addLayout(range_layout)
         
+        # Add some spacing before next section
+        layout.addSpacing(5)
+        
         # Interval
         interval_header = QLabel("Interval:")
         interval_header.setFont(QFont("Arial", 12, QFont.Weight.Bold))
@@ -195,8 +197,6 @@ class DateSequenceDialog(QDialog):
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-top: 10px;
-            margin-bottom: 5px;
         """)
         layout.addWidget(interval_header)
         
@@ -235,6 +235,9 @@ class DateSequenceDialog(QDialog):
         
         layout.addLayout(interval_layout)
         
+        # Add some spacing before next section
+        layout.addSpacing(5)
+        
         # Date/Time placement options
         placement_header = QLabel("Date/Time Placement:")
         placement_header.setFont(QFont("Arial", 12, QFont.Weight.Bold))
@@ -243,8 +246,6 @@ class DateSequenceDialog(QDialog):
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-top: 10px;
-            margin-bottom: 5px;
         """)
         layout.addWidget(placement_header)
         
@@ -258,6 +259,36 @@ class DateSequenceDialog(QDialog):
         self.datetime_suffix_radio = QRadioButton("After PROJECT_NAME (e.g., MyProject_20240115)")
         self.datetime_suffix_radio.setChecked(True)  # Default to suffix
         
+        # Apply proper styling to radio buttons to match app theme
+        radio_button_style = f"""
+            QRadioButton {{
+                color: {colors['text']};
+                background-color: transparent;
+                border: none;
+                padding: 8px;
+                font-size: 14px;
+                spacing: 8px;
+            }}
+            QRadioButton::indicator {{
+                width: 16px;
+                height: 16px;
+                border: 1px solid {colors['border']};
+                background-color: {colors['card_bg']};
+                border-radius: 8px;
+            }}
+            QRadioButton::indicator:hover {{
+                border: 1px solid {colors['accent']};
+            }}
+            QRadioButton::indicator:checked {{
+                background-color: {colors['accent']};
+                border: 1px solid {colors['accent']};
+                background-image: radial-gradient(white 0px, white 4px, transparent 5px);
+            }}
+        """
+        
+        self.datetime_prefix_radio.setStyleSheet(radio_button_style)
+        self.datetime_suffix_radio.setStyleSheet(radio_button_style)
+        
         self.datetime_button_group.addButton(self.datetime_prefix_radio, 0)
         self.datetime_button_group.addButton(self.datetime_suffix_radio, 1)
         
@@ -265,9 +296,13 @@ class DateSequenceDialog(QDialog):
         self.datetime_suffix_radio.toggled.connect(self.update_preview)
         
         placement_layout = QVBoxLayout()
+        placement_layout.setSpacing(5)  # Add spacing between radio buttons
         placement_layout.addWidget(self.datetime_prefix_radio)
         placement_layout.addWidget(self.datetime_suffix_radio)
         layout.addLayout(placement_layout)
+        
+        # Add some spacing before preview section
+        layout.addSpacing(5)
         
         # Preview
         preview_label = QLabel("Preview (first 10 dates):")
@@ -277,13 +312,12 @@ class DateSequenceDialog(QDialog):
             background-color: transparent;
             border: none;
             padding: 0px;
-            margin-top: 10px;
-            margin-bottom: 5px;
         """)
         layout.addWidget(preview_label)
         
         self.preview_text = QTextEdit()
-        self.preview_text.setMaximumHeight(150)
+        self.preview_text.setMinimumHeight(200)  # Increased from 150 to 200
+        self.preview_text.setMaximumHeight(250)  # Set a reasonable maximum
         self.preview_text.setReadOnly(True)
         self.preview_text.setStyleSheet(f"""
             QTextEdit {{
@@ -294,6 +328,7 @@ class DateSequenceDialog(QDialog):
                 padding: 12px;
                 font-family: 'Courier New', monospace;
                 font-size: 12px;
+                line-height: 1.4;
             }}
         """)
         layout.addWidget(self.preview_text)
@@ -307,6 +342,9 @@ class DateSequenceDialog(QDialog):
         
         # Initial preview
         self.update_preview()
+        
+        # Add some spacing before buttons
+        layout.addSpacing(10)
         
         # Buttons
         button_layout = QHBoxLayout()
@@ -361,12 +399,17 @@ class DateSequenceDialog(QDialog):
             start_date = self._qdate_to_python(self.start_date.date())
             end_date = self._qdate_to_python(self.end_date.date())
             
+            # Validate date range
+            if start_date > end_date:
+                self.preview_text.setPlainText("Preview of generated files:\n\nError: Start date must be before end date.")
+                return
+            
             # Get interval
             interval_value = self.interval_spin.value()
             interval_type = self.interval_combo.currentText()
             
             # Get item name and parse extension
-            item_name = self.item.text(0) if self.item else "example_file"
+            item_name = self.item.text(0) if self.item else "example_project"
             
             # Clean item name of icons
             if ' ' in item_name and any(item_name.startswith(icon) for icon in ['🎬', '🎵', '🖼️', '📄', '📊', '📽️', '📦', '💻']):
@@ -434,19 +477,26 @@ class DateSequenceDialog(QDialog):
                     current_date += timedelta(days=interval_value * 30)
             
             # Update preview text
-            preview_text = "Preview of generated files:\n\n"
-            for i, filename in enumerate(dates, 1):
-                preview_text += f"{i}. {filename}\n"
-            
-            if len(dates) >= 10:
-                preview_text += "\n... (showing first 10 items)"
+            if not dates:
+                preview_text = "Preview of generated files:\n\nNo files would be generated with the current settings.\nTry adjusting the date range or interval."
+            else:
+                preview_text = "Preview of generated files:\n\n"
+                for i, filename in enumerate(dates, 1):
+                    preview_text += f"{i:2d}. {filename}\n"
+                
+                if len(dates) >= 10:
+                    preview_text += "\n... (showing first 10 items)"
+                elif len(dates) == 1:
+                    preview_text += "\n(Only 1 file would be generated)"
+                else:
+                    preview_text += f"\n({len(dates)} files would be generated)"
             
             self.preview_text.setPlainText(preview_text)
             
         except Exception as e:
             print(f"DEBUG: Error updating date preview: {e}")
             if hasattr(self, 'preview_text'):
-                self.preview_text.setPlainText("Error generating preview")
+                self.preview_text.setPlainText("Preview of generated files:\n\nError generating preview. Please check your settings and try again.")
     
     def get_date_data(self):
         """Get the date sequence configuration data"""
