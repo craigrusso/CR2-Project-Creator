@@ -160,8 +160,7 @@ class PatternUIComponents:
         separator_layout.setSpacing(10)
         separator_layout.setContentsMargins(0, 0, 0, 0)
         
-        separator_combo = QComboBox()
-        separator_combo.addItems([
+        separator_combo = self.create_styled_combo_box([
             "_ (underscore)",
             "- (dash)", 
             ". (dot)",
@@ -169,7 +168,6 @@ class PatternUIComponents:
             "Custom..."
         ])
         separator_combo.setCurrentIndex(0)  # Default to underscore
-        separator_combo.setStyleSheet(self.styles['combobox'])
         separator_layout.addWidget(separator_combo)
         
         # Custom separator input (hidden by default)
