@@ -15,7 +15,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtGui import QFont
 
 # Import styling
-from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE
+from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE, SPINBOX_STYLE
 from app.ui.custom_delegates import apply_hover_delegate
 
 
@@ -101,19 +101,7 @@ class VersioningDialog(QDialog):
         self.start_spin.setMinimum(1)
         self.start_spin.setMaximum(999)
         self.start_spin.setValue(1)
-        self.start_spin.setStyleSheet(f"""
-            QSpinBox {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 2px solid {colors['border']};
-                border-radius: 4px;
-                padding: 8px;
-                font-size: 14px;
-            }}
-            QSpinBox:focus {{
-                border: 2px solid {colors['accent']};
-            }}
-        """)
+        self.start_spin.setStyleSheet(SPINBOX_STYLE)
         layout.addWidget(self.start_spin)
         
         # Number of versions
@@ -133,19 +121,7 @@ class VersioningDialog(QDialog):
         self.count_spin.setMinimum(1)
         self.count_spin.setMaximum(50)
         self.count_spin.setValue(5)
-        self.count_spin.setStyleSheet(f"""
-            QSpinBox {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 2px solid {colors['border']};
-                border-radius: 4px;
-                padding: 8px;
-                font-size: 14px;
-            }}
-            QSpinBox:focus {{
-                border: 2px solid {colors['accent']};
-            }}
-        """)
+        self.count_spin.setStyleSheet(SPINBOX_STYLE)
         layout.addWidget(self.count_spin)
         
         # Preview

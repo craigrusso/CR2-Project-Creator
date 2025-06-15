@@ -319,6 +319,113 @@ COMBOBOX_STYLE = f"""
     }}
 """
 
+# Style for spinbox - matches combobox design with up/down arrows
+SPINBOX_STYLE = f"""
+    QSpinBox {{
+        background-color: {colors['card_bg']};
+        color: {colors['text']};
+        border: 1px solid {colors['border']};
+        padding: 5px 25px 5px 5px;  /* Right padding for buttons */
+        border-radius: 3px;
+        min-height: 22px;
+    }}
+    
+    /* Main spinbox hover */
+    QSpinBox:hover {{
+        border: 1px solid {colors['highlight_border']};
+        background-color: {colors['hover_bg']};
+    }}
+    
+    QSpinBox:focus {{
+        border: 1px solid {colors['highlight_border']};
+        background-color: {colors['highlight_bg_transparent']};
+    }}
+    
+    /* Up button styling */
+    QSpinBox::up-button {{
+        subcontrol-origin: border;
+        subcontrol-position: top right;
+        width: 20px;
+        border-left: 1px solid {colors['border']};
+        border-right: none;
+        border-top: none;
+        border-bottom: none;
+        border-top-right-radius: 3px;
+        background-color: {colors['card_bg']};
+    }}
+    
+    QSpinBox::up-button:hover {{
+        background-color: {colors['accent']};
+        border-left: 1px solid {colors['border']};
+    }}
+    
+    QSpinBox::up-button:pressed {{
+        background-color: {colors['accent_hover']};
+        border-left: 1px solid {colors['border']};
+    }}
+    
+    /* Down button styling */
+    QSpinBox::down-button {{
+        subcontrol-origin: border;
+        subcontrol-position: bottom right;
+        width: 20px;
+        border-left: 1px solid {colors['border']};
+        border-right: none;
+        border-bottom: none;
+        border-top: none;
+        border-bottom-right-radius: 3px;
+        background-color: {colors['card_bg']};
+    }}
+    
+    QSpinBox::down-button:hover {{
+        background-color: {colors['accent']};
+        border-left: 1px solid {colors['border']};
+    }}
+    
+    QSpinBox::down-button:pressed {{
+        background-color: {colors['accent_hover']};
+        border-left: 1px solid {colors['border']};
+    }}
+    
+    /* Arrow styling */
+    QSpinBox::up-arrow {{
+        image: url("{get_resource_path('app/assets/css/v_arrow_up.svg')}");
+        width: 12px;
+        height: 12px;
+        margin-top: 1px;
+        margin-bottom: 0px;
+    }}
+    
+    QSpinBox::up-arrow:hover {{
+        image: url("{get_resource_path('app/assets/css/v_arrow_up.svg')}");
+    }}
+    
+    QSpinBox::down-arrow {{
+        image: url("{get_resource_path('app/assets/css/v_arrow.svg')}");
+        width: 12px;
+        height: 12px;
+        margin-top: 0px;
+        margin-bottom: 1px;
+        margin-left: 3px;
+    }}
+    
+    QSpinBox::down-arrow:hover {{
+        image: url("{get_resource_path('app/assets/css/v_arrow.svg')}");
+    }}
+    
+    /* Disabled state */
+    QSpinBox:disabled {{
+        background-color: {colors['bg']};
+        color: {colors['secondary_text']};
+        border: 1px solid {colors['secondary_text']};
+    }}
+    
+    QSpinBox::up-button:disabled, QSpinBox::down-button:disabled {{
+        background-color: {colors['bg']};
+        border-left: 1px solid {colors['secondary_text']};
+    }}
+"""
+
 # Create a specialized style just for QListView in popups - this will be applied directly
 LISTVIEW_POPUP_STYLE = f"""
     QListView {{

@@ -15,7 +15,7 @@ from PyQt6.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, 
 from app.core.app_config import APP_NAME, RECENT_TEMPLATES_MAX
 # Import the refactored main window
 from .main_window import ProjectCreatorApp as RefactoredProjectCreatorApp
-from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE, LISTVIEW_POPUP_STYLE, APP_COLORS, ACTION_LINK_STYLE
+from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE, LISTVIEW_POPUP_STYLE, APP_COLORS, ACTION_LINK_STYLE, SPINBOX_STYLE
 from app.utils.utils import load_config, save_config, truncate_path, normalize_path_for_storage
 from app.ui.ui_components_pyqt import ToolTip, CardFrame, SearchBox, TemplateFileCard, ScrollableFrame, UI_FONT, UpdateNotificationBanner
 from app.templates.template_manager import TemplateManager
@@ -574,14 +574,7 @@ class ProjectCreatorApp(QMainWindow):
         self.date_count.setValue(5)
         self.date_count.setMinimumWidth(80)
         self.date_count.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
-        self.date_count.setStyleSheet(f"""
-            QSpinBox {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                padding: 4px;
-            }}
-        """)
+        self.date_count.setStyleSheet(SPINBOX_STYLE)
         count_layout.addWidget(self.date_count)
         first_row_layout.addWidget(count_container)
         
@@ -615,14 +608,7 @@ class ProjectCreatorApp(QMainWindow):
         self.date_interval.setValue(1)
         self.date_interval.setMinimumWidth(80)
         self.date_interval.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
-        self.date_interval.setStyleSheet(f"""
-            QSpinBox {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                padding: 4px;
-            }}
-        """)
+        self.date_interval.setStyleSheet(SPINBOX_STYLE)
         interval_layout.addWidget(self.date_interval)
         second_row_layout.addWidget(interval_container)
         
@@ -728,14 +714,7 @@ class ProjectCreatorApp(QMainWindow):
         self.version_count.setValue(5)
         self.version_count.setFixedWidth(80)
         self.version_count.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
-        self.version_count.setStyleSheet(f"""
-            QSpinBox {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                padding: 4px;
-            }}
-        """)
+        self.version_count.setStyleSheet(SPINBOX_STYLE)
         count_layout.addWidget(self.version_count)
         version_main_layout.addWidget(count_container)
         
@@ -811,14 +790,7 @@ class ProjectCreatorApp(QMainWindow):
         self.number_start.setValue(1)
         self.number_start.setFixedWidth(80)
         self.number_start.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
-        self.number_start.setStyleSheet(f"""
-            QSpinBox {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                padding: 4px;
-            }}
-        """)
+        self.number_start.setStyleSheet(SPINBOX_STYLE)
         start_layout.addWidget(self.number_start)
         first_row_layout.addWidget(start_container)
         
@@ -845,14 +817,7 @@ class ProjectCreatorApp(QMainWindow):
         self.number_count.setValue(5)
         self.number_count.setFixedWidth(80)
         self.number_count.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
-        self.number_count.setStyleSheet(f"""
-            QSpinBox {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 1px solid {colors['border']};
-                padding: 4px;
-            }}
-        """)
+        self.number_count.setStyleSheet(SPINBOX_STYLE)
         count_layout.addWidget(self.number_count)
         first_row_layout.addWidget(count_container)
         

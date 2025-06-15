@@ -13,8 +13,8 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                            QSizePolicy, QComboBox)
 from PyQt6.QtCore import QSettings
 
-from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, GROUPBOX_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE
-from app.ui.styles.dialog_styles import LABEL_STYLE, LINEEDIT_STYLE, CHECKBOX_STYLE, SPINBOX_STYLE
+from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, GROUPBOX_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE, SPINBOX_STYLE
+from app.ui.styles.dialog_styles import LABEL_STYLE, LINEEDIT_STYLE, CHECKBOX_STYLE
 from app.utils.utils import open_folder
 from app.core import config_manager
 

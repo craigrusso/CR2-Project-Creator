@@ -5,7 +5,7 @@
 Styles for dialog components used throughout the application.
 """
 
-from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, GROUPBOX_STYLE
+from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, GROUPBOX_STYLE, SPINBOX_STYLE
 from app.constants import get_resource_path
 
 # Label styles
@@ -69,47 +69,7 @@ CHECKBOX_STYLE = f"""
     }}
 """
 
-# Spinbox style
-SPINBOX_STYLE = f"""
-    QSpinBox {{
-        background-color: {colors['card_bg']};
-        color: {colors['text']};
-        border: 1px solid {colors['border']};
-        padding: 5px;
-        border-radius: 3px;
-    }}
-    QSpinBox:focus {{
-        border: 1px solid {colors['accent']};
-        background-color: {colors['hover_bg']};
-    }}
-    /* Style the up/down buttons */
-    QSpinBox::up-button, QSpinBox::down-button {{
-        subcontrol-origin: border;
-        background-color: {colors['card_bg']};
-        border: none;
-        width: 16px;
-    }}
-    QSpinBox::up-button {{
-        subcontrol-position: top right; /* position at the top right corner */
-        border-bottom: 1px solid {colors['border']}; /* Separator line */
-    }}
-    QSpinBox::down-button {{
-        subcontrol-position: bottom right; /* position at bottom right corner */
-    }}
-    QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
-        background-color: {colors['hover_bg']};
-    }}
-    QSpinBox::up-arrow {{
-        image: url({get_resource_path('app/assets/css/v_arrow_up.svg')});
-        width: 10px;
-        height: 10px;
-    }}
-    QSpinBox::down-arrow {{
-        image: url({get_resource_path('app/assets/css/v_arrow.svg')});
-        width: 10px;
-        height: 10px;
-    }}
-"""
+# Spinbox style is now imported from color_scheme_pyqt for consistency
 
 # Tab widget style
 TABWIDGET_STYLE = f"""

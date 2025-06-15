@@ -18,7 +18,7 @@ from PyQt6.QtCore import Qt, QDate, QTimer
 from PyQt6.QtGui import QFont
 
 # Import styling
-from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE
+from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE, SPINBOX_STYLE
 from app.ui.custom_delegates import apply_hover_delegate
 
 
@@ -211,19 +211,7 @@ class DateSequenceDialog(QDialog):
         self.interval_spin.setMinimum(1)
         self.interval_spin.setMaximum(365)
         self.interval_spin.setValue(1)
-        self.interval_spin.setStyleSheet(f"""
-            QSpinBox {{
-                background-color: {colors['card_bg']};
-                color: {colors['text']};
-                border: 2px solid {colors['border']};
-                border-radius: 4px;
-                padding: 8px;
-                font-size: 14px;
-            }}
-            QSpinBox:focus {{
-                border: 2px solid {colors['accent']};
-            }}
-        """)
+        self.interval_spin.setStyleSheet(SPINBOX_STYLE)
         interval_layout.addWidget(self.interval_spin)
         
         self.interval_combo = QComboBox()
