@@ -2000,6 +2000,8 @@ class ProjectBuilder:
         """
         Processes a custom pattern string, replacing placeholders.
         It now intelligently handles date and time formats based on item data.
+        Enhanced to handle date sequence integration - when an item has date sequence data,
+        the ${DATE} tag uses that sequence date instead of current date.
         """
         if not pattern or not isinstance(pattern, str):
             return ""
@@ -2015,7 +2017,32 @@ class ProjectBuilder:
         if not time_format_text:
             time_format_text = placeholders.get('TIME_FORMAT_STRING', 'HH_MM_SS')
 
-        now = datetime.datetime.now()
+        # --- Check for Date Sequence Integration ---
+        # Check for sequence date in both item data and placeholders
+        sequence_date = None
+        
+        # First check item data (from date applier)
+        if item_data.get('date_sequence_date'):
+            try:
+                sequence_date = datetime.datetime.fromisoformat(item_data['date_sequence_date'])
+                print(f"DEBUG: Using date sequence date from item data for ${{DATE}} tag: {sequence_date}")
+            except (ValueError, TypeError) as e:
+                print(f"DEBUG: Error parsing date sequence date from item data: {e}")
+                sequence_date = None
+        
+        # If not found in item data, check if we can extract from project name via placeholders
+        if not sequence_date:
+            project_name = placeholders.get('PROJECT_NAME', '')
+            if project_name:
+                # Try to extract sequence date from project name
+                extracted_date_info = self._extract_sequence_date_from_project_name(project_name)
+                if extracted_date_info and 'date' in extracted_date_info:
+                    # Convert date to datetime for consistency
+                    sequence_date = datetime.datetime.combine(extracted_date_info['date'], datetime.time())
+                    print(f"DEBUG: Extracted date sequence from project name '{project_name}' for ${{DATE}} tag: {sequence_date}")
+        
+        # Use sequence date if available, otherwise current date
+        date_to_use = sequence_date if sequence_date else datetime.datetime.now()
         
         # --- Date Formatting ---
         if "${DATE}" in pattern:
@@ -2024,15 +2051,17 @@ class ProjectBuilder:
             if date_format_match:
                 date_format_string = date_format_match.group(1).strip()
                 try:
-                    formatted_date = self._convert_custom_date_format(date_format_string, now)
+                    formatted_date = self._convert_custom_date_format(date_format_string, date_to_use)
                     pattern = pattern.replace("${DATE}", formatted_date)
+                    if sequence_date:
+                        print(f"DEBUG: Replaced ${{DATE}} with sequence date: {formatted_date}")
                 except Exception as e:
                     print(f"Error formatting date with '{date_format_string}': {e}")
                     # Fallback to a default format if conversion fails
-                    pattern = pattern.replace("${DATE}", now.strftime("%Y_%m_%d"))
+                    pattern = pattern.replace("${DATE}", date_to_use.strftime("%Y_%m_%d"))
             else:
                  # Fallback if regex fails to parse
-                 pattern = pattern.replace("${DATE}", now.strftime("%Y_%m_%d"))
+                 pattern = pattern.replace("${DATE}", date_to_use.strftime("%Y_%m_%d"))
 
         # --- Time Formatting ---
         if "${TIME}" in pattern:
@@ -2041,15 +2070,17 @@ class ProjectBuilder:
             if time_format_match:
                 time_format_string = time_format_match.group(1).strip()
                 try:
-                    formatted_time = self._convert_custom_time_format(time_format_string, now)
+                    formatted_time = self._convert_custom_time_format(time_format_string, date_to_use)
                     pattern = pattern.replace("${TIME}", formatted_time)
+                    if sequence_date:
+                        print(f"DEBUG: Replaced ${{TIME}} with sequence date time: {formatted_time}")
                 except Exception as e:
                     print(f"Error formatting time with '{time_format_string}': {e}")
                     # Fallback to a default format if conversion fails
-                    pattern = pattern.replace("${TIME}", now.strftime("%H_%M_%S"))
+                    pattern = pattern.replace("${TIME}", date_to_use.strftime("%H_%M_%S"))
             else:
                 # Fallback if regex fails to parse
-                pattern = pattern.replace("${TIME}", now.strftime("%H_%M_%S"))
+                pattern = pattern.replace("${TIME}", date_to_use.strftime("%H_%M_%S"))
 
 
         # --- Custom Options ---

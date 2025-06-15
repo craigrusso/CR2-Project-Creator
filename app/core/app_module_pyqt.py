@@ -2057,6 +2057,9 @@ class ProjectCreatorApp(QMainWindow):
         position = self.name_position.currentText()
         names = []
         
+        # Check if template has ${DATE} tag in custom patterns
+        template_has_date_tag = self._template_has_date_tag()
+        
         if sequence_type == "Date Sequences":
             # Generate date sequence
             qdate = self.start_date.date()
@@ -2100,12 +2103,17 @@ class ProjectCreatorApp(QMainWindow):
             for i in range(count):
                 date_str = current_date.strftime(date_format)
                 
-                if "Suffix" in position:
-                    name = f"{base_name}_{date_str}"
-                elif "Prefix" in position:
-                    name = f"{date_str}_{base_name}"
+                # If template has ${DATE} tag, don't add date to project name
+                # Let the ${DATE} tag handle date placement in custom patterns
+                if template_has_date_tag:
+                    name = base_name
                 else:
-                    name = date_str
+                    if "Suffix" in position:
+                        name = f"{base_name}_{date_str}"
+                    elif "Prefix" in position:
+                        name = f"{date_str}_{base_name}"
+                    else:
+                        name = date_str
                 
                 names.append(name)
                 
@@ -2170,6 +2178,32 @@ class ProjectCreatorApp(QMainWindow):
                 names.append(name)
         
         return names
+
+    def _template_has_date_tag(self):
+        """Check if the current template has ${DATE} tag in custom patterns"""
+        try:
+            from app.templates.template_manager_core import TemplateManagerCore
+            template_manager = TemplateManagerCore()
+            
+            # Get currently selected template
+            if hasattr(self, 'template_gallery') and self.template_gallery:
+                selected_templates = self.template_gallery.get_selected_templates()
+                if selected_templates:
+                    template_name = selected_templates[0]
+                    template_data = template_manager.get_template_by_name(template_name)
+                    
+                    if template_data:
+                        # Check for ${DATE} in custom patterns
+                        custom_prompts = self._collect_custom_options_from_template(template_data)
+                        for key, prompt_data in custom_prompts.items():
+                            pattern = prompt_data.get('pattern', '')
+                            if '${DATE}' in pattern:
+                                print(f"DEBUG: Found ${{DATE}} tag in template pattern: {pattern}")
+                                return True
+        except Exception as e:
+            print(f"DEBUG: Error checking for DATE tag in template: {e}")
+        
+        return False
 
     def process_batch_projects(self):
         """Process the entered project names for batch creation"""
@@ -2564,30 +2598,29 @@ class ProjectCreatorApp(QMainWindow):
                 print(f"DEBUG: Error checking for pattern conflicts: {e}")
                 return
             
-            # Show warning if conflicts found
+            # Show informational message if custom patterns with date tags are found
             if conflicts:
                 from PyQt6.QtWidgets import QMessageBox
-                conflict_text = "\n".join(conflicts)
                 
-                reply = QMessageBox.question(
+                # Count different types of patterns
+                date_patterns = [c for c in conflicts if '${DATE}' in c]
+                project_name_patterns = [c for c in conflicts if '${PROJECT_NAME}' in c]
+                
+                info_parts = []
+                if date_patterns:
+                    info_parts.append(f"• Custom ${{DATE}} patterns will use the sequence dates (avoiding duplication)")
+                if project_name_patterns:
+                    info_parts.append(f"• Custom ${{PROJECT_NAME}} will include the sequence date in project names")
+                
+                QMessageBox.information(
                     self,
-                    "Pattern Conflict Detected",
-                    f"The selected template has custom patterns that may conflict with sequence creation:\n\n"
-                    f"{conflict_text}\n\n"
-                    f"When using 'Date Sequences':\n"
-                    f"• Sequence dates will be added to project names\n"
-                    f"• Custom ${{DATE}} patterns will use current date\n"
-                    f"• Custom ${{PROJECT_NAME}} will include the sequence date\n\n"
-                    f"This may result in duplicate dates in filenames.\n\n"
-                    f"Do you want to continue with sequence creation?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No
+                    "Date Sequence Integration",
+                    f"The selected template has custom patterns that work with date sequences:\n\n"
+                    f"Found {len(date_patterns)} custom date pattern(s) and {len(project_name_patterns)} project name pattern(s).\n\n"
+                    f"Smart Integration Features:\n"
+                    + "\n".join(info_parts) + "\n\n"
+                    f"This ensures your files have consistent dates without duplication!"
                 )
-                
-                if reply == QMessageBox.StandardButton.No:
-                    # Disable versioning
-                    self.enable_versioning.setChecked(False)
-                    return
 
     def _export_all(self):
         """Export all settings and templates"""
