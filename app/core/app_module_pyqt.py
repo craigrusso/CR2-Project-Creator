@@ -203,6 +203,25 @@ class ProjectCreatorApp(QMainWindow):
         self._update_ui_from_config()
         print("DEBUG: UI config update complete")
         
+        # Initialize onboarding system after UI is set up
+        print("DEBUG: Setting up onboarding system...")
+        try:
+            from app.onboarding.integration import OnboardingIntegration
+            self.onboarding = OnboardingIntegration(self)
+            self.onboarding.setup_ui_references()
+            self.onboarding.initialize()
+            print("DEBUG: Onboarding system setup complete")
+        except Exception as e:
+            print(f"DEBUG: Onboarding system setup failed: {e}")
+            # Create a dummy onboarding object to prevent AttributeError
+            class DummyOnboarding:
+                def initialize(self): pass
+                def show_welcome(self): pass
+                def show_guided_tour(self): pass
+                def reset_tutorials(self): pass
+            self.onboarding = DummyOnboarding()
+            print("DEBUG: Using dummy onboarding system")
+        
         # Connect signals
         self.template_updated.connect(self.trigger_template_updated)
         
@@ -216,6 +235,9 @@ class ProjectCreatorApp(QMainWindow):
         
         # Schedule initial update check
         self._initial_update_check()
+        
+        # Initialize onboarding tutorials after everything is set up
+        QTimer.singleShot(500, self.onboarding.initialize)
         
         # Note: Window will be shown by main.py, not here
         
@@ -1155,10 +1177,28 @@ class ProjectCreatorApp(QMainWindow):
         # Help menu
         self.help_menu = menubar.addMenu("Help")
         
-        # Tutorial action
+        # Tutorial action (existing)
         tutorial_action = QAction("Tutorial", self)
         tutorial_action.triggered.connect(lambda: show_tutorial(self))
         self.help_menu.addAction(tutorial_action)
+        
+        # Onboarding tutorials
+        self.help_menu.addSeparator()
+        
+        # Welcome tutorial (slideshow)
+        welcome_tutorial_action = QAction("Show Welcome Tutorial", self)
+        welcome_tutorial_action.triggered.connect(self._show_welcome_tutorial)
+        self.help_menu.addAction(welcome_tutorial_action)
+        
+        # Guided tour
+        guided_tour_action = QAction("Show Guided Tour", self)
+        guided_tour_action.triggered.connect(self._show_guided_tour)
+        self.help_menu.addAction(guided_tour_action)
+        
+        # Reset tutorials
+        reset_tutorials_action = QAction("Reset Tutorials", self)
+        reset_tutorials_action.triggered.connect(self._reset_tutorials)
+        self.help_menu.addAction(reset_tutorials_action)
         
         # About action
         self.about_action = self.help_menu.addAction("About Echelon")
@@ -2618,6 +2658,22 @@ class ProjectCreatorApp(QMainWindow):
     def notify_gallery_preference_changed(self, preference_key):
         """Notify listeners that a gallery-related preference has changed."""
         self.gallery_preference_changed.emit(preference_key)
+    
+    # Onboarding tutorial methods
+    def _show_welcome_tutorial(self):
+        """Show the welcome tutorial slideshow"""
+        if hasattr(self, 'onboarding') and self.onboarding:
+            self.onboarding.show_welcome()
+    
+    def _show_guided_tour(self):
+        """Show the guided tour"""
+        if hasattr(self, 'onboarding') and self.onboarding:
+            self.onboarding.show_guided_tour()
+    
+    def _reset_tutorials(self):
+        """Reset all tutorials"""
+        if hasattr(self, 'onboarding') and self.onboarding:
+            self.onboarding.reset_tutorials()
 
 # Add a class variable to hold the single instance
 ProjectCreatorApp._instance = None

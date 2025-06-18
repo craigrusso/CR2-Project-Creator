@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <rect width="400" height="300" fill="#252526" rx="8"/>
+  <rect x="50" y="40" width="300" height="200" fill="#1E1E1E" stroke="#3C3C3C" stroke-width="2" rx="8"/>
+  <rect x="50" y="40" width="300" height="30" fill="#252526" rx="8"/>
+  <circle cx="65" cy="55" r="6" fill="#FF5F56"/>
+  <circle cx="85" cy="55" r="6" fill="#FFBD2E"/>
+  <circle cx="105" cy="55" r="6" fill="#27CA3F"/>
+  <text x="200" y="60" text-anchor="middle" fill="#CCCCCC" font-family="Arial, sans-serif" font-size="14" font-weight="bold">Echelon Project Creator</text>
+  <rect x="80" y="270" width="240" height="50" fill="#2C4F76" stroke="#3C3C3C" stroke-width="2" rx="12"/>
+  <polygon points="192,320 208,320 200,240" fill="#2C4F76" stroke="#3C3C3C" stroke-width="2"/>
+  <text x="200" y="299" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="12" font-weight="bold">Welcome! Let's create your first project template</text>
+</svg>
