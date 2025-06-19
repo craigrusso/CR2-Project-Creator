@@ -157,14 +157,16 @@ CUSTOM_SLIDESHOW_CONTENT = [
     {
         'title': 'Welcome to Project Creator',
         'content': 'Create organized project structures with ease using templates and custom configurations.\n\n📁 Step 1: Create a Template\nFirst, you\'ll create a template that defines your project structure.\n\n• Click the "Create Template" button to get started\n• Give your template a descriptive name\n• This template will be reusable for all future projects of this type\n\nThink of it as creating a blueprint for your projects!',
-        'image_path': 'app/onboarding/slide_01_welcome.svg',  # Using custom SVG with combined content
+        'image_path': 'sample_svgs/GRID SIZE.png',
         'duration': 6000  # Longer duration since there's more content
     },
     {
         'id': 'add_files',
         'title': '📂 Step 2: Add Files & Folders',
         'content': 'Next, you\'ll build your project structure by dragging files and folders.\n\n• Drag files and folders from your computer into the template area\n• Organize them exactly how you want your projects structured\n• You can create folders, add starter files, and set up your ideal workflow\n\nThis becomes your project template that you can use over and over!',
-        'image_path': None,
+        'image_path': 'sample_svgs/onboarding_slides/SCREEN 02_v4.png',
+        'arrow_delay': 1000,
+        'arrow_image_path': 'sample_svgs/onboarding_slides/SCREEN 02_v4_ARROW.png'
     },
     {
         'id': 'smart_patterns',

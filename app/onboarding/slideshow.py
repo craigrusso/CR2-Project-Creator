@@ -10,12 +10,13 @@ animations, and modern UI design.
 
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                            QPushButton, QFrame, QStackedWidget, QWidget,
-                           QGraphicsOpacityEffect, QProgressBar)
+                           QGraphicsOpacityEffect, QProgressBar, QSizePolicy)
 from PyQt6.QtCore import (Qt, QTimer, QPropertyAnimation, QEasingCurve, 
-                        pyqtSignal, QRect, QEvent, QByteArray, QPoint, QPointF, QLineF)
+                        pyqtSignal, QRect, QEvent, QByteArray, QPoint, QPointF, QLineF, QSizeF, QRectF)
 from PyQt6.QtGui import (QFont, QPalette, QColor, QPainter, QPen, QBrush,
                        QPixmap, QIcon, QMovie, QPolygonF, QPainterPath)
 from PyQt6.QtSvgWidgets import QSvgWidget
+from PyQt6.QtSvg import QSvgRenderer
 from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, APP_COLORS
 from app.templates.components.utils import get_system_font
 from .tutorial_illustrations import TutorialIllustrations
@@ -26,19 +27,56 @@ import math
 
 class ImageWithArrow(QWidget):
     """A widget to display a pixmap and an optional arrow overlay."""
-    def __init__(self, pixmap=None, arrow_data=None, crop_rect=None, parent=None):
+    def __init__(self, pixmap=None, arrow_data=None, crop_rect=None, arrow_delay=None, arrow_image_path=None, parent=None):
         super().__init__(parent)
         self.original_pixmap = pixmap if pixmap else QPixmap()
         self.arrow_data = arrow_data
         self.crop_rect = crop_rect
         self.arrow_svg = None
-        self.setMinimumSize(1, 1)
+        self.arrow_delay = arrow_delay  # Always set this
+        # Set size policy to expand and fill the available space
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.show_arrow = False
+        self.arrow_opacity = 0.0  # Start with arrow invisible
         
-        # Load the SVG arrow if it exists
-        arrow_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "sample_svgs", "curved arrow_CR.svg")
-        if os.path.exists(arrow_path):
-            self.arrow_svg = QPixmap(arrow_path)
+        # Setup fade-in animation for arrow
+        self.arrow_opacity_effect = QGraphicsOpacityEffect()
+        self.arrow_fade_animation = QPropertyAnimation(self.arrow_opacity_effect, b"opacity")
+        self.arrow_fade_animation.setDuration(500)  # 500ms fade-in
+        self.arrow_fade_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         
+        # Load the arrow image (PNG or SVG)
+        if arrow_image_path and os.path.exists(arrow_image_path):
+            self.arrow_svg = QPixmap(arrow_image_path)
+        else:
+            # Fallback to default curved arrow
+            arrow_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "sample_svgs", "curved arrow_CR.svg")
+            if os.path.exists(arrow_path):
+                self.arrow_svg = QPixmap(arrow_path)
+        
+        if self.arrow_data or arrow_image_path:  # Show arrow if we have either positioning data OR an arrow image
+            # Don't start the timer immediately - wait for slide to be shown
+            if not arrow_delay:
+                self.show_arrow = True
+                self.arrow_opacity = 1.0
+
+    def start_arrow_animation(self):
+        """Start the arrow animation timer when the slide becomes visible"""
+        if (self.arrow_data or self.arrow_svg) and self.arrow_delay and not self.show_arrow:
+            QTimer.singleShot(self.arrow_delay, self.trigger_arrow_display)
+
+    def trigger_arrow_display(self):
+        self.show_arrow = True
+        # Start fade-in animation
+        self.arrow_fade_animation.setStartValue(0.0)
+        self.arrow_fade_animation.setEndValue(1.0)
+        self.arrow_fade_animation.valueChanged.connect(self._update_arrow_opacity)
+        self.arrow_fade_animation.start()
+
+    def _update_arrow_opacity(self, value):
+        self.arrow_opacity = value
+        self.update()  # Trigger repaint
+
     def set_pixmap(self, pixmap):
         self.original_pixmap = pixmap
         self.update() # Trigger a repaint
@@ -54,62 +92,44 @@ class ImageWithArrow(QWidget):
         if self.original_pixmap.isNull():
             return
 
-        # Crop the pixmap if a crop rectangle is provided
+        # Get the original pixmap
         pixmap_to_draw = self.original_pixmap
         if self.crop_rect:
             pixmap_to_draw = self.original_pixmap.copy(self.crop_rect)
 
-        # Scale pixmap to fit widget size, maintaining aspect ratio
-        scaled_pixmap = pixmap_to_draw.scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        # Scale image to fit the widget size while maintaining aspect ratio
+        widget_width = self.width()
+        widget_height = self.height()
+        final_pixmap = pixmap_to_draw.scaled(widget_width, widget_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         
-        # Center the pixmap
-        pixmap_x = (self.width() - scaled_pixmap.width()) // 2
-        pixmap_y = (self.height() - scaled_pixmap.height()) // 2
-        painter.drawPixmap(pixmap_x, pixmap_y, scaled_pixmap)
+        # Draw at exact pixel size accounting for device pixel ratio
+        draw_rect = QRect(0, 0, self.width(), self.height())
+        painter.drawPixmap(draw_rect, final_pixmap, final_pixmap.rect())
 
-        # Draw the arrow overlay
-        if self.arrow_data and self.arrow_svg and not self.arrow_svg.isNull():
-            # Calculate position based on arrow_data
-            start_x = pixmap_x + self.arrow_data['start'][0] * scaled_pixmap.width()
-            start_y = pixmap_y + self.arrow_data['start'][1] * scaled_pixmap.height()
-            end_x = pixmap_x + self.arrow_data['end'][0] * scaled_pixmap.width()
-            end_y = pixmap_y + self.arrow_data['end'][1] * scaled_pixmap.height()
+        # Draw the arrow overlay scaled to fit
+        if self.show_arrow and self.arrow_svg and not self.arrow_svg.isNull():
+            # Scale arrow to match the background image scaling
+            scaled_arrow = self.arrow_svg.scaled(widget_width, widget_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             
-            # Calculate center point for the arrow
-            center_x = (start_x + end_x) / 2
-            center_y = (start_y + end_y) / 2
+            # Set device pixel ratio for arrow too
+            scaled_arrow.setDevicePixelRatio(self.devicePixelRatioF())
             
-            # Calculate angle between start and end points
-            angle = math.degrees(math.atan2(end_y - start_y, end_x - start_x)) - 45  # Adjust angle for this arrow
+            arrow_x = (self.width() - scaled_arrow.width()) // 2
+            arrow_y = (self.height() - scaled_arrow.height()) // 2
             
-            # Size of the arrow - smaller for this arrow since it has a better shape
-            arrow_size = min(80, max(40, math.sqrt((end_x - start_x)**2 + (end_y - start_y)**2) * 0.5))
+            if self.arrow_opacity < 1.0:
+                painter.setOpacity(self.arrow_opacity)
             
-            # Save the current state of the painter
-            painter.save()
+            painter.drawPixmap(int(arrow_x), int(arrow_y), scaled_arrow)
             
-            # Translate to the center point
-            painter.translate(center_x, center_y)
-            
-            # Rotate according to the angle
-            painter.rotate(angle)
-            
-            # Scale the arrow
-            scaled_arrow = self.arrow_svg.scaled(int(arrow_size), int(arrow_size), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            
-            # Draw the arrow centered at the rotation point - fix by using QPointF
-            arrow_x = -scaled_arrow.width() // 2
-            arrow_y = -scaled_arrow.height() // 2
-            painter.drawPixmap(QPointF(arrow_x, arrow_y), scaled_arrow)
-            
-            # Restore the painter state
-            painter.restore()
+            if self.arrow_opacity < 1.0:
+                painter.setOpacity(1.0)
         # Fallback to drawing a path if SVG is not available
-        elif self.arrow_data:
-            start_x = pixmap_x + self.arrow_data['start'][0] * scaled_pixmap.width()
-            start_y = pixmap_y + self.arrow_data['start'][1] * scaled_pixmap.height()
-            end_x = pixmap_x + self.arrow_data['end'][0] * scaled_pixmap.width()
-            end_y = pixmap_y + self.arrow_data['end'][1] * scaled_pixmap.height()
+        elif self.show_arrow and self.arrow_data:
+            start_x = (self.width() - pixmap_to_draw.width()) // 2 + self.arrow_data['start'][0] * pixmap_to_draw.width()
+            start_y = (self.height() - pixmap_to_draw.height()) // 2 + self.arrow_data['start'][1] * pixmap_to_draw.height()
+            end_x = (self.width() - pixmap_to_draw.width()) // 2 + self.arrow_data['end'][0] * pixmap_to_draw.width()
+            end_y = (self.height() - pixmap_to_draw.height()) // 2 + self.arrow_data['end'][1] * pixmap_to_draw.height()
             
             pen = QPen(QColor("#D94141"), 8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
             painter.setPen(pen)
@@ -141,7 +161,7 @@ class ImageWithArrow(QWidget):
 class SlideshowSlide(QWidget):
     """Individual slide in the tutorial slideshow"""
     
-    def __init__(self, title, content, slide_index=0, image_path=None, animation_data=None, arrow_data=None, crop_rect=None):
+    def __init__(self, title, content, slide_index=0, image_path=None, animation_data=None, arrow_data=None, crop_rect=None, arrow_delay=None, arrow_image_path=None):
         super().__init__()
         self.title = title
         self.content = content
@@ -150,14 +170,16 @@ class SlideshowSlide(QWidget):
         self.animation_data = animation_data
         self.arrow_data = arrow_data
         self.crop_rect = crop_rect
+        self.arrow_delay = arrow_delay
+        self.arrow_image_path = arrow_image_path
         self.illustrations = TutorialIllustrations(APP_COLORS)
         self._setup_ui()
     
     def _setup_ui(self):
         """Setup the slide UI with a two-panel layout"""
         main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(40, 40, 40, 40)
-        main_layout.setSpacing(40)
+        main_layout.setContentsMargins(20, 40, 20, 40)  # Reduced left/right margins to prevent cutoff
+        main_layout.setSpacing(0)  # Minimal spacing between text and image panels
 
         # --- Left Panel (Text) ---
         text_panel = QFrame()
@@ -185,43 +207,43 @@ class SlideshowSlide(QWidget):
 
         # --- Right Panel (Image) ---
         image_panel = QFrame()
-        image_panel.setMinimumWidth(400)
+        image_panel.setMinimumWidth(770)  # Set minimum width only
+        image_panel.setMaximumWidth(770)  # Set maximum width only - let height be flexible
+        # Use app color scheme for consistent styling
+        image_panel.setStyleSheet(f"background-color: {get_color('card_bg')};")
         image_layout = QVBoxLayout(image_panel)
-        image_layout.setContentsMargins(0, 0, 0, 0)
+        image_layout.setContentsMargins(0, 0, 0, 0)  # Remove all padding to let image fill container
 
         pixmap = QPixmap()
         screenshot_filename = self.image_path
         
-        # First check if we have a direct image_path (for custom SVGs/images)
+        # First check if we have a direct image_path (for PNG/JPG images or SVGs)
         if screenshot_filename and os.path.exists(screenshot_filename):
-            # Direct path exists, check if it's an SVG
-            if screenshot_filename.lower().endswith('.svg'):
-                # Load SVG directly
+            # Load as regular image (PNG, JPG, or SVG)
+            pixmap.load(screenshot_filename)
+            if not pixmap.isNull():
+                self.image_display_widget = ImageWithArrow(pixmap, self.arrow_data, self.crop_rect, self.arrow_delay, self.arrow_image_path)
+                # Make the image widget expand to fill the entire layout
+                image_layout.addWidget(self.image_display_widget, 1)  # stretch factor of 1
+            else:
+                print(f"Error loading image {screenshot_filename}")
+                # Fallback to generated SVG
                 self.svg_widget = QSvgWidget()
                 try:
-                    self.svg_widget.load(screenshot_filename)
-                    image_layout.addWidget(self.svg_widget)
-                    print(f"DEBUG: Loaded custom SVG from {screenshot_filename}")
-                except Exception as e:
-                    print(f"Error loading custom SVG {screenshot_filename}: {e}")
-                    # Fallback to generated SVG
                     svg_content = self.illustrations.get_illustration_for_slide(self.slide_index)
                     if svg_content:
                         self.svg_widget.load(QByteArray(svg_content.encode('utf-8')))
                     image_layout.addWidget(self.svg_widget)
-            else:
-                # Load as regular image
-                pixmap.load(screenshot_filename)
-                if not pixmap.isNull():
-                    self.image_display_widget = ImageWithArrow(pixmap, self.arrow_data, self.crop_rect)
-                    image_layout.addWidget(self.image_display_widget)
+                except Exception as e:
+                    print(f"Error loading fallback SVG for slide {self.slide_index}: {e}")
         elif screenshot_filename:
             # Try the old path logic for backward compatibility
             screenshots_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "sample_svgs", "app screen shots", screenshot_filename)
             if os.path.exists(screenshots_path):
                 pixmap.load(screenshots_path)
                 if not pixmap.isNull():
-                    self.image_display_widget = ImageWithArrow(pixmap, self.arrow_data, self.crop_rect)
+                    self.image_display_widget = ImageWithArrow(pixmap, self.arrow_data, self.crop_rect, self.arrow_delay, self.arrow_image_path)
+                    # Removed height constraint to allow fuller use of available space
                     image_layout.addWidget(self.image_display_widget)
         
         # If no image was loaded above, use generated SVG
@@ -236,9 +258,15 @@ class SlideshowSlide(QWidget):
                 print(f"Error loading generated SVG for slide {self.slide_index}: {e}")
             image_layout.addWidget(self.svg_widget)
 
-        # Add panels to main layout
-        main_layout.addWidget(text_panel, 1)  # Text panel takes 1 part of the space
-        main_layout.addWidget(image_panel, 2) # Image panel takes 2 parts
+        # Add panels to main layout with fixed proportions
+        # Text panel: 800px, Image panel: 1600px (2:1 ratio for high DPI)
+        # Set fixed width for text panel - reduced by another 20px
+        text_panel.setMinimumWidth(430)
+        text_panel.setMaximumWidth(430)
+        
+        # Add panels to main layout with no stretch factors (use fixed sizes)
+        main_layout.addWidget(text_panel)  # Text panel: fixed 800px
+        main_layout.addWidget(image_panel) # Image panel: fixed 1600px
         
 
 class TutorialSlideshow(QDialog):
@@ -274,7 +302,7 @@ class TutorialSlideshow(QDialog):
     def _setup_ui(self):
         """Setup the main slideshow UI"""
         self.setWindowTitle("Welcome to Echelon - Quick Start Guide")
-        self.setFixedSize(1000, 600)
+        self.setFixedSize(1280, 760)  # Increased height to accommodate 580px image + margins
         self.setModal(True)
         
         # Center the dialog
@@ -308,7 +336,9 @@ class TutorialSlideshow(QDialog):
                 image_path=slide_data.get('image_path'),
                 animation_data=slide_data.get('animation_data'),
                 arrow_data=slide_data.get('arrow_data'),
-                crop_rect=slide_data.get('crop_rect')
+                crop_rect=slide_data.get('crop_rect'),
+                arrow_delay=slide_data.get('arrow_delay'),
+                arrow_image_path=slide_data.get('arrow_image_path')
             )
             self.slides.append(slide)
             self.slide_stack.addWidget(slide)
@@ -492,6 +522,11 @@ class TutorialSlideshow(QDialog):
         self.slide_changed.emit(self.current_slide)
         self._update_button_states()
         
+        # Start arrow animation for the current slide if it has one
+        current_slide_widget = self.slides[self.current_slide]
+        if hasattr(current_slide_widget, 'image_display_widget'):
+            current_slide_widget.image_display_widget.start_arrow_animation()
+        
         # Fade back in
         self.fade_animation.setStartValue(0.0)
         self.fade_animation.setEndValue(1.0)
@@ -536,4 +571,9 @@ class TutorialSlideshow(QDialog):
         self.fade_animation.setStartValue(0.0)
         self.fade_animation.setEndValue(1.0)
         self.fade_animation.start()
+        
+        # Start arrow animation for the initial slide if it has one
+        if self.slides and hasattr(self.slides[0], 'image_display_widget'):
+            self.slides[0].image_display_widget.start_arrow_animation()
+            
         super().showEvent(event) 
