@@ -155,24 +155,54 @@ CUSTOM_TOUR_STEPS = [
 # Slideshow customization
 CUSTOM_SLIDESHOW_CONTENT = [
     {
-        'title': 'Welcome to Project Creator',
+        'title': 'Welcome to Echelon',
         'content': 'Create organized project structures with ease using templates and custom configurations.\n\n📁 Step 1: Create a Template\nFirst, you\'ll create a template that defines your project structure.\n\n• Click the "Create Template" button to get started\n• Give your template a descriptive name\n• This template will be reusable for all future projects of this type\n\nThink of it as creating a blueprint for your projects!',
-        'image_path': 'sample_svgs/GRID SIZE.png',
+        'image_path': 'sample_svgs/SLIDE 01.png',
         'duration': 6000  # Longer duration since there's more content
     },
     {
         'id': 'add_files',
         'title': '📂 Step 2: Add Files & Folders',
         'content': 'Next, you\'ll build your project structure by dragging files and folders.\n\n• Drag files and folders from your computer into the template area\n• Organize them exactly how you want your projects structured\n• You can create folders, add starter files, and set up your ideal workflow\n\nThis becomes your project template that you can use over and over!',
-        'image_path': 'sample_svgs/onboarding_slides/SCREEN 02_v4.png',
+        'image_path': 'sample_svgs/SLIDE_02_BG.png',
         'arrow_delay': 1000,
-        'arrow_image_path': 'sample_svgs/onboarding_slides/SCREEN 02_v4_ARROW.png'
+        'arrow_image_path': 'sample_svgs/SLIDE_02_ARROW.png'
     },
     {
         'id': 'smart_patterns',
         'title': '⚡ Step 3: Smart File Patterns',
-        'content': 'Here\'s the powerful part - smart file renaming!\n\n• Right-click on any file in your template\n• Choose "Use Project Name" or "Custom Pattern"\n• Files will automatically be renamed when you create new projects\n\nFor example: "MyTemplate.txt" becomes "MyNewProject.txt" automatically!',
-        'image_path': None,
+        'content': 'Here\'s the powerful part - smart file renaming!\n\n• Right-click on any file in your template structure\n• This opens a context menu with powerful options\n• Choose "Use Project Name" to automatically rename files\n• For more advanced naming options, you can select "Custom Naming Patterns"\n• Files will be renamed when you create new projects\n\nFor example: "MyTemplate.txt" becomes "MyNewProject.txt" automatically!',
+        'image_path': 'sample_svgs/SLIDE_03_BG.png',
+        'multi_step_sequence': [
+            {
+                'step': 1,
+                'delay': 1000,
+                'action': 'show_arrow',
+                'arrow_image': 'sample_svgs/SLIDE_03_ARROW.png',
+                'description': 'Right-click on any file to access smart naming options'
+            },
+            {
+                'step': 2,
+                'delay': 3000,
+                'action': 'fade_arrow_show_overlay',
+                'overlay_image': 'sample_svgs/SLIDE_03_MENU.png',
+                'description': 'Context menu appears with powerful options'
+            },
+            {
+                'step': 3,
+                'delay': 2000,
+                'action': 'show_final_arrow',
+                'arrow_image': 'sample_svgs/SLIDE_03_MENU_ARROW.png',
+                'description': 'Select "Use Project Name" for automatic file renaming'
+            },
+            {
+                'step': 4,
+                'delay': 3000,
+                'action': 'show_advanced_arrow',
+                'arrow_image': 'sample_svgs/SLIDE_03_ADV_ARROW.png',
+                'description': 'For more advanced naming options, select "Custom Naming Patterns"'
+            }
+        ]
     },
     {
         'id': 'create_project',

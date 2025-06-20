@@ -26,26 +26,46 @@ import math
 
 
 class ImageWithArrow(QWidget):
-    """A widget to display a pixmap and an optional arrow overlay."""
-    def __init__(self, pixmap=None, arrow_data=None, crop_rect=None, arrow_delay=None, arrow_image_path=None, parent=None):
+    """A widget to display a pixmap with optional overlays and multi-step animations."""
+    def __init__(self, pixmap=None, arrow_data=None, crop_rect=None, arrow_delay=None, arrow_image_path=None, multi_step_sequence=None, parent=None):
         super().__init__(parent)
         self.original_pixmap = pixmap if pixmap else QPixmap()
         self.arrow_data = arrow_data
         self.crop_rect = crop_rect
         self.arrow_svg = None
         self.arrow_delay = arrow_delay  # Always set this
+        self.multi_step_sequence = multi_step_sequence or []
+        self.current_step = 0
+        
         # Set size policy to expand and fill the available space
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.show_arrow = False
-        self.arrow_opacity = 0.0  # Start with arrow invisible
         
-        # Setup fade-in animation for arrow
+        # Animation states
+        self.show_arrow = False
+        self.arrow_opacity = 0.0
+        self.show_overlay = False
+        self.overlay_opacity = 0.0
+        self.show_final_arrow = False
+        self.final_arrow_opacity = 0.0
+        self.show_advanced_arrow = False
+        self.advanced_arrow_opacity = 0.0
+        
+        # Current images
+        self.current_arrow_image = None
+        self.overlay_image = None
+        self.final_arrow_image = None
+        self.advanced_arrow_image = None
+        
+        # Timer management
+        self.active_timers = []
+        
+        # Setup fade animations
         self.arrow_opacity_effect = QGraphicsOpacityEffect()
         self.arrow_fade_animation = QPropertyAnimation(self.arrow_opacity_effect, b"opacity")
         self.arrow_fade_animation.setDuration(500)  # 500ms fade-in
         self.arrow_fade_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         
-        # Load the arrow image (PNG or SVG)
+        # Load the initial arrow image (PNG or SVG)
         if arrow_image_path and os.path.exists(arrow_image_path):
             self.arrow_svg = QPixmap(arrow_image_path)
         else:
@@ -54,24 +74,228 @@ class ImageWithArrow(QWidget):
             if os.path.exists(arrow_path):
                 self.arrow_svg = QPixmap(arrow_path)
         
+        # Set initial state
         if self.arrow_data or arrow_image_path:  # Show arrow if we have either positioning data OR an arrow image
-            # Don't start the timer immediately - wait for slide to be shown
-            if not arrow_delay:
+            if not arrow_delay and not multi_step_sequence:
                 self.show_arrow = True
                 self.arrow_opacity = 1.0
 
     def start_arrow_animation(self):
-        """Start the arrow animation timer when the slide becomes visible"""
-        if (self.arrow_data or self.arrow_svg) and self.arrow_delay and not self.show_arrow:
-            QTimer.singleShot(self.arrow_delay, self.trigger_arrow_display)
+        """Start the animation sequence when the slide becomes visible"""
+        # Always reset the slide state first
+        self.reset_animation_state()
+        
+        if self.multi_step_sequence:
+            # Start multi-step sequence
+            self.current_step = 0
+            self._execute_next_step()
+        elif (self.arrow_data or self.arrow_svg) and self.arrow_delay and not self.show_arrow:
+            # Simple single arrow animation
+            timer = QTimer()
+            timer.setSingleShot(True)
+            timer.timeout.connect(self.trigger_arrow_display)
+            self.active_timers.append(timer)
+            timer.start(self.arrow_delay)
 
-    def trigger_arrow_display(self):
-        self.show_arrow = True
-        # Start fade-in animation
+    def reset_animation_state(self):
+        """Reset all animation states to initial values"""
+        # Stop all active timers first
+        for timer in getattr(self, 'active_timers', []):
+            if timer and timer.isActive():
+                timer.stop()
+        self.active_timers = []
+        
+        # Reset all visibility flags
+        self.show_arrow = False
+        self.show_overlay = False
+        self.show_final_arrow = False
+        self.show_advanced_arrow = False
+        
+        # Reset all opacity values
+        self.arrow_opacity = 0.0
+        self.overlay_opacity = 0.0
+        self.final_arrow_opacity = 0.0
+        self.advanced_arrow_opacity = 0.0
+        
+        # Reset step counter
+        self.current_step = 0
+        
+        # Clear current images (they'll be reloaded as needed)
+        self.current_arrow_image = None
+        self.overlay_image = None
+        self.final_arrow_image = None
+        self.advanced_arrow_image = None
+        
+        # Stop any running animations
+        if hasattr(self, 'arrow_fade_animation'):
+            self.arrow_fade_animation.stop()
+        
+        # Force a repaint to clear any visible elements
+        self.update()
+
+    def stop_animations(self):
+        """Stop all running animations and timers"""
+        # Stop the main animation
+        if hasattr(self, 'arrow_fade_animation'):
+            self.arrow_fade_animation.stop()
+        
+        # Reset state
+        self.reset_animation_state()
+
+    def _execute_next_step(self):
+        """Execute the next step in the multi-step sequence"""
+        if self.current_step >= len(self.multi_step_sequence):
+            return
+            
+        step_data = self.multi_step_sequence[self.current_step]
+        delay = step_data.get('delay', 1000)
+        action = step_data.get('action', 'show_arrow')
+        
+        # Create timer and track it
+        timer = QTimer()
+        timer.setSingleShot(True)
+        timer.timeout.connect(lambda: self._perform_step_action(step_data))
+        self.active_timers.append(timer)
+        timer.start(delay)
+
+    def _perform_step_action(self, step_data):
+        """Perform the action for a specific step"""
+        action = step_data.get('action', 'show_arrow')
+        
+        if action == 'show_arrow':
+            # Load and show the arrow
+            arrow_image_path = step_data.get('arrow_image')
+            if arrow_image_path and os.path.exists(arrow_image_path):
+                self.current_arrow_image = QPixmap(arrow_image_path)
+                self.show_arrow = True
+                self._fade_in_arrow()
+                
+        elif action == 'fade_arrow_show_overlay':
+            # Fade out arrow and fade in overlay
+            self._fade_out_arrow()
+            overlay_image_path = step_data.get('overlay_image')
+            if overlay_image_path and os.path.exists(overlay_image_path):
+                self.overlay_image = QPixmap(overlay_image_path)
+                # Create timer and track it
+                timer = QTimer()
+                timer.setSingleShot(True)
+                timer.timeout.connect(self._fade_in_overlay)
+                self.active_timers.append(timer)
+                timer.start(300)  # Start overlay fade after arrow fade starts
+                
+        elif action == 'show_final_arrow':
+            # Show final arrow on top of overlay
+            arrow_image_path = step_data.get('arrow_image')
+            if arrow_image_path and os.path.exists(arrow_image_path):
+                self.final_arrow_image = QPixmap(arrow_image_path)
+                self.show_final_arrow = True
+                self._fade_in_final_arrow()
+                
+        elif action == 'show_advanced_arrow':
+            # Show advanced arrow on top of everything
+            arrow_image_path = step_data.get('arrow_image')
+            if arrow_image_path and os.path.exists(arrow_image_path):
+                self.advanced_arrow_image = QPixmap(arrow_image_path)
+                self.show_advanced_arrow = True
+                self._fade_in_advanced_arrow()
+        
+        self.current_step += 1
+        # Schedule next step if there are more
+        if self.current_step < len(self.multi_step_sequence):
+            next_step = self.multi_step_sequence[self.current_step]
+            next_delay = next_step.get('delay', 2000)
+            
+            # Create timer and track it
+            timer = QTimer()
+            timer.setSingleShot(True)
+            timer.timeout.connect(lambda: self._perform_step_action(next_step))
+            self.active_timers.append(timer)
+            timer.start(next_delay)
+
+    def _fade_in_arrow(self):
+        """Fade in the current arrow"""
         self.arrow_fade_animation.setStartValue(0.0)
         self.arrow_fade_animation.setEndValue(1.0)
         self.arrow_fade_animation.valueChanged.connect(self._update_arrow_opacity)
         self.arrow_fade_animation.start()
+
+    def _fade_out_arrow(self):
+        """Fade out the current arrow"""
+        self.arrow_fade_animation.setStartValue(self.arrow_opacity)
+        self.arrow_fade_animation.setEndValue(0.0)
+        self.arrow_fade_animation.valueChanged.connect(self._update_arrow_opacity)
+        self.arrow_fade_animation.finished.connect(lambda: setattr(self, 'show_arrow', False))
+        self.arrow_fade_animation.start()
+
+    def _fade_in_overlay(self):
+        """Fade in the overlay image"""
+        self.show_overlay = True
+        # Create a simple opacity animation for overlay
+        self.overlay_opacity = 0.0
+        self._animate_overlay_opacity(0.0, 1.0)
+
+    def _fade_in_final_arrow(self):
+        """Fade in the final arrow"""
+        self.final_arrow_opacity = 0.0
+        self._animate_final_arrow_opacity(0.0, 1.0)
+
+    def _fade_in_advanced_arrow(self):
+        """Fade in the advanced arrow"""
+        self.advanced_arrow_opacity = 0.0
+        self._animate_advanced_arrow_opacity(0.0, 1.0)
+
+    def _animate_overlay_opacity(self, start_val, end_val):
+        """Animate overlay opacity"""
+        self.overlay_opacity = start_val
+        # Simple timer-based animation
+        steps = 20
+        step_size = (end_val - start_val) / steps
+        step_duration = 25  # 500ms total / 20 steps
+        
+        def animate_step(current_step):
+            if current_step <= steps:
+                self.overlay_opacity = start_val + (step_size * current_step)
+                self.update()
+                QTimer.singleShot(step_duration, lambda: animate_step(current_step + 1))
+        
+        animate_step(0)
+
+    def _animate_final_arrow_opacity(self, start_val, end_val):
+        """Animate final arrow opacity"""
+        self.final_arrow_opacity = start_val
+        # Simple timer-based animation
+        steps = 20
+        step_size = (end_val - start_val) / steps
+        step_duration = 25  # 500ms total / 20 steps
+        
+        def animate_step(current_step):
+            if current_step <= steps:
+                self.final_arrow_opacity = start_val + (step_size * current_step)
+                self.update()
+                QTimer.singleShot(step_duration, lambda: animate_step(current_step + 1))
+        
+        animate_step(0)
+
+    def _animate_advanced_arrow_opacity(self, start_val, end_val):
+        """Animate advanced arrow opacity"""
+        self.advanced_arrow_opacity = start_val
+        # Simple timer-based animation
+        steps = 20
+        step_size = (end_val - start_val) / steps
+        step_duration = 25  # 500ms total / 20 steps
+        
+        def animate_step(current_step):
+            if current_step <= steps:
+                self.advanced_arrow_opacity = start_val + (step_size * current_step)
+                self.update()
+                QTimer.singleShot(step_duration, lambda: animate_step(current_step + 1))
+        
+        animate_step(0)
+
+    def trigger_arrow_display(self):
+        """Legacy method for simple arrow display"""
+        self.show_arrow = True
+        self._fade_in_arrow()
 
     def _update_arrow_opacity(self, value):
         self.arrow_opacity = value
@@ -106,23 +330,74 @@ class ImageWithArrow(QWidget):
         draw_rect = QRect(0, 0, self.width(), self.height())
         painter.drawPixmap(draw_rect, final_pixmap, final_pixmap.rect())
 
-        # Draw the arrow overlay scaled to fit
-        if self.show_arrow and self.arrow_svg and not self.arrow_svg.isNull():
-            # Scale arrow to match the background image scaling
-            scaled_arrow = self.arrow_svg.scaled(widget_width, widget_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        # Draw overlays and arrows with EXACT same positioning and scaling as background
+        
+        # Draw the main arrow (from multi-step or simple arrow)
+        arrow_image_to_use = self.current_arrow_image if self.current_arrow_image else self.arrow_svg
+        if self.show_arrow and arrow_image_to_use and not arrow_image_to_use.isNull():
+            # Scale arrow using EXACT same parameters as the background image
+            arrow_to_draw = arrow_image_to_use
+            if self.crop_rect:
+                arrow_to_draw = arrow_image_to_use.copy(self.crop_rect)
             
-            # Set device pixel ratio for arrow too
-            scaled_arrow.setDevicePixelRatio(self.devicePixelRatioF())
-            
-            arrow_x = (self.width() - scaled_arrow.width()) // 2
-            arrow_y = (self.height() - scaled_arrow.height()) // 2
+            # Scale arrow with EXACT same scaling as background image
+            scaled_arrow = arrow_to_draw.scaled(widget_width, widget_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             
             if self.arrow_opacity < 1.0:
                 painter.setOpacity(self.arrow_opacity)
             
-            painter.drawPixmap(int(arrow_x), int(arrow_y), scaled_arrow)
+            # Draw arrow at EXACT same position as background (using same draw_rect)
+            painter.drawPixmap(draw_rect, scaled_arrow, scaled_arrow.rect())
             
             if self.arrow_opacity < 1.0:
+                painter.setOpacity(1.0)
+        
+        # Draw the overlay image (menu, etc.)
+        if self.show_overlay and self.overlay_image and not self.overlay_image.isNull():
+            overlay_to_draw = self.overlay_image
+            if self.crop_rect:
+                overlay_to_draw = self.overlay_image.copy(self.crop_rect)
+            
+            scaled_overlay = overlay_to_draw.scaled(widget_width, widget_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            
+            if self.overlay_opacity < 1.0:
+                painter.setOpacity(self.overlay_opacity)
+            
+            painter.drawPixmap(draw_rect, scaled_overlay, scaled_overlay.rect())
+            
+            if self.overlay_opacity < 1.0:
+                painter.setOpacity(1.0)
+        
+        # Draw the final arrow (on top of overlay)
+        if self.show_final_arrow and self.final_arrow_image and not self.final_arrow_image.isNull():
+            final_arrow_to_draw = self.final_arrow_image
+            if self.crop_rect:
+                final_arrow_to_draw = self.final_arrow_image.copy(self.crop_rect)
+            
+            scaled_final_arrow = final_arrow_to_draw.scaled(widget_width, widget_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            
+            if self.final_arrow_opacity < 1.0:
+                painter.setOpacity(self.final_arrow_opacity)
+            
+            painter.drawPixmap(draw_rect, scaled_final_arrow, scaled_final_arrow.rect())
+            
+            if self.final_arrow_opacity < 1.0:
+                painter.setOpacity(1.0)
+        
+        # Draw the advanced arrow (on top of everything)
+        if self.show_advanced_arrow and self.advanced_arrow_image and not self.advanced_arrow_image.isNull():
+            advanced_arrow_to_draw = self.advanced_arrow_image
+            if self.crop_rect:
+                advanced_arrow_to_draw = self.advanced_arrow_image.copy(self.crop_rect)
+            
+            scaled_advanced_arrow = advanced_arrow_to_draw.scaled(widget_width, widget_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            
+            if self.advanced_arrow_opacity < 1.0:
+                painter.setOpacity(self.advanced_arrow_opacity)
+            
+            painter.drawPixmap(draw_rect, scaled_advanced_arrow, scaled_advanced_arrow.rect())
+            
+            if self.advanced_arrow_opacity < 1.0:
                 painter.setOpacity(1.0)
         # Fallback to drawing a path if SVG is not available
         elif self.show_arrow and self.arrow_data:
@@ -161,7 +436,7 @@ class ImageWithArrow(QWidget):
 class SlideshowSlide(QWidget):
     """Individual slide in the tutorial slideshow"""
     
-    def __init__(self, title, content, slide_index=0, image_path=None, animation_data=None, arrow_data=None, crop_rect=None, arrow_delay=None, arrow_image_path=None):
+    def __init__(self, title, content, slide_index=0, image_path=None, animation_data=None, arrow_data=None, crop_rect=None, arrow_delay=None, arrow_image_path=None, multi_step_sequence=None):
         super().__init__()
         self.title = title
         self.content = content
@@ -172,6 +447,7 @@ class SlideshowSlide(QWidget):
         self.crop_rect = crop_rect
         self.arrow_delay = arrow_delay
         self.arrow_image_path = arrow_image_path
+        self.multi_step_sequence = multi_step_sequence
         self.illustrations = TutorialIllustrations(APP_COLORS)
         self._setup_ui()
     
@@ -222,7 +498,16 @@ class SlideshowSlide(QWidget):
             # Load as regular image (PNG, JPG, or SVG)
             pixmap.load(screenshot_filename)
             if not pixmap.isNull():
-                self.image_display_widget = ImageWithArrow(pixmap, self.arrow_data, self.crop_rect, self.arrow_delay, self.arrow_image_path)
+                # Check if this slide has a multi-step sequence
+                multi_step_sequence = getattr(self, 'multi_step_sequence', None)
+                self.image_display_widget = ImageWithArrow(
+                    pixmap, 
+                    self.arrow_data, 
+                    self.crop_rect, 
+                    self.arrow_delay, 
+                    self.arrow_image_path,
+                    multi_step_sequence
+                )
                 # Make the image widget expand to fill the entire layout
                 image_layout.addWidget(self.image_display_widget, 1)  # stretch factor of 1
             else:
@@ -338,7 +623,8 @@ class TutorialSlideshow(QDialog):
                 arrow_data=slide_data.get('arrow_data'),
                 crop_rect=slide_data.get('crop_rect'),
                 arrow_delay=slide_data.get('arrow_delay'),
-                arrow_image_path=slide_data.get('arrow_image_path')
+                arrow_image_path=slide_data.get('arrow_image_path'),
+                multi_step_sequence=slide_data.get('multi_step_sequence')
             )
             self.slides.append(slide)
             self.slide_stack.addWidget(slide)
@@ -516,6 +802,11 @@ class TutorialSlideshow(QDialog):
     def _switch_slide_content(self):
         """The actual logic to switch content after fade out"""
         self.fade_animation.finished.disconnect(self._switch_slide_content)
+        
+        # Stop animations on ALL slides first to prevent interference
+        for slide_widget in self.slides:
+            if hasattr(slide_widget, 'image_display_widget'):
+                slide_widget.image_display_widget.stop_animations()
         
         self.slide_stack.setCurrentIndex(self.current_slide)
         self.progress_bar.setValue(self.current_slide + 1)
