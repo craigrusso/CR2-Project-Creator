@@ -4,20 +4,16 @@
 """
 Tutorial Manager
 
-Main controller for the onboarding tutorial system. Coordinates between
-slideshow tutorials, guided tours, and state management.
+Coordinates the tutorial system, managing slideshow tutorials.
 """
 
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer
-from PyQt6.QtWidgets import QWidget
-
-from .tutorial_state import TutorialState
 from .slideshow import TutorialSlideshow
-from .guided_tour import GuidedTour
+from .tutorial_state import TutorialState
 
 
 class TutorialManager(QObject):
-    """Main tutorial system controller"""
+    """Main tutorial coordination class - manages slideshow only"""
     
     # Signals
     tutorial_started = pyqtSignal(str)  # tutorial_type
@@ -29,26 +25,20 @@ class TutorialManager(QObject):
         super().__init__()
         self.parent_widget = parent_widget
         self.state = TutorialState()
+        
+        # Tutorial components
         self.slideshow = None
-        self.guided_tour = None
         
         # Connect state signals
         self.state.tutorial_completed.connect(self._handle_tutorial_completed)
         self.state.tutorial_skipped.connect(self._handle_tutorial_skipped)
-        
-        # Delay timer for showing tutorials after app startup
-        self.startup_timer = QTimer()
-        self.startup_timer.setSingleShot(True)
-        self.startup_timer.timeout.connect(self._check_and_show_tutorials)
-    
-    def set_parent_widget(self, parent_widget):
-        """Set the parent widget for tutorials"""
-        self.parent_widget = parent_widget
-    
+
     def initialize(self):
-        """Initialize the tutorial system after app startup"""
-        # Delay tutorial check to allow app to fully load
-        self.startup_timer.start(1000)  # 1 second delay
+        """Initialize the tutorial system and check if tutorials should be shown"""
+        if not self.parent_widget:
+            return
+        
+        self._check_and_show_tutorials()
     
     def _check_and_show_tutorials(self):
         """Check if tutorials should be shown and show them"""
@@ -84,32 +74,10 @@ class TutorialManager(QObject):
             speed = self.state.get_preference('slideshow_speed', 4000)
             self.slideshow.start_auto_advance(speed)
     
-    def show_guided_tour(self):
-        """Show the guided tour"""
-        if self.guided_tour:
-            return  # Already showing
-        
-        self.guided_tour = GuidedTour(self.parent_widget)
-        
-        # Connect signals
-        self.guided_tour.completed.connect(lambda: self._guided_tour_finished(completed=True))
-        self.guided_tour.skipped.connect(lambda: self._guided_tour_finished(completed=False))
-        
-        # Start tour
-        self.guided_tour.start_tour()
-        self.tutorial_started.emit('guided_tour')
-    
     def _slideshow_finished(self, tutorial_id, completed):
         """Handle slideshow completion"""
         if completed:
             self.state.mark_tutorial_completed(tutorial_id)
-            # Show guided tour next if it should be shown
-            auto_start_tour = self.state.get_preference('auto_start_guided_tour_after_slideshow', True)
-            if auto_start_tour and self.state.should_show_tutorial('guided_tour'):
-                print("DEBUG: Starting guided tour after slideshow completion")
-                QTimer.singleShot(1000, self.show_guided_tour)  # Small delay
-            else:
-                print(f"DEBUG: Guided tour not starting - auto_start: {auto_start_tour}, should_show: {self.state.should_show_tutorial('guided_tour')}")
         else:
             self.state.mark_tutorial_skipped(tutorial_id)
         
@@ -117,18 +85,6 @@ class TutorialManager(QObject):
         if self.slideshow:
             self.slideshow.deleteLater()
             self.slideshow = None
-    
-    def _guided_tour_finished(self, completed):
-        """Handle guided tour completion"""
-        if completed:
-            self.state.mark_tutorial_completed('guided_tour')
-        else:
-            self.state.mark_tutorial_skipped('guided_tour')
-        
-        # Clean up
-        if self.guided_tour:
-            self.guided_tour.deleteLater()
-            self.guided_tour = None
         
         # Check if all tutorials are completed
         if self._all_tutorials_completed():
@@ -144,18 +100,13 @@ class TutorialManager(QObject):
     
     def _all_tutorials_completed(self):
         """Check if all tutorials have been completed"""
-        return (self.state.is_tutorial_completed('welcome_slideshow') and 
-                self.state.is_tutorial_completed('guided_tour'))
+        return self.state.is_tutorial_completed('welcome_slideshow')
     
     def stop_all_tutorials(self):
         """Stop all running tutorials"""
         if self.slideshow:
             self.slideshow.close()
             self.slideshow = None
-        
-        if self.guided_tour:
-            self.guided_tour.stop_tour()
-            self.guided_tour = None
     
     def reset_tutorials(self):
         """Reset all tutorial progress"""
@@ -170,10 +121,6 @@ class TutorialManager(QObject):
     def set_slideshow_enabled(self, enabled):
         """Enable/disable the welcome slideshow"""
         self.state.set_preference('show_welcome_slideshow', enabled)
-    
-    def set_guided_tour_enabled(self, enabled):
-        """Enable/disable the guided tour"""
-        self.state.set_preference('show_guided_tour', enabled)
     
     def set_auto_start_enabled(self, enabled):
         """Enable/disable automatic tutorial startup"""
@@ -198,14 +145,12 @@ class TutorialManager(QObject):
     
     def is_any_tutorial_running(self):
         """Check if any tutorial is currently running"""
-        return self.slideshow is not None or self.guided_tour is not None
+        return self.slideshow is not None
     
     def get_current_tutorial_type(self):
         """Get the type of currently running tutorial"""
         if self.slideshow:
             return 'welcome_slideshow'
-        elif self.guided_tour:
-            return 'guided_tour'
         return None
     
     # Integration methods for main app
@@ -213,24 +158,10 @@ class TutorialManager(QObject):
         """Call this when the main app is fully loaded and ready for tutorials"""
         self._check_and_show_tutorials()
     
-    def register_widget_for_tour(self, widget, widget_name):
-        """Register a widget with a specific name for the guided tour"""
-        if widget and hasattr(widget, 'setObjectName'):
-            widget.setObjectName(widget_name)
-    
-    def update_tour_target(self, step_index, widget_name):
-        """Update the target widget for a specific guided tour step"""
-        if self.guided_tour:
-            self.guided_tour.set_target_widget_by_name(step_index, widget_name)
-    
     # Menu integration methods
     def show_slideshow_manually(self):
         """Show slideshow when triggered from menu (regardless of state)"""
         self.show_welcome_slideshow()
-    
-    def show_guided_tour_manually(self):
-        """Show guided tour when triggered from menu (regardless of state)"""
-        self.show_guided_tour()
     
     def show_tutorial_preferences(self):
         """Show tutorial preferences (to be integrated with app preferences)"""
@@ -238,36 +169,24 @@ class TutorialManager(QObject):
         # For now, we'll just print the current state
         prefs = {
             'slideshow_enabled': self.state.get_preference('show_welcome_slideshow'),
-            'guided_tour_enabled': self.state.get_preference('show_guided_tour'),
             'auto_start': self.state.get_preference('auto_start_tutorials'),
             'auto_advance': self.state.get_preference('slideshow_auto_advance'),
             'speed': self.state.get_preference('slideshow_speed')
         }
         return prefs
     
-    def stop_guided_tour(self):
-        """Stop the guided tour immediately"""
-        try:
-            if hasattr(self, 'guided_tour') and self.guided_tour:
-                self.guided_tour.stop_tour()
-                self.guided_tour = None
-                print("DEBUG: Guided tour stopped successfully")
-        except Exception as e:
-            print(f"Error stopping guided tour: {e}")
-    
     def stop_slideshow(self):
         """Stop the slideshow immediately"""
         try:
-            if hasattr(self, 'current_slideshow') and self.current_slideshow:
-                if self.current_slideshow.isVisible():
-                    self.current_slideshow.close()
-                self.current_slideshow = None
+            if hasattr(self, 'slideshow') and self.slideshow:
+                if self.slideshow.isVisible():
+                    self.slideshow.close()
+                self.slideshow = None
                 print("DEBUG: Slideshow stopped successfully")
         except Exception as e:
             print(f"Error stopping slideshow: {e}")
     
     def cleanup_all_tutorials(self):
         """Clean up all running tutorials"""
-        self.stop_guided_tour()
         self.stop_slideshow()
         print("DEBUG: All tutorials cleaned up") 

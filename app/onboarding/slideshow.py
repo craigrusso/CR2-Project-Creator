@@ -27,6 +27,10 @@ import math
 
 class ImageWithArrow(QWidget):
     """A widget to display a pixmap with optional overlays and multi-step animations."""
+    
+    # Signal for step changes
+    step_changed = pyqtSignal(int)  # current_step
+    
     def __init__(self, pixmap=None, arrow_data=None, crop_rect=None, arrow_delay=None, arrow_image_path=None, multi_step_sequence=None, parent=None):
         super().__init__(parent)
         self.original_pixmap = pixmap if pixmap else QPixmap()
@@ -36,6 +40,7 @@ class ImageWithArrow(QWidget):
         self.arrow_delay = arrow_delay  # Always set this
         self.multi_step_sequence = multi_step_sequence or []
         self.current_step = 0
+        self.total_steps = len(self.multi_step_sequence) if self.multi_step_sequence else (1 if (arrow_delay or arrow_image_path) else 0)
         
         # Set size policy to expand and fill the available space
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -79,6 +84,94 @@ class ImageWithArrow(QWidget):
             if not arrow_delay and not multi_step_sequence:
                 self.show_arrow = True
                 self.arrow_opacity = 1.0
+
+    def get_total_steps(self):
+        """Get the total number of animation steps for this widget"""
+        return self.total_steps
+
+    def get_current_step(self):
+        """Get the current animation step (0-based)"""
+        return self.current_step
+
+    def jump_to_step(self, step_index):
+        """Jump directly to a specific animation step"""
+        if step_index < 0 or step_index >= self.total_steps:
+            return
+        
+        # Stop all current animations and timers
+        self.stop_animations()
+        
+        # Reset state
+        self.reset_animation_state()
+        
+        if self.multi_step_sequence:
+            # Jump to specific step in multi-step sequence
+            self.current_step = step_index
+            self._jump_to_multi_step(step_index)
+        else:
+            # For simple arrow animations, step 0 = no arrow, step 1 = arrow shown
+            self.current_step = step_index
+            if step_index == 0:
+                # No arrow state
+                pass
+            elif step_index == 1 and (self.arrow_data or self.arrow_svg):
+                # Show arrow immediately
+                self.show_arrow = True
+                self.arrow_opacity = 1.0
+                self.update()
+        
+        # Emit step change signal
+        self.step_changed.emit(self.current_step)
+
+    def _jump_to_multi_step(self, target_step):
+        """Jump to a specific step in the multi-step sequence"""
+        # Apply all effects up to and including the target step
+        for i in range(target_step + 1):
+            if i < len(self.multi_step_sequence):
+                step_data = self.multi_step_sequence[i]
+                self._apply_step_immediately(step_data, i)
+        
+        self.update()
+
+    def _apply_step_immediately(self, step_data, step_index):
+        """Apply a step's effects immediately without animation"""
+        action = step_data.get('action', 'show_arrow')
+        
+        if action == 'show_arrow':
+            # Load and show the arrow immediately
+            arrow_image_path = step_data.get('arrow_image')
+            if arrow_image_path and os.path.exists(arrow_image_path):
+                self.current_arrow_image = QPixmap(arrow_image_path)
+                self.show_arrow = True
+                self.arrow_opacity = 1.0
+                
+        elif action == 'fade_arrow_show_overlay':
+            # Hide arrow and show overlay immediately
+            if step_index > 0:  # Only hide arrow if we had one from previous step
+                self.show_arrow = False
+                self.arrow_opacity = 0.0
+            
+            overlay_image_path = step_data.get('overlay_image')
+            if overlay_image_path and os.path.exists(overlay_image_path):
+                self.overlay_image = QPixmap(overlay_image_path)
+                self.show_overlay = True
+                self.overlay_opacity = 1.0
+                
+        elif action == 'show_final_arrow':
+            # Show final arrow on top of overlay immediately
+            arrow_image_path = step_data.get('arrow_image')
+            if arrow_image_path and os.path.exists(arrow_image_path):
+                self.final_arrow_image = QPixmap(arrow_image_path)
+                self.show_final_arrow = True
+                self.final_arrow_opacity = 1.0
+                
+        elif action == 'show_advanced_arrow':
+            # Show advanced arrow on top of everything immediately
+            arrow_image_path = step_data.get('arrow_image')
+            if arrow_image_path and os.path.exists(arrow_image_path):
+                self.advanced_arrow_image = QPixmap(arrow_image_path)
+                self.show_advanced_arrow = True
+                self.advanced_arrow_opacity = 1.0
 
     def start_arrow_animation(self):
         """Start the animation sequence when the slide becomes visible"""
@@ -198,6 +291,9 @@ class ImageWithArrow(QWidget):
                 self.advanced_arrow_image = QPixmap(arrow_image_path)
                 self.show_advanced_arrow = True
                 self._fade_in_advanced_arrow()
+        
+        # Emit step change signal
+        self.step_changed.emit(self.current_step)
         
         self.current_step += 1
         # Schedule next step if there are more
@@ -434,7 +530,10 @@ class ImageWithArrow(QWidget):
 
 
 class SlideshowSlide(QWidget):
-    """Individual slide in the tutorial slideshow"""
+    """A single slide in the tutorial slideshow"""
+    
+    # Signal for when user clicks on a sub-navigation dot
+    sub_nav_requested = pyqtSignal(int)  # step_index
     
     def __init__(self, title, content, slide_index=0, image_path=None, animation_data=None, arrow_data=None, crop_rect=None, arrow_delay=None, arrow_image_path=None, multi_step_sequence=None):
         super().__init__()
@@ -448,9 +547,12 @@ class SlideshowSlide(QWidget):
         self.arrow_delay = arrow_delay
         self.arrow_image_path = arrow_image_path
         self.multi_step_sequence = multi_step_sequence
+        self.current_sub_step = 0
         self.illustrations = TutorialIllustrations(APP_COLORS)
+        
+        # Setup the UI
         self._setup_ui()
-    
+
     def _setup_ui(self):
         """Setup the slide UI with a two-panel layout"""
         main_layout = QHBoxLayout(self)
@@ -462,97 +564,271 @@ class SlideshowSlide(QWidget):
         text_layout = QVBoxLayout(text_panel)
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(20)
-
+        
         # Title
         self.title_label = QLabel(self.title)
         self.title_label.setFont(QFont(get_system_font(), 28, QFont.Weight.Bold))
-        self.title_label.setStyleSheet(f"color: {get_color('text')};")
+        self.title_label.setStyleSheet(f"color: {get_color('accent')}; margin-bottom: 10px;")
         self.title_label.setWordWrap(True)
-        self.title_label.setAlignment(Qt.AlignmentFlag.AlignTop)
+        text_layout.addWidget(self.title_label)
         
         # Description
         self.description_label = QLabel(self.content)
         self.description_label.setFont(QFont(get_system_font(), 16))
-        self.description_label.setStyleSheet(f"color: {get_color('secondary_text')}; line-height: 1.5;")
+        self.description_label.setStyleSheet(f"color: {get_color('text')}; line-height: 1.4;")
         self.description_label.setWordWrap(True)
         self.description_label.setAlignment(Qt.AlignmentFlag.AlignTop)
-        
-        text_layout.addWidget(self.title_label)
         text_layout.addWidget(self.description_label)
+        
         text_layout.addStretch()
-
-        # --- Right Panel (Image) ---
+        text_panel.setFixedWidth(430)
+        
+        # --- Right Panel (Image + Sub-navigation) ---
         image_panel = QFrame()
-        image_panel.setMinimumWidth(770)  # Set minimum width only
-        image_panel.setMaximumWidth(770)  # Set maximum width only - let height be flexible
-        # Use app color scheme for consistent styling
-        image_panel.setStyleSheet(f"background-color: {get_color('card_bg')};")
-        image_layout = QVBoxLayout(image_panel)
-        image_layout.setContentsMargins(0, 0, 0, 0)  # Remove all padding to let image fill container
-
-        pixmap = QPixmap()
-        screenshot_filename = self.image_path
+        image_panel_layout = QVBoxLayout(image_panel)
+        image_panel_layout.setContentsMargins(0, 0, 0, 0)
+        image_panel_layout.setSpacing(10)  # Space between image and dots
         
-        # First check if we have a direct image_path (for PNG/JPG images or SVGs)
-        if screenshot_filename and os.path.exists(screenshot_filename):
-            # Load as regular image (PNG, JPG, or SVG)
-            pixmap.load(screenshot_filename)
+        # Image display widget
+        self.image_display_widget = ImageWithArrow(
+            pixmap=None,  # Will be loaded from image_path
+            arrow_data=self.arrow_data, 
+            crop_rect=self.crop_rect, 
+            arrow_delay=self.arrow_delay, 
+            arrow_image_path=self.arrow_image_path,
+            multi_step_sequence=getattr(self, 'multi_step_sequence', None)
+        )
+        
+        # Load the image after creating the widget
+        if self.image_path and os.path.exists(self.image_path):
+            pixmap = QPixmap(self.image_path)
             if not pixmap.isNull():
-                # Check if this slide has a multi-step sequence
-                multi_step_sequence = getattr(self, 'multi_step_sequence', None)
-                self.image_display_widget = ImageWithArrow(
-                    pixmap, 
-                    self.arrow_data, 
-                    self.crop_rect, 
-                    self.arrow_delay, 
-                    self.arrow_image_path,
-                    multi_step_sequence
-                )
-                # Make the image widget expand to fill the entire layout
-                image_layout.addWidget(self.image_display_widget, 1)  # stretch factor of 1
-            else:
-                print(f"Error loading image {screenshot_filename}")
-                # Fallback to generated SVG
-                self.svg_widget = QSvgWidget()
-                try:
-                    svg_content = self.illustrations.get_illustration_for_slide(self.slide_index)
-                    if svg_content:
-                        self.svg_widget.load(QByteArray(svg_content.encode('utf-8')))
-                    image_layout.addWidget(self.svg_widget)
-                except Exception as e:
-                    print(f"Error loading fallback SVG for slide {self.slide_index}: {e}")
-        elif screenshot_filename:
-            # Try the old path logic for backward compatibility
-            screenshots_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "sample_svgs", "app screen shots", screenshot_filename)
-            if os.path.exists(screenshots_path):
-                pixmap.load(screenshots_path)
-                if not pixmap.isNull():
-                    self.image_display_widget = ImageWithArrow(pixmap, self.arrow_data, self.crop_rect, self.arrow_delay, self.arrow_image_path)
-                    # Removed height constraint to allow fuller use of available space
-                    image_layout.addWidget(self.image_display_widget)
+                self.image_display_widget.set_pixmap(pixmap)
         
-        # If no image was loaded above, use generated SVG
-        if not hasattr(self, 'image_display_widget') and not hasattr(self, 'svg_widget'):
-            self.svg_widget = QSvgWidget()
-            try:
-                svg_content = self.illustrations.get_illustration_for_slide(self.slide_index)
-                if svg_content:
-                    self.svg_widget.load(QByteArray(svg_content.encode('utf-8')))
-                    print(f"DEBUG: Loaded generated SVG for slide {self.slide_index}")
-            except Exception as e:
-                print(f"Error loading generated SVG for slide {self.slide_index}: {e}")
-            image_layout.addWidget(self.svg_widget)
+        self.image_display_widget.setFixedSize(730, 500)  # Maintain original size
+        image_panel_layout.addWidget(self.image_display_widget, 0, Qt.AlignmentFlag.AlignCenter)
+        
+        # Sub-navigation container (under the image)
+        self.sub_nav_container = QWidget()
+        self.sub_nav_container.setFixedHeight(25)  # Compact height for dots
+        image_panel_layout.addWidget(self.sub_nav_container, 0, Qt.AlignmentFlag.AlignCenter)
+        
+        # Add stretch to push everything up
+        image_panel_layout.addStretch()
+        
+        image_panel.setFixedWidth(770)
+        
+        # Add panels to main layout
+        main_layout.addWidget(text_panel)
+        main_layout.addWidget(image_panel)
+        
+        # Create and populate sub-navigation if needed
+        if hasattr(self, 'image_display_widget') and self.image_display_widget.get_total_steps() > 1:
+            self._create_and_populate_sub_nav()
 
-        # Add panels to main layout with fixed proportions
-        # Text panel: 800px, Image panel: 1600px (2:1 ratio for high DPI)
-        # Set fixed width for text panel - reduced by another 20px
-        text_panel.setMinimumWidth(430)
-        text_panel.setMaximumWidth(430)
+    def _create_and_populate_sub_nav(self):
+        """Create and populate the sub-navigation container"""
+        # Clear existing sub-navigation
+        if hasattr(self, 'sub_nav_container'):
+            # Clear the container properly
+            layout = self.sub_nav_container.layout()
+            if layout:
+                # Clear existing widgets
+                while layout.count():
+                    child = layout.takeAt(0)
+                    if child.widget():
+                        child.widget().deleteLater()
+                # Delete the layout
+                layout.deleteLater()
+            
+            # Get current slide
+            current_slide_widget = self
+            
+            # Check if current slide has multi-step navigation
+            if (hasattr(current_slide_widget, 'image_display_widget') and 
+                current_slide_widget.image_display_widget.get_total_steps() > 1):
+                
+                # Create sub-navigation for this slide
+                sub_nav_widget = current_slide_widget._create_sub_navigation()
+                if sub_nav_widget:
+                    # Create new layout for the container
+                    container_layout = QHBoxLayout(self.sub_nav_container)
+                    container_layout.setContentsMargins(0, 0, 0, 0)
+                    container_layout.addWidget(sub_nav_widget)
+                    
+                    # Connect step changes to update the sub-nav
+                    current_slide_widget.image_display_widget.step_changed.connect(
+                        current_slide_widget._update_sub_nav_state
+                    )
+                    
+                    # Make container visible and store reference
+                    self.sub_nav_container.setVisible(True)
+                    self.current_sub_nav = sub_nav_widget
+                    self.current_slide_widget = current_slide_widget
+                else:
+                    # No sub-navigation needed - hide the container
+                    self.sub_nav_container.setVisible(False)
+            else:
+                # No sub-navigation needed - hide the container
+                self.sub_nav_container.setVisible(False)
+
+    def _create_sub_navigation(self):
+        """Create a proper two-layer image-based sub-navigation for footer"""
+        if not hasattr(self, 'image_display_widget'):
+            return None
+            
+        total_steps = self.image_display_widget.get_total_steps()
+        if total_steps <= 1:
+            return None
         
-        # Add panels to main layout with no stretch factors (use fixed sizes)
-        main_layout.addWidget(text_panel)  # Text panel: fixed 800px
-        main_layout.addWidget(image_panel) # Image panel: fixed 1600px
+        # Container for sub-navigation - optimized for footer
+        sub_nav_container = QWidget()
+        sub_nav_container.setFixedHeight(30)  # Match footer container height
+        sub_nav_layout = QHBoxLayout(sub_nav_container)
+        sub_nav_layout.setContentsMargins(0, 5, 0, 5)  # Small vertical margins
+        sub_nav_layout.setSpacing(4)  # Tight spacing between dots
         
+        # Center the dots
+        sub_nav_layout.addStretch()
+        
+        # Create proper two-layer image-based dots
+        self.sub_nav_dots = []
+        for i in range(total_steps):
+            dot_container = self._create_dot(i)
+            self.sub_nav_dots.append(dot_container)
+            sub_nav_layout.addWidget(dot_container)
+        
+        sub_nav_layout.addStretch()
+        
+        # Update initial state
+        self._update_sub_nav_state(0)
+        
+        return sub_nav_container
+
+    def _create_dot(self, step_index):
+        """Create a proper two-layer navigation dot using outline + fill images"""
+        # Create a container widget for the two-layer dot
+        dot_container = QWidget()
+        dot_container.setProperty("step_index", step_index)
+        dot_container.setCursor(Qt.CursorShape.PointingHandCursor)
+        
+        # Load the dot images
+        empty_dot_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "sample_svgs", "DOT EMPTY.png")
+        filled_dot_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "sample_svgs", "DOT FILL.png")
+        
+        print(f"DEBUG: Creating dot {step_index}, empty_path: {empty_dot_path}, exists: {os.path.exists(empty_dot_path)}")
+        print(f"DEBUG: filled_path: {filled_dot_path}, exists: {os.path.exists(filled_dot_path)}")
+        
+        # Set fixed size for the container - half the original image size
+        target_size = 15  # Half of 29px
+        dot_container.setFixedSize(target_size, target_size)
+        print(f"DEBUG: Dot size set to: {target_size}x{target_size}")
+        
+        # Create the outline (always visible) - positioned absolutely
+        outline_label = QLabel(dot_container)
+        outline_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        outline_label.setFixedSize(target_size, target_size)
+        outline_label.move(0, 0)
+        
+        # Create the fill (layered on top) - positioned absolutely
+        fill_label = QLabel(dot_container)
+        fill_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        fill_label.setFixedSize(target_size, target_size)
+        fill_label.move(0, 0)
+        
+        # Load and scale images
+        if os.path.exists(empty_dot_path):
+            outline_pixmap = QPixmap(empty_dot_path)
+            scaled_outline = outline_pixmap.scaled(target_size, target_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            outline_label.setPixmap(scaled_outline)
+            print(f"DEBUG: Loaded and scaled outline image for dot {step_index}")
+        else:
+            outline_label.setText("○")
+            outline_label.setStyleSheet("color: #666666; font-size: 10px;")
+            print(f"DEBUG: Using fallback outline text for dot {step_index}")
+        
+        if os.path.exists(filled_dot_path):
+            fill_pixmap = QPixmap(filled_dot_path)
+            scaled_fill = fill_pixmap.scaled(target_size, target_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            fill_label.setPixmap(scaled_fill)
+            print(f"DEBUG: Loaded and scaled fill image for dot {step_index}")
+        else:
+            fill_label.setText("●")
+            fill_label.setStyleSheet("color: #FFFFFF; font-size: 10px;")
+            print(f"DEBUG: Using fallback fill text for dot {step_index}")
+        
+        # Ensure fill is on top by raising it
+        fill_label.raise_()
+        
+        # Store references for easy access
+        dot_container.outline_label = outline_label
+        dot_container.fill_label = fill_label
+        dot_container.empty_image_path = empty_dot_path
+        dot_container.filled_image_path = filled_dot_path
+        
+        # Handle mouse clicks
+        def on_dot_clicked(event):
+            self._on_dot_clicked(step_index)
+        
+        dot_container.mousePressEvent = on_dot_clicked
+        
+        print(f"DEBUG: Created dot container {step_index}")
+        return dot_container
+
+    def _update_sub_nav_state(self, current_step):
+        """Update the visual state using proper two-layer dot images"""
+        if not hasattr(self, 'sub_nav_dots') or not self.sub_nav_dots:
+            return
+        
+        self.current_sub_step = current_step
+        
+        for i, dot_container in enumerate(self.sub_nav_dots):
+            is_active = i == current_step
+            is_completed = i < current_step
+            
+            # The outline is always visible (no changes needed)
+            
+            # Control the fill layer visibility and opacity
+            fill_label = dot_container.fill_label
+            
+            if is_active:
+                # Active step - show fill at full opacity
+                fill_label.setVisible(True)
+                effect = QGraphicsOpacityEffect()
+                effect.setOpacity(1.0)
+                fill_label.setGraphicsEffect(effect)
+            elif is_completed:
+                # Completed step - show fill at reduced opacity
+                fill_label.setVisible(True)
+                effect = QGraphicsOpacityEffect()
+                effect.setOpacity(0.6)
+                fill_label.setGraphicsEffect(effect)
+            else:
+                # Future step - hide fill (only outline visible)
+                fill_label.setVisible(False)
+
+    def _on_step_changed(self, step_index):
+        """Handle step changes from the image widget"""
+        self._update_sub_nav_state(step_index)
+
+    def _on_dot_clicked(self, step_index):
+        """Handle dot clicks for sub-navigation"""
+        if hasattr(self, 'image_display_widget'):
+            self.image_display_widget.jump_to_step(step_index)
+        
+        # Emit signal for external handlers
+        self.sub_nav_requested.emit(step_index)
+
+    def get_current_sub_step(self):
+        """Get the current sub-step index"""
+        return self.current_sub_step
+
+    def get_total_sub_steps(self):
+        """Get the total number of sub-steps"""
+        if hasattr(self, 'image_display_widget'):
+            return self.image_display_widget.get_total_steps()
+        return 0
+
 
 class TutorialSlideshow(QDialog):
     """Modern, animated tutorial slideshow"""
@@ -572,18 +848,37 @@ class TutorialSlideshow(QDialog):
         self._setup_animations()
     
     def _setup_slides(self):
-        """Setup the tutorial slides using the central configuration."""
-        app_name = TUTORIAL_CONTENT.get('app_name', 'Echelon')
+        """Setup slides from configuration data"""
+        from .config import CUSTOM_SLIDESHOW_CONTENT
+        self.slides_data = CUSTOM_SLIDESHOW_CONTENT
+        self.slides = []
         
-        self.slides_data = []
-        for slide_config in CUSTOM_SLIDESHOW_CONTENT:
-            processed_slide = slide_config.copy()
-            if 'title' in processed_slide and processed_slide['title']:
-                processed_slide['title'] = processed_slide['title'].format(app_name=app_name)
-            if 'content' in processed_slide and processed_slide['content']:
-                processed_slide['content'] = processed_slide['content'].format(app_name=app_name)
-            self.slides_data.append(processed_slide)
-    
+        # Create slide widgets
+        for i, slide_data in enumerate(self.slides_data):
+            slide = SlideshowSlide(
+                title=slide_data['title'],
+                content=slide_data['content'],
+                slide_index=i,
+                image_path=slide_data.get('image_path'),
+                animation_data=slide_data.get('animation_data'),
+                arrow_data=slide_data.get('arrow_data'),
+                crop_rect=slide_data.get('crop_rect'),
+                arrow_delay=slide_data.get('arrow_delay'),
+                arrow_image_path=slide_data.get('arrow_image_path'),
+                multi_step_sequence=slide_data.get('multi_step_sequence')
+            )
+            
+            # Connect sub-navigation signals
+            slide.sub_nav_requested.connect(self._on_sub_nav_requested)
+            
+            self.slides.append(slide)
+
+    def _on_sub_nav_requested(self, step_index):
+        """Handle sub-navigation requests from slides"""
+        # This signal comes from individual slides when user clicks on sub-nav dots
+        # The slide handles the animation jump internally, we just need to acknowledge
+        pass
+
     def _setup_ui(self):
         """Setup the main slideshow UI"""
         self.setWindowTitle("Welcome to Echelon - Quick Start Guide")
@@ -611,22 +906,8 @@ class TutorialSlideshow(QDialog):
         self.slide_stack = QStackedWidget()
         self.slide_stack.setStyleSheet(f"background-color: {get_color('bg')};")
         
-        # Create slides
-        self.slides = []
-        for index, slide_data in enumerate(self.slides_data):
-            slide = SlideshowSlide(
-                slide_data['title'],
-                slide_data['content'],
-                slide_index=index,
-                image_path=slide_data.get('image_path'),
-                animation_data=slide_data.get('animation_data'),
-                arrow_data=slide_data.get('arrow_data'),
-                crop_rect=slide_data.get('crop_rect'),
-                arrow_delay=slide_data.get('arrow_delay'),
-                arrow_image_path=slide_data.get('arrow_image_path'),
-                multi_step_sequence=slide_data.get('multi_step_sequence')
-            )
-            self.slides.append(slide)
+        # Add slides to stack
+        for slide in self.slides:
             self.slide_stack.addWidget(slide)
         
         main_layout.addWidget(self.slide_stack)
@@ -643,7 +924,14 @@ class TutorialSlideshow(QDialog):
                 border-radius: 16px;
             }}
         """)
-    
+        
+        # Setup animations
+        self._setup_animations()
+        
+        # Set initial slide
+        self.slide_stack.setCurrentIndex(0)
+        self.progress_bar.setValue(1)
+
     def _create_header(self):
         """Create the header with progress bar"""
         header = QFrame()
@@ -685,7 +973,7 @@ class TutorialSlideshow(QDialog):
     def _create_footer(self):
         """Create the footer with navigation buttons"""
         footer = QFrame()
-        footer.setFixedHeight(80)
+        footer.setFixedHeight(80)  # Reduced since no sub-nav
         footer.setStyleSheet(f"""
             QFrame {{
                 background-color: {get_color('card_bg')};
@@ -863,8 +1151,4 @@ class TutorialSlideshow(QDialog):
         self.fade_animation.setEndValue(1.0)
         self.fade_animation.start()
         
-        # Start arrow animation for the initial slide if it has one
-        if self.slides and hasattr(self.slides[0], 'image_display_widget'):
-            self.slides[0].image_display_widget.start_arrow_animation()
-            
         super().showEvent(event) 

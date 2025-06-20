@@ -4,8 +4,7 @@
 """
 Tutorial State Management
 
-Handles saving and loading tutorial completion states, user preferences,
-and tutorial progress tracking.
+Manages tutorial completion state and user preferences.
 """
 
 from PyQt6.QtCore import QObject, pyqtSignal
@@ -13,75 +12,64 @@ from app.core.config_manager import get_app_preference, set_app_preference
 
 
 class TutorialState(QObject):
-    """Manages tutorial completion state and user preferences"""
+    """Manages tutorial state and preferences"""
     
     # Signals
     tutorial_completed = pyqtSignal(str)  # tutorial_id
     tutorial_skipped = pyqtSignal(str)    # tutorial_id
-    preference_changed = pyqtSignal(str, bool)  # key, value
     
     def __init__(self):
         super().__init__()
-        self._load_preferences()
+        self._load_state()
     
-    def _load_preferences(self):
-        """Load tutorial preferences from app config"""
+    def _load_state(self):
+        """Load tutorial state from preferences"""
+        # Load completion state
+        self.completed_tutorials = get_app_preference('tutorial_completed_tutorials', [])
+        
+        # Load preferences
         self.preferences = {
             'show_welcome_slideshow': get_app_preference('tutorial_show_welcome_slideshow', True),
-            'show_guided_tour': get_app_preference('tutorial_show_guided_tour', True),
-            'auto_start_tutorials': get_app_preference('tutorial_auto_start', True),
+            'auto_start_tutorials': get_app_preference('tutorial_auto_start_tutorials', True),
             'slideshow_auto_advance': get_app_preference('tutorial_slideshow_auto_advance', False),
-            'slideshow_speed': get_app_preference('tutorial_slideshow_speed', 4000),  # 4 seconds
+            'slideshow_speed': get_app_preference('tutorial_slideshow_speed', 4000),
         }
-        
-        self.completed_tutorials = get_app_preference('tutorial_completed_tutorials', [])
-        if not isinstance(self.completed_tutorials, list):
-            self.completed_tutorials = []
     
-    def save_preferences(self):
-        """Save current preferences to app config"""
+    def _save_state(self):
+        """Save tutorial state to preferences"""
+        set_app_preference('tutorial_completed_tutorials', self.completed_tutorials)
+        
+        # Save preferences
         for key, value in self.preferences.items():
             set_app_preference(f'tutorial_{key}', value)
-        
-        set_app_preference('tutorial_completed_tutorials', self.completed_tutorials)
-    
-    def is_tutorial_completed(self, tutorial_id):
-        """Check if a specific tutorial has been completed"""
-        return tutorial_id in self.completed_tutorials
     
     def mark_tutorial_completed(self, tutorial_id):
         """Mark a tutorial as completed"""
         if tutorial_id not in self.completed_tutorials:
             self.completed_tutorials.append(tutorial_id)
-            self.save_preferences()
+            self._save_state()
             self.tutorial_completed.emit(tutorial_id)
     
     def mark_tutorial_skipped(self, tutorial_id):
-        """Mark a tutorial as skipped (same as completed for state tracking)"""
+        """Mark a tutorial as skipped (not completed but don't show again)"""
+        # For now, treat skipped same as completed
         self.mark_tutorial_completed(tutorial_id)
         self.tutorial_skipped.emit(tutorial_id)
     
+    def is_tutorial_completed(self, tutorial_id):
+        """Check if a tutorial is completed"""
+        return tutorial_id in self.completed_tutorials
+    
     def reset_tutorial(self, tutorial_id):
-        """Reset a specific tutorial (mark as not completed)"""
+        """Reset a specific tutorial's completion state"""
         if tutorial_id in self.completed_tutorials:
             self.completed_tutorials.remove(tutorial_id)
-            self.save_preferences()
+            self._save_state()
     
     def reset_all_tutorials(self):
-        """Reset all tutorials (mark all as not completed)"""
-        self.completed_tutorials.clear()
-        self.save_preferences()
-    
-    def get_preference(self, key, default=None):
-        """Get a tutorial preference value"""
-        return self.preferences.get(key, default)
-    
-    def set_preference(self, key, value):
-        """Set a tutorial preference value"""
-        if key in self.preferences and self.preferences[key] != value:
-            self.preferences[key] = value
-            self.save_preferences()
-            self.preference_changed.emit(key, value)
+        """Reset all tutorial completion state"""
+        self.completed_tutorials = []
+        self._save_state()
     
     def should_show_tutorial(self, tutorial_id):
         """Determine if a tutorial should be shown based on state and preferences"""
@@ -92,8 +80,6 @@ class TutorialState(QObject):
         # Check specific preferences
         if tutorial_id == 'welcome_slideshow':
             return self.get_preference('show_welcome_slideshow', True)
-        elif tutorial_id == 'guided_tour':
-            return self.get_preference('show_guided_tour', True)
         
         # Default to showing if auto_start is enabled
         return self.get_preference('auto_start_tutorials', True)
@@ -104,6 +90,15 @@ class TutorialState(QObject):
     
     def get_tutorial_progress(self):
         """Get overall tutorial completion progress as a percentage"""
-        total_tutorials = 2  # welcome_slideshow, guided_tour
+        total_tutorials = 1  # Only welcome_slideshow now
         completed = len(self.completed_tutorials)
-        return min(100, (completed / total_tutorials) * 100) 
+        return min(100, (completed / total_tutorials) * 100)
+    
+    def get_preference(self, key, default=None):
+        """Get a tutorial preference value"""
+        return self.preferences.get(key, default)
+    
+    def set_preference(self, key, value):
+        """Set a tutorial preference value"""
+        self.preferences[key] = value
+        self._save_state() 

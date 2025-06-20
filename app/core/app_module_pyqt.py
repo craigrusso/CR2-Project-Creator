@@ -217,7 +217,6 @@ class ProjectCreatorApp(QMainWindow):
             class DummyOnboarding:
                 def initialize(self): pass
                 def show_welcome(self): pass
-                def show_guided_tour(self): pass
                 def reset_tutorials(self): pass
             self.onboarding = DummyOnboarding()
             print("DEBUG: Using dummy onboarding system")
@@ -1190,10 +1189,7 @@ class ProjectCreatorApp(QMainWindow):
         welcome_tutorial_action.triggered.connect(self._show_welcome_tutorial)
         self.help_menu.addAction(welcome_tutorial_action)
         
-        # Guided tour
-        guided_tour_action = QAction("Show Guided Tour", self)
-        guided_tour_action.triggered.connect(self._show_guided_tour)
-        self.help_menu.addAction(guided_tour_action)
+
         
         # Reset tutorials
         reset_tutorials_action = QAction("Reset Tutorials", self)
@@ -2665,10 +2661,7 @@ class ProjectCreatorApp(QMainWindow):
         if hasattr(self, 'onboarding') and self.onboarding:
             self.onboarding.show_welcome()
     
-    def _show_guided_tour(self):
-        """Show the guided tour"""
-        if hasattr(self, 'onboarding') and self.onboarding:
-            self.onboarding.show_guided_tour()
+
     
     def _reset_tutorials(self):
         """Reset all tutorials"""

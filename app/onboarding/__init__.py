@@ -6,7 +6,6 @@ Onboarding Tutorial System
 
 A modular, self-contained tutorial system that provides:
 - Interactive slideshow tutorials for first-time users
-- Guided tooltip overlays for step-by-step walkthroughs
 - Tutorial state management and preferences
 - Easy integration with existing PyQt6 applications
 
@@ -15,13 +14,11 @@ The system is designed to be non-intrusive and easily removable if needed.
 
 from .tutorial_manager import TutorialManager
 from .slideshow import TutorialSlideshow
-from .guided_tour import GuidedTour
 from .tutorial_state import TutorialState
 
 __all__ = [
     'TutorialManager',
     'TutorialSlideshow', 
-    'GuidedTour',
     'TutorialState'
 ]
 

@@ -15,18 +15,8 @@ SLIDESHOW_CONFIG = {
     'animation_duration': 300,  # slide transition duration
 }
 
-# Guided tour configuration
-GUIDED_TOUR_CONFIG = {
-    'tooltip_size': (350, 250),  # (width, height)
-    'highlight_padding': 8,  # pixels around highlighted widget
-    'highlight_border_width': 3,
-    'animation_duration': 300,
-    'position_offset': (20, 20),  # (x, y) offset from target widget
-}
-
 # UI styling overrides (optional)
 STYLE_OVERRIDES = {
-    'tooltip_border_radius': 16,
     'slideshow_border_radius': 16,
     'progress_bar_height': 8,
     'button_spacing': 10,
@@ -38,46 +28,6 @@ TUTORIAL_CONTENT = {
     'welcome_title': '👋 Welcome to {app_name}!',
     'completion_message': '🎉 You\'re All Set!',
     'skip_confirmation': False,  # Whether to confirm before skipping
-}
-
-# Widget search patterns for guided tour
-# Add alternative names for your widgets here
-WIDGET_SEARCH_PATTERNS = {
-    'create_template_button': [
-        'create_template_btn',
-        'createTemplateButton', 
-        'btnCreateTemplate',
-        'new_template_button',
-        'add_template_btn'
-    ],
-    'template_name_field': [
-        'template_name',
-        'templateNameField',
-        'name_input',
-        'template_name_edit',
-        'template_title_field'
-    ],
-    'structure_editor': [
-        'structure_area',
-        'structureEditor',
-        'template_structure',
-        'file_tree',
-        'structure_tree_widget'
-    ],
-    'project_name_field': [
-        'project_name',
-        'projectNameField',
-        'name_field',
-        'project_name_edit',
-        'output_name_field'
-    ],
-    'template_gallery': [
-        'gallery',
-        'templateGallery',
-        'template_list',
-        'gallery_widget',
-        'template_view'
-    ]
 }
 
 # Feature flags
@@ -92,71 +42,16 @@ FEATURES = {
 # Default preferences
 DEFAULT_PREFERENCES = {
     'show_welcome_slideshow': True,
-    'show_guided_tour': True,
     'auto_start_tutorials': True,
     'slideshow_auto_advance': False,
     'slideshow_speed': SLIDESHOW_CONFIG['default_auto_advance_speed'],
-    'auto_start_guided_tour_after_slideshow': True,  # New setting
 }
-
-# Tutorial step customization
-# You can modify these to match your app's specific workflow
-CUSTOM_TOUR_STEPS = [
-    {
-        'id': 'create_template',
-        'title': '🎯 Create Your First Template',
-        'content': 'Click this button to create a new template. This will be your project blueprint!',
-        'target': 'create_template_button',
-        'highlight': True,
-        'wait_for_action': False,  # Whether to wait for user to perform the action
-    },
-    {
-        'id': 'name_template',
-        'title': '📝 Name Your Template',
-        'content': 'Give your template a descriptive name that represents the type of projects you\'ll create.',
-        'target': 'template_name_field',
-        'highlight': True,
-        'wait_for_action': False,
-    },
-    {
-        'id': 'build_structure',
-        'title': '📁 Drag Files & Folders',
-        'content': 'Drag files and folders from your computer into this area to build your project structure.',
-        'target': 'structure_editor',
-        'highlight': True,
-        'wait_for_action': False,
-    },
-    {
-        'id': 'smart_patterns',
-        'title': '⚡ Smart File Patterns',
-        'content': 'Right-click on any file to set up smart naming patterns. Files will be automatically renamed in new projects!',
-        'target': 'structure_editor',
-        'highlight': True,
-        'wait_for_action': False,
-    },
-    {
-        'id': 'create_project',
-        'title': '🚀 Create Projects',
-        'content': 'Enter a project name here and click "Create Project" to generate your new project instantly!',
-        'target': 'project_name_field',
-        'highlight': True,
-        'wait_for_action': False,
-    },
-    {
-        'id': 'template_gallery',
-        'title': '📊 Template Gallery',
-        'content': 'All your saved templates appear here. Click any template to use it for creating new projects.',
-        'target': 'template_gallery',
-        'highlight': True,
-        'wait_for_action': False,
-    }
-]
 
 # Slideshow customization
 CUSTOM_SLIDESHOW_CONTENT = [
     {
         'title': 'Welcome to Echelon',
-        'content': 'Create organized project structures with ease using templates and custom configurations.\n\n📁 Step 1: Create a Template\nFirst, you\'ll create a template that defines your project structure.\n\n• Click the "Create Template" button to get started\n• Give your template a descriptive name\n• This template will be reusable for all future projects of this type\n\nThink of it as creating a blueprint for your projects!',
+        'content': 'Create organized project structures with ease using templates and custom configurations.\n\n📁 Step 1: Create a Template\nFirst, you\'ll create a template that defines your project structure.\n\n• Click the "Add Template" button to get started\n• Give your template a descriptive name\n• This template will be reusable for all future projects of this type\n\nThink of it as creating a blueprint for your projects!',
         'image_path': 'sample_svgs/SLIDE 01.png',
         'duration': 6000  # Longer duration since there's more content
     },
@@ -207,13 +102,15 @@ CUSTOM_SLIDESHOW_CONTENT = [
     {
         'id': 'create_project',
         'title': '🚀 Step 4: Create Your Project',
-        'content': 'Ready to create a project? It\'s super simple:\n\n• Enter your project name in the text field\n• Choose your output location\n• Click "Create Project" and watch the magic happen!\n\nYou can also create multiple versions with date sequences for iterative work.',
-        'image_path': None,
+        'content': 'Ready to create a project? Now enter your project name in the Project Settings panel and then select a template that you want to use.\n\nQuick tip: To edit a template just double click it or right click it.',
+        'image_path': 'sample_svgs/SLIDE_04_BG.png',
+        'arrow_delay': 1500,
+        'arrow_image_path': 'sample_svgs/SLIDE_04_ARROW.png'
     },
     {
         'id': 'completion',
         'title': '🎉 You\'re All Set!',
-        'content': 'That\'s it! You now know how to:\n\n✅ Create reusable project templates\n✅ Add and organize files and folders\n✅ Set up smart file naming patterns\n✅ Generate new projects instantly\n\nReady to start creating amazing projects? Let\'s dive in!\n\nTip: You can always access this tutorial again from the Help menu.',
-        'image_path': None,
+        'content': 'That\'s it! You now know how to:\n\n✅ Create reusable project templates\n✅ Add and organize files and folders\n✅ Set up smart file naming patterns\n✅ Generate new projects instantly\n\nReady to start creating amazing projects? Click the "Create Project(s)" button to create your projects and you\'re done!\n\nTip: You can always access this tutorial again from the Help menu.',
+        'image_path': 'sample_svgs/SLIDE_05_BG.png',
     }
 ] 
