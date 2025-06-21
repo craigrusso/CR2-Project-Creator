@@ -568,7 +568,7 @@ class SlideshowSlide(QWidget):
         # Title
         self.title_label = QLabel(self.title)
         self.title_label.setFont(QFont(get_system_font(), 28, QFont.Weight.Bold))
-        self.title_label.setStyleSheet(f"color: {get_color('accent')}; margin-bottom: 10px;")
+        self.title_label.setStyleSheet("color: #FFFFFF; margin-bottom: 10px;")
         self.title_label.setWordWrap(True)
         text_layout.addWidget(self.title_label)
         

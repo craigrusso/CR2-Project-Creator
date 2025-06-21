@@ -51,35 +51,36 @@ DEFAULT_PREFERENCES = {
 CUSTOM_SLIDESHOW_CONTENT = [
     {
         'title': 'Welcome to Echelon',
-        'content': 'Create organized project structures with ease using templates and custom configurations.\n\n📁 Step 1: Create a Template\nFirst, you\'ll create a template that defines your project structure.\n\n• Click the "Add Template" button to get started\n• Give your template a descriptive name\n• This template will be reusable for all future projects of this type\n\nThink of it as creating a blueprint for your projects!',
-        'image_path': 'sample_svgs/SLIDE 01.png',
+        'content': 'Stop recreating the same project folders over and over again.\n\nEchelon lets you create smart project templates that automatically generate organized folder structures with intelligent file naming.\n\n📁 **Step 1: Create Your Template**\nClick the "Add Template" button to get started, then give your template a descriptive name.\n\n🎯 **What you\'ll learn next:**\n• Build your ideal project structure\n• Set up automatic file naming\n• Generate projects instantly\n\nReady to streamline your workflow? Let\'s begin!',
+        'image_path': 'sample_svgs/SLIDE_01.png',
         'duration': 6000  # Longer duration since there's more content
     },
     {
         'id': 'add_files',
-        'title': '📂 Step 2: Add Files & Folders',
-        'content': 'Next, you\'ll build your project structure by dragging files and folders.\n\n• Drag files and folders from your computer into the template area\n• Organize them exactly how you want your projects structured\n• You can create folders, add starter files, and set up your ideal workflow\n\nThis becomes your project template that you can use over and over!',
+        'title': '📂 Step 2: Build Your Structure',
+        'content': 'Now drag and drop files and folders from your computer to build your ideal project structure.\n\n✨ **Pro tip:** Include everything you typically need:\n• Starter files and documents\n• Folder hierarchies for assets, code, docs\n• Configuration files\n• README templates\n\nArrange everything exactly how you like it – this becomes your reusable blueprint!\n\n💡 The arrow shows you where to drop your files and folders.',
         'image_path': 'sample_svgs/SLIDE_02_BG.png',
         'arrow_delay': 1000,
         'arrow_image_path': 'sample_svgs/SLIDE_02_ARROW.png'
     },
     {
         'id': 'smart_patterns',
-        'title': '⚡ Step 3: Smart File Patterns',
-        'content': 'Here\'s the powerful part - smart file renaming!\n\n• Right-click on any file in your template structure\n• This opens a context menu with powerful options\n• Choose "Use Project Name" to automatically rename files\n• For more advanced naming options, you can select "Custom Naming Patterns"\n• Files will be renamed when you create new projects\n\nFor example: "MyTemplate.txt" becomes "MyNewProject.txt" automatically!',
+        'title': '⚡ Step 3: Add Smart Naming',
+        'content': 'Here\'s where the magic happens! Make your files automatically rename themselves.\n\n🎯 **Watch this:** Right-click any file in your template to see the context menu.\n\n**Choose "Use Project Name"** and that file will automatically update its name when you create new projects.\n\n**Need more control?** Select "Custom Naming Patterns" for advanced options.\n\n💡 **Example:** "Template_README.md" becomes "MyAwesomeProject_README.md" automatically!',
         'image_path': 'sample_svgs/SLIDE_03_BG.png',
         'multi_step_sequence': [
             {
                 'step': 1,
                 'delay': 1000,
                 'action': 'show_arrow',
-                'arrow_image': 'sample_svgs/SLIDE_03_ARROW.png',
+                'arrow_image': 'sample_svgs/SLIDE_03_ARROW_01.png',
                 'description': 'Right-click on any file to access smart naming options'
             },
             {
                 'step': 2,
-                'delay': 3000,
+                'delay': 2500,
                 'action': 'fade_arrow_show_overlay',
+                'fade_out_arrow': 'sample_svgs/SLIDE_03_ARROW_01.png',
                 'overlay_image': 'sample_svgs/SLIDE_03_MENU.png',
                 'description': 'Context menu appears with powerful options'
             },
@@ -101,16 +102,16 @@ CUSTOM_SLIDESHOW_CONTENT = [
     },
     {
         'id': 'create_project',
-        'title': '🚀 Step 4: Create Your Project',
-        'content': 'Ready to create a project? Now enter your project name in the Project Settings panel and then select a template that you want to use.\n\nQuick tip: To edit a template just double click it or right click it.',
+        'title': '🚀 Step 4: Set Up Your Project',
+        'content': 'Your template is ready! Now let\'s set up your new project.\n\n**Enter your project name(s)** in the left panel. You can create multiple projects at once by entering several names.\n\n**Then select your template** on the right side to use for your new project(s).\n\n🎯 **Power Feature: Sequence Variations**\nCheck "Create sequence variations" to automatically generate multiple project versions:\n• **Date Sequences** → MyProject_2024-01-01, MyProject_2024-01-02...\n• **Version Numbers** → MyProject_V01, MyProject_V02...\n• **Sequential Numbers** → MyProject_001, MyProject_002...\n\nPerfect for versioned work, daily tracking, or batch project creation!\n\n💡 **Pro tip:** You can edit any template anytime by double-clicking it, or create variations for different project types.',
         'image_path': 'sample_svgs/SLIDE_04_BG.png',
         'arrow_delay': 1500,
         'arrow_image_path': 'sample_svgs/SLIDE_04_ARROW.png'
     },
     {
         'id': 'completion',
-        'title': '🎉 You\'re All Set!',
-        'content': 'That\'s it! You now know how to:\n\n✅ Create reusable project templates\n✅ Add and organize files and folders\n✅ Set up smart file naming patterns\n✅ Generate new projects instantly\n\nReady to start creating amazing projects? Click the "Create Project(s)" button to create your projects and you\'re done!\n\nTip: You can always access this tutorial again from the Help menu.',
+        'title': '🎉 Click "Create Project(s)" and You\'re Done!',
+        'content': 'This is it – the moment of magic! **Click the "Create Project(s)" button** and watch Echelon generate your complete project structure with all files properly named and organized.\n\n**You\'ve just learned how to:**\n✅ Build smart, reusable project templates\n✅ Set up automatic file and folder naming\n✅ Generate perfectly organized projects in seconds\n✅ Create multiple projects simultaneously\n\n🚀 **Ready to transform your workflow?** \nGo ahead and create your first template – your future self will thank you!\n\n💡 *Find this tutorial anytime in the Help menu.*',
         'image_path': 'sample_svgs/SLIDE_05_BG.png',
     }
 ] 
