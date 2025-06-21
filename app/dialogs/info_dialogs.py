@@ -87,7 +87,7 @@ def show_tutorial(app):
     header_layout.setContentsMargins(0, 0, 0, 0)
     header_layout.setSpacing(4)
     
-    title_label = QLabel("📚 Echelon User Guide")
+    title_label = QLabel("Echelon User Guide")
     font = title_label.font()
     font.setBold(True)
     font.setPointSize(18)
@@ -108,164 +108,105 @@ def show_tutorial(app):
     
     # Add tabs with modern, comprehensive content
     tabs = {
-        "🎯 Quick Start": f"""
-<h3>🚀 Get Started in 5 Minutes</h3>
+        "Quick Start": f"""
+<h3>Get Started in 5 Minutes</h3>
 <p>New to Echelon? This quick overview will have you creating projects in minutes.</p>
 
-<h4>🎬 Watch the Welcome Tutorial</h4>
-<p>First time here? Go to <b>Help > Show Welcome Tutorial</b> for a visual walkthrough of the core workflow.</p>
+<h4>Watch the Welcome Tutorial</h4>
+<p>First time here? Go to <strong>Help > Show Welcome Tutorial</strong> for a visual walkthrough of the core workflow.</p>
 
-<h4>⚡ The 4-Step Workflow</h4>
+<h4>The 4-Step Workflow</h4>
 <ol>
-    <li><b>📁 Create Template:</b> Click "Add Template" → Build your ideal project structure</li>
-    <li><b>🏷️ Smart Naming:</b> Right-click files → Select "Use Project Name" for automatic renaming</li>
-    <li><b>📝 Enter Names:</b> Type your project name(s) in the left panel</li>
-    <li><b>🎉 Create:</b> Select template + Click "Create Project(s)" = Done!</li>
+    <li><strong>Build Template:</strong> Start with example templates or create your own structure</li>
+    <li><strong>Smart Naming:</strong> Right-click files → Select "Use Project Name" for automatic renaming</li>
+    <li><strong>Enter Names:</strong> Type your project name(s) in the left panel</li>
+    <li><strong>Create:</strong> Select template + Click "Create Project(s)" = Done!</li>
 </ol>
 
-<h4>💡 Pro Tips for Beginners</h4>
+<h4>Example Templates</h4>
+<p>Echelon includes built-in example templates to get you started:</p>
 <ul>
-    <li><b>Start Simple:</b> Create your first template with just a few folders and files</li>
-    <li><b>Use Examples:</b> Check out the built-in example templates for inspiration</li>
-    <li><b>Drag & Drop:</b> Build structures by dragging files/folders from your computer</li>
-    <li><b>Test First:</b> Create a test project to see how your template works</li>
+    <li><strong>Web Development:</strong> HTML, CSS, JavaScript project structure</li>
+    <li><strong>Video Production:</strong> Organized folders for footage, audio, exports</li>
+    <li><strong>Design Projects:</strong> Assets, mockups, and deliverables structure</li>
+    <li><strong>Music Production:</strong> Tracks, samples, and project organization</li>
+    <li><strong>General Projects:</strong> Basic folder structures for any workflow</li>
 </ul>
 
-<h4>🔗 Next Steps</h4>
-<p>Once you've created your first project, explore the other tabs for advanced features like:</p>
+<h4>Customizing Your Environment</h4>
 <ul>
-    <li><b>Smart Naming:</b> Automatic file renaming with variables</li>
-    <li><b>Batch Creation:</b> Generate multiple projects at once</li>
-    <li><b>Team Workflows:</b> Share templates and collaborate</li>
-</ul>
-""",
-        "🚀 Project Creation": f"""
-<h3>📂 Master Project Creation</h3>
-<p>Transform your templates into organized project structures with powerful automation features.</p>
-
-<h4>🎯 Basic Project Creation</h4>
-<ol>
-    <li><b>Select Template:</b> Click any template in the gallery (right side) - it will highlight when selected</li>
-    <li><b>Enter Project Name:</b> Type your project name in the left panel text box</li>
-    <li><b>Choose Location:</b> Click "Browse..." to select where projects will be created</li>
-    <li><b>Create:</b> Hit "Create Project(s)" and watch the magic happen!</li>
-</ol>
-
-<h4>⚡ Batch Project Creation</h4>
-<p>Create multiple projects simultaneously with these input methods:</p>
-<ul>
-    <li><b>Line Breaks:</b> One project per line</li>
-    <li><b>Commas:</b> <code>Project A, Project B, Project C</code></li>
-    <li><b>Semicolons:</b> <code>Video 1; Video 2; Video 3</code></li>
-    <li><b>Mixed:</b> Combine any separators as needed</li>
-</ul>
-<p><b>Example batch input:</b></p>
-<pre><code>Marketing Campaign 2024
-Social Media Video
-Product Demo, Tutorial Series
-Brand Guidelines; Style Guide</code></pre>
-<p><i>This creates 6 separate projects automatically!</i></p>
-
-<h4>🎛️ Sequence Variations (Power Feature)</h4>
-<p>Check <b>"Create sequence variations"</b> to automatically generate multiple project versions:</p>
-
-<h5>📅 Date Sequences</h5>
-<ul>
-    <li><b>Daily:</b> <code>MyProject_2024-01-01, MyProject_2024-01-02...</code></li>
-    <li><b>Weekly:</b> <code>MyProject_2024-01-01, MyProject_2024-01-08...</code></li>
-    <li><b>Monthly:</b> <code>MyProject_2024-01-01, MyProject_2024-02-01...</code></li>
-    <li><b>Custom Formats:</b> YYYY-MM-DD, YYYYMMDD, MM/DD/YYYY, and more</li>
+    <li><strong>Hide Examples:</strong> Go to <strong>Edit > Preferences > Templates</strong> and uncheck "Show example templates" to clean up your gallery</li>
+    <li><strong>Categories:</strong> Organize templates into custom categories for better workflow</li>
+    <li><strong>Start Simple:</strong> Begin with example templates, then customize or create your own</li>
 </ul>
 
-<h5>🏷️ Version Numbers</h5>
+<h4>Next Steps</h4>
+<p>Once you understand the basics, explore the other tabs to learn about:</p>
 <ul>
-    <li><b>Standard:</b> <code>MyProject_V01, MyProject_V02, MyProject_V03...</code></li>
-    <li><b>Formats:</b> V1/v1, Ver1, Version1 - choose your style</li>
-    <li><b>Prefix/Suffix:</b> Put versions before or after project names</li>
-</ul>
-
-<h5>🔢 Sequential Numbers</h5>
-<ul>
-    <li><b>Basic:</b> <code>MyProject_001, MyProject_002, MyProject_003...</code></li>
-    <li><b>Padding:</b> 1-digit, 2-digit, or 3-digit formatting</li>
-    <li><b>Custom Start:</b> Begin numbering from any value</li>
-</ul>
-
-<h4>📊 Project Creation Results</h4>
-<p>After creation, Echelon shows you:</p>
-<ul>
-    <li><b>Success Count:</b> How many projects were created successfully</li>
-    <li><b>Detailed Report:</b> Individual results for each project</li>
-    <li><b>Error Handling:</b> Clear messages for any issues encountered</li>
-    <li><b>File Locations:</b> Direct links to your new project folders</li>
-</ul>
-
-<h4>🕒 Recent Projects & Templates</h4>
-<ul>
-    <li><b>File > Recent Projects:</b> Quick access to recently created project folders</li>
-    <li><b>File > Recent Templates:</b> Jump back to templates you've used</li>
-    <li><b>Smart Suggestions:</b> Echelon remembers your workflow patterns</li>
+    <li><strong>Template Building:</strong> Create custom templates from scratch</li>
+    <li><strong>Smart Naming:</strong> Automatic file renaming with variables</li>
+    <li><strong>Batch Creation:</strong> Generate multiple projects at once</li>
 </ul>
 """,
-        "🎨 Templates & Smart Naming": f"""
-<h3>🏗️ Build Intelligent Templates</h3>
+        "Templates": f"""
+<h3>Build Intelligent Templates</h3>
 <p>Create reusable project blueprints with automatic file naming and advanced customization.</p>
 
-<h4>📁 Template Gallery Navigation</h4>
+<h4>Template Gallery Navigation</h4>
 <ul>
-    <li><b>Grid/List View:</b> Toggle between visual cards and detailed list views</li>
-    <li><b>Search & Filter:</b> Find templates by name, description, category, or tags</li>
-    <li><b>Categories:</b> Organize templates into logical groups (Web, Video, Design, etc.)</li>
-    <li><b>Folders:</b> Create custom folders and drag templates to organize your workflow</li>
+    <li><strong>Grid/List View:</strong> Toggle between visual cards and detailed list views</li>
+    <li><strong>Search & Filter:</strong> Find templates by name, description, category, or tags</li>
+    <li><strong>Categories:</strong> Organize templates into logical groups (Web, Video, Design, etc.)</li>
+    <li><strong>Folders:</strong> Create custom folders and drag templates to organize your workflow</li>
 </ul>
 
-<h4>⚡ Template Actions</h4>
+<h4>Template Actions</h4>
 <ul>
-    <li><b>Single-Click:</b> Select template for project creation</li>
-    <li><b>Double-Click:</b> Open template editor for modifications</li>
-    <li><b>Right-Click Menu:</b>
+    <li><strong>Single-Click:</strong> Select template for project creation</li>
+    <li><strong>Double-Click:</strong> Open template editor for modifications</li>
+    <li><strong>Right-Click Menu:</strong>
         <ul>
-            <li><b>Edit (✏️):</b> Modify template structure and settings</li>
-            <li><b>Duplicate (📋):</b> Create a copy for customization</li>
-            <li><b>Delete (🗑️):</b> Permanently remove template</li>
+            <li><strong>Edit:</strong> Modify template structure and settings</li>
+            <li><strong>Duplicate:</strong> Create a copy for customization</li>
+            <li><strong>Delete:</strong> Permanently remove template</li>
         </ul>
     </li>
 </ul>
 
-<h4>🎯 Creating New Templates</h4>
+<h4>Creating New Templates</h4>
 <ol>
-    <li><b>Start:</b> Click "Add Template" or <b>File > New Template...</b></li>
-    <li><b>Details:</b> Enter name, category, description, and optional tags</li>
-    <li><b>Structure:</b> Switch to Structure tab and build your project layout</li>
-    <li><b>Build Methods:</b>
+    <li><strong>Start:</strong> Click "Add Template" or <strong>File > New Template...</strong></li>
+    <li><strong>Details:</strong> Enter name, category, description, and optional tags</li>
+    <li><strong>Structure:</strong> Switch to Structure tab and build your project layout</li>
+    <li><strong>Build Methods:</strong>
         <ul>
-            <li><b>Drag & Drop:</b> Pull files/folders from your computer</li>
-            <li><b>Manual Creation:</b> Use "Add Folder" and "Add File" buttons</li>
-            <li><b>Source Files:</b> Link actual files to be copied into projects</li>
+            <li><strong>Drag & Drop:</strong> Pull files/folders from your computer</li>
+            <li><strong>Manual Creation:</strong> Use "Add Folder" and "Add File" buttons</li>
+            <li><strong>Source Files:</strong> Link actual files to be copied into projects</li>
         </ul>
     </li>
 </ol>
 
-<h4>🧠 Smart Naming System</h4>
+<h4>Smart Naming System</h4>
 <p>Make your files automatically rename themselves when creating projects:</p>
 
-<h5>🏷️ Basic Smart Naming</h5>
+<h5>Basic Smart Naming</h5>
 <ul>
-    <li><b>Right-click any file</b> in your template structure</li>
-    <li><b>Select "Use Project Name"</b> - file will auto-rename with project name</li>
-    <li><b>Example:</b> <code>Template_README.md</code> → <code>MyProject_README.md</code></li>
+    <li><strong>Right-click any file</strong> in your template structure</li>
+    <li><strong>Select "Use Project Name"</strong> - file will auto-rename with project name</li>
+    <li><strong>Example:</strong> <code>Template_README.md</code> → <code>MyProject_README.md</code></li>
 </ul>
 
-<h5>🎛️ Advanced Custom Patterns</h5>
-<p>For power users, select <b>"Custom Naming Patterns"</b> to access variables:</p>
+<h5>Advanced Custom Patterns</h5>
+<p>For power users, select <strong>"Custom Naming Patterns"</strong> to access variables:</p>
 <ul>
-    <li><b>${{PROJECT_NAME}}:</b> Inserts the project name</li>
-    <li><b>${{DATE}}:</b> Adds current date in various formats</li>
-    <li><b>${{SEQUENCE}}:</b> Sequential numbering for batch projects</li>
-    <li><b>${{CUSTOM}}:</b> User-defined variables for complex workflows</li>
+    <li><strong>${{PROJECT_NAME}}:</strong> Inserts the project name</li>
+    <li><strong>${{DATE}}:</strong> Adds current date in various formats</li>
+    <li><strong>${{SEQUENCE}}:</strong> Sequential numbering for batch projects</li>
+    <li><strong>${{CUSTOM}}:</strong> User-defined variables for complex workflows</li>
 </ul>
 
-<h5>📝 Pattern Examples</h5>
+<h5>Pattern Examples</h5>
 <pre><code># Basic patterns
 ${{PROJECT_NAME}}_Script.docx
 ${{PROJECT_NAME}}_v01.prproj
@@ -277,125 +218,193 @@ Meeting_Notes_${{DATE:MM-DD-YYYY}}.docx
 # Advanced combinations
 ${{PROJECT_NAME}}_Draft_${{SEQUENCE:001}}_${{DATE:YYYYMMDD}}.pdf</code></pre>
 
-<h4>🔧 Template Management</h4>
-<h5>📤 Import/Export</h5>
+<h4>Template Management</h4>
+<h5>Import/Export</h5>
 <ul>
-    <li><b>Import:</b> <code>File > Import Template...</code> - Load .zip template packages</li>
-    <li><b>Export Single:</b> Right-click template → Export for sharing</li>
-    <li><b>Export All:</b> <code>File > Export > All Settings...</code> - Complete backup</li>
+    <li><strong>Import:</strong> <code>File > Import Template...</code> - Load .zip template packages</li>
+    <li><strong>Export Single:</strong> Right-click template → Export for sharing</li>
+    <li><strong>Export All:</strong> <code>File > Export > All Settings...</code> - Complete backup</li>
 </ul>
 
-<h5>💾 File Caching</h5>
+<h5>File Caching</h5>
 <ul>
-    <li><b>Automatic:</b> Source files are cached for faster project creation</li>
-    <li><b>Efficient:</b> Templates work without accessing original file locations</li>
-    <li><b>Settings:</b> Manage cache in <code>Edit > Preferences > Cache</code></li>
+    <li><strong>Automatic:</strong> Source files are cached for faster project creation</li>
+    <li><strong>Efficient:</strong> Templates work without accessing original file locations</li>
+    <li><strong>Settings:</strong> Manage cache in <code>Edit > Preferences > Cache</code></li>
 </ul>
 
-<h4>👥 Team Collaboration</h4>
+<h4>Team Collaboration</h4>
 <ul>
-    <li><b>Shared Storage:</b> <code>Edit > Preferences > Storage</code> - Set network location</li>
-    <li><b>Template Sharing:</b> Export/import workflows for team consistency</li>
-    <li><b>Version Control:</b> Use template descriptions to track changes</li>
-        </ul>
+    <li><strong>Shared Storage:</strong> <code>Edit > Preferences > Storage</code> - Set network location</li>
+    <li><strong>Template Sharing:</strong> Export/import workflows for team consistency</li>
+    <li><strong>Version Control:</strong> Use template descriptions to track changes</li>
+</ul>
 """,
-        "🔧 Advanced Tips & Troubleshooting": f"""
-<h3>💡 Pro Tips & Problem Solving</h3>
+        "Project Creation": f"""
+<h3>Master Project Creation</h3>
+<p>Transform your templates into organized project structures with powerful automation features.</p>
+
+<h4>Basic Project Creation</h4>
+<ol>
+    <li><strong>Select Template:</strong> Click any template in the gallery (right side) - it will highlight when selected</li>
+    <li><strong>Enter Project Name:</strong> Type your project name in the left panel text box</li>
+    <li><strong>Choose Location:</strong> Click "Browse..." to select where projects will be created</li>
+    <li><strong>Create:</strong> Hit "Create Project(s)" and watch the magic happen!</li>
+</ol>
+
+<h4>Batch Project Creation</h4>
+<p>Create multiple projects simultaneously with these input methods:</p>
+<ul>
+    <li><strong>Line Breaks:</strong> One project per line</li>
+    <li><strong>Commas:</strong> <code>Project A, Project B, Project C</code></li>
+    <li><strong>Semicolons:</strong> <code>Video 1; Video 2; Video 3</code></li>
+    <li><strong>Mixed:</strong> Combine any separators as needed</li>
+</ul>
+<p><strong>Example batch input:</strong></p>
+<pre><code>Marketing Campaign 2024
+Social Media Video
+Product Demo, Tutorial Series
+Brand Guidelines; Style Guide</code></pre>
+<p><em>This creates 6 separate projects automatically!</em></p>
+
+<h4>⚙️ Sequence Variations (Power Feature)</h4>
+<p>Check <strong>"Create sequence variations"</strong> to automatically generate multiple project versions:</p>
+
+<h5>Date Sequences</h5>
+<ul>
+    <li><strong>Daily:</strong> <code>MyProject_2024-01-01, MyProject_2024-01-02...</code></li>
+    <li><strong>Weekly:</strong> <code>MyProject_2024-01-01, MyProject_2024-01-08...</code></li>
+    <li><strong>Monthly:</strong> <code>MyProject_2024-01-01, MyProject_2024-02-01...</code></li>
+    <li><strong>Custom Formats:</strong> YYYY-MM-DD, YYYYMMDD, MM/DD/YYYY, and more</li>
+</ul>
+
+<h5>Version Numbers</h5>
+<ul>
+    <li><strong>Standard:</strong> <code>MyProject_V01, MyProject_V02, MyProject_V03...</code></li>
+    <li><strong>Formats:</strong> V1/v1, Ver1, Version1 - choose your style</li>
+    <li><strong>Prefix/Suffix:</strong> Put versions before or after project names</li>
+</ul>
+
+<h5>Sequential Numbers</h5>
+<ul>
+    <li><strong>Basic:</strong> <code>MyProject_001, MyProject_002, MyProject_003...</code></li>
+    <li><strong>Padding:</strong> 1-digit, 2-digit, or 3-digit formatting</li>
+    <li><strong>Custom Start:</strong> Begin numbering from any value</li>
+</ul>
+
+<h4>Project Creation Results</h4>
+<p>After creation, Echelon shows you:</p>
+<ul>
+    <li><strong>Success Count:</strong> How many projects were created successfully</li>
+    <li><strong>Detailed Report:</strong> Individual results for each project</li>
+    <li><strong>Error Handling:</strong> Clear messages for any issues encountered</li>
+    <li><strong>File Locations:</strong> Direct links to your new project folders</li>
+</ul>
+
+<h4>Recent Projects & Templates</h4>
+<ul>
+    <li><strong>File > Recent Projects:</strong> Quick access to recently created project folders</li>
+    <li><strong>File > Recent Templates:</strong> Jump back to templates you've used</li>
+    <li><strong>Smart Suggestions:</strong> Echelon remembers your workflow patterns</li>
+</ul>
+""",
+        "Advanced": f"""
+<h3>Pro Tips & Problem Solving</h3>
 <p>Master advanced workflows and resolve common issues like a power user.</p>
 
-<h4>⚡ Power User Workflows</h4>
+<h4>Power User Workflows</h4>
 
-<h5>🚀 Productivity Shortcuts</h5>
+<h5>Productivity Shortcuts</h5>
 <ul>
-    <li><b>Keyboard Navigation:</b> Use arrow keys in template gallery, Enter to select</li>
-    <li><b>Quick Duplicate:</b> Right-click template → Duplicate for rapid variations</li>
-    <li><b>Batch Naming:</b> Use Excel/Sheets to generate project name lists, then copy-paste</li>
-    <li><b>Template Favorites:</b> Drag frequently used templates to Favorites folder</li>
+    <li><strong>Keyboard Navigation:</strong> Use arrow keys in template gallery, Enter to select</li>
+    <li><strong>Quick Duplicate:</strong> Right-click template → Duplicate for rapid variations</li>
+    <li><strong>Batch Naming:</strong> Use Excel/Sheets to generate project name lists, then copy-paste</li>
+    <li><strong>Template Favorites:</strong> Drag frequently used templates to Favorites folder</li>
 </ul>
 
-<h5>📊 Advanced Project Organization</h5>
+<h5>Advanced Project Organization</h5>
 <ul>
-    <li><b>Nested Structures:</b> Create deep folder hierarchies for complex projects</li>
-    <li><b>Conditional Files:</b> Use multiple templates for different project phases</li>
-    <li><b>Version Templates:</b> Create separate templates for Draft/Review/Final versions</li>
-    <li><b>Client Workflows:</b> Build client-specific templates with branded assets</li>
+    <li><strong>Nested Structures:</strong> Create deep folder hierarchies for complex projects</li>
+    <li><strong>Conditional Files:</strong> Use multiple templates for different project phases</li>
+    <li><strong>Version Templates:</strong> Create separate templates for Draft/Review/Final versions</li>
+    <li><strong>Client Workflows:</strong> Build client-specific templates with branded assets</li>
 </ul>
 
-<h4>🛠️ Common Issues & Solutions</h4>
+<h4>Common Issues & Solutions</h4>
 
-<h5>❌ Template Problems</h5>
+<h5>Template Problems</h5>
 <ul>
-    <li><b>Template Won't Save:</b> Check file permissions, ensure template name is unique</li>
-    <li><b>Missing Source Files:</b> Re-link files in template editor, check file paths</li>
-    <li><b>Structure Not Updating:</b> Refresh template gallery, restart Echelon if needed</li>
-    <li><b>Categories Missing:</b> Use "Manage Categories" to restore or recreate</li>
+    <li><strong>Template Won't Save:</strong> Check file permissions, ensure template name is unique</li>
+    <li><strong>Missing Source Files:</strong> Re-link files in template editor, check file paths</li>
+    <li><strong>Structure Not Updating:</strong> Refresh template gallery, restart Echelon if needed</li>
+    <li><strong>Categories Missing:</strong> Use "Manage Categories" to restore or recreate</li>
 </ul>
 
-<h5>🚫 Project Creation Failures</h5>
+<h5>Project Creation Failures</h5>
 <ul>
-    <li><b>Permission Denied:</b> Check output directory write permissions</li>
-    <li><b>Disk Space:</b> Ensure sufficient storage for all projects</li>
-    <li><b>Path Too Long:</b> Shorten project names or choose shorter output paths</li>
-    <li><b>Special Characters:</b> Avoid <code>\\/:*?"<>|</code> in project names</li>
+    <li><strong>Permission Denied:</strong> Check output directory write permissions</li>
+    <li><strong>Disk Space:</strong> Ensure sufficient storage for all projects</li>
+    <li><strong>Path Too Long:</strong> Shorten project names or choose shorter output paths</li>
+    <li><strong>Special Characters:</strong> Avoid <code>\\/:*?"<>|</code> in project names</li>
 </ul>
 
-<h5>⚙️ Performance Issues</h5>
+<h5>Performance Issues</h5>
 <ul>
-    <li><b>Slow Template Loading:</b> Clear cache in Preferences > Cache</li>
-    <li><b>Large File Handling:</b> Consider using file links instead of embedded files</li>
-    <li><b>Memory Usage:</b> Close unused template editors, restart app periodically</li>
+    <li><strong>Slow Template Loading:</strong> Clear cache in Preferences > Cache</li>
+    <li><strong>Large File Handling:</strong> Consider using file links instead of embedded files</li>
+    <li><strong>Memory Usage:</strong> Close unused template editors, restart app periodically</li>
 </ul>
 
-<h4>🔒 Data Management & Backup</h4>
+<h4>Data Management & Backup</h4>
 
-<h5>💾 Backup Strategies</h5>
+<h5>Backup Strategies</h5>
 <ul>
-    <li><b>Regular Exports:</b> Weekly exports of all templates and settings</li>
-    <li><b>Version Control:</b> Keep dated backups of important templates</li>
-    <li><b>Cloud Storage:</b> Store exports in Dropbox, Google Drive, or OneDrive</li>
-    <li><b>Team Sync:</b> Share template packages with team members regularly</li>
+    <li><strong>Regular Exports:</strong> Weekly exports of all templates and settings</li>
+    <li><strong>Version Control:</strong> Keep dated backups of important templates</li>
+    <li><strong>Cloud Storage:</strong> Store exports in Dropbox, Google Drive, or OneDrive</li>
+    <li><strong>Team Sync:</strong> Share template packages with team members regularly</li>
 </ul>
 
-<h5>🔄 Migration & Updates</h5>
+<h5>Migration & Updates</h5>
 <ul>
-    <li><b>New Computer:</b> Export all settings, install Echelon, import settings</li>
-    <li><b>App Updates:</b> Templates are preserved, but export before major updates</li>
-    <li><b>Shared Drives:</b> Test network permissions before switching storage locations</li>
+    <li><strong>New Computer:</strong> Export all settings, install Echelon, import settings</li>
+    <li><strong>App Updates:</strong> Templates are preserved, but export before major updates</li>
+    <li><strong>Shared Drives:</strong> Test network permissions before switching storage locations</li>
 </ul>
 
-<h4>🎯 Optimization Tips</h4>
+<h4>Optimization Tips</h4>
 
-<h5>⚡ Speed Improvements</h5>
+<h5>Speed Improvements</h5>
 <ul>
-    <li><b>Template Design:</b> Avoid excessive nesting, keep structures reasonable</li>
-    <li><b>File Sizes:</b> Use smaller source files when possible</li>
-    <li><b>Batch Limits:</b> Create 50 projects or fewer in single batch operations</li>
-    <li><b>Cache Maintenance:</b> Periodically clear cache to free disk space</li>
+    <li><strong>Template Design:</strong> Avoid excessive nesting, keep structures reasonable</li>
+    <li><strong>File Sizes:</strong> Use smaller source files when possible</li>
+    <li><strong>Batch Limits:</strong> Create 50 projects or fewer in single batch operations</li>
+    <li><strong>Cache Maintenance:</strong> Periodically clear cache to free disk space</li>
 </ul>
 
-<h5>🎨 User Experience</h5>
+<h5>User Experience</h5>
 <ul>
-    <li><b>Descriptive Names:</b> Use clear, searchable template names and descriptions</li>
-    <li><b>Consistent Categories:</b> Establish category naming conventions</li>
-    <li><b>Tag Everything:</b> Add relevant tags for better searchability</li>
-    <li><b>Regular Cleanup:</b> Archive or delete unused templates periodically</li>
+    <li><strong>Descriptive Names:</strong> Use clear, searchable template names and descriptions</li>
+    <li><strong>Consistent Categories:</strong> Establish category naming conventions</li>
+    <li><strong>Tag Everything:</strong> Add relevant tags for better searchability</li>
+    <li><strong>Regular Cleanup:</strong> Archive or delete unused templates periodically</li>
 </ul>
 
-<h4>🆘 Getting Help</h4>
+<h4>Getting Help</h4>
 <ul>
-    <li><b>Welcome Tutorial:</b> <code>Help > Show Welcome Tutorial</code> - Visual walkthrough</li>
-    <li><b>This Guide:</b> <code>Help > Tutorial</code> - Comprehensive reference</li>
-    <li><b>Reset Tutorials:</b> <code>Help > Reset Tutorials</code> - Start fresh</li>
-    <li><b>Check Updates:</b> <code>Help > Check for Updates</code> - Latest features</li>
-    <li><b>About Info:</b> <code>Help > About Echelon</code> - Version and system info</li>
+    <li><strong>Welcome Tutorial:</strong> <code>Help > Show Welcome Tutorial</code> - Visual walkthrough</li>
+    <li><strong>This Guide:</strong> <code>Help > Tutorial</code> - Comprehensive reference</li>
+    <li><strong>Reset Tutorials:</strong> <code>Help > Reset Tutorials</code> - Start fresh</li>
+    <li><strong>Check Updates:</strong> <code>Help > Check for Updates</code> - Latest features</li>
+    <li><strong>About Info:</strong> <code>Help > About Echelon</code> - Version and system info</li>
 </ul>
 
-<h4>🎓 Learning Resources</h4>
+<h4>Learning Resources</h4>
 <ul>
-    <li><b>Start Simple:</b> Begin with basic templates, add complexity gradually</li>
-    <li><b>Experiment:</b> Test templates with sample projects before important work</li>
-    <li><b>Community:</b> Share templates with colleagues, learn from their approaches</li>
-    <li><b>Documentation:</b> Keep notes on your template designs and naming conventions</li>
+    <li><strong>Start Simple:</strong> Begin with basic templates, add complexity gradually</li>
+    <li><strong>Experiment:</strong> Test templates with sample projects before important work</li>
+    <li><strong>Community:</strong> Share templates with colleagues, learn from their approaches</li>
+    <li><strong>Documentation:</strong> Keep notes on your template designs and naming conventions</li>
 </ul>
 """,
     }
@@ -499,7 +508,7 @@ ${{PROJECT_NAME}}_Draft_${{SEQUENCE:001}}_${{DATE:YYYYMMDD}}.pdf</code></pre>
             QLabel {{
                 color: {colors['text']};
                 line-height: 1.6;
-                font-size: 14px;
+                font-size: 16px;
             }}
             a {{ 
                 color: {colors['accent']}; 
@@ -510,7 +519,7 @@ ${{PROJECT_NAME}}_Draft_${{SEQUENCE:001}}_${{DATE:YYYYMMDD}}.pdf</code></pre>
             }}
             h3 {{ 
                 color: {colors['text']};
-                font-size: 20px;
+                font-size: 24px;
                 font-weight: 600;
                 margin: 0 0 16px 0;
                 padding-bottom: 8px;
@@ -518,27 +527,41 @@ ${{PROJECT_NAME}}_Draft_${{SEQUENCE:001}}_${{DATE:YYYYMMDD}}.pdf</code></pre>
             }}
             h4 {{ 
                 color: {colors['text']};
-                font-size: 16px;
+                font-size: 20px;
                 font-weight: 600;
                 margin: 24px 0 8px 0;
             }}
             h5 {{ 
                 color: {colors['accent']};
-                font-size: 14px;
+                font-size: 18px;
                 font-weight: 600;
                 margin: 16px 0 6px 0;
             }}
             p {{ 
                 margin: 0 0 12px 0; 
                 line-height: 1.6;
+                font-weight: 400;
             }}
             ul, ol {{ 
                 margin: 0 0 16px 0;
-                padding-left: 24px;
+                padding-left: 20px;
             }}
             li {{ 
-                margin-bottom: 6px;
-                line-height: 1.5;
+                margin-bottom: 8px;
+                line-height: 1.6;
+                font-weight: 400;
+            }}
+            ul ul, ol ol {{
+                margin: 8px 0 8px 0;
+                padding-left: 16px;
+            }}
+            strong {{
+                font-weight: 600;
+                color: {colors['text']};
+            }}
+            em {{
+                font-style: italic;
+                color: {colors['text']};
             }}
             code {{ 
                 background-color: {colors['bg']};
