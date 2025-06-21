@@ -1176,8 +1176,8 @@ class ProjectCreatorApp(QMainWindow):
         # Help menu
         self.help_menu = menubar.addMenu("Help")
         
-        # Tutorial action (existing)
-        tutorial_action = QAction("Tutorial", self)
+        # Comprehensive user guide (existing written tutorial)
+        tutorial_action = QAction("User Guide", self)
         tutorial_action.triggered.connect(lambda: show_tutorial(self))
         self.help_menu.addAction(tutorial_action)
         
