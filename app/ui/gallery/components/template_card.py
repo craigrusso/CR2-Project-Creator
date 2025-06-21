@@ -1106,11 +1106,11 @@ class TemplateCard(QFrame):
             
             print(f"Moving {len(template_names_to_move)} templates out of folder '{current_folder}': {template_names_to_move}")
             
-            # Move all templates out of folder
-            for template_name in template_names_to_move:
-                # EMIT THE SIGNAL first - this helps grid/list view compatibility
-                print(f"Emitting moveToFolderRequested signal for '{template_name}' to 'no folder'")
-                self.moveToFolderRequested.emit(template_name, "")
+            # Move all templates out of folder at once using GalleryEvents directly
+            # This ensures multi-selection works properly by calling the move operation once with all templates
+            from app.gallery.logic.gallery_events import GalleryEvents
+            GalleryEvents.on_move_template_to_folder(gallery, template_names_to_move, None)
+            print(f"Moved {len(template_names_to_move)} templates out of folder '{current_folder}' using GalleryEvents")
             
             # Refresh UI for immediate feedback
             from PyQt6.QtWidgets import QApplication
@@ -1251,11 +1251,11 @@ class TemplateCard(QFrame):
 
             print(f"Moving {len(template_names_to_move)} templates to folder '{folder_name}': {template_names_to_move}")
             
-            # Move all templates to folder
-            for template_name in template_names_to_move:
-                # EMIT THE SIGNAL first - this helps grid/list view compatibility
-                print(f"Emitting moveToFolderRequested signal for '{template_name}' to '{folder_name}'")
-                self.moveToFolderRequested.emit(template_name, folder_name)
+            # Move all templates to folder at once using GalleryEvents directly
+            # This ensures multi-selection works properly by calling the move operation once with all templates
+            from app.gallery.logic.gallery_events import GalleryEvents
+            GalleryEvents.on_move_template_to_folder(gallery, template_names_to_move, folder_name)
+            print(f"Moved {len(template_names_to_move)} templates to folder '{folder_name}' using GalleryEvents")
             
             # The success message will now rely on the outcome of the signal-slot mechanism.
             # For immediate feedback, we might need a way for the signal handler to report back, 
