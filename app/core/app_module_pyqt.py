@@ -206,17 +206,24 @@ class ProjectCreatorApp(QMainWindow):
         # Initialize onboarding system after UI is set up
         print("DEBUG: Setting up onboarding system...")
         try:
+            print("DEBUG: Importing OnboardingIntegration...")
             from app.onboarding.integration import OnboardingIntegration
+            print("DEBUG: Creating OnboardingIntegration instance...")
             self.onboarding = OnboardingIntegration(self)
+            print("DEBUG: Setting up UI references...")
             self.onboarding.setup_ui_references()
+            print("DEBUG: Initializing onboarding...")
             self.onboarding.initialize()
             print("DEBUG: Onboarding system setup complete")
         except Exception as e:
             print(f"DEBUG: Onboarding system setup failed: {e}")
+            import traceback
+            traceback.print_exc()
             # Create a dummy onboarding object to prevent AttributeError
             class DummyOnboarding:
                 def initialize(self): pass
-                def show_welcome(self): pass
+                def show_welcome(self): 
+                    print("DEBUG: DummyOnboarding.show_welcome called")
                 def reset_tutorials(self): pass
             self.onboarding = DummyOnboarding()
             print("DEBUG: Using dummy onboarding system")
@@ -1195,6 +1202,13 @@ class ProjectCreatorApp(QMainWindow):
         reset_tutorials_action = QAction("Reset Tutorials", self)
         reset_tutorials_action.triggered.connect(self._reset_tutorials)
         self.help_menu.addAction(reset_tutorials_action)
+        
+        # License Management action
+        license_management_action = QAction("License Management...", self)
+        license_management_action.triggered.connect(self._show_license_management)
+        self.help_menu.addAction(license_management_action)
+        
+        self.help_menu.addSeparator()
         
         # About action
         self.about_action = self.help_menu.addAction("About Echelon")
@@ -2650,6 +2664,15 @@ class ProjectCreatorApp(QMainWindow):
     def show_about_dialog(self):
         """Shows the About dialog."""
         show_about(self)
+
+    def _show_license_management(self):
+        """Show the license management dialog"""
+        from app.dialogs.license_management import LicenseManagementDialog
+        from app.utils.security.license_manager import LicenseManager
+        
+        license_manager = LicenseManager()
+        dialog = LicenseManagementDialog(self, license_manager)
+        dialog.exec()
 
     def notify_gallery_preference_changed(self, preference_key):
         """Notify listeners that a gallery-related preference has changed."""

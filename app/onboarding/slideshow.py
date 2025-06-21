@@ -15,11 +15,13 @@ from PyQt6.QtCore import (Qt, QTimer, QPropertyAnimation, QEasingCurve,
                         pyqtSignal, QRect, QEvent, QByteArray, QPoint, QPointF, QLineF, QSizeF, QRectF)
 from PyQt6.QtGui import (QFont, QPalette, QColor, QPainter, QPen, QBrush,
                        QPixmap, QIcon, QMovie, QPolygonF, QPainterPath)
-from PyQt6.QtSvgWidgets import QSvgWidget
-from PyQt6.QtSvg import QSvgRenderer
 from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, APP_COLORS
 from app.templates.components.utils import get_system_font
-from .tutorial_illustrations import TutorialIllustrations
+from app.constants import get_resource_path
+try:
+    from .tutorial_illustrations import TutorialIllustrations
+except ImportError:
+    TutorialIllustrations = None
 from .config import CUSTOM_SLIDESHOW_CONTENT, TUTORIAL_CONTENT # Import configuration
 import os
 import math
@@ -71,13 +73,11 @@ class ImageWithArrow(QWidget):
         self.arrow_fade_animation.setEasingCurve(QEasingCurve.Type.OutCubic)
         
         # Load the initial arrow image (PNG or SVG)
-        if arrow_image_path and os.path.exists(arrow_image_path):
-            self.arrow_svg = QPixmap(arrow_image_path)
-        else:
-            # Fallback to default curved arrow
-            arrow_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "sample_svgs", "curved arrow_CR.svg")
-            if os.path.exists(arrow_path):
-                self.arrow_svg = QPixmap(arrow_path)
+        if arrow_image_path:
+            resolved_arrow_path = get_resource_path(arrow_image_path)
+            if os.path.exists(resolved_arrow_path):
+                self.arrow_svg = QPixmap(resolved_arrow_path)
+        # Note: Removed fallback curved arrow as file doesn't exist
         
         # Set initial state
         if self.arrow_data or arrow_image_path:  # Show arrow if we have either positioning data OR an arrow image
@@ -140,10 +140,12 @@ class ImageWithArrow(QWidget):
         if action == 'show_arrow':
             # Load and show the arrow immediately
             arrow_image_path = step_data.get('arrow_image')
-            if arrow_image_path and os.path.exists(arrow_image_path):
-                self.current_arrow_image = QPixmap(arrow_image_path)
-                self.show_arrow = True
-                self.arrow_opacity = 1.0
+            if arrow_image_path:
+                resolved_path = get_resource_path(arrow_image_path)
+                if os.path.exists(resolved_path):
+                    self.current_arrow_image = QPixmap(resolved_path)
+                    self.show_arrow = True
+                    self.arrow_opacity = 1.0
                 
         elif action == 'fade_arrow_show_overlay':
             # Hide arrow and show overlay immediately
@@ -152,26 +154,32 @@ class ImageWithArrow(QWidget):
                 self.arrow_opacity = 0.0
             
             overlay_image_path = step_data.get('overlay_image')
-            if overlay_image_path and os.path.exists(overlay_image_path):
-                self.overlay_image = QPixmap(overlay_image_path)
-                self.show_overlay = True
-                self.overlay_opacity = 1.0
+            if overlay_image_path:
+                resolved_path = get_resource_path(overlay_image_path)
+                if os.path.exists(resolved_path):
+                    self.overlay_image = QPixmap(resolved_path)
+                    self.show_overlay = True
+                    self.overlay_opacity = 1.0
                 
         elif action == 'show_final_arrow':
             # Show final arrow on top of overlay immediately
             arrow_image_path = step_data.get('arrow_image')
-            if arrow_image_path and os.path.exists(arrow_image_path):
-                self.final_arrow_image = QPixmap(arrow_image_path)
-                self.show_final_arrow = True
-                self.final_arrow_opacity = 1.0
+            if arrow_image_path:
+                resolved_path = get_resource_path(arrow_image_path)
+                if os.path.exists(resolved_path):
+                    self.final_arrow_image = QPixmap(resolved_path)
+                    self.show_final_arrow = True
+                    self.final_arrow_opacity = 1.0
                 
         elif action == 'show_advanced_arrow':
             # Show advanced arrow on top of everything immediately
             arrow_image_path = step_data.get('arrow_image')
-            if arrow_image_path and os.path.exists(arrow_image_path):
-                self.advanced_arrow_image = QPixmap(arrow_image_path)
-                self.show_advanced_arrow = True
-                self.advanced_arrow_opacity = 1.0
+            if arrow_image_path:
+                resolved_path = get_resource_path(arrow_image_path)
+                if os.path.exists(resolved_path):
+                    self.advanced_arrow_image = QPixmap(resolved_path)
+                    self.show_advanced_arrow = True
+                    self.advanced_arrow_opacity = 1.0
 
     def start_arrow_animation(self):
         """Start the animation sequence when the slide becomes visible"""
@@ -253,44 +261,53 @@ class ImageWithArrow(QWidget):
 
     def _perform_step_action(self, step_data):
         """Perform the action for a specific step"""
+        
         action = step_data.get('action', 'show_arrow')
         
         if action == 'show_arrow':
             # Load and show the arrow
             arrow_image_path = step_data.get('arrow_image')
-            if arrow_image_path and os.path.exists(arrow_image_path):
-                self.current_arrow_image = QPixmap(arrow_image_path)
-                self.show_arrow = True
-                self._fade_in_arrow()
+            if arrow_image_path:
+                resolved_path = get_resource_path(arrow_image_path)
+                if os.path.exists(resolved_path):
+                    self.current_arrow_image = QPixmap(resolved_path)
+                    self.show_arrow = True
+                    self._fade_in_arrow()
                 
         elif action == 'fade_arrow_show_overlay':
             # Fade out arrow and fade in overlay
             self._fade_out_arrow()
             overlay_image_path = step_data.get('overlay_image')
-            if overlay_image_path and os.path.exists(overlay_image_path):
-                self.overlay_image = QPixmap(overlay_image_path)
-                # Create timer and track it
-                timer = QTimer()
-                timer.setSingleShot(True)
-                timer.timeout.connect(self._fade_in_overlay)
-                self.active_timers.append(timer)
-                timer.start(300)  # Start overlay fade after arrow fade starts
+            if overlay_image_path:
+                resolved_path = get_resource_path(overlay_image_path)
+                if os.path.exists(resolved_path):
+                    self.overlay_image = QPixmap(resolved_path)
+                    # Create timer and track it
+                    timer = QTimer()
+                    timer.setSingleShot(True)
+                    timer.timeout.connect(self._fade_in_overlay)
+                    self.active_timers.append(timer)
+                    timer.start(300)  # Start overlay fade after arrow fade starts
                 
         elif action == 'show_final_arrow':
             # Show final arrow on top of overlay
             arrow_image_path = step_data.get('arrow_image')
-            if arrow_image_path and os.path.exists(arrow_image_path):
-                self.final_arrow_image = QPixmap(arrow_image_path)
-                self.show_final_arrow = True
-                self._fade_in_final_arrow()
+            if arrow_image_path:
+                resolved_path = get_resource_path(arrow_image_path)
+                if os.path.exists(resolved_path):
+                    self.final_arrow_image = QPixmap(resolved_path)
+                    self.show_final_arrow = True
+                    self._fade_in_final_arrow()
                 
         elif action == 'show_advanced_arrow':
             # Show advanced arrow on top of everything
             arrow_image_path = step_data.get('arrow_image')
-            if arrow_image_path and os.path.exists(arrow_image_path):
-                self.advanced_arrow_image = QPixmap(arrow_image_path)
-                self.show_advanced_arrow = True
-                self._fade_in_advanced_arrow()
+            if arrow_image_path:
+                resolved_path = get_resource_path(arrow_image_path)
+                if os.path.exists(resolved_path):
+                    self.advanced_arrow_image = QPixmap(resolved_path)
+                    self.show_advanced_arrow = True
+                    self._fade_in_advanced_arrow()
         
         # Emit step change signal
         self.step_changed.emit(self.current_step)
@@ -548,7 +565,11 @@ class SlideshowSlide(QWidget):
         self.arrow_image_path = arrow_image_path
         self.multi_step_sequence = multi_step_sequence
         self.current_sub_step = 0
-        self.illustrations = TutorialIllustrations(APP_COLORS)
+        try:
+            self.illustrations = TutorialIllustrations(APP_COLORS) if TutorialIllustrations else None
+        except Exception as e:
+            print(f"Warning: Could not initialize TutorialIllustrations: {e}")
+            self.illustrations = None
         
         # Setup the UI
         self._setup_ui()
@@ -600,10 +621,13 @@ class SlideshowSlide(QWidget):
         )
         
         # Load the image after creating the widget
-        if self.image_path and os.path.exists(self.image_path):
-            pixmap = QPixmap(self.image_path)
-            if not pixmap.isNull():
-                self.image_display_widget.set_pixmap(pixmap)
+        if self.image_path:
+            # Use centralized resource path resolution
+            resolved_image_path = get_resource_path(self.image_path)
+            if os.path.exists(resolved_image_path):
+                pixmap = QPixmap(resolved_image_path)
+                if not pixmap.isNull():
+                    self.image_display_widget.set_pixmap(pixmap)
         
         self.image_display_widget.setFixedSize(730, 500)  # Maintain original size
         image_panel_layout.addWidget(self.image_display_widget, 0, Qt.AlignmentFlag.AlignCenter)
@@ -712,17 +736,14 @@ class SlideshowSlide(QWidget):
         dot_container.setProperty("step_index", step_index)
         dot_container.setCursor(Qt.CursorShape.PointingHandCursor)
         
-        # Load the dot images
-        empty_dot_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "sample_svgs", "DOT EMPTY.png")
-        filled_dot_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "sample_svgs", "DOT FILL.png")
+        # Load the dot images using centralized resource path resolution
         
-        print(f"DEBUG: Creating dot {step_index}, empty_path: {empty_dot_path}, exists: {os.path.exists(empty_dot_path)}")
-        print(f"DEBUG: filled_path: {filled_dot_path}, exists: {os.path.exists(filled_dot_path)}")
+        empty_dot_path = get_resource_path(os.path.join("slides", "DOT EMPTY.png"))
+        filled_dot_path = get_resource_path(os.path.join("slides", "DOT FILL.png"))
         
         # Set fixed size for the container - half the original image size
         target_size = 15  # Half of 29px
         dot_container.setFixedSize(target_size, target_size)
-        print(f"DEBUG: Dot size set to: {target_size}x{target_size}")
         
         # Create the outline (always visible) - positioned absolutely
         outline_label = QLabel(dot_container)
@@ -741,21 +762,17 @@ class SlideshowSlide(QWidget):
             outline_pixmap = QPixmap(empty_dot_path)
             scaled_outline = outline_pixmap.scaled(target_size, target_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             outline_label.setPixmap(scaled_outline)
-            print(f"DEBUG: Loaded and scaled outline image for dot {step_index}")
         else:
             outline_label.setText("○")
             outline_label.setStyleSheet("color: #666666; font-size: 10px;")
-            print(f"DEBUG: Using fallback outline text for dot {step_index}")
         
         if os.path.exists(filled_dot_path):
             fill_pixmap = QPixmap(filled_dot_path)
             scaled_fill = fill_pixmap.scaled(target_size, target_size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             fill_label.setPixmap(scaled_fill)
-            print(f"DEBUG: Loaded and scaled fill image for dot {step_index}")
         else:
             fill_label.setText("●")
             fill_label.setStyleSheet("color: #FFFFFF; font-size: 10px;")
-            print(f"DEBUG: Using fallback fill text for dot {step_index}")
         
         # Ensure fill is on top by raising it
         fill_label.raise_()
@@ -772,7 +789,6 @@ class SlideshowSlide(QWidget):
         
         dot_container.mousePressEvent = on_dot_clicked
         
-        print(f"DEBUG: Created dot container {step_index}")
         return dot_container
 
     def _update_sub_nav_state(self, current_step):

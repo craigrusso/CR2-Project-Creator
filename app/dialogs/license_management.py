@@ -192,13 +192,13 @@ class LicenseManagementDialog(QDialog):
         license_types_group = QGroupBox("Available License Types")
         license_types_layout = QVBoxLayout()
         
-        permanent_label = QLabel("<b>Permanent License:</b> Use the software indefinitely. Updates available for 1 year from purchase.")
+        permanent_label = QLabel("<b>Permanent License:</b> Use the software indefinitely on one machine. Updates available for 1 year from purchase. Use 'Deactivate License' to move to a different machine.")
         permanent_label.setWordWrap(True)
         
-        enterprise_label = QLabel("<b>Enterprise License:</b> Multiple installations for a single company. Ability to deactivate and reactivate on different machines.")
+        enterprise_label = QLabel("<b>Enterprise License:</b> Multiple installations for a single company with assigned activation limits. Ability to deactivate and reactivate on different machines.")
         enterprise_label.setWordWrap(True)
         
-        subscription_label = QLabel("<b>Subscription License:</b> Full access during the subscription period. Includes all updates.")
+        subscription_label = QLabel("<b>Subscription License:</b> Full access on one machine during the subscription period. Includes all updates. Use 'Deactivate License' to move to a different machine.")
         subscription_label.setWordWrap(True)
         
         license_types_layout.addWidget(permanent_label)
@@ -294,10 +294,13 @@ class LicenseManagementDialog(QDialog):
             success, message = self.license_manager.deactivate_license()
             
             if success:
+                # Force an immediate license validation check to sync with server
+                self.license_manager._validate_license_with_server()
+                
                 QMessageBox.information(
                     self,
                     "License Deactivated",
-                    "Your license has been successfully deactivated."
+                    message if message else "Your license has been successfully deactivated."
                 )
                 # Reload the license info in the dialog
                 self.load_license_info()
@@ -335,11 +338,24 @@ class LicenseManagementDialog(QDialog):
                         f"Your license has been deactivated. The application will continue in trial mode with {days_left} days remaining."
                     )
             else:
-                QMessageBox.warning(
-                    self,
-                    "Deactivation Failed",
-                    f"Failed to deactivate the license: {message}"
-                )
+                # Check if the message indicates it was already deactivated
+                if message and ("not found" in message.lower() or "already deactivated" in message.lower()):
+                    # Force an immediate license validation check to sync with server
+                    self.license_manager._validate_license_with_server()
+                    
+                    QMessageBox.information(
+                        self,
+                        "License Already Deactivated",
+                        f"The license was already deactivated: {message}"
+                    )
+                    # Reload to sync the UI with the actual state
+                    self.load_license_info()
+                else:
+                    QMessageBox.warning(
+                        self,
+                        "Deactivation Failed",
+                        f"Failed to deactivate the license: {message}"
+                    )
     
     def open_purchase_website(self):
         """Open the license purchase website"""

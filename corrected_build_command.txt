@@ -1,0 +1,27 @@
+pyinstaller --clean --target-arch arm64 --name Echelon --icon=ICONS/Echelon.icns --windowed --noupx \
+    --distpath "MAC BUILD/dist" --workpath "MAC BUILD/build" --noconfirm \
+    --hidden-import json \
+    --hidden-import webbrowser \
+    --hidden-import uuid \
+    --hidden-import requests \
+    --hidden-import packaging \
+    --hidden-import PyQt6.QtCore \
+    --hidden-import PyQt6.QtSvg \
+    --hidden-import PyQt6.QtSvgWidgets \
+    --hidden-import rubicon.objc \
+    --hidden-import logging \
+    --hidden-import logging.handlers \
+    --hidden-import logging.config \
+    --hidden-import ctypes \
+    --hidden-import xml.etree.ElementTree \
+    --collect-submodules app \
+    --collect-submodules logging \
+    --add-data "app:app" \
+    --add-data "slides:slides" \
+    --add-data "app/assets/css:app/assets/css" \
+    --add-data "app/assets/icons:app/assets/icons" \
+    --add-data "app/assets/bundled_example_templates:app/assets/bundled_example_templates" \
+    --add-data "app/resources:app/resources" \
+    --add-data "app/onboarding:app/onboarding" \
+    --add-data "EULA.txt:." \
+    main.py 

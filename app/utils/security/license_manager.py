@@ -73,14 +73,50 @@ class LicenseManager:
             
         # Generate a new machine ID if one doesn't exist
         system_info = [
-            platform.node(),
-            platform.machine(),
-            platform.processor(),
-            str(uuid.getnode())  # MAC address
+            platform.node(),                    # Computer name
+            platform.machine(),                 # Architecture (arm64, x86_64)
+            platform.processor(),               # Processor info
+            str(uuid.getnode()),                # MAC address
+            platform.system(),                  # Operating system
+            platform.version()[:50],            # OS version (truncated to avoid too long strings)
         ]
         
+        # Add additional platform-specific identifiers
+        try:
+            if platform.system() == "Darwin":  # macOS
+                # Add system boot UUID if available
+                import subprocess
+                result = subprocess.run(["system_profiler", "SPHardwareDataType"], 
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    # Extract hardware UUID if present
+                    for line in result.stdout.split('\n'):
+                        if 'Hardware UUID' in line:
+                            uuid_part = line.split(':')[-1].strip()
+                            if uuid_part:
+                                system_info.append(uuid_part)
+                            break
+            elif platform.system() == "Windows":
+                # Add Windows machine GUID
+                try:
+                    import subprocess
+                    result = subprocess.run(["wmic", "csproduct", "get", "UUID"], 
+                                          capture_output=True, text=True, timeout=5)
+                    if result.returncode == 0:
+                        lines = result.stdout.strip().split('\n')
+                        if len(lines) > 1:
+                            uuid_part = lines[1].strip()
+                            if uuid_part and uuid_part != "UUID":
+                                system_info.append(uuid_part)
+                except:
+                    pass
+        except Exception:
+            # If platform-specific info fails, continue with basic info
+            pass
+        
         # Create a hash of the system information
-        fingerprint = hashlib.sha256("".join(system_info).encode()).hexdigest()
+        combined_info = "|".join(str(info) for info in system_info if info)
+        fingerprint = hashlib.sha256(combined_info.encode('utf-8')).hexdigest()
         
         # Save the machine ID
         self.settings.setValue("license/machine_id", fingerprint)
@@ -367,10 +403,38 @@ class LicenseManager:
                 # Handle non-200 status codes (failures)
                 # print(f"ERROR: Activation request failed with status {response.status_code}. Response text: {response.text}")
                 try:
-                    error_message = response.json().get("message", f"Activation failed (Status: {response.status_code})")
+                    error_data = response.json()
+                    error_message = error_data.get("message", f"Activation failed (Status: {response.status_code})")
+                    
+                    # Enhanced error handling for 1-machine-per-license policy
+                    if response.status_code == 409:  # Conflict - license already activated
+                        if "already activated" in error_message.lower():
+                            existing_machine = error_data.get("existingMachine", "another machine")
+                            enhanced_message = (
+                                f"This license is already activated on {existing_machine}.\n\n"
+                                f"Each license can only be used on one machine at a time.\n\n"
+                                f"To use this license on this machine:\n"
+                                f"1. Deactivate the license on {existing_machine}\n"
+                                f"2. Then activate it on this machine\n\n"
+                                f"Contact support at https://www.cr2creative.com/support.html if you need help."
+                            )
+                            return False, enhanced_message
+                    elif response.status_code == 400:  # Bad request
+                        if "invalid" in error_message.lower() or "not found" in error_message.lower():
+                            enhanced_message = (
+                                f"License key not found or invalid.\n\n"
+                                f"Please check:\n"
+                                f"• License key is entered correctly\n"
+                                f"• Email matches your purchase receipt\n"
+                                f"• License hasn't been refunded or cancelled\n\n"
+                                f"Contact support at https://www.cr2creative.com/support.html if you need help."
+                            )
+                            return False, enhanced_message
+                    
+                    return False, error_message
                 except json.JSONDecodeError:
                     error_message = f"Activation failed (Status: {response.status_code}) - Non-JSON response: {response.text}"
-                return False, error_message
+                    return False, error_message
 
         except requests.RequestException as e:
             # print(f"ERROR: Activation connection error: {str(e)}") # Enhanced logging prefix
@@ -392,9 +456,10 @@ class LicenseManager:
         if not email or not license_key:
             return False, "No license is currently activated"
             
-        # --- Added: Check for activation_id, though backend might not require it yet --- 
+        # --- Added: Check for activation_id, backend now requires it --- 
         if not activation_id:
-            # print("WARNING: No activation ID found locally. Sending deactivation without it. Backend might require this in the future.")
+            # If no activation ID, try to deactivate by machine ID only
+            # Some older activations might not have stored activation IDs
             pass
         # --- End Added ---
 
@@ -404,10 +469,12 @@ class LicenseManager:
                 "email": email,
                 "licenseKey": license_key,
                 "machineId": self.machine_id,
-                # --- Added: Include activation ID in payload --- 
-                "activationId": activation_id # Send the specific activation ID
-                # --- End Added ---
             }
+            
+            # Only include activationId if we have one
+            if activation_id:
+                payload["activationId"] = activation_id
+            # --- End Added ---
             
             # Add headers with API key
             headers = {
@@ -421,7 +488,33 @@ class LicenseManager:
             if response.status_code != 200:
                 # print(f"ERROR: Deactivation request failed with status {response.status_code}. Response text: {response.text}")
                 try:
-                    error_message = response.json().get("message", f"Deactivation failed (Status: {response.status_code})")
+                    error_data = response.json()
+                    error_message = error_data.get("message", error_data.get("error", f"Deactivation failed (Status: {response.status_code})"))
+                    
+                    # Special handling for 400 errors with missing activationId
+                    if response.status_code == 400 and "activationId" in error_message:
+                        # This might be a legacy activation without stored activationId
+                        # Force a license validation to see if deactivation actually worked
+                        validation_result = self._validate_license_with_server()
+                        if not validation_result:
+                            # License is now invalid, so deactivation probably worked
+                            # Clear local data and treat as success
+                            self.settings.remove("license/key")
+                            self.settings.remove("license/email")
+                            self.settings.remove("license/type")
+                            self.settings.remove("license/expiry")
+                            self.settings.setValue("license/is_valid", False)
+                            self.settings.remove("license/activation_date")
+                            self.settings.remove("license/activation_id")
+                            self.settings.remove("license/first_name")
+                            self.settings.remove("license/last_name")
+                            self.settings.remove("license/company")
+                            self.settings.sync()
+                            return True, "License deactivated successfully (legacy activation)"
+                        else:
+                            # License is still valid, so deactivation failed
+                            return False, f"Deactivation failed: {error_message}"
+                    
                 except json.JSONDecodeError:
                     error_message = f"Deactivation failed (Status: {response.status_code}) - Non-JSON response: {response.text}"
                 return False, error_message
@@ -430,9 +523,10 @@ class LicenseManager:
             message = data.get("message", "") # Get message for checking
             is_explicit_success = data.get("status") == "success"
             is_already_inactive = "not found" in message.lower() # Check if backend says it's not found
+            is_deactivation_successful = "deactivation successful" in message.lower() # Check for successful deactivation message
             
-            # --- Updated: Clear local data if successful OR if backend says 'not found' --- 
-            if is_explicit_success or is_already_inactive:
+            # --- Updated: Clear local data if successful OR if backend says 'not found' OR if deactivation successful --- 
+            if is_explicit_success or is_already_inactive or is_deactivation_successful:
                 # Clear license information
                 self.settings.remove("license/key")
                 self.settings.remove("license/email")
@@ -448,6 +542,12 @@ class LicenseManager:
                 self.settings.remove("license/first_name")
                 self.settings.remove("license/last_name")
                 self.settings.remove("license/company")
+                
+                # Force settings to sync immediately
+                self.settings.sync()
+                
+                # Force a server validation check to ensure state is synchronized
+                self._validate_license_with_server()
                 
                 # FIX: If we get "not found" message, consider it a success because the license is effectively deactivated
                 if is_already_inactive:
@@ -887,11 +987,11 @@ class LicenseManager:
                     self.show_license_dialog()
                 return False
             
-            # Check trial expiry
-            if not self.is_valid_trial():
-                if show_dialog:
-                    self.show_license_dialog()
-                return False
+            # Check trial expiry (this check is redundant since we have license, but keeping for safety)
+            # if not self.is_valid_trial():
+            #     if show_dialog:
+            #         self.show_license_dialog()
+            #     return False
             
             # **NEW: Check if full license validation is needed**
             should_validate = self.should_run_full_license_check()
