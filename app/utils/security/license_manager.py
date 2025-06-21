@@ -24,6 +24,9 @@ from PyQt6.QtCore import Qt, QSettings, QTimer
 # Import styling constants
 from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
 
+# Import for version release date checking
+from app.config.app_config import APP_VERSION_NUMBER, APP_BUILD_NUMBER
+
 # Constants
 # TRIAL_DAYS = 14 # Old constant
 # TRIAL_DURATION_MINUTES_FOR_TESTING = 3  # For testing purposes
@@ -31,6 +34,10 @@ from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE
 
 # Standard 14-day trial period in seconds
 TRIAL_DURATION_SECONDS = 14 * 24 * 60 * 60 
+
+# License validation intervals - Updated for business model
+FULL_LICENSE_CHECK_INTERVAL = 30 * 24 * 60 * 60  # 30 days (monthly) for permanent/enterprise
+SUBSCRIPTION_CHECK_INTERVAL = 15 * 24 * 60 * 60   # 15 days (bi-monthly) for subscriptions
 
 PRODUCTION_URL = "https://ceeo86y6ze.execute-api.us-west-1.amazonaws.com/prod"  # Updated Prod URL
 TESTING_URL = "https://ceeo86y6ze.execute-api.us-west-1.amazonaws.com/test"  # Updated Test URL
@@ -78,35 +85,47 @@ class LicenseManager:
         # Save the machine ID
         self.settings.setValue("license/machine_id", fingerprint)
         return fingerprint
+
+    def _get_machine_name(self):
+        """Get a human-readable machine name"""
+        try:
+            machine_name = platform.node()
+            if not machine_name or machine_name.strip() == "":
+                # Fallback to a combination of system info
+                machine_name = f"{platform.system()}-{platform.machine()}"
+            return machine_name
+        except Exception:
+            return "Unknown-Machine"
         
     def _load_api_key_from_config(self):
-        """Load the API key from the bundled config.json file."""
+        """Load the API key from the config file"""
         try:
-            # Use importlib.resources to safely access the data file
-            # Assumes config.json is in the 'app.config' package
-            config_content = importlib.resources.read_text('app.config', API_KEY_CONFIG_NAME)
-            config_data = json.loads(config_content)
-            api_key = config_data.get(API_KEY_FIELD_NAME)
-            
-            if not api_key:
-                print(f"ERROR: Field '{API_KEY_FIELD_NAME}' not found in {API_KEY_CONFIG_NAME}.")
-                return None
-                
-            # print("DEBUG: API key loaded successfully.")
-            return api_key
-            
-        except FileNotFoundError:
-            print(f"ERROR: Configuration file '{API_KEY_CONFIG_NAME}' not found in package 'app.config'. Ensure it's included in the build.")
-            return None
-        except json.JSONDecodeError:
-            print(f"ERROR: Failed to parse JSON from '{API_KEY_CONFIG_NAME}'.")
-            return None
+            # Try to load from bundled config first
+            if hasattr(importlib.resources, 'files'):
+                # Python 3.9+
+                config_path = importlib.resources.files('app.config') / API_KEY_CONFIG_NAME
+                if config_path.exists():
+                    config_data = json.loads(config_path.read_text())
+                    return config_data.get(API_KEY_FIELD_NAME)
+            else:
+                # Python 3.8 fallback
+                with importlib.resources.open_text('app.config', API_KEY_CONFIG_NAME) as f:
+                    config_data = json.load(f)
+                    return config_data.get(API_KEY_FIELD_NAME)
         except Exception as e:
-            print(f"ERROR: Unexpected error loading API key from config: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
+            print(f"ERROR: Could not load API key from bundled config: {e}")
         
+        # Fallback: try to load from local config file
+        try:
+            config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config', API_KEY_CONFIG_NAME)
+            with open(config_path, 'r') as f:
+                config_data = json.load(f)
+                return config_data.get(API_KEY_FIELD_NAME)
+        except Exception as e:
+            print(f"ERROR: Could not load API key from local config: {e}")
+        
+        return None
+
     def is_trial_active(self):
         """Check if the trial period is active"""
         # Check if a license is already activated
@@ -255,7 +274,7 @@ class LicenseManager:
         try:
             # --- Added: Gather additional activation details ---
             try:
-                machine_name = socket.gethostname()
+                machine_name = self._get_machine_name()
             except Exception:
                 machine_name = "Unknown" # Fallback if hostname cannot be retrieved
             activation_date = datetime.utcnow().isoformat() + 'Z' # Use UTC time in ISO format
@@ -624,6 +643,479 @@ class LicenseManager:
             redacted_domain = '*' * len(domain)
             
         return redacted_local + '@' + redacted_domain
+
+    def should_run_full_license_check(self):
+        """Determine if a full license validation should be performed"""
+        current_time = time.time()
+        last_check = self.settings.value("license/last_full_check", 0, type=float)
+        
+        license_type = self.settings.value("license/type", "")
+        
+        # Use different intervals based on license type
+        if license_type == LICENSE_TYPE_SUBSCRIPTION:
+            interval = SUBSCRIPTION_CHECK_INTERVAL  # More frequent for subscriptions
+        else:
+            interval = FULL_LICENSE_CHECK_INTERVAL   # Standard interval
+        
+        return (current_time - last_check) > interval
+
+    def mark_full_license_check_completed(self):
+        """Mark that a full license check was completed"""
+        self.settings.setValue("license/last_full_check", time.time())
+
+    def get_version_release_date(self):
+        """Fetch the release date for the current app version from the server"""
+        try:
+            # Use the same API that the update checker uses
+            from app.utils.utils import load_config
+            config = load_config()
+            api_url = config.get("api_urls", {}).get("get_public_downloads")
+            
+            if not api_url:
+                print("ERROR: Could not get API URL for version info")
+                return None
+            
+            # Get current platform
+            current_platform = platform.system().lower()
+            platform_map = {"darwin": "macos", "windows": "windows", "linux": "linux"}
+            target_platform = platform_map.get(current_platform)
+            
+            if not target_platform:
+                print(f"ERROR: Unsupported platform: {current_platform}")
+                return None
+            
+            response = requests.get(api_url, timeout=10)
+            response.raise_for_status()
+            versions_data = response.json()
+            
+            # Find the current version and build
+            current_version = APP_VERSION_NUMBER
+            current_build = str(APP_BUILD_NUMBER)
+            
+            for version_info in versions_data:
+                if (version_info.get('platform', '').lower() == target_platform and
+                    version_info.get('versionNumber') == current_version and
+                    str(version_info.get('buildNumber', '')) == current_build):
+                    
+                    release_date_str = version_info.get('releaseDate')
+                    if release_date_str:
+                        # Parse the release date - expect ISO format from server
+                        try:
+                            release_date = datetime.fromisoformat(release_date_str.replace('Z', '+00:00'))
+                            return release_date
+                        except ValueError:
+                            # Try display format as fallback
+                            try:
+                                release_date = datetime.strptime(release_date_str, "%b %d, %Y")
+                                return release_date
+                            except ValueError:
+                                print(f"ERROR: Could not parse release date: {release_date_str}")
+                                return None
+            
+            print(f"WARNING: Could not find release date for version {current_version} build {current_build}")
+            return None
+            
+        except Exception as e:
+            print(f"ERROR: Failed to fetch version release date: {e}")
+            return None
+
+    def is_version_allowed_for_permanent_license(self):
+        """Check if permanent license can run this version (1 year update window)"""
+        if self.settings.value("license/type") != LICENSE_TYPE_PERMANENT:
+            return True  # Not a permanent license, allow
+        
+        activation_date_str = self.settings.value("license/activation_date", "")
+        if not activation_date_str:
+            print("ERROR: Permanent license missing activation date")
+            return False
+        
+        try:
+            # Parse activation date
+            if 'T' in activation_date_str:
+                activation_date = datetime.fromisoformat(activation_date_str.replace('Z', '+00:00'))
+            else:
+                activation_date = datetime.fromisoformat(activation_date_str)
+                # Make timezone-aware if needed
+                if activation_date.tzinfo is None:
+                    from datetime import timezone
+                    activation_date = activation_date.replace(tzinfo=timezone.utc)
+            
+            # Get the release date for this version
+            version_release_date = self.get_version_release_date()
+            if not version_release_date:
+                # If we can't get the release date, be conservative but allow offline use
+                # Cache a warning flag so we can prompt user to check online later
+                self.settings.setValue("license/version_date_check_needed", True)
+                return True
+            
+            # Ensure both dates have timezone info for comparison
+            from datetime import timezone
+            if activation_date.tzinfo is None:
+                activation_date = activation_date.replace(tzinfo=timezone.utc)
+            
+            if version_release_date.tzinfo is None:
+                version_release_date = version_release_date.replace(tzinfo=timezone.utc)
+                
+            # Permanent licenses get 1 year of updates from activation date
+            license_update_expiry = activation_date + timedelta(days=365)
+            
+            is_allowed = version_release_date <= license_update_expiry
+            
+            if not is_allowed:
+                print(f"INFO: Permanent license expired for this version. "
+                      f"License activated: {activation_date.strftime('%Y-%m-%d')}, "
+                      f"Version released: {version_release_date.strftime('%Y-%m-%d')}, "
+                      f"Update window ended: {license_update_expiry.strftime('%Y-%m-%d')}")
+            
+            return is_allowed
+            
+        except Exception as e:
+            print(f"ERROR: Could not validate permanent license version access: {e}")
+            return False
+
+    def is_subscription_active(self):
+        """Check if subscription period is still valid (works until expiry even if cancelled)"""
+        if self.settings.value("license/type") != LICENSE_TYPE_SUBSCRIPTION:
+            return True  # Not a subscription license
+        
+        # Check expiry date from server response - user paid for full year, should work until expiry
+        expiry_date_str = self.settings.value("license/expiry", "")
+        if not expiry_date_str:
+            print("WARNING: Subscription license missing expiry date")
+            return False
+        
+        try:
+            # Handle different date formats
+            expiry_date = None
+            
+            # Try ISO format first
+            if 'T' in expiry_date_str or 'Z' in expiry_date_str:
+                expiry_date = datetime.fromisoformat(expiry_date_str.replace('Z', '+00:00'))
+            else:
+                # Try simple date format
+                expiry_date = datetime.fromisoformat(expiry_date_str)
+            
+            # Get current date with proper timezone handling
+            if expiry_date.tzinfo is not None:
+                # Expiry date has timezone info, use UTC for current time
+                from datetime import timezone
+                current_date = datetime.now(timezone.utc)
+            else:
+                # Expiry date is naive, use local time
+                current_date = datetime.now()
+                
+            is_active = current_date <= expiry_date
+            
+            if not is_active:
+                print(f"INFO: Subscription period ended. "
+                      f"Expiry date: {expiry_date.strftime('%Y-%m-%d')}, "
+                      f"Current date: {current_date.strftime('%Y-%m-%d')}")
+            
+            return is_active
+            
+        except Exception as e:
+            print(f"ERROR: Could not validate subscription expiry: {e}")
+            return False
+
+    def validate_enterprise_license(self):
+        """Validate enterprise license constraints - works like permanent license"""
+        if self.settings.value("license/type") != LICENSE_TYPE_ENTERPRISE:
+            return True  # Not an enterprise license
+        
+        # Enterprise licenses work like permanent licenses - machine locked with yearly validation
+        # Check if we have an activation date for version validation
+        activation_date_str = self.settings.value("license/activation_date", "")
+        if not activation_date_str:
+            print("WARNING: Enterprise license missing activation date")
+            # If no activation date, assume it's valid (for legacy licenses)
+            return True
+        
+        try:
+            # Parse activation date
+            if 'T' in activation_date_str:
+                activation_date = datetime.fromisoformat(activation_date_str.replace('Z', '+00:00'))
+            else:
+                activation_date = datetime.fromisoformat(activation_date_str)
+                # Make timezone-aware if needed
+                if activation_date.tzinfo is None:
+                    from datetime import timezone
+                    activation_date = activation_date.replace(tzinfo=timezone.utc)
+            
+            # Enterprise licenses expire after 1 year and need renewal
+            current_date = datetime.now()
+            if activation_date.tzinfo is not None and current_date.tzinfo is None:
+                from datetime import timezone
+                current_date = datetime.now(timezone.utc)
+            elif activation_date.tzinfo is None and current_date.tzinfo is not None:
+                current_date = current_date.replace(tzinfo=None)
+            
+            enterprise_expiry = activation_date + timedelta(days=365)
+            is_valid = current_date <= enterprise_expiry
+            
+            if not is_valid:
+                print(f"INFO: Enterprise license expired. "
+                      f"Activated: {activation_date.strftime('%Y-%m-%d')}, "
+                      f"Expired: {enterprise_expiry.strftime('%Y-%m-%d')}, "
+                      f"Current: {current_date.strftime('%Y-%m-%d')}")
+            
+            return is_valid
+            
+        except Exception as e:
+            print(f"ERROR: Could not validate enterprise license: {e}")
+            # If we can't validate, assume valid (for offline enterprise users)
+            return True
+
+    def is_valid_license(self, show_dialog=True):
+        """
+        Check if the current license is valid.
+        
+        Args:
+            show_dialog (bool): Whether to show the license activation dialog if license is invalid
+        
+        Returns:
+            bool: True if license is valid, False otherwise
+        """
+        if not self.license_key:
+            if show_dialog:
+                self.show_license_dialog()
+            return False
+        
+        try:
+            # First check if license exists locally
+            if not self.settings.value("license/is_valid"):
+                if show_dialog:
+                    self.show_license_dialog()
+                return False
+            
+            # Check trial expiry
+            if not self.is_valid_trial():
+                if show_dialog:
+                    self.show_license_dialog()
+                return False
+            
+            # **NEW: Check if full license validation is needed**
+            should_validate = self.should_run_full_license_check()
+            license_type = self.settings.value("license/type", "")
+            
+            if should_validate:
+                print(f"Running full license validation for {license_type} license")
+                
+                # Perform server validation
+                if not self._validate_license_with_server():
+                    if show_dialog:
+                        self.show_license_dialog()
+                    return False
+                
+                # Mark validation as completed
+                self.mark_full_license_check_completed()
+            
+            # **NEW: Always check version restrictions for permanent licenses**
+            if not self.is_version_allowed_for_permanent_license():
+                if show_dialog:
+                    self._show_version_expired_dialog()
+                return False
+            
+            # **NEW: Always check subscription expiry**
+            if not self.is_subscription_active():
+                if show_dialog:
+                    self._show_subscription_expired_dialog()
+                return False
+            
+            # **NEW: Validate enterprise constraints**
+            if not self.validate_enterprise_license():
+                if show_dialog:
+                    self._show_enterprise_expired_dialog()
+                return False
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error validating license: {e}")
+            import traceback
+            traceback.print_exc()
+            if show_dialog:
+                self.show_license_dialog()
+            return False
+
+    def _validate_license_with_server(self):
+        """Validate license with server and update local settings"""
+        try:
+            api_key = self._load_api_key_from_config()
+            if not api_key:
+                print("ERROR: API key not found. Cannot validate license.")
+                return False
+            
+            # Use the actual endpoint structure from existing code
+            validation_url = f"{PRODUCTION_URL}/licenses/validate"
+            
+            headers = {
+                "Content-Type": "application/json",
+                "x-api-key": api_key
+            }
+            
+            # Use the existing API payload format
+            payload = {
+                "licenseKey": self.license_key
+            }
+            
+            response = requests.post(validation_url, headers=headers, json=payload, timeout=10)
+            
+            if response.status_code == 200:
+                validation_data = response.json()
+                
+                # Handle both current and enhanced response formats
+                is_valid = validation_data.get("isValid", False)
+                
+                if is_valid:
+                    # Update license information from server
+                    self.settings.setValue("license/is_valid", True)
+                    
+                    # Handle current response format
+                    if "licenseType" in validation_data:
+                        self.settings.setValue("license/type", validation_data["licenseType"])
+                    elif "license_type" in validation_data:
+                        self.settings.setValue("license/type", validation_data["license_type"])
+                    
+                    if "email" in validation_data:
+                        self.settings.setValue("license/email", validation_data["email"])
+                    
+                    # Handle enhanced response format (for new validation logic)
+                    if "expiryDate" in validation_data:
+                        self.settings.setValue("license/expiry", validation_data["expiryDate"])
+                    elif "expiry_date" in validation_data:
+                        self.settings.setValue("license/expiry", validation_data["expiry_date"])
+                    
+                    if "activationDate" in validation_data:
+                        self.settings.setValue("license/activation_date", validation_data["activationDate"])
+                    elif "activation_date" in validation_data:
+                        self.settings.setValue("license/activation_date", validation_data["activation_date"])
+                    
+                    # Handle other fields from current API
+                    if "firstName" in validation_data:
+                        self.settings.setValue("license/first_name", validation_data["firstName"])
+                    if "lastName" in validation_data:
+                        self.settings.setValue("license/last_name", validation_data["lastName"])
+                    if "company" in validation_data:
+                        self.settings.setValue("license/company", validation_data["company"])
+                    
+                    return True
+                else:
+                    print("License validation failed on server")
+                    self.settings.setValue("license/is_valid", False)
+                    return False
+                    
+            elif response.status_code == 404:
+                print("License key not found on server")
+                self.settings.setValue("license/is_valid", False)
+                return False
+                
+            elif response.status_code == 403:
+                # Handle 403 errors - could be cancelled subscription or revoked license
+                try:
+                    error_data = response.json()
+                    error_message = error_data.get("error", "")
+                    
+                    if "Status: Cancelled" in error_message:
+                        license_type = self.settings.value("license/type", "")
+                        if license_type == LICENSE_TYPE_SUBSCRIPTION:
+                            # Subscription cancelled but user paid for full year - check expiry date
+                            print("Subscription cancelled but checking if paid period is still valid")
+                            # Keep license valid locally, let expiry date handling take care of it
+                            return True
+                        else:
+                            # Permanent or enterprise license cancelled - block immediately
+                            print("Non-subscription license cancelled - blocking access")
+                            self.settings.setValue("license/is_valid", False)
+                            return False
+                    else:
+                        # Other 403 errors (revoked, etc.) - block access
+                        print(f"License blocked by server: {error_message}")
+                        self.settings.setValue("license/is_valid", False)
+                        return False
+                        
+                except json.JSONDecodeError:
+                    print(f"License validation failed: {response.text}")
+                    self.settings.setValue("license/is_valid", False)
+                    return False
+                
+            else:
+                print(f"License validation request failed: {response.status_code} - {response.text}")
+                # For other errors, fall back to cached status to allow offline use
+                cached_status = self.settings.value("license/is_valid", False, type=bool)
+                print(f"Falling back to cached license status: {cached_status}")
+                return cached_status
+                
+        except requests.exceptions.RequestException as e:
+            print(f"Network error validating license with server: {e}")
+            # Fall back to cached status for network issues
+            cached_status = self.settings.value("license/is_valid", False, type=bool)
+            print(f"Falling back to cached license status: {cached_status}")
+            return cached_status
+            
+        except Exception as e:
+            print(f"Error validating license with server: {e}")
+            return False
+
+    def _show_version_expired_dialog(self):
+        """Show dialog when permanent license version access has expired"""
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Information)
+        msg.setWindowTitle("License Update Required")
+        msg.setText("Your permanent license has expired for this version.")
+        msg.setInformativeText("Permanent licenses include 1 year of updates. "
+                              "Please purchase a new license or subscription to continue using the latest version.")
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec_()
+
+    def _show_subscription_expired_dialog(self):
+        """Show dialog when subscription period has ended"""
+        expiry_date_str = self.settings.value("license/expiry", "")
+        
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Information)
+        msg.setWindowTitle("Subscription Period Ended")
+        msg.setText("Your subscription period has ended.")
+        
+        if expiry_date_str:
+            try:
+                expiry_date = datetime.fromisoformat(expiry_date_str.replace('Z', '+00:00'))
+                msg.setInformativeText(f"Your subscription period ended on {expiry_date.strftime('%B %d, %Y')}. "
+                                     "Please purchase a new subscription to continue using the app.")
+            except:
+                msg.setInformativeText("Please purchase a new subscription to continue using the app.")
+        else:
+            msg.setInformativeText("Please purchase a new subscription to continue using the app.")
+        
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec_()
+
+    def _show_enterprise_expired_dialog(self):
+        """Show dialog when enterprise license has expired"""
+        activation_date_str = self.settings.value("license/activation_date", "")
+        
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Information)
+        msg.setWindowTitle("Enterprise License Expired")
+        msg.setText("Your enterprise license has expired.")
+        
+        if activation_date_str:
+            try:
+                activation_date = datetime.fromisoformat(activation_date_str.replace('Z', '+00:00'))
+                expiry_date = activation_date + timedelta(days=365)
+                msg.setInformativeText(f"Your enterprise license expired on {expiry_date.strftime('%B %d, %Y')}. "
+                                     "Please contact your administrator to renew the enterprise license.")
+            except:
+                msg.setInformativeText("Please contact your administrator to renew the enterprise license.")
+        else:
+            msg.setInformativeText("Please contact your administrator to renew the enterprise license.")
+        
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec_()
+
+    @property
+    def license_key(self):
+        """Get the current license key"""
+        return self.settings.value("license/key", "")
 
 class LicenseActivationDialog(QDialog):
     """Dialog for license activation"""
