@@ -425,7 +425,7 @@ ${{PROJECT_NAME}}_Draft_${{SEQUENCE:001}}_${{DATE:YYYYMMDD}}.pdf</code></pre>
             background-color: {colors['card_bg']};
             border-bottom: none;
             border-top: 3px solid {colors['accent']};
-            color: {colors['accent']};
+            color: white;
             font-weight: 600;
         }}
         QTabBar::tab:!selected {{
