@@ -986,8 +986,8 @@ class TemplateCard(QFrame):
             
             def move_to_root_handler(): # Renamed to avoid conflict if contextMenuEvent is called rapidly
                 print(f"DEBUG: 'No Folder' clicked for '{t_name}' (current_card_folder='{current_folder_for_this_card}')")
-                # Pass None as the target_folder to signify moving to root
-                GalleryEvents.on_move_template_to_folder(gallery, [t_name], None) 
+                # Use the same multi-selection logic as regular folder moves
+                self._move_template_out_of_folder(current_folder_for_this_card) 
             
             move_to_root_action.triggered.connect(move_to_root_handler)
             move_menu.addAction(move_to_root_action)
