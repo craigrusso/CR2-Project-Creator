@@ -1623,10 +1623,31 @@ class TemplateGallery(QWidget):
 
         # Add "No Folder" option
         root_action = move_menu.addAction("No Folder")
-        # Disable if not a single selection or if already in root
-        root_action.setEnabled(num_selected == 1 and current_template_parent_folder is not None)
-        if num_selected == 1 and current_template_name_for_move: # Connect only if single valid selection
-            root_action.triggered.connect(lambda checked, tn=current_template_name_for_move: GalleryEvents.on_move_template_to_folder(self, tn, None))
+        # For multi-selection, enable if any selected templates are in folders
+        # For single selection, enable if the template is in a folder
+        if num_selected > 1:
+            # For multi-selection, check if any templates are in folders
+            any_in_folder = False
+            if self.template_manager:
+                for template_data in selected_templates:
+                    if template_data and template_data.get('name'):
+                        for folder_name_iter, templates_in_folder in self.template_manager.folders.items():
+                            if template_data.get('name') in templates_in_folder:
+                                any_in_folder = True
+                                break
+                        if any_in_folder:
+                            break
+            root_action.setEnabled(any_in_folder)
+        else:
+            # Single selection logic (original)
+            root_action.setEnabled(current_template_parent_folder is not None)
+        
+        # Connect action for both single and multi-selection
+        if names_to_process and any(names_to_process):
+            root_action.triggered.connect(lambda checked, ntp=list(names_to_process): 
+                GalleryEvents.on_move_template_to_folder(self, ntp, None))
+        else:
+            root_action.setEnabled(False)
         
         all_folders = self.template_manager.get_folders() if hasattr(self.template_manager, 'get_folders') else []
         if all_folders:
