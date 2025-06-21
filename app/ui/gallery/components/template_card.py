@@ -1009,10 +1009,10 @@ class TemplateCard(QFrame):
 
                     folder_action = QAction(folder_name_iter, self)
                     
-                    # Use a lambda that captures f_name correctly
+                    # Use a lambda that captures f_name correctly and handles multi-selection
                     folder_action.triggered.connect(
-                        lambda checked=False, template_name_captured=t_name, target_folder_name=folder_name_iter: 
-                            GalleryEvents.on_move_template_to_folder(gallery, [template_name_captured], target_folder_name)
+                        lambda checked=False, target_folder_name=folder_name_iter: 
+                            self._move_to_folder_and_hide(target_folder_name)
                     )
                     move_menu.addAction(folder_action)
 

@@ -331,7 +331,7 @@ class TemplateListItem(QFrame):
                             
                         folder_action = QAction(folder_name, self)
                         folder_action.triggered.connect(lambda checked=False, f=folder_name: 
-                                                      self.moveToFolderRequested.emit(template_name, f))
+                                                      self._move_template_to_folder(f))
                         move_to_menu.addAction(folder_action)
                 
                 # Only add the Move To menu if it has items
@@ -458,6 +458,71 @@ class TemplateListItem(QFrame):
         # Use the GalleryEvents class to handle the move operation
         from app.templates.gallery_events import GalleryEvents
         GalleryEvents.on_move_template_to_folder(gallery, template_name, None)
+    
+    def _move_template_to_folder(self, target_folder):
+        """Move the template(s) to a specific folder"""
+        template_name = self.template.get('name', '') if isinstance(self.template, dict) else str(self.template)
+          
+        # Find the gallery to get multi-selection info
+        gallery = self.gallery
+        if not gallery:
+            # Try to find gallery by traversing parent hierarchy
+            parent = self.parent()
+            while parent:
+                if hasattr(parent, 'multi_selected_templates'):
+                    gallery = parent
+                    break
+                parent = parent.parent()
+        
+        if not gallery:
+            print(f"[ERROR] Cannot move template: invalid gallery reference")
+            return
+        
+        # Check if we need to move multiple templates
+        if gallery and hasattr(gallery, 'multi_selected_templates') and gallery.multi_selected_templates:
+            # Check if this template is part of the multi-selection or if we're in multi-select mode
+            is_multi_selected = False
+            for t in gallery.multi_selected_templates:
+                t_name = t.get('name', '') if isinstance(t, dict) else str(t)
+                if t_name == template_name:
+                    is_multi_selected = True
+                    break
+                    
+            if is_multi_selected or getattr(gallery, 'is_multi_selecting', False):
+                # This is a multi-selection operation
+                print(f"🔍 LISTENER: Moving multiple templates to folder '{target_folder}'")
+                
+                # Use a set to collect unique template names
+                templates_to_move = set()
+                
+                # Add the primary selection if it exists
+                if hasattr(gallery, 'selected_template') and gallery.selected_template:
+                    primary_template = gallery.selected_template
+                    primary_name = primary_template.get('name', '') if isinstance(primary_template, dict) else str(primary_template)
+                    if primary_name:
+                        templates_to_move.add(primary_name)
+                        print(f"🔍 LISTENER: Adding primary selection '{primary_name}' to move list")
+                    
+                # Add all multi-selected templates
+                if hasattr(gallery, 'multi_selected_templates'):
+                    for t in gallery.multi_selected_templates:
+                        t_name = t.get('name', '') if isinstance(t, dict) else str(t)
+                        if t_name:
+                            templates_to_move.add(t_name)
+                            print(f"🔍 LISTENER: Adding multi-selected '{t_name}' to move list")
+
+                # Use the GalleryEvents class to handle the move operation
+                from app.templates.gallery_events import GalleryEvents
+                GalleryEvents.on_move_template_to_folder(gallery, list(templates_to_move), target_folder)
+                print(f"🔍 LISTENER: Requested move for {len(templates_to_move)} unique templates to folder '{target_folder}'")
+                return
+        
+        # Single template move (fallback if not multi-selection)
+        print(f"🔍 LISTENER: Moving template '{template_name}' to folder '{target_folder}'")
+        
+        # Use the GalleryEvents class to handle the move operation
+        from app.templates.gallery_events import GalleryEvents
+        GalleryEvents.on_move_template_to_folder(gallery, template_name, target_folder)
     
     def _export_template(self, template_name):
         """Export the template to a package file"""
