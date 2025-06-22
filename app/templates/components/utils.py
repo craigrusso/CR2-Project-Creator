@@ -110,10 +110,11 @@ def get_slideshow_title_font_size(text="Sample Title", container_width=430):
     # Special handling for Mac to ensure readable fonts
     system = platform.system()
     if system == "Darwin":  # macOS
-        # Mac needs significantly larger fonts
-        min_size = 32  # Minimum 32px on Mac
-        calculated_size = calculate_optimal_font_size(base_size, container_width, text_length, max_lines=2, scale_adjustment=1.4)
-        return max(min_size, calculated_size)
+        # Mac needs larger fonts but not cartoonishly large
+        min_size = 24  # Minimum 24px on Mac (reduced from 32px)
+        max_size = 32  # Maximum 32px on Mac to prevent huge titles
+        calculated_size = calculate_optimal_font_size(base_size, container_width, text_length, max_lines=2, scale_adjustment=1.2)
+        return min(max_size, max(min_size, calculated_size))
     else:
         # Windows and Linux
         return calculate_optimal_font_size(base_size, container_width, text_length, max_lines=2, scale_adjustment=1.2)
