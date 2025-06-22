@@ -138,10 +138,10 @@ def get_slideshow_description_font_size(text="Sample description text", containe
         calculated_size = calculate_optimal_font_size(base_size, container_width, text_length, max_lines=6, scale_adjustment=1.3)
         return max(min_size, calculated_size)
     elif system == "Windows":
-        # Windows description text tends to render small, so boost it
-        min_size = 13  # Minimum 13px on Windows (larger than before)
-        max_size = 18  # Maximum 18px to keep it readable but not huge
-        calculated_size = calculate_optimal_font_size(15, container_width, text_length, max_lines=6, scale_adjustment=1.2)
+        # Windows description text tends to render small, so boost it but not too much to avoid cutoff
+        min_size = 11  # Minimum 11px on Windows (reduced from 13px)
+        max_size = 15  # Maximum 15px to prevent cutoff (reduced from 18px)
+        calculated_size = calculate_optimal_font_size(13, container_width, text_length, max_lines=6, scale_adjustment=1.1)
         return min(max_size, max(min_size, calculated_size))
     else:
         # Linux and others
