@@ -25,6 +25,10 @@ except ImportError:
 from .config import CUSTOM_SLIDESHOW_CONTENT, TUTORIAL_CONTENT # Import configuration
 import os
 import math
+import platform
+
+
+
 
 
 class ImageWithArrow(QWidget):
@@ -586,22 +590,24 @@ class SlideshowSlide(QWidget):
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(20)
         
-        # Title
+        # Title with smaller font size for better scaling compatibility
         self.title_label = QLabel(self.title)
-        self.title_label.setFont(QFont(get_system_font(), 28, QFont.Weight.Bold))
+        self.title_label.setFont(QFont(get_system_font(), 22, QFont.Weight.Bold))
         self.title_label.setStyleSheet("color: #FFFFFF; margin-bottom: 10px;")
         self.title_label.setWordWrap(True)
         text_layout.addWidget(self.title_label)
         
-        # Description
+        # Description with smaller font size for better scaling compatibility
         self.description_label = QLabel(self.content)
-        self.description_label.setFont(QFont(get_system_font(), 16))
-        self.description_label.setStyleSheet(f"color: {get_color('text')}; line-height: 1.4;")
+        self.description_label.setFont(QFont(get_system_font(), 11))
+        self.description_label.setStyleSheet(f"color: {get_color('text')}; line-height: 1.3;")
         self.description_label.setWordWrap(True)
         self.description_label.setAlignment(Qt.AlignmentFlag.AlignTop)
         text_layout.addWidget(self.description_label)
         
         text_layout.addStretch()
+        
+        # Keep original text panel width
         text_panel.setFixedWidth(430)
         
         # --- Right Panel (Image + Sub-navigation) ---
@@ -610,7 +616,7 @@ class SlideshowSlide(QWidget):
         image_panel_layout.setContentsMargins(0, 0, 0, 0)
         image_panel_layout.setSpacing(10)  # Space between image and dots
         
-        # Image display widget
+        # Image display widget - make it responsive
         self.image_display_widget = ImageWithArrow(
             pixmap=None,  # Will be loaded from image_path
             arrow_data=self.arrow_data, 
@@ -629,7 +635,8 @@ class SlideshowSlide(QWidget):
                 if not pixmap.isNull():
                     self.image_display_widget.set_pixmap(pixmap)
         
-        self.image_display_widget.setFixedSize(730, 500)  # Maintain original size
+        # Keep original image size for proper slideshow display
+        self.image_display_widget.setFixedSize(730, 500)
         image_panel_layout.addWidget(self.image_display_widget, 0, Qt.AlignmentFlag.AlignCenter)
         
         # Sub-navigation container (under the image)
@@ -640,6 +647,7 @@ class SlideshowSlide(QWidget):
         # Add stretch to push everything up
         image_panel_layout.addStretch()
         
+        # Keep original image panel width
         image_panel.setFixedWidth(770)
         
         # Add panels to main layout
@@ -898,7 +906,10 @@ class TutorialSlideshow(QDialog):
     def _setup_ui(self):
         """Setup the main slideshow UI"""
         self.setWindowTitle("Welcome to Echelon - Quick Start Guide")
-        self.setFixedSize(1280, 760)  # Increased height to accommodate 580px image + margins
+        
+        # Keep original fixed size for slideshow images to display properly
+        self.setFixedSize(1280, 760)
+        
         self.setModal(True)
         
         # Center the dialog
