@@ -16,7 +16,7 @@ from PyQt6.QtCore import (Qt, QTimer, QPropertyAnimation, QEasingCurve,
 from PyQt6.QtGui import (QFont, QPalette, QColor, QPainter, QPen, QBrush,
                        QPixmap, QIcon, QMovie, QPolygonF, QPainterPath)
 from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, APP_COLORS
-from app.templates.components.utils import get_system_font, get_slideshow_title_font_size, get_slideshow_description_font_size, get_platform_css_font_size
+from app.templates.components.utils import get_system_font, get_slideshow_title_font_size, get_slideshow_description_font_size, get_platform_css_font_size, get_dynamic_font_size
 from app.constants import get_resource_path
 try:
     from .tutorial_illustrations import TutorialIllustrations
@@ -590,16 +590,18 @@ class SlideshowSlide(QWidget):
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(20)
         
-        # Title with platform-specific font size for cross-platform compatibility
+        # Title with dynamic font size optimized for container and content
         self.title_label = QLabel(self.title)
-        self.title_label.setFont(QFont(get_system_font(), get_slideshow_title_font_size(), QFont.Weight.Bold))
+        title_font_size = get_slideshow_title_font_size(self.title, 430)
+        self.title_label.setFont(QFont(get_system_font(), title_font_size, QFont.Weight.Bold))
         self.title_label.setStyleSheet("color: #FFFFFF; margin-bottom: 10px;")
         self.title_label.setWordWrap(True)
         text_layout.addWidget(self.title_label)
         
-        # Description with platform-specific font size for cross-platform compatibility
+        # Description with dynamic font size optimized for container and content
         self.description_label = QLabel(self.content)
-        self.description_label.setFont(QFont(get_system_font(), get_slideshow_description_font_size()))
+        desc_font_size = get_slideshow_description_font_size(self.content, 430)
+        self.description_label.setFont(QFont(get_system_font(), desc_font_size))
         self.description_label.setStyleSheet(f"color: {get_color('text')}; line-height: 1.3;")
         self.description_label.setWordWrap(True)
         self.description_label.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -772,7 +774,7 @@ class SlideshowSlide(QWidget):
             outline_label.setPixmap(scaled_outline)
         else:
             outline_label.setText("○")
-            outline_label.setStyleSheet(f"color: #666666; font-size: {get_platform_css_font_size(10)};")
+            outline_label.setStyleSheet(f"color: #666666; font-size: {get_platform_css_font_size(10, 0.9)};")
         
         if os.path.exists(filled_dot_path):
             fill_pixmap = QPixmap(filled_dot_path)
@@ -780,7 +782,7 @@ class SlideshowSlide(QWidget):
             fill_label.setPixmap(scaled_fill)
         else:
             fill_label.setText("●")
-            fill_label.setStyleSheet(f"color: #FFFFFF; font-size: {get_platform_css_font_size(10)};")
+            fill_label.setStyleSheet(f"color: #FFFFFF; font-size: {get_platform_css_font_size(10, 0.9)};")
         
         # Ensure fill is on top by raising it
         fill_label.raise_()
@@ -1022,7 +1024,7 @@ class TutorialSlideshow(QDialog):
                 color: {get_color('secondary_text')};
                 border: none;
                 padding: 8px 16px;
-                font-size: {get_platform_css_font_size(14)};
+                font-size: {get_platform_css_font_size(14, 1.0)};
             }}
             QPushButton:hover {{
                 color: {get_color('text')};
