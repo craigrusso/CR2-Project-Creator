@@ -107,7 +107,7 @@ def get_slideshow_title_font_size(text="Sample Title", container_width=430):
     base_size = 28  # Larger base size
     text_length = len(text) if text else 50
     
-    # Special handling for Mac to ensure readable fonts
+    # Special handling for different platforms
     system = platform.system()
     if system == "Darwin":  # macOS
         # Mac needs larger fonts but not cartoonishly large
@@ -115,8 +115,14 @@ def get_slideshow_title_font_size(text="Sample Title", container_width=430):
         max_size = 32  # Maximum 32px on Mac to prevent huge titles
         calculated_size = calculate_optimal_font_size(base_size, container_width, text_length, max_lines=2, scale_adjustment=1.2)
         return min(max_size, max(min_size, calculated_size))
+    elif system == "Windows":
+        # Windows headers tend to render large, so use smaller base with limits
+        min_size = 18  # Minimum 18px on Windows
+        max_size = 26  # Maximum 26px on Windows to prevent giant headers
+        calculated_size = calculate_optimal_font_size(22, container_width, text_length, max_lines=2, scale_adjustment=1.0)
+        return min(max_size, max(min_size, calculated_size))
     else:
-        # Windows and Linux
+        # Linux and others
         return calculate_optimal_font_size(base_size, container_width, text_length, max_lines=2, scale_adjustment=1.2)
 
 def get_slideshow_description_font_size(text="Sample description text", container_width=430):
@@ -124,15 +130,21 @@ def get_slideshow_description_font_size(text="Sample description text", containe
     base_size = 14  # Larger base size
     text_length = len(text) if text else 200
     
-    # Special handling for Mac to ensure readable fonts
+    # Special handling for different platforms
     system = platform.system()
     if system == "Darwin":  # macOS
-        # Mac needs significantly larger fonts
+        # Mac needs larger fonts
         min_size = 16  # Minimum 16px on Mac
         calculated_size = calculate_optimal_font_size(base_size, container_width, text_length, max_lines=6, scale_adjustment=1.3)
         return max(min_size, calculated_size)
+    elif system == "Windows":
+        # Windows description text tends to render small, so boost it
+        min_size = 13  # Minimum 13px on Windows (larger than before)
+        max_size = 18  # Maximum 18px to keep it readable but not huge
+        calculated_size = calculate_optimal_font_size(15, container_width, text_length, max_lines=6, scale_adjustment=1.2)
+        return min(max_size, max(min_size, calculated_size))
     else:
-        # Windows and Linux
+        # Linux and others
         return calculate_optimal_font_size(base_size, container_width, text_length, max_lines=6, scale_adjustment=1.0)
 
 def get_dynamic_font_size(base_size, scale_adjustment=1.0):
