@@ -111,7 +111,7 @@ class VersioningUI:
         # Count
         layout.addWidget(QLabel("Count:"))
         self.main_window.date_count = QSpinBox()
-        self.main_window.date_count.setRange(1, 100)
+        self.main_window.date_count.setRange(1, 1000)
         self.main_window.date_count.setValue(5)
         layout.addWidget(self.main_window.date_count)
         
@@ -154,7 +154,7 @@ class VersioningUI:
         # Count
         layout.addWidget(QLabel("Count:"))
         self.main_window.version_count = QSpinBox()
-        self.main_window.version_count.setRange(1, 50)
+        self.main_window.version_count.setRange(1, 1000)
         self.main_window.version_count.setValue(3)
         layout.addWidget(self.main_window.version_count)
         
@@ -182,7 +182,7 @@ class VersioningUI:
         # Count
         layout.addWidget(QLabel("Count:"))
         self.main_window.number_count = QSpinBox()
-        self.main_window.number_count.setRange(1, 100)
+        self.main_window.number_count.setRange(1, 1000)
         self.main_window.number_count.setValue(5)
         layout.addWidget(self.main_window.number_count)
         

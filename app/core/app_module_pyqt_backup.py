@@ -622,7 +622,7 @@ class ProjectCreatorApp(MainWindowBase):
         count_layout.addWidget(count_label)
         
         self.date_count = QSpinBox()
-        self.date_count.setRange(1, 50)
+        self.date_count.setRange(1, 1000)
         self.date_count.setValue(5)
         self.date_count.setMinimumWidth(80)
         self.date_count.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
@@ -776,7 +776,7 @@ class ProjectCreatorApp(MainWindowBase):
         count_layout.addWidget(count_label)
         
         self.version_count = QSpinBox()
-        self.version_count.setRange(1, 50)
+        self.version_count.setRange(1, 1000)
         self.version_count.setValue(5)
         self.version_count.setFixedWidth(80)
         self.version_count.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
@@ -893,7 +893,7 @@ class ProjectCreatorApp(MainWindowBase):
         count_layout.addWidget(count_label)
         
         self.number_count = QSpinBox()
-        self.number_count.setRange(1, 50)
+        self.number_count.setRange(1, 1000)
         self.number_count.setValue(5)
         self.number_count.setFixedWidth(80)
         self.number_count.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
