@@ -412,6 +412,7 @@ SPINBOX_STYLE = f"""
         height: 12px;
         margin-top: 1px;
         margin-bottom: 0px;
+        {f"margin-left: 1px;" if system == "Windows" else ""}
     }}
     
     QSpinBox::up-arrow:hover {{
@@ -424,7 +425,7 @@ SPINBOX_STYLE = f"""
         height: 12px;
         margin-top: 0px;
         margin-bottom: 1px;
-        margin-left: 3px;
+        {f"margin-left: 1px;" if system == "Windows" else "margin-left: 3px;"}
     }}
     
     QSpinBox::down-arrow:hover {{
