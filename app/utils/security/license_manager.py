@@ -185,13 +185,19 @@ class LicenseManager:
         trial_end_iso = self.settings.value("license/trial_end_time", None)
         if not trial_end_iso:
             # Fallback if trial_end_time was somehow not set (e.g., older version)
-            # This will effectively reset the trial for this check, which is safer.
-            # print("DEBUG: trial_end_time not found. Resetting trial period for this session.")
-            start_date_dt = datetime.now()
-            self.settings.setValue("license/trial_start", start_date_dt.isoformat())
-            trial_end_dt = start_date_dt + timedelta(seconds=TRIAL_DURATION_SECONDS)
-            self.settings.setValue("license/trial_end_time", trial_end_dt.isoformat())
-            return True
+            # Calculate the end time based on the original trial_start to preserve expiration
+            try:
+                start_date = datetime.fromisoformat(trial_start)
+                trial_end_dt = start_date + timedelta(seconds=TRIAL_DURATION_SECONDS)
+                trial_end_iso = trial_end_dt.isoformat()
+                # Store the calculated end time for future reference
+                self.settings.setValue("license/trial_end_time", trial_end_iso)
+                # print(f"DEBUG: Calculated trial_end_time from existing trial_start: {trial_end_iso}")
+            except (ValueError, TypeError) as e:
+                # If we can't parse the trial_start, then the trial data is corrupted
+                # In this case, treat the trial as expired rather than resetting it
+                # print(f"DEBUG: Could not parse trial_start ({trial_start}): {e}. Treating trial as expired.")
+                return False
 
         try:
             # start_date = datetime.fromisoformat(trial_start) # Original start, for reference
@@ -256,14 +262,20 @@ class LicenseManager:
         trial_end_iso = self.settings.value("license/trial_end_time", None)
 
         if not trial_start_iso or not trial_end_iso:
-            # Trial hasn't formally started in settings, return full configured duration
-            # This assumes is_trial_active() would be called first to set these.
-            # If called before that, give the full potential.
-            total_days = math.floor(TRIAL_DURATION_SECONDS / (24 * 60 * 60))
-            remaining_seconds_for_hours = TRIAL_DURATION_SECONDS % (24 * 60 * 60)
-            total_hours = math.floor(remaining_seconds_for_hours / (60*60))
-            # For this initial full duration display, minutes are likely not needed / would be 0
-            return {'days': int(total_days), 'hours': int(total_hours), 'minutes': 0}
+            # If either trial date is missing, calculate end time from start time if possible
+            if trial_start_iso and not trial_end_iso:
+                try:
+                    start_date = datetime.fromisoformat(trial_start_iso)
+                    end_date = start_date + timedelta(seconds=TRIAL_DURATION_SECONDS)
+                    trial_end_iso = end_date.isoformat()
+                    # Store the calculated end time for consistency
+                    self.settings.setValue("license/trial_end_time", trial_end_iso)
+                except (ValueError, TypeError):
+                    # If we can't parse trial_start, treat trial as expired
+                    return {'days': 0, 'hours': 0, 'minutes': 0}
+            else:
+                # No trial data available, treat as expired
+                return {'days': 0, 'hours': 0, 'minutes': 0}
 
         try:
             end_date = datetime.fromisoformat(trial_end_iso)
