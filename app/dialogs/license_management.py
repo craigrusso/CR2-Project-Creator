@@ -105,7 +105,7 @@ class LicenseManagementDialog(QDialog):
         self.trial_days_label = QLabel("--")
         
         trial_layout.addRow("Trial Status:", self.trial_status_label)
-        trial_layout.addRow("Days Remaining:", self.trial_days_label)
+        trial_layout.addRow("Time Remaining:", self.trial_days_label)
         
         trial_group.setLayout(trial_layout)
         layout.addWidget(trial_group)
@@ -262,19 +262,41 @@ class LicenseManagementDialog(QDialog):
             self.name_label.setText("--")
             self.company_label.setText("--")
         
-        # Trial information
-        days_left = self.license_manager.get_trial_days_remaining()
+        # Trial information - use precise time remaining
         if self.license_manager.is_licensed():
             self.trial_status_label.setText("N/A (Licensed)")
             self.trial_days_label.setText("N/A")
-        elif days_left > 0:
-            self.trial_status_label.setText("Active")
-            self.trial_status_label.setStyleSheet("color: green;")
-            self.trial_days_label.setText(str(days_left))
         else:
-            self.trial_status_label.setText("Expired")
-            self.trial_status_label.setStyleSheet("color: red;")
-            self.trial_days_label.setText("0")
+            is_trial_active = self.license_manager.is_trial_active()
+            if is_trial_active:
+                self.trial_status_label.setText("Active")
+                self.trial_status_label.setStyleSheet("color: green;")
+                
+                # Get precise time remaining for display
+                time_parts = self.license_manager.get_trial_time_remaining_parts()
+                days = time_parts.get('days', 0)
+                hours = time_parts.get('hours', 0)
+                minutes = time_parts.get('minutes', 0)
+                
+                # Build compact time display string
+                time_str_parts = []
+                if days > 0:
+                    time_str_parts.append(f"{days}d")
+                if hours > 0:
+                    time_str_parts.append(f"{hours}h")
+                if minutes > 0:
+                    time_str_parts.append(f"{minutes}m")
+                
+                if time_str_parts:
+                    time_display_str = " ".join(time_str_parts)
+                else:
+                    time_display_str = "<1m"
+                
+                self.trial_days_label.setText(time_display_str)
+            else:
+                self.trial_status_label.setText("Expired")
+                self.trial_status_label.setStyleSheet("color: red;")
+                self.trial_days_label.setText("Expired")
         
     def deactivate_license(self):
         """Deactivate the license"""
