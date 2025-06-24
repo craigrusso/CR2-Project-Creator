@@ -218,25 +218,43 @@ if system == "Windows":
     dropdown_arrow_path = get_resource_path('app/assets/css/dropdown_arrow_windows.svg')
     dropdown_arrow_up_path = get_resource_path('app/assets/css/dropdown_arrow_up_windows.svg')
     
+    # Windows-specific vertical arrows for spinboxes
+    v_arrow_path = get_resource_path('app/assets/css/v_arrow_windows.svg')
+    v_arrow_up_path = get_resource_path('app/assets/css/v_arrow_up_windows.svg')
+    
     # If the Windows-specific arrows don't exist, fall back to regular ones
     if not os.path.exists(dropdown_arrow_path):
         print(f"[WARNING] Windows dropdown arrow not found at {dropdown_arrow_path}")
         dropdown_arrow_path = get_resource_path('app/assets/css/dropdown_arrow.svg')
         dropdown_arrow_up_path = get_resource_path('app/assets/css/dropdown_arrow_up.svg')
+    
+    # Fall back to regular vertical arrows if Windows-specific ones don't exist
+    if not os.path.exists(v_arrow_path):
+        print(f"[WARNING] Windows vertical arrow not found at {v_arrow_path}")
+        v_arrow_path = get_resource_path('app/assets/css/v_arrow.svg') 
+        v_arrow_up_path = get_resource_path('app/assets/css/v_arrow_up.svg')
 else:
     # Default arrows for macOS/Linux
     dropdown_arrow_path = get_resource_path('app/assets/css/dropdown_arrow.svg')
     dropdown_arrow_up_path = get_resource_path('app/assets/css/dropdown_arrow_up.svg')
+    v_arrow_path = get_resource_path('app/assets/css/v_arrow.svg')
+    v_arrow_up_path = get_resource_path('app/assets/css/v_arrow_up.svg')
 
 # For Qt stylesheets, always use forward slashes regardless of platform
 dropdown_arrow_path = dropdown_arrow_path.replace('\\', '/')
 dropdown_arrow_up_path = dropdown_arrow_up_path.replace('\\', '/')
+v_arrow_path = v_arrow_path.replace('\\', '/')
+v_arrow_up_path = v_arrow_up_path.replace('\\', '/')
 
 # Debug output to help diagnose path issues
 print(f"[DEBUG] {system} dropdown arrow path: {dropdown_arrow_path}")
 print(f"[DEBUG] {system} dropdown arrow up path: {dropdown_arrow_up_path}")
+print(f"[DEBUG] {system} vertical arrow path: {v_arrow_path}")
+print(f"[DEBUG] {system} vertical arrow up path: {v_arrow_up_path}")
 print(f"[DEBUG] Path exists (arrow): {os.path.exists(dropdown_arrow_path)}")
 print(f"[DEBUG] Path exists (arrow up): {os.path.exists(dropdown_arrow_up_path)}")
+print(f"[DEBUG] Path exists (v arrow): {os.path.exists(v_arrow_path)}")
+print(f"[DEBUG] Path exists (v arrow up): {os.path.exists(v_arrow_up_path)}")
 
 # Style for combobox
 COMBOBOX_STYLE = f"""
@@ -389,7 +407,7 @@ SPINBOX_STYLE = f"""
     
     /* Arrow styling */
     QSpinBox::up-arrow {{
-        image: url("{get_resource_path('app/assets/css/v_arrow_up.svg')}");
+        image: url("{v_arrow_up_path}");
         width: 12px;
         height: 12px;
         margin-top: 1px;
@@ -397,11 +415,11 @@ SPINBOX_STYLE = f"""
     }}
     
     QSpinBox::up-arrow:hover {{
-        image: url("{get_resource_path('app/assets/css/v_arrow_up.svg')}");
+        image: url("{v_arrow_up_path}");
     }}
     
     QSpinBox::down-arrow {{
-        image: url("{get_resource_path('app/assets/css/v_arrow.svg')}");
+        image: url("{v_arrow_path}");
         width: 12px;
         height: 12px;
         margin-top: 0px;
@@ -410,7 +428,7 @@ SPINBOX_STYLE = f"""
     }}
     
     QSpinBox::down-arrow:hover {{
-        image: url("{get_resource_path('app/assets/css/v_arrow.svg')}");
+        image: url("{v_arrow_path}");
     }}
     
     /* Disabled state */
