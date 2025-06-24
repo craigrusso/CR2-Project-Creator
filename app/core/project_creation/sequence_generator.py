@@ -25,6 +25,7 @@ class SequenceGenerator:
                 - date_format: QComboBox
                 - version_count: QSpinBox
                 - version_format: QComboBox
+                - version_digits: QSpinBox
                 - number_start: QSpinBox
                 - number_count: QSpinBox
                 - number_format: QComboBox
@@ -118,20 +119,24 @@ class SequenceGenerator:
     def _generate_version_sequence(base_name, position, ui_widgets):
         """Generate version sequence names"""
         count = ui_widgets['version_count'].value()
-        format_text = ui_widgets['version_format'].currentText()
+        format_prefix = ui_widgets['version_format'].currentText()
+        leading_zeros = ui_widgets['version_digits'].currentText()
         
         names = []
         for i in range(1, count + 1):
-            if "V1, V2" in format_text:
-                version_str = f"V{i}"
-            elif "v1, v2" in format_text:
-                version_str = f"v{i}"
-            elif "Ver1, Ver2" in format_text:
-                version_str = f"Ver{i}"
-            elif "Version1, Version2" in format_text:
-                version_str = f"Version{i}"
+            # Format number based on leading zeros setting
+            if leading_zeros == "NONE":
+                num_str = str(i)
+            elif leading_zeros == "1":
+                num_str = f"{i:02d}"  # 1 leading zero = 2 digits total
+            elif leading_zeros == "2":
+                num_str = f"{i:03d}"  # 2 leading zeros = 3 digits total
+            elif leading_zeros == "3":
+                num_str = f"{i:04d}"  # 3 leading zeros = 4 digits total
             else:
-                version_str = f"V{i}"
+                num_str = str(i)
+            
+            version_str = f"{format_prefix}{num_str}"
             
             if "Suffix" in position:
                 name = f"{base_name}_{version_str}"
@@ -155,7 +160,9 @@ class SequenceGenerator:
         for i in range(count):
             num = start + i
             
-            if "3 digits" in format_text:
+            if "4 digits" in format_text:
+                num_str = f"{num:04d}"
+            elif "3 digits" in format_text:
                 num_str = f"{num:03d}"
             elif "2 digits" in format_text:
                 num_str = f"{num:02d}"

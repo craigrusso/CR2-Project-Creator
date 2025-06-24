@@ -110,6 +110,7 @@ class BatchCreationManager:
             'date_format': self.main_window.date_format,
             'version_count': self.main_window.version_count,
             'version_format': self.main_window.version_format,
+            'version_digits': self.main_window.version_digits,
             'number_start': self.main_window.number_start,
             'number_count': self.main_window.number_count,
             'number_format': self.main_window.number_format,

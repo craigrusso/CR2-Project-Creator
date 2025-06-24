@@ -161,8 +161,20 @@ class VersioningUI:
         # Format
         layout.addWidget(QLabel("Format:"))
         self.main_window.version_format = QComboBox()
-        self.main_window.version_format.addItems(["V1, V2", "v1, v2", "Ver1, Ver2"])
+        self.main_window.version_format.addItems([
+            "V",
+            "v", 
+            "Ver",
+            "Version"
+        ])
         layout.addWidget(self.main_window.version_format)
+        
+        # Leading Zeros
+        layout.addWidget(QLabel("Leading Zeros:"))
+        self.main_window.version_digits = QComboBox()
+        self.main_window.version_digits.addItems(["NONE", "1", "2", "3"])  # NONE=no padding, 1=01, 2=001, 3=0001
+        self.main_window.version_digits.setCurrentText("NONE")
+        layout.addWidget(self.main_window.version_digits)
         
         layout.addStretch()
         self.main_window.version_options.hide()

@@ -715,9 +715,15 @@ class ProjectCreatorApp(QMainWindow):
         
         # Version options (shown when Version Numbers selected)
         self.version_options = QWidget()
-        version_main_layout = QHBoxLayout(self.version_options)
+        version_main_layout = QVBoxLayout(self.version_options)
         version_main_layout.setContentsMargins(0, 5, 0, 0)
-        version_main_layout.setSpacing(15)
+        version_main_layout.setSpacing(8)
+        
+        # First row: Count and Leading Zeros
+        first_row = QWidget()
+        first_row_layout = QHBoxLayout(first_row)
+        first_row_layout.setContentsMargins(0, 0, 0, 0)
+        first_row_layout.setSpacing(15)
         
         # Count
         count_container = QWidget()
@@ -744,13 +750,47 @@ class ProjectCreatorApp(QMainWindow):
         self.version_count.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.version_count.setStyleSheet(SPINBOX_STYLE)
         count_layout.addWidget(self.version_count)
-        version_main_layout.addWidget(count_container)
+        first_row_layout.addWidget(count_container)
         
-        # Format
-        format_container = QWidget()
-        format_layout = QHBoxLayout(format_container)
-        format_layout.setContentsMargins(0, 0, 0, 0)
-        format_layout.setSpacing(5)
+        # Leading Zeros
+        zeros_container = QWidget()
+        zeros_layout = QHBoxLayout(zeros_container)
+        zeros_layout.setContentsMargins(0, 0, 0, 0)
+        zeros_layout.setSpacing(5)
+        
+        zeros_label = QLabel("Leading Zeros:")
+        zeros_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        zeros_label.setStyleSheet(f"""
+            color: {colors['text']};
+            background-color: transparent;
+            border: none;
+            padding: 0px;
+            font-weight: normal;
+        """)
+        zeros_label.setFixedWidth(90)
+        zeros_layout.addWidget(zeros_label)
+        
+        self.version_digits = QComboBox()
+        self.version_digits.addItems(["NONE", "1", "2", "3"])  # NONE=no padding, 1=01, 2=001, 3=0001
+        self.version_digits.setCurrentText("NONE")
+        self.version_digits.setFixedWidth(100)
+        self.version_digits.setMinimumHeight(32)
+        self.version_digits.setStyleSheet(COMBOBOX_STYLE)
+        
+        # Apply hover delegate for proper hover effects
+        apply_hover_delegate(self.version_digits)
+        
+        zeros_layout.addWidget(self.version_digits)
+        first_row_layout.addWidget(zeros_container)
+        
+        first_row_layout.addStretch()
+        version_main_layout.addWidget(first_row)
+        
+        # Second row: Format
+        format_row = QWidget()
+        format_row_layout = QHBoxLayout(format_row)
+        format_row_layout.setContentsMargins(0, 0, 0, 0)
+        format_row_layout.setSpacing(5)
         
         format_label = QLabel("Format:")
         format_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -762,24 +802,25 @@ class ProjectCreatorApp(QMainWindow):
             font-weight: normal;
         """)
         format_label.setFixedWidth(60)
-        format_layout.addWidget(format_label)
+        format_row_layout.addWidget(format_label)
         
         self.version_format = QComboBox()
         self.version_format.addItems([
-            "V1, V2, V3...",
-            "v1, v2, v3...",
-            "Ver1, Ver2, Ver3...",
-            "Version1, Version2, Version3..."
+            "V",
+            "v", 
+            "Ver",
+            "Version"
         ])
-        self.version_format.setFixedWidth(180)
+        self.version_format.setFixedWidth(100)
         self.version_format.setMinimumHeight(32)  # Minimum height to prevent arrow cutoff
         self.version_format.setStyleSheet(COMBOBOX_STYLE)
         
         # Apply hover delegate for proper hover effects
         apply_hover_delegate(self.version_format)
         
-        format_layout.addWidget(self.version_format)
-        version_main_layout.addWidget(format_container)
+        format_row_layout.addWidget(self.version_format)
+        format_row_layout.addStretch()
+        version_main_layout.addWidget(format_row)
         
         version_main_layout.addStretch()
         
@@ -874,7 +915,8 @@ class ProjectCreatorApp(QMainWindow):
         self.number_format.addItems([
             "No padding (1, 2, 3...)",
             "2 digits (01, 02, 03...)",
-            "3 digits (001, 002, 003...)"
+            "3 digits (001, 002, 003...)",
+            "4 digits (0001, 0002, 0003...)"
         ])
         self.number_format.setCurrentText("3 digits (001, 002, 003...)")
         self.number_format.setFixedWidth(200)
@@ -2144,19 +2186,23 @@ class ProjectCreatorApp(QMainWindow):
         elif sequence_type == "Version Numbers":
             # Generate version sequence
             count = self.version_count.value()
-            format_text = self.version_format.currentText()
+            format_prefix = self.version_format.currentText()
+            leading_zeros = self.version_digits.currentText()
             
             for i in range(1, count + 1):
-                if "V1, V2" in format_text:
-                    version_str = f"V{i}"
-                elif "v1, v2" in format_text:
-                    version_str = f"v{i}"
-                elif "Ver1, Ver2" in format_text:
-                    version_str = f"Ver{i}"
-                elif "Version1, Version2" in format_text:
-                    version_str = f"Version{i}"
+                # Format number based on leading zeros setting
+                if leading_zeros == "NONE":
+                    num_str = str(i)
+                elif leading_zeros == "1":
+                    num_str = f"{i:02d}"  # 1 leading zero = 2 digits total
+                elif leading_zeros == "2":
+                    num_str = f"{i:03d}"  # 2 leading zeros = 3 digits total
+                elif leading_zeros == "3":
+                    num_str = f"{i:04d}"  # 3 leading zeros = 4 digits total
                 else:
-                    version_str = f"V{i}"
+                    num_str = str(i)
+                
+                version_str = f"{format_prefix}{num_str}"
                 
                 if "Suffix" in position:
                     name = f"{base_name}_{version_str}"
@@ -2176,7 +2222,9 @@ class ProjectCreatorApp(QMainWindow):
             for i in range(count):
                 num = start + i
                 
-                if "3 digits" in format_text:
+                if "4 digits" in format_text:
+                    num_str = f"{num:04d}"
+                elif "3 digits" in format_text:
                     num_str = f"{num:03d}"
                 elif "2 digits" in format_text:
                     num_str = f"{num:02d}"

@@ -2176,15 +2176,25 @@ class ProjectCreatorApp(MainWindowBase):
             format_text = self.version_format.currentText()
             
             for i in range(1, count + 1):
-                if "V1, V2" in format_text:
-                    version_str = f"V{i}"
-                elif "v1, v2" in format_text:
-                    version_str = f"v{i}"
-                elif "Ver1, Ver2" in format_text:
-                    version_str = f"Ver{i}"
-                elif "Version1, Version2" in format_text:
-                    version_str = f"Version{i}"
+                # Format number based on leading zeros setting
+                if hasattr(self, 'version_digits'):
+                    leading_zeros = self.version_digits.currentText()
+                    format_prefix = format_text
+                    
+                    if leading_zeros == "NONE":
+                        num_str = str(i)
+                    elif leading_zeros == "1":
+                        num_str = f"{i:02d}"  # 1 leading zero = 2 digits total
+                    elif leading_zeros == "2":
+                        num_str = f"{i:03d}"  # 2 leading zeros = 3 digits total
+                    elif leading_zeros == "3":
+                        num_str = f"{i:04d}"  # 3 leading zeros = 4 digits total
+                    else:
+                        num_str = str(i)
+                    
+                    version_str = f"{format_prefix}{num_str}"
                 else:
+                    # Fallback for old format
                     version_str = f"V{i}"
                 
                 if "Suffix" in position:

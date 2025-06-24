@@ -182,11 +182,25 @@ class BatchManager:
         """Generate version number sequences"""
         sequences = []
         
-        if hasattr(self.app, 'version_count'):
+        if hasattr(self.app, 'version_count') and hasattr(self.app, 'version_format') and hasattr(self.app, 'version_digits'):
             count = self.app.version_count.value()
+            format_prefix = self.app.version_format.currentText()
+            leading_zeros = self.app.version_digits.currentText()
             
             for i in range(1, count + 1):
-                version_str = f"v{i:02d}"
+                # Format number based on leading zeros setting
+                if leading_zeros == "NONE":
+                    num_str = str(i)
+                elif leading_zeros == "1":
+                    num_str = f"{i:02d}"  # 1 leading zero = 2 digits total
+                elif leading_zeros == "2":
+                    num_str = f"{i:03d}"  # 2 leading zeros = 3 digits total
+                elif leading_zeros == "3":
+                    num_str = f"{i:04d}"  # 3 leading zeros = 4 digits total
+                else:
+                    num_str = str(i)
+                
+                version_str = f"{format_prefix}{num_str}"
                 
                 if position == "Prefix":
                     project_name = f"{version_str}_{base_name}"
