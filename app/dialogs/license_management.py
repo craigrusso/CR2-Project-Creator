@@ -305,7 +305,8 @@ class LicenseManagementDialog(QDialog):
                 # Reload the license info in the dialog
                 self.load_license_info()
                 
-                # Check if trial is still active
+                # Force a fresh check of trial status after deactivation
+                # This ensures we get accurate trial information now that license is deactivated
                 is_trial_active = self.license_manager.is_trial_active()
                 days_left = self.license_manager.get_trial_days_remaining()
                 
@@ -332,10 +333,33 @@ class LicenseManagementDialog(QDialog):
                 
                 # If trial is still active, just show informational message
                 else:
+                    # Get more detailed time remaining for accurate message
+                    time_parts = self.license_manager.get_trial_time_remaining_parts()
+                    days = time_parts.get('days', 0)
+                    hours = time_parts.get('hours', 0)
+                    minutes = time_parts.get('minutes', 0)
+                    
+                    # Build time display string
+                    time_str_parts = []
+                    if days > 0:
+                        time_str_parts.append(f"{days} day{'s' if days != 1 else ''}")
+                    if hours > 0:
+                        time_str_parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+                    if minutes > 0:
+                        time_str_parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+                    
+                    if time_str_parts:
+                        if len(time_str_parts) > 1:
+                            time_display_str = ", ".join(time_str_parts[:-1]) + " and " + time_str_parts[-1]
+                        else:
+                            time_display_str = time_str_parts[0]
+                    else:
+                        time_display_str = "less than a minute"
+                    
                     QMessageBox.information(
                         self,
                         "Trial Mode Activated",
-                        f"Your license has been deactivated. The application will continue in trial mode with {days_left} days remaining."
+                        f"Your license has been deactivated. The application will continue in trial mode with {time_display_str} remaining."
                     )
             else:
                 # Check if the message indicates it was already deactivated
