@@ -1224,6 +1224,48 @@ class LicenseManager:
         msg.setStandardButtons(QMessageBox.Ok)
         msg.exec_()
 
+    def get_startup_trial_status(self):
+        """
+        Get trial status using the same logic as main.py startup.
+        Returns a dict with 'status' and 'time_parts' keys.
+        
+        Status can be:
+        - 'licensed': User has valid license
+        - 'trial_active': Trial is active, time_parts contains remaining time
+        - 'trial_expired': Trial has expired (either genuine expiry or was_ever_licensed bypass)
+        """
+        # Check if licensed first
+        if self.is_licensed():
+            return {
+                'status': 'licensed',
+                'time_parts': {'days': 0, 'hours': 0, 'minutes': 0}
+            }
+        
+        # Check if a license was ever activated on this installation
+        # This is the key logic from main.py that bypasses trial for previously licensed users
+        was_ever_licensed = self.settings.value("license/was_ever_licensed", False, type=bool)
+        
+        if was_ever_licensed:
+            # Force expiration - treat as if trial expired (startup logic line 427-438)
+            return {
+                'status': 'trial_expired',
+                'time_parts': {'days': 0, 'hours': 0, 'minutes': 0}
+            }
+        else:
+            # Normal trial check (only if never licensed before) - startup logic line 440+
+            if self.is_trial_active():
+                time_parts = self.get_trial_time_remaining_parts()
+                return {
+                    'status': 'trial_active',
+                    'time_parts': time_parts
+                }
+            else:
+                # Trial has genuinely expired according to precise check
+                return {
+                    'status': 'trial_expired',
+                    'time_parts': {'days': 0, 'hours': 0, 'minutes': 0}
+                }
+
     @property
     def license_key(self):
         """Get the current license key"""

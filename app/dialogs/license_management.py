@@ -262,41 +262,41 @@ class LicenseManagementDialog(QDialog):
             self.name_label.setText("--")
             self.company_label.setText("--")
         
-        # Trial information - use precise time remaining
-        if self.license_manager.is_licensed():
+        # Trial information - use the same logic as startup for consistency
+        trial_status = self.license_manager.get_startup_trial_status()
+        
+        if trial_status['status'] == 'licensed':
             self.trial_status_label.setText("N/A (Licensed)")
             self.trial_days_label.setText("N/A")
-        else:
-            is_trial_active = self.license_manager.is_trial_active()
-            if is_trial_active:
-                self.trial_status_label.setText("Active")
-                self.trial_status_label.setStyleSheet("color: green;")
-                
-                # Get precise time remaining for display
-                time_parts = self.license_manager.get_trial_time_remaining_parts()
-                days = time_parts.get('days', 0)
-                hours = time_parts.get('hours', 0)
-                minutes = time_parts.get('minutes', 0)
-                
-                # Build compact time display string
-                time_str_parts = []
-                if days > 0:
-                    time_str_parts.append(f"{days}d")
-                if hours > 0:
-                    time_str_parts.append(f"{hours}h")
-                if minutes > 0:
-                    time_str_parts.append(f"{minutes}m")
-                
-                if time_str_parts:
-                    time_display_str = " ".join(time_str_parts)
-                else:
-                    time_display_str = "<1m"
-                
-                self.trial_days_label.setText(time_display_str)
+        elif trial_status['status'] == 'trial_active':
+            self.trial_status_label.setText("Active")
+            self.trial_status_label.setStyleSheet("color: green;")
+            
+            # Get time remaining from startup logic
+            time_parts = trial_status['time_parts']
+            days = time_parts.get('days', 0)
+            hours = time_parts.get('hours', 0)
+            minutes = time_parts.get('minutes', 0)
+            
+            # Build compact time display string
+            time_str_parts = []
+            if days > 0:
+                time_str_parts.append(f"{days}d")
+            if hours > 0:
+                time_str_parts.append(f"{hours}h")
+            if minutes > 0:
+                time_str_parts.append(f"{minutes}m")
+            
+            if time_str_parts:
+                time_display_str = " ".join(time_str_parts)
             else:
-                self.trial_status_label.setText("Expired")
-                self.trial_status_label.setStyleSheet("color: red;")
-                self.trial_days_label.setText("Expired")
+                time_display_str = "<1m"
+            
+            self.trial_days_label.setText(time_display_str)
+        else:  # trial_expired
+            self.trial_status_label.setText("Expired")
+            self.trial_status_label.setStyleSheet("color: red;")
+            self.trial_days_label.setText("Expired")
         
     def deactivate_license(self):
         """Deactivate the license"""
@@ -327,13 +327,12 @@ class LicenseManagementDialog(QDialog):
                 # Reload the license info in the dialog
                 self.load_license_info()
                 
-                # Force a fresh check of trial status after deactivation
-                # This ensures we get accurate trial information now that license is deactivated
-                is_trial_active = self.license_manager.is_trial_active()
-                days_left = self.license_manager.get_trial_days_remaining()
+                # Force a fresh check of trial status after deactivation using startup logic
+                # This ensures we get the same trial information that startup would show
+                trial_status = self.license_manager.get_startup_trial_status()
                 
                 # If trial is expired, show activation dialog or close app
-                if not is_trial_active or days_left <= 0:
+                if trial_status['status'] == 'trial_expired':
                     QMessageBox.warning(
                         self,
                         "Trial Expired",
@@ -355,8 +354,8 @@ class LicenseManagementDialog(QDialog):
                 
                 # If trial is still active, just show informational message
                 else:
-                    # Get more detailed time remaining for accurate message
-                    time_parts = self.license_manager.get_trial_time_remaining_parts()
+                    # Get time remaining from startup logic for accurate message
+                    time_parts = trial_status['time_parts']
                     days = time_parts.get('days', 0)
                     hours = time_parts.get('hours', 0)
                     minutes = time_parts.get('minutes', 0)
