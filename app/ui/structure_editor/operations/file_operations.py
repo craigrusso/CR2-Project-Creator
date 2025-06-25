@@ -10,18 +10,19 @@ import os
 from PyQt6.QtWidgets import (
     QTreeWidgetItem, QInputDialog, QLineEdit, QMessageBox, QDialog, QFileDialog
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QObject
 from PyQt6.QtGui import QIcon
 
 # Import our utilities
 from ..utils.file_type_detector import FileTypeDetector
 
 
-class BasicFileOperations:
+class BasicFileOperations(QObject):
     """Handles basic file and folder operations"""
     
     def __init__(self, tree_widget=None):
         """Initialize basic file operations handler"""
+        super().__init__()
         self.tree_widget = tree_widget
         self.file_detector = FileTypeDetector()
         
@@ -30,61 +31,71 @@ class BasicFileOperations:
         self.tree_widget = tree_widget
 
     def add_file(self, parent_item=None, file_name=None, file_type=None):
-        """Add an existing file to the structure, ensuring it's placed under the correct parent."""
+        """Add a new file to the structure"""
         if not self.tree_widget:
             print("ERROR: No tree widget available")
             return None
-
-        # 1. Determine the correct parent item using logic identical to add_folder.
+        
+        # Get the selected item to determine parent
         selected = self.tree_widget.selectedItems()
-        actual_parent_item = None
-        parent_name_for_debug = "Root Level"
-
-        if selected:
+        parent_name_for_debug = "Root Level"  # Default debug name
+        
+        # If no parent_item was provided, try to get it from selection
+        if parent_item is None and selected:
             item = selected[0]
-            # If the selected item is a folder, it becomes the parent.
-            item_data = item.data(0, Qt.ItemDataRole.UserRole)
-            if isinstance(item_data, dict) and item_data.get('type') == "folder":
-                actual_parent_item = item
-                parent_name_for_debug = actual_parent_item.text(0)
-
-        # If no folder was selected, the parent becomes the invisible root item.
-        if actual_parent_item is None:
-            actual_parent_item = self.tree_widget.invisibleRootItem()
-
-        # 2. Open system file picker dialog to select an existing file.
-        file_path, _ = QFileDialog.getOpenFileName(
-            self.tree_widget,
-            "Select File to Add to Template Structure",
-            "",  # Start in default directory
-            "All Files (*)"
-        )
+            if item.text(1) == "folder":
+                parent_item = item
+                parent_name_for_debug = item.text(0)
+            else:
+                # If a file is selected, use its parent
+                parent_item = item.parent()
+                if parent_item:
+                    parent_name_for_debug = parent_item.text(0)
         
-        if not file_path:
-            return None  # User cancelled
+        # If still no parent_item, use root
+        if parent_item is None:
+            parent_item = self.tree_widget.invisibleRootItem()
         
-        # 3. Process the selected file.
-        file_name = os.path.basename(file_path)
-        file_type = self.file_detector.get_file_type_from_extension(file_name)
+        # --- USER-REQUESTED DEBUG MESSAGE ---
+        QMessageBox.information(self.tree_widget, "Debug: Parent Selection", 
+                              f"The currently selected parent is: '{parent_name_for_debug}'")
         
-        # 4. Create the file item in the tree under the correct parent.
-        file_item = self._add_file_item(actual_parent_item, file_name, file_type, file_path)
-        
-        if file_item:
-            from ..handlers.binary_file_handler import BinaryFileHandler
-            data = file_item.data(0, Qt.ItemDataRole.UserRole) or {}
-            data['is_binary'] = BinaryFileHandler.is_binary_file(file_path)
-            data['original_path'] = file_path
-            file_item.setData(0, Qt.ItemDataRole.UserRole, data)
+        # Get file path from user if not provided
+        file_path = None
+        if not file_name:
+            file_path, _ = QFileDialog.getOpenFileName(
+                self.tree_widget,
+                'Select File',
+                os.path.expanduser("~"),
+                'All Files (*.*)'
+            )
             
-            # This styling needs to be applied after the item is created and added.
-            try:
-                from app.ui.tree_styling import update_item_icon
-                update_item_icon(file_item)
-            except ImportError:
-                print("Could not import update_item_icon for immediate styling.")
-
-            print(f"DEBUG: Added file '{file_name}' to parent '{parent_name_for_debug}'")
+            if not file_path:
+                return None  # User cancelled
+            
+            file_name = os.path.basename(file_path)
+        
+        # Create the new file item
+        file_item = QTreeWidgetItem()
+        file_item.setText(0, file_name)
+        file_item.setText(1, "file")
+        
+        # Add it to the parent
+        parent_item.addChild(file_item)
+        
+        # If we have a file path, store it
+        if file_path:
+            item_data = {
+                'name': file_name,
+                'type': 'file',
+                'original_path': file_path,
+                'is_binary': self.file_detector.is_binary_file(file_path)
+            }
+            file_item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+        
+        # Expand the parent to make the new file visible
+        if parent_item is not self.tree_widget.invisibleRootItem():
+            parent_item.setExpanded(True)
         
         return file_item
 
@@ -151,7 +162,9 @@ class BasicFileOperations:
         else:
             folder_item = QTreeWidgetItem(self.tree_widget)
 
+        # Set both column texts
         folder_item.setText(0, folder_name)
+        folder_item.setText(1, "folder")  # Set the type column
         
         # Set item data
         item_data = {
