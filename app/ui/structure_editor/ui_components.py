@@ -63,6 +63,10 @@ class StructureEditorTree(QTreeWidget):
         self.placeholder_text = "Drop Files and Folders Here"
         self.placeholder_visible = True
         
+        # Get resource paths for branch indicators
+        branch_closed_path = get_resource_path('app/assets/css/branch-closed.svg').replace('\\', '/')
+        branch_open_path = get_resource_path('app/assets/css/branch-open.svg').replace('\\', '/')
+
         # Apply enhanced styling while ensuring branch indicators remain visible
         self.setStyleSheet(f"""
             QTreeWidget {{
@@ -97,14 +101,14 @@ class StructureEditorTree(QTreeWidget):
             /* Style branch indicators to ensure they're visible */
             QTreeWidget::branch:has-children:!has-siblings:closed,
             QTreeWidget::branch:closed:has-children:has-siblings {{
-                image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24'><path fill='%23666666' d='M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z'/></svg>");
+                image: url({branch_closed_path});
                 width: 15px;
                 height: 15px;
             }}
             
             QTreeWidget::branch:open:has-children:!has-siblings,
             QTreeWidget::branch:open:has-children:has-siblings {{
-                image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24'><path fill='%23666666' d='M7 10l5 5 5-5z'/></svg>");
+                image: url({branch_open_path});
                 width: 15px;
                 height: 15px;
             }}

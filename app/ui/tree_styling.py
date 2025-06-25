@@ -74,8 +74,8 @@ def apply_enhanced_tree_styling(tree_widget):
         return
     
     # Get absolute paths to branch indicator SVGs using the resource path helper
-    branch_closed_path = get_resource_path('app/assets/css/branch-closed.svg')
-    branch_open_path = get_resource_path('app/assets/css/branch-open.svg')
+    branch_closed_path = get_resource_path('app/assets/css/branch-closed.svg').replace('\\', '/')
+    branch_open_path = get_resource_path('app/assets/css/branch-open.svg').replace('\\', '/')
     
     # Apply custom stylesheet for consistent appearance
     # Use the application color scheme for consistency
