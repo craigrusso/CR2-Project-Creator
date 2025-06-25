@@ -30,47 +30,59 @@ class BasicFileOperations:
         self.tree_widget = tree_widget
 
     def add_file(self, parent_item=None, file_name=None, file_type=None):
-        """Add an existing file from the user's system to the structure"""
+        """Add an existing file to the structure, ensuring it's placed under the correct parent."""
         if not self.tree_widget:
             print("ERROR: No tree widget available")
             return None
 
-        # Open system file picker dialog to select an existing file
-        from PyQt6.QtWidgets import QFileDialog
-        
-        # Get the file path from user
+        # 1. Determine the correct parent item using logic identical to add_folder.
+        selected = self.tree_widget.selectedItems()
+        actual_parent_item = None
+
+        if selected:
+            item = selected[0]
+            # If the selected item is a folder, it becomes the parent.
+            item_data = item.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(item_data, dict) and item_data.get('type') == "folder":
+                actual_parent_item = item
+
+        # If no folder was selected, the parent becomes the invisible root item.
+        if actual_parent_item is None:
+            actual_parent_item = self.tree_widget.invisibleRootItem()
+
+        # 2. Open system file picker dialog to select an existing file.
         file_path, _ = QFileDialog.getOpenFileName(
             self.tree_widget,
             "Select File to Add to Template Structure",
             "",  # Start in default directory
-            "All Files (*)"  # Accept all file types
+            "All Files (*)"
         )
         
         if not file_path:
             return None  # User cancelled
         
-        # Extract file name from path
-        import os
+        # 3. Process the selected file.
         file_name = os.path.basename(file_path)
-        
-        # Detect file type from extension
         file_type = self.file_detector.get_file_type_from_extension(file_name)
         
-        # Check if it's a binary file
-        from ..handlers.binary_file_handler import BinaryFileHandler
-        is_binary = BinaryFileHandler.is_binary_file(file_path)
-        
-        # Create the file item in the tree
-        file_item = self._add_file_item(parent_item, file_name, file_type, file_path)
+        # 4. Create the file item in the tree under the correct parent.
+        file_item = self._add_file_item(actual_parent_item, file_name, file_type, file_path)
         
         if file_item:
-            # Set binary flag and original path in the item data
+            from ..handlers.binary_file_handler import BinaryFileHandler
             data = file_item.data(0, Qt.ItemDataRole.UserRole) or {}
-            data['is_binary'] = is_binary
+            data['is_binary'] = BinaryFileHandler.is_binary_file(file_path)
             data['original_path'] = file_path
             file_item.setData(0, Qt.ItemDataRole.UserRole, data)
             
-            print(f"DEBUG: Added file '{file_name}' from '{file_path}' to tree structure")
+            # This styling needs to be applied after the item is created and added.
+            try:
+                from app.ui.tree_styling import _apply_file_styling_to_item
+                _apply_file_styling_to_item(file_item, file_name)
+            except ImportError:
+                print("Could not import _apply_file_styling_to_item for immediate styling.")
+
+            print(f"DEBUG: Added file '{file_name}' to parent '{actual_parent_item.text(0)}'")
         
         return file_item
 
