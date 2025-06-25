@@ -79,10 +79,10 @@ class BasicFileOperations:
             
             # This styling needs to be applied after the item is created and added.
             try:
-                from app.ui.tree_styling import _apply_file_styling_to_item
-                _apply_file_styling_to_item(file_item, file_name)
+                from app.ui.tree_styling import update_item_icon
+                update_item_icon(file_item)
             except ImportError:
-                print("Could not import _apply_file_styling_to_item for immediate styling.")
+                print("Could not import update_item_icon for immediate styling.")
 
             print(f"DEBUG: Added file '{file_name}' to parent '{parent_name_for_debug}'")
         
