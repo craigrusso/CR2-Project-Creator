@@ -469,29 +469,30 @@ class EnhancedStructureEditor(QDialog):
             print("DEBUG: Folder creation canceled or empty name")
     
     def add_file(self):
-        """
-        Add an existing file (or files) from the user's system to the structure.
-        The file will be added to the currently selected folder. If a file is
-        selected, it will be added to that file's parent folder. If no item
-        is selected, it will be added to the root.
-        """
-        # 1. Determine the correct parent for the new file using existing,
-        # reliable selection logic.
-        selected_items = self.tree.selectedItems()
-        parent_item = self.tree.invisibleRootItem()  # Default to root
-
-        if selected_items:
-            current_item = selected_items[0]
-            item_data = current_item.data(0, Qt.ItemDataRole.UserRole)
-            
-            # Check if the selected item is a folder.
-            if item_data and item_data.get('type') == 'folder':
-                parent_item = current_item
-            else:
-                # If a file is selected, use its parent (or root if it's a top-level file).
-                parent_item = current_item.parent() or self.tree.invisibleRootItem()
+        """Add a new file to the structure, with debugging and identical logic to add_folder."""
+        print("DEBUG: add_file (in EnhancedStructureEditor) method called. THIS IS THE CORRECT ONE.")
         
-        # 2. Open system file picker to get one or more file paths.
+        # Determine the parent item using the exact same logic as add_folder
+        selected = self.tree.selectedItems()
+        parent_item = None
+        parent_name_for_debug = "Root Level" # Default debug name
+
+        if selected:
+            item = selected[0]
+            # If the selected item is a folder, it becomes the parent.
+            if item.text(1) == "folder":
+                parent_item = item
+                parent_name_for_debug = parent_item.text(0)
+
+        # --- USER-REQUESTED DEBUG MESSAGE ---
+        QMessageBox.information(self, "Debug: Parent Selection", f"The currently selected parent is: '{parent_name_for_debug}'")
+
+        # If no parent was found (nothing selected, or a file was selected),
+        # the file will be added to the top level.
+        if parent_item is None:
+            parent_item = self.tree.invisibleRootItem()
+
+        # Use QFileDialog to get file paths
         file_paths, _ = QFileDialog.getOpenFileNames(
             self, "Select File(s) to Add", "", "All Files (*.*)"
         )
@@ -499,38 +500,23 @@ class EnhancedStructureEditor(QDialog):
         if not file_paths:
             return
 
-        # 3. Process each selected file.
         for file_path in file_paths:
-            if not file_path:
-                continue
+            if file_path:
+                file_name = os.path.basename(file_path)
+                
+                # Create a new item with both columns populated
+                new_item = QTreeWidgetItem([file_name, "file"])
+                
+                # Add it to the correct parent (either a folder or the root)
+                parent_item.addChild(new_item)
+                
+                # Apply styling for the icon and text color
+                self._apply_file_styling(new_item, file_name)
 
-            file_name = os.path.basename(file_path)
-            
-            # Create the item under the correct parent.
-            new_item = QTreeWidgetItem(parent_item)
-            new_item.setText(0, file_name)
-            
-            # CRITICAL: Set the item's data *before* applying style.
-            # This is required for the styling/icon logic to work correctly.
-            item_data = {
-                'name': file_name, 'type': 'file',
-                'original_path': file_path, 'is_binary': True
-            }
-            new_item.setData(0, Qt.ItemDataRole.UserRole, item_data)
-            
-            # CRITICAL: Reuse the existing, working method to apply the icon and style.
-            self._apply_file_styling(new_item, file_name)
-            
-            # Ensure the item is editable, consistent with other items.
-            new_item.setFlags(new_item.flags() | Qt.ItemFlag.ItemIsEditable)
-
-        # 4. Expand the parent to ensure the newly added files are visible.
-        if parent_item != self.tree.invisibleRootItem():
+        # Expand the parent to make the new file visible
+        if parent_item is not self.tree.invisibleRootItem():
             parent_item.setExpanded(True)
-            # Scroll to the last added item to bring it into view.
-            if 'new_item' in locals():
-                self.tree.scrollToItem(new_item, QAbstractItemView.ScrollHint.PositionAtCenter)
-    
+
     def _apply_file_styling(self, item, filename):
         """Apply styling to a file item based on its type"""
         from PyQt6.QtGui import QBrush, QColor

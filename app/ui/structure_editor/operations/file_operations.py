@@ -38,6 +38,7 @@ class BasicFileOperations:
         # 1. Determine the correct parent item using logic identical to add_folder.
         selected = self.tree_widget.selectedItems()
         actual_parent_item = None
+        parent_name_for_debug = "Root Level"
 
         if selected:
             item = selected[0]
@@ -45,6 +46,7 @@ class BasicFileOperations:
             item_data = item.data(0, Qt.ItemDataRole.UserRole)
             if isinstance(item_data, dict) and item_data.get('type') == "folder":
                 actual_parent_item = item
+                parent_name_for_debug = actual_parent_item.text(0)
 
         # If no folder was selected, the parent becomes the invisible root item.
         if actual_parent_item is None:
@@ -82,7 +84,7 @@ class BasicFileOperations:
             except ImportError:
                 print("Could not import _apply_file_styling_to_item for immediate styling.")
 
-            print(f"DEBUG: Added file '{file_name}' to parent '{actual_parent_item.text(0)}'")
+            print(f"DEBUG: Added file '{file_name}' to parent '{parent_name_for_debug}'")
         
         return file_item
 
