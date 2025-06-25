@@ -469,25 +469,22 @@ class EnhancedStructureEditor(QDialog):
             print("DEBUG: Folder creation canceled or empty name")
     
     def add_file(self):
-        """Add a new file to the structure, with debugging and identical logic to add_folder."""
+        """Add a new file to the structure."""
         print("DEBUG: add_file (in EnhancedStructureEditor) method called. THIS IS THE CORRECT ONE.")
         
-        # Determine the parent item using the exact same logic as add_folder
         selected = self.tree.selectedItems()
         parent_item = None
-        parent_name_for_debug = "Root Level" # Default debug name
 
         if selected:
             item = selected[0]
             # If the selected item is a folder, it becomes the parent.
             if item.text(1) == "folder":
                 parent_item = item
-                parent_name_for_debug = parent_item.text(0)
+            # If it's a file, its parent becomes the parent for the new file.
+            else:
+                parent_item = item.parent()
 
-        # --- USER-REQUESTED DEBUG MESSAGE ---
-        QMessageBox.information(self, "Debug: Parent Selection", f"The currently selected parent is: '{parent_name_for_debug}'")
-
-        # If no parent was found (nothing selected, or a file was selected),
+        # If no parent was found (nothing selected, or a top-level file was selected and its parent is None),
         # the file will be added to the top level.
         if parent_item is None:
             parent_item = self.tree.invisibleRootItem()

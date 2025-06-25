@@ -9,6 +9,8 @@ Extracted from the monolithic file_operations.py for better organization.
 """
 
 import os
+from PyQt6.QtWidgets import QApplication, QStyle
+from PyQt6.QtGui import QIcon
 
 # Constants for file types
 FILE_TYPES = {
@@ -20,6 +22,7 @@ FILE_TYPES = {
     'presentation': ['.ppt', '.pptx', '.odp'],
     'archive': ['.zip', '.rar', '.7z', '.tar', '.gz'],
     'script': ['.py', '.js', '.html', '.css', '.xml', '.json'],
+    'cad': ['.dwg', '.dxf', '.stp', '.step', '.iges', '.igs'],
     'other': []
 }
 
@@ -65,4 +68,37 @@ class FileTypeDetector:
     @staticmethod
     def is_supported_extension(file_path):
         """Check if file extension is in our supported types"""
-        return FileTypeDetector.get_file_type_from_extension(file_path) != 'other' 
+        return FileTypeDetector.get_file_type_from_extension(file_path) != 'other'
+
+    @staticmethod
+    def is_binary_file(file_path):
+        """
+        Check if a file is binary or text.
+        
+        Args:
+            file_path (str): The path to the file.
+            
+        Returns:
+            bool: True if the file is likely binary, False otherwise.
+        """
+        try:
+            with open(file_path, 'rb') as f:
+                chunk = f.read(1024)
+                return b'\x00' in chunk
+        except IOError:
+            return False
+
+def get_folder_icon(is_expanded=False) -> QIcon:
+    """
+    Returns the appropriate folder icon (open or closed).
+    
+    Args:
+        is_expanded (bool): Whether the folder is expanded.
+        
+    Returns:
+        QIcon: The folder icon.
+    """
+    if is_expanded:
+        return QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirOpenIcon)
+    else:
+        return QApplication.style().standardIcon(QStyle.StandardPixmap.SP_DirIcon) 

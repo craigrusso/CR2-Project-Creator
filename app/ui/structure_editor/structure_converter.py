@@ -247,13 +247,10 @@ class StructureConverter:
     
     def _apply_icons_to_tree(self):
         """Apply proper icons to all items in the tree"""
-        # Get default icons
-        from .utils import get_file_icon_for_type
-        
         # Get the tree root
         root = self.tree_widget.invisibleRootItem()
         
-        # Process all items
+        # Process all items recursively
         for i in range(root.childCount()):
             item = root.child(i)
             self._apply_icon_to_item(item)
@@ -263,34 +260,44 @@ class StructureConverter:
         if not item:
             return
             
-        # Get item data
+        from .utils.file_type_detector import get_folder_icon
+        from .utils.structure_utils import get_file_icon_for_type
+        
         item_data = item.data(0, Qt.ItemDataRole.UserRole)
-        
-        # If no data available, infer from text and children
-        if not item_data:
-            if item.childCount() > 0:
-                # Assume it's a folder if it has children
-                item_data = {'type': 'folder', 'name': item.text(0)}
-            else:
-                # Assume it's a file otherwise
-                item_data = {'type': 'file', 'name': item.text(0)}
-            item.setData(0, Qt.ItemDataRole.UserRole, item_data)
-        
-        # Apply icon based on type
+        displayed_name = item.text(0)
+        item_type = None
+
         if isinstance(item_data, dict) and 'type' in item_data:
-            if item_data['type'] == 'folder':
-                # Use standard folder icon
-                from PyQt6.QtGui import QIcon
-                item.setIcon(0, QIcon.fromTheme("folder"))
+            item_type = item_data.get('type')
+        
+        # If type is still unknown, infer it
+        if not item_type:
+            if item.childCount() > 0:
+                item_type = 'folder'
+            # Check for file extension as a strong indicator of a file
+            elif '.' in os.path.basename(displayed_name):
+                item_type = 'file'
+            # Fallback for items with no children and no extension
             else:
-                # Use file type icon
-                from .utils import get_file_icon_for_type
-                item.setIcon(0, get_file_icon_for_type(item_data.get('name', '')))
+                item_type = 'folder' 
+
+        # Apply icon based on the determined type
+        if item_type == 'folder':
+            is_expanded = item.isExpanded()
+            item.setIcon(0, get_folder_icon(is_expanded))
+        else: # 'file'
+            # Use the 'name' from user data for icon lookup, as the displayed
+            # text might be a pattern like '${PROJECT_NAME}'. Fall back to displayed text.
+            name_for_icon = displayed_name
+            if isinstance(item_data, dict) and 'name' in item_data:
+                name_for_icon = item_data['name']
+            
+            item.setIcon(0, get_file_icon_for_type(name_for_icon))
         
         # Process children recursively
         for i in range(item.childCount()):
             self._apply_icon_to_item(item.child(i))
-        
+
     def _add_structure_item_to_tree(self, item, parent_item):
         """
         Add a structure item to the tree

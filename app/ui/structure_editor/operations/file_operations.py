@@ -36,68 +36,64 @@ class BasicFileOperations(QObject):
             print("ERROR: No tree widget available")
             return None
         
-        # Get the selected item to determine parent
-        selected = self.tree_widget.selectedItems()
-        parent_name_for_debug = "Root Level"  # Default debug name
-        
-        # If no parent_item was provided, try to get it from selection
-        if parent_item is None and selected:
-            item = selected[0]
-            if item.text(1) == "folder":
-                parent_item = item
-                parent_name_for_debug = item.text(0)
-            else:
-                # If a file is selected, use its parent
-                parent_item = item.parent()
-                if parent_item:
-                    parent_name_for_debug = parent_item.text(0)
-        
-        # If still no parent_item, use root
+        # Determine the correct parent for the new file
         if parent_item is None:
-            parent_item = self.tree_widget.invisibleRootItem()
-        
-        # --- USER-REQUESTED DEBUG MESSAGE ---
-        QMessageBox.information(self.tree_widget, "Debug: Parent Selection", 
-                              f"The currently selected parent is: '{parent_name_for_debug}'")
-        
-        # Get file path from user if not provided
-        file_path = None
-        if not file_name:
-            file_path, _ = QFileDialog.getOpenFileName(
-                self.tree_widget,
-                'Select File',
-                os.path.expanduser("~"),
-                'All Files (*.*)'
-            )
+            selected = self.tree_widget.selectedItems()
+            if selected:
+                item = selected[0]
+                item_data = item.data(0, Qt.ItemDataRole.UserRole)
+                
+                # Check if the selected item is a folder
+                is_folder = (item.childCount() > 0 or 
+                             (isinstance(item_data, dict) and item_data.get('type') == 'folder'))
+
+                if is_folder:
+                    parent_item = item  # Use the selected folder as the parent
+                else:
+                    parent_item = item.parent()  # Use the parent of the selected file
             
-            if not file_path:
-                return None  # User cancelled
-            
+            # If still no parent, default to the root
+            if parent_item is None:
+                parent_item = self.tree_widget.invisibleRootItem()
+
+        # Get file path(s) from user
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self.tree_widget,
+            'Select File(s) to Add',
+            os.path.expanduser("~"),
+            'All Files (*.*)'
+        )
+        
+        if not file_paths:
+            return None  # User cancelled
+        
+        created_items = []
+        for file_path in file_paths:
             file_name = os.path.basename(file_path)
-        
-        # Create the new file item
-        file_item = QTreeWidgetItem()
-        file_item.setText(0, file_name)
-        file_item.setText(1, "file")
-        
-        # Add it to the parent
-        parent_item.addChild(file_item)
-        
-        # If we have a file path, store it
-        if file_path:
+            
+            # Create the new file item
+            file_item = QTreeWidgetItem()
+            file_item.setText(0, file_name)
+            file_item.setText(1, "file")  # Set type in column 1
+            
+            # Add to the determined parent
+            parent_item.addChild(file_item)
+            
+            # Store metadata in the item
             item_data = {
                 'name': file_name,
                 'type': 'file',
                 'original_path': file_path,
-                'is_binary': self.file_detector.is_binary_file(file_path)
+                'is_binary': FileTypeDetector.is_binary_file(file_path)
             }
             file_item.setData(0, Qt.ItemDataRole.UserRole, item_data)
-        
-        # Expand the parent to make the new file visible
+            created_items.append(file_item)
+
+        # Expand the parent to make the new file(s) visible
         if parent_item is not self.tree_widget.invisibleRootItem():
             parent_item.setExpanded(True)
         
-        return file_item
+        return created_items
 
     def _add_file_item(self, parent_item, file_name, file_type=None, original_path=None):
         """Internal method to add a file item to the tree"""
