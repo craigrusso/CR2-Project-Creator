@@ -469,34 +469,124 @@ class EnhancedStructureEditor(QDialog):
             print("DEBUG: Folder creation canceled or empty name")
     
     def add_file(self):
-        """Add a new file to the structure"""
-        print("DEBUG: add_file method called")
-        # Get parent item (if any)
-        selected = self.tree.selectedItems()
-        parent = None
-        
-        if selected:
-            item = selected[0]
-            # Only folders can have children
-            if item.text(1) == "folder":
-                parent = item
-        
-        # Get file name
-        file_name, ok = QInputDialog.getText(self, "Add File", "File name:")
-        if ok and file_name:
-            print(f"DEBUG: Adding file '{file_name}'")
-            new_item = QTreeWidgetItem([file_name, "file"])
+        """
+        Add an existing file (or files) from the user's system to the structure.
+        The file will be added to the currently selected folder. If a file is
+        selected, it will be added to that file's parent folder. If no item
+        is selected, it will be added to the root.
+        """
+        # 1. Determine the correct parent for the new file using existing,
+        # reliable selection logic.
+        selected_items = self.tree.selectedItems()
+        parent_item = self.tree.invisibleRootItem()  # Default to root
+
+        if selected_items:
+            current_item = selected_items[0]
+            item_data = current_item.data(0, Qt.ItemDataRole.UserRole)
             
-            # Add to parent or top level
-            if parent:
-                parent.addChild(new_item)
-                parent.setExpanded(True)
-                print(f"DEBUG: Added file '{file_name}' to parent '{parent.text(0)}'")
+            # Check if the selected item is a folder.
+            if item_data and item_data.get('type') == 'folder':
+                parent_item = current_item
             else:
-                self.tree.addTopLevelItem(new_item)
-                print(f"DEBUG: Added file '{file_name}' to top level")
-        else:
-            print("DEBUG: File creation canceled or empty name")
+                # If a file is selected, use its parent (or root if it's a top-level file).
+                parent_item = current_item.parent() or self.tree.invisibleRootItem()
+        
+        # 2. Open system file picker to get one or more file paths.
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self, "Select File(s) to Add", "", "All Files (*.*)"
+        )
+
+        if not file_paths:
+            return
+
+        # 3. Process each selected file.
+        for file_path in file_paths:
+            if not file_path:
+                continue
+
+            file_name = os.path.basename(file_path)
+            
+            # Create the item under the correct parent.
+            new_item = QTreeWidgetItem(parent_item)
+            new_item.setText(0, file_name)
+            
+            # CRITICAL: Set the item's data *before* applying style.
+            # This is required for the styling/icon logic to work correctly.
+            item_data = {
+                'name': file_name, 'type': 'file',
+                'original_path': file_path, 'is_binary': True
+            }
+            new_item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+            
+            # CRITICAL: Reuse the existing, working method to apply the icon and style.
+            self._apply_file_styling(new_item, file_name)
+            
+            # Ensure the item is editable, consistent with other items.
+            new_item.setFlags(new_item.flags() | Qt.ItemFlag.ItemIsEditable)
+
+        # 4. Expand the parent to ensure the newly added files are visible.
+        if parent_item != self.tree.invisibleRootItem():
+            parent_item.setExpanded(True)
+            # Scroll to the last added item to bring it into view.
+            if 'new_item' in locals():
+                self.tree.scrollToItem(new_item, QAbstractItemView.ScrollHint.PositionAtCenter)
+    
+    def _apply_file_styling(self, item, filename):
+        """Apply styling to a file item based on its type"""
+        from PyQt6.QtGui import QBrush, QColor
+        import os
+        
+        ext = os.path.splitext(filename)[1].lower()
+        
+        # Color mappings for file types
+        colors = {
+            # Code files - blue
+            'code': QColor("#42A5F5"),
+            # Web files - orange  
+            'web': QColor("#FF9800"),
+            # Documents - green
+            'doc': QColor("#66BB6A"),
+            # Images - purple
+            'image': QColor("#AB47BC"),
+            # Config files - yellow
+            'config': QColor("#FFC107"),
+            # Executables - red
+            'executable': QColor("#F44336"),
+            # Default - light gray
+            'default': QColor("#BDBDBD")
+        }
+        
+        # Determine file type
+        file_type = 'default'
+        
+        if ext in ('.py', '.js', '.java', '.c', '.cpp', '.h', '.cs', '.php', '.rb', '.go', '.swift'):
+            file_type = 'code'
+        elif ext in ('.html', '.htm', '.css', '.ts', '.jsx', '.tsx'):
+            file_type = 'web'
+        elif ext in ('.txt', '.md', '.doc', '.docx', '.pdf', '.rtf'):
+            file_type = 'doc'
+        elif ext in ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg'):
+            file_type = 'image'
+        elif ext in ('.json', '.yaml', '.yml', '.xml', '.ini', '.conf', '.config', '.toml'):
+            file_type = 'config'
+        elif ext in ('.exe', '.bat', '.sh', '.app'):
+            file_type = 'executable'
+        
+        # Apply color
+        item.setForeground(0, QBrush(colors[file_type]))
+        
+        # Apply font styling for certain file types
+        font = item.font(0)
+        
+        # Bold for important files
+        if file_type in ('executable', 'config'):
+            font.setBold(True)
+            
+        # Italic for documentation files
+        if file_type == 'doc' or filename.lower() in ('readme.md', 'license', 'contributing.md'):
+            font.setItalic(True)
+        
+        item.setFont(0, font)
     
     def edit_item(self):
         """Edit the selected item"""

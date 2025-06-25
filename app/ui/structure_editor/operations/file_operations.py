@@ -8,14 +8,13 @@ Handles basic file and folder operations: add, delete, rename
 
 import os
 from PyQt6.QtWidgets import (
-    QTreeWidgetItem, QInputDialog, QLineEdit, QMessageBox, QDialog
+    QTreeWidgetItem, QInputDialog, QLineEdit, QMessageBox, QDialog, QFileDialog
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
 
 # Import our utilities
 from ..utils.file_type_detector import FileTypeDetector
-from ..dialogs.file_details_dialog import FileDetailsDialog
 
 
 class BasicFileOperations:
@@ -31,44 +30,49 @@ class BasicFileOperations:
         self.tree_widget = tree_widget
 
     def add_file(self, parent_item=None, file_name=None, file_type=None):
-        """Add a new file to the structure"""
+        """Add an existing file from the user's system to the structure"""
         if not self.tree_widget:
             print("ERROR: No tree widget available")
             return None
 
-        # Get categories for the dialog
-        categories = list(self.file_detector.FILE_TYPES.keys())
-        if 'other' in categories:
-            categories.remove('other')  # Remove 'other' from selectable categories
-
-        # Show file details dialog
-        dialog = FileDetailsDialog(
+        # Open system file picker dialog to select an existing file
+        from PyQt6.QtWidgets import QFileDialog
+        
+        # Get the file path from user
+        file_path, _ = QFileDialog.getOpenFileName(
             self.tree_widget,
-            "Add New File",
-            "Enter details for the new file:",
-            file_name or "",
-            categories,
-            file_type or ""
+            "Select File to Add to Template Structure",
+            "",  # Start in default directory
+            "All Files (*)"  # Accept all file types
         )
         
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            file_name = dialog.get_file_name()
-            file_type = dialog.get_file_type()
-            is_binary = dialog.is_binary()
-            
-            if file_name:
-                # Create the file item
-                file_item = self._add_file_item(parent_item, file_name, file_type)
-                
-                # Set binary flag if needed
-                if is_binary:
-                    data = file_item.data(0, Qt.ItemDataRole.UserRole) or {}
-                    data['is_binary'] = True
-                    file_item.setData(0, Qt.ItemDataRole.UserRole, data)
-                
-                return file_item
+        if not file_path:
+            return None  # User cancelled
         
-        return None
+        # Extract file name from path
+        import os
+        file_name = os.path.basename(file_path)
+        
+        # Detect file type from extension
+        file_type = self.file_detector.get_file_type_from_extension(file_name)
+        
+        # Check if it's a binary file
+        from ..handlers.binary_file_handler import BinaryFileHandler
+        is_binary = BinaryFileHandler.is_binary_file(file_path)
+        
+        # Create the file item in the tree
+        file_item = self._add_file_item(parent_item, file_name, file_type, file_path)
+        
+        if file_item:
+            # Set binary flag and original path in the item data
+            data = file_item.data(0, Qt.ItemDataRole.UserRole) or {}
+            data['is_binary'] = is_binary
+            data['original_path'] = file_path
+            file_item.setData(0, Qt.ItemDataRole.UserRole, data)
+            
+            print(f"DEBUG: Added file '{file_name}' from '{file_path}' to tree structure")
+        
+        return file_item
 
     def _add_file_item(self, parent_item, file_name, file_type=None, original_path=None):
         """Internal method to add a file item to the tree"""

@@ -796,19 +796,65 @@ class UIBuilder(QObject):
         # Add File button
         add_file_btn = QPushButton("Add File")
         add_file_btn.setStyleSheet(self._get_button_style('default'))
-        add_file_btn.clicked.connect(lambda: self.editor.add_file() if hasattr(self.editor, 'add_file') else None)
+        
+        # Create a proper slot function to avoid lambda issues in PyQt6
+        def create_add_file_slot():
+            def add_file_slot():
+                try:
+                    # Ensure self.editor exists and has the add_file method
+                    if hasattr(self, 'editor') and hasattr(self.editor, 'add_file'):
+                        self.editor.add_file()
+                    else:
+                        print("ERROR: Editor or add_file method not found!")
+                except Exception as e:
+                    print(f"Error in add file slot: {e}")
+                    import traceback
+                    traceback.print_exc()
+            return add_file_slot
+            
+        add_file_btn.clicked.connect(create_add_file_slot())
         button_layout.addWidget(add_file_btn)
         
         # Add Folder button
         add_folder_btn = QPushButton("Add Folder")
         add_folder_btn.setStyleSheet(self._get_button_style('default'))
-        add_folder_btn.clicked.connect(lambda: self.editor.add_folder() if hasattr(self.editor, 'add_folder') else None)
+        
+        # Create a proper slot function for add_folder
+        def create_add_folder_slot():
+            def add_folder_slot():
+                try:
+                    if hasattr(self, 'editor') and hasattr(self.editor, 'add_folder'):
+                        self.editor.add_folder()
+                    else:
+                        print("ERROR: Editor or add_folder method not found!")
+                except Exception as e:
+                    print(f"Error in add folder slot: {e}")
+                    import traceback
+                    traceback.print_exc()
+            return add_folder_slot
+            
+        add_folder_btn.clicked.connect(create_add_folder_slot())
         button_layout.addWidget(add_folder_btn)
         
         # Delete button
         delete_btn = QPushButton("Delete")
         delete_btn.setStyleSheet(self._get_button_style('danger'))
-        delete_btn.clicked.connect(lambda: self.editor.delete_selected() if hasattr(self.editor, 'delete_selected') else None)
+        
+        # Create a proper slot function for delete
+        def create_delete_slot():
+            def delete_slot():
+                try:
+                    if hasattr(self, 'editor') and hasattr(self.editor, 'delete_selected'):
+                        self.editor.delete_selected()
+                    else:
+                        print("ERROR: Editor or delete_selected method not found!")
+                except Exception as e:
+                    print(f"Error in delete slot: {e}")
+                    import traceback
+                    traceback.print_exc()
+            return delete_slot
+            
+        delete_btn.clicked.connect(create_delete_slot())
         button_layout.addWidget(delete_btn)
         
         # Add button layout to structure layout

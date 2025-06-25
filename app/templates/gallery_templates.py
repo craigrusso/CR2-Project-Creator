@@ -444,30 +444,96 @@ class GalleryTemplatesSetup:
 
         # Connect signals based on item type (TemplateCard or QTableWidgetItem/etc.)
         if hasattr(item, 'clicked'):
-            item.clicked.connect(lambda td=template_data: GalleryEvents.on_template_select(gallery, td))
+            # Create a proper slot function to avoid lambda issues in PyQt6
+            def create_select_slot(template_data_arg):
+                def select_slot():
+                    try:
+                        GalleryEvents.on_template_select(gallery, template_data_arg)
+                    except Exception as e:
+                        print(f"Error in template select slot: {e}")
+                        import traceback
+                        traceback.print_exc()
+                return select_slot
+            item.clicked.connect(create_select_slot(template_data))
         
         if hasattr(item, 'doubleClicked'):
-            item.doubleClicked.connect(lambda t_name=template_name: GalleryEvents.on_edit_template(gallery, t_name))
+            # Create a proper slot function to avoid lambda issues in PyQt6
+            def create_edit_slot(template_name_arg):
+                def edit_slot():
+                    try:
+                        GalleryEvents.on_edit_template(gallery, template_name_arg)
+                    except Exception as e:
+                        print(f"Error in edit template slot: {e}")
+                        import traceback
+                        traceback.print_exc()
+                return edit_slot
+            item.doubleClicked.connect(create_edit_slot(template_name))
 
         if hasattr(item, 'editRequested'):
-            item.editRequested.connect(lambda t_name=template_name: GalleryEvents.on_edit_template(gallery, t_name))
+            # Create a proper slot function to avoid lambda issues in PyQt6
+            def create_edit_requested_slot(template_name_arg):
+                def edit_requested_slot():
+                    try:
+                        GalleryEvents.on_edit_template(gallery, template_name_arg)
+                    except Exception as e:
+                        print(f"Error in edit requested slot: {e}")
+                        import traceback
+                        traceback.print_exc()
+                return edit_requested_slot
+            item.editRequested.connect(create_edit_requested_slot(template_name))
         
         if hasattr(item, 'deleteRequested'):
-            # Corrected: on_delete_template expects only the gallery instance.
-            # It uses the gallery's selection_manager to determine what to delete.
-            item.deleteRequested.connect(lambda: GalleryEvents.on_delete_template(gallery))
+            # Create a proper slot function to avoid lambda issues in PyQt6
+            def create_delete_slot():
+                def delete_slot():
+                    try:
+                        GalleryEvents.on_delete_template(gallery)
+                    except Exception as e:
+                        print(f"Error in delete template slot: {e}")
+                        import traceback
+                        traceback.print_exc()
+                return delete_slot
+            item.deleteRequested.connect(create_delete_slot())
 
         if hasattr(item, 'duplicate_requested'):
-            item.duplicate_requested.connect(lambda t_name=template_name: GalleryEvents.on_duplicate_template(gallery, t_name))
+            # Create a proper slot function to avoid lambda issues in PyQt6
+            def create_duplicate_slot(template_name_arg):
+                def duplicate_slot():
+                    try:
+                        GalleryEvents.on_duplicate_template(gallery, template_name_arg)
+                    except Exception as e:
+                        print(f"Error in duplicate template slot: {e}")
+                        import traceback
+                        traceback.print_exc()
+                return duplicate_slot
+            item.duplicate_requested.connect(create_duplicate_slot(template_name))
 
         if hasattr(item, 'moveToFolderRequested'):
-            item.moveToFolderRequested.connect(lambda t_name=template_name, folder=template_data.get('parent_folder'): 
-                                                GalleryEvents.on_move_template_to_folder(gallery, [t_name], folder))
+            # Create a proper slot function to avoid lambda issues in PyQt6
+            def create_move_to_folder_slot(template_name_arg, folder_arg):
+                def move_to_folder_slot():
+                    try:
+                        GalleryEvents.on_move_template_to_folder(gallery, [template_name_arg], folder_arg)
+                    except Exception as e:
+                        print(f"Error in move to folder slot: {e}")
+                        import traceback
+                        traceback.print_exc()
+                return move_to_folder_slot
+            item.moveToFolderRequested.connect(create_move_to_folder_slot(template_name, template_data.get('parent_folder')))
 
         # Connect multi-select handler
         if hasattr(gallery, 'on_template_multi_select') and hasattr(item, 'multiSelectRequested'):
-            item.multiSelectRequested.connect(
-                lambda t, add=True: gallery.on_template_multi_select(t, add))
+            # Create a proper slot function to avoid lambda issues in PyQt6
+            def create_multi_select_slot():
+                def multi_select_slot(t, add=True):
+                    try:
+                        gallery.on_template_multi_select(t, add)
+                    except Exception as e:
+                        print(f"Error in multi-select slot: {e}")
+                        import traceback
+                        traceback.print_exc()
+                return multi_select_slot
+            item.multiSelectRequested.connect(create_multi_select_slot())
                 
         return item
         
@@ -575,7 +641,17 @@ class GalleryTemplatesSetup:
         gallery.template_grid_view_btn.setToolTip("Grid View")
         gallery.template_grid_view_btn.setText("Grid")
         gallery.template_grid_view_btn.setChecked(gallery.view_mode == "grid")
-        gallery.template_grid_view_btn.clicked.connect(lambda: gallery._set_template_view_mode("grid"))
+        # Create a proper slot function to avoid lambda issues in PyQt6
+        def create_grid_view_slot():
+            def grid_view_slot():
+                try:
+                    gallery._set_template_view_mode("grid")
+                except Exception as e:
+                    print(f"Error in grid view slot: {e}")
+                    import traceback
+                    traceback.print_exc()
+            return grid_view_slot
+        gallery.template_grid_view_btn.clicked.connect(create_grid_view_slot())
         gallery.template_grid_view_btn.setFixedSize(65, 24)
         gallery.template_grid_view_btn.setStyleSheet("""
             QToolButton {
@@ -605,7 +681,17 @@ class GalleryTemplatesSetup:
         gallery.template_list_view_btn.setToolTip("List View")
         gallery.template_list_view_btn.setText("List")
         gallery.template_list_view_btn.setChecked(gallery.view_mode == "list")
-        gallery.template_list_view_btn.clicked.connect(lambda: gallery._set_template_view_mode("list"))
+        # Create a proper slot function to avoid lambda issues in PyQt6
+        def create_list_view_slot():
+            def list_view_slot():
+                try:
+                    gallery._set_template_view_mode("list")
+                except Exception as e:
+                    print(f"Error in list view slot: {e}")
+                    import traceback
+                    traceback.print_exc()
+            return list_view_slot
+        gallery.template_list_view_btn.clicked.connect(create_list_view_slot())
         gallery.template_list_view_btn.setFixedSize(65, 24)
         gallery.template_list_view_btn.setStyleSheet("""
             QToolButton {

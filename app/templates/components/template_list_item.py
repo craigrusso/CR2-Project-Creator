@@ -205,7 +205,17 @@ class TemplateListItem(QFrame):
             
             # Add Edit action
             edit_action = QAction("Edit", self)
-            edit_action.triggered.connect(lambda: self.editRequested.emit(template_name))
+            # Create a proper slot function to avoid lambda issues in PyQt6
+            def create_edit_action_slot():
+                def edit_action_slot():
+                    try:
+                        self.editRequested.emit(template_name)
+                    except Exception as e:
+                        print(f"Error in edit action slot: {e}")
+                        import traceback
+                        traceback.print_exc()
+                return edit_action_slot
+            edit_action.triggered.connect(create_edit_action_slot())
             menu.addAction(edit_action)
             
             # Find the parent gallery for multi-selection handling
@@ -271,12 +281,32 @@ class TemplateListItem(QFrame):
             
             # Add duplicate template option
             duplicate_action = QAction("Duplicate", self)
-            duplicate_action.triggered.connect(lambda: self._duplicate_template(template_name))
+            # Create a proper slot function to avoid lambda issues in PyQt6
+            def create_duplicate_action_slot():
+                def duplicate_action_slot():
+                    try:
+                        self._duplicate_template(template_name)
+                    except Exception as e:
+                        print(f"Error in duplicate action slot: {e}")
+                        import traceback
+                        traceback.print_exc()
+                return duplicate_action_slot
+            duplicate_action.triggered.connect(create_duplicate_action_slot())
             menu.addAction(duplicate_action)
             
             # Add export template option
             export_action = QAction("Export Template...", self)
-            export_action.triggered.connect(lambda: self._export_template(template_name))
+            # Create a proper slot function to avoid lambda issues in PyQt6
+            def create_export_action_slot():
+                def export_action_slot():
+                    try:
+                        self._export_template(template_name)
+                    except Exception as e:
+                        print(f"Error in export action slot: {e}")
+                        import traceback
+                        traceback.print_exc()
+                return export_action_slot
+            export_action.triggered.connect(create_export_action_slot())
             menu.addAction(export_action)
             
             # Add separator
@@ -287,12 +317,32 @@ class TemplateListItem(QFrame):
             
             # Add recache option
             recache_action = QAction("Recache Template", self)
-            recache_action.triggered.connect(lambda: self._recache_template(template_name))
+            # Create a proper slot function to avoid lambda issues in PyQt6
+            def create_recache_action_slot():
+                def recache_action_slot():
+                    try:
+                        self._recache_template(template_name)
+                    except Exception as e:
+                        print(f"Error in recache action slot: {e}")
+                        import traceback
+                        traceback.print_exc()
+                return recache_action_slot
+            recache_action.triggered.connect(create_recache_action_slot())
             cache_menu.addAction(recache_action)
             
             # Add clear cache option
             clear_cache_action = QAction("Clear Template Cache", self)
-            clear_cache_action.triggered.connect(lambda: self._clear_template_cache(template_name))
+            # Create a proper slot function to avoid lambda issues in PyQt6
+            def create_clear_cache_action_slot():
+                def clear_cache_action_slot():
+                    try:
+                        self._clear_template_cache(template_name)
+                    except Exception as e:
+                        print(f"Error in clear cache action slot: {e}")
+                        import traceback
+                        traceback.print_exc()
+                return clear_cache_action_slot
+            clear_cache_action.triggered.connect(create_clear_cache_action_slot())
             cache_menu.addAction(clear_cache_action)
             
             # Add separator
@@ -316,7 +366,17 @@ class TemplateListItem(QFrame):
                 # Add "Move to Root" option if template is in a folder
                 if current_folder:
                     move_to_root_action = QAction("No Folder", self)
-                    move_to_root_action.triggered.connect(lambda: self._move_template_out_of_folder(current_folder))
+                    # Create a proper slot function to avoid lambda issues in PyQt6
+                    def create_move_to_root_action_slot():
+                        def move_to_root_action_slot():
+                            try:
+                                self._move_template_out_of_folder(current_folder)
+                            except Exception as e:
+                                print(f"Error in move to root action slot: {e}")
+                                import traceback
+                                traceback.print_exc()
+                        return move_to_root_action_slot
+                    move_to_root_action.triggered.connect(create_move_to_root_action_slot())
                     move_to_menu.addAction(move_to_root_action)
                     
                     move_to_menu.addSeparator()
@@ -330,8 +390,17 @@ class TemplateListItem(QFrame):
                             continue
                             
                         folder_action = QAction(folder_name, self)
-                        folder_action.triggered.connect(lambda checked=False, f=folder_name: 
-                                                      self._move_template_to_folder(f))
+                        # Create a proper slot function to avoid lambda issues in PyQt6
+                        def create_folder_action_slot(folder_name_arg):
+                            def folder_action_slot():
+                                try:
+                                    self._move_template_to_folder(folder_name_arg)
+                                except Exception as e:
+                                    print(f"Error in folder action slot: {e}")
+                                    import traceback
+                                    traceback.print_exc()
+                            return folder_action_slot
+                        folder_action.triggered.connect(create_folder_action_slot(folder_name))
                         move_to_menu.addAction(folder_action)
                 
                 # Only add the Move To menu if it has items
@@ -382,14 +451,41 @@ class TemplateListItem(QFrame):
             menu.addAction(delete_action)
             menu.addAction(duplicate_action)
             
-            # Connect actions to slots - with error handling
-            edit_action.triggered.connect(lambda: self.editRequested.emit(template_name))
+            # Connect actions to slots - with error handling and proper slot functions
+            def create_fallback_edit_slot():
+                def fallback_edit_slot():
+                    try:
+                        self.editRequested.emit(template_name)
+                    except Exception as e:
+                        print(f"Error in fallback edit slot: {e}")
+                        import traceback
+                        traceback.print_exc()
+                return fallback_edit_slot
+            edit_action.triggered.connect(create_fallback_edit_slot())
             
             # Use try/except for delete to prevent crashes
-            delete_action.triggered.connect(lambda: self._safe_delete(gallery, template_name))
+            def create_fallback_delete_slot():
+                def fallback_delete_slot():
+                    try:
+                        self._safe_delete(gallery, template_name)
+                    except Exception as e:
+                        print(f"Error in fallback delete slot: {e}")
+                        import traceback
+                        traceback.print_exc()
+                return fallback_delete_slot
+            delete_action.triggered.connect(create_fallback_delete_slot())
             
             # Use safer duplicate implementation
-            duplicate_action.triggered.connect(lambda: self._duplicate_template(template_name))
+            def create_fallback_duplicate_slot():
+                def fallback_duplicate_slot():
+                    try:
+                        self._duplicate_template(template_name)
+                    except Exception as e:
+                        print(f"Error in fallback duplicate slot: {e}")
+                        import traceback
+                        traceback.print_exc()
+                return fallback_duplicate_slot
+            duplicate_action.triggered.connect(create_fallback_duplicate_slot())
             
         # Show the menu at the requested position
         menu.exec(self.mapToGlobal(position))

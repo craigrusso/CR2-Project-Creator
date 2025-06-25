@@ -471,7 +471,18 @@ class GalleryTemplatesSetup:
                 item.clicked.disconnect()
             except TypeError:
                 pass # No connections to disconnect
-            item.clicked.connect(lambda td=template_data: gallery._on_template_select(td))
+
+            # Create a proper slot function to avoid lambda issues in PyQt6
+            def create_item_clicked_slot(template_data_arg):
+                def item_clicked_slot():
+                    try:
+                        gallery._on_template_select(template_data_arg)
+                    except Exception as e:
+                        print(f"Error in item clicked slot: {e}")
+                        import traceback
+                        traceback.print_exc()
+                return item_clicked_slot
+            item.clicked.connect(create_item_clicked_slot(template_data))
 
         # --- Multi-Selection Handling (Secondary Signal) ---
         # This signal is typically emitted by cards when a modifier key is used during a click.
@@ -489,7 +500,17 @@ class GalleryTemplatesSetup:
             except TypeError:
                 pass
             # Use GalleryEvents.on_edit_template which expects the gallery and template_name
-            item.doubleClicked.connect(lambda name=template_name: GalleryEvents.on_edit_template(gallery, name))
+            # Create a proper slot function to avoid lambda issues in PyQt6
+            def create_item_double_clicked_slot(template_name_arg):
+                def item_double_clicked_slot():
+                    try:
+                        GalleryEvents.on_edit_template(gallery, template_name_arg)
+                    except Exception as e:
+                        print(f"Error in item double clicked slot: {e}")
+                        import traceback
+                        traceback.print_exc()
+                return item_double_clicked_slot
+            item.doubleClicked.connect(create_item_double_clicked_slot(template_name))
             
         # --- Delete Request Handling ---
         if hasattr(item, 'deleteRequested'):
@@ -662,7 +683,17 @@ class GalleryTemplatesSetup:
         gallery.template_grid_view_btn.setToolTip("Grid View")
         gallery.template_grid_view_btn.setText("Grid")
         gallery.template_grid_view_btn.setChecked(gallery.template_view_mode == "grid")
-        gallery.template_grid_view_btn.clicked.connect(lambda: gallery._set_template_view_mode("grid"))
+        # Create a proper slot function to avoid lambda issues in PyQt6
+        def create_template_grid_view_slot():
+            def template_grid_view_slot():
+                try:
+                    gallery._set_template_view_mode("grid")
+                except Exception as e:
+                    print(f"Error in template grid view slot: {e}")
+                    import traceback
+                    traceback.print_exc()
+            return template_grid_view_slot
+        gallery.template_grid_view_btn.clicked.connect(create_template_grid_view_slot())
         gallery.template_grid_view_btn.setFixedSize(65, 24) # Match folder view buttons
         
         gallery.template_grid_view_btn.setStyleSheet("""
@@ -693,7 +724,17 @@ class GalleryTemplatesSetup:
         gallery.template_list_view_btn.setToolTip("List View")
         gallery.template_list_view_btn.setText("List")
         gallery.template_list_view_btn.setChecked(gallery.template_view_mode == "list")
-        gallery.template_list_view_btn.clicked.connect(lambda: gallery._set_template_view_mode("list"))
+        # Create a proper slot function to avoid lambda issues in PyQt6
+        def create_template_list_view_slot():
+            def template_list_view_slot():
+                try:
+                    gallery._set_template_view_mode("list")
+                except Exception as e:
+                    print(f"Error in template list view slot: {e}")
+                    import traceback
+                    traceback.print_exc()
+            return template_list_view_slot
+        gallery.template_list_view_btn.clicked.connect(create_template_list_view_slot())
         gallery.template_list_view_btn.setFixedSize(65, 24) # Match folder view buttons
         
         gallery.template_list_view_btn.setStyleSheet("""

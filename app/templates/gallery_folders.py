@@ -69,7 +69,17 @@ class GalleryFoldersSetup:
         gallery.folder_grid_view_btn.setToolTip("Grid View")
         gallery.folder_grid_view_btn.setText("Grid")
         gallery.folder_grid_view_btn.setChecked(gallery.folder_view_mode == "grid")
-        gallery.folder_grid_view_btn.clicked.connect(lambda: gallery._set_folder_view_mode("grid"))
+        # Create a proper slot function to avoid lambda issues in PyQt6
+        def create_folder_grid_view_slot():
+            def folder_grid_view_slot():
+                try:
+                    gallery._set_folder_view_mode("grid")
+                except Exception as e:
+                    print(f"Error in folder grid view slot: {e}")
+                    import traceback
+                    traceback.print_exc()
+            return folder_grid_view_slot
+        gallery.folder_grid_view_btn.clicked.connect(create_folder_grid_view_slot())
         gallery.folder_grid_view_btn.setFixedSize(65, 24)
         
         gallery.folder_grid_view_btn.setStyleSheet("""
@@ -100,7 +110,17 @@ class GalleryFoldersSetup:
         gallery.folder_list_view_btn.setToolTip("List View")
         gallery.folder_list_view_btn.setText("List")
         gallery.folder_list_view_btn.setChecked(gallery.folder_view_mode == "list")
-        gallery.folder_list_view_btn.clicked.connect(lambda: gallery._set_folder_view_mode("list"))
+        # Create a proper slot function to avoid lambda issues in PyQt6
+        def create_folder_list_view_slot():
+            def folder_list_view_slot():
+                try:
+                    gallery._set_folder_view_mode("list")
+                except Exception as e:
+                    print(f"Error in folder list view slot: {e}")
+                    import traceback
+                    traceback.print_exc()
+            return folder_list_view_slot
+        gallery.folder_list_view_btn.clicked.connect(create_folder_list_view_slot())
         gallery.folder_list_view_btn.setFixedSize(65, 24)
         
         gallery.folder_list_view_btn.setStyleSheet("""
