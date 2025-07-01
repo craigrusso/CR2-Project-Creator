@@ -1,3 +1,20 @@
+**ForwardFlow v1.0 (Build 281) - Beta Release Notes**
+
+This update introduces our new identity, **ForwardFlow**, along with significant stability improvements and bug fixes.
+
+**✨ New Features & Enhancements**
+
+*   **Complete Rebranding:** The application has been renamed from Echelon to **ForwardFlow**. This includes a new application icon and updated visual elements throughout the app.
+
+**🐛 Bug Fixes & Stability**
+
+*   **Critical Crash Resolved:** Fixed a major issue that could cause the application to crash, particularly when using the "Add File" function.
+*   **Improved File Handling:** Corrected a bug where new files were not being added to the correct parent folder in the Structure Editor.
+*   **Structure Editor Icons:** Restored file and folder icons within the Structure Editor, making it easier to distinguish between different types of items.
+*   **Smoother UI:** Various underlying code optimizations have been made to improve the overall speed and responsiveness of the user interface.
+
+---
+
 ForwardFlow 1.0 - macOS Release Notes
 ===================================
 
