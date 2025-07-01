@@ -1,7 +1,7 @@
-Echelon 1.0 - macOS Release Notes
+ForwardFlow 1.0 - macOS Release Notes
 ===================================
 
-Echelon 1.0 (Build 280) - macOS Release Notes
+ForwardFlow 1.0 (Build 280) - macOS Release Notes
 Release Date: June 25, 2025
 
 ## Overview
@@ -13,7 +13,7 @@ This release includes minor bug fixes and performance improvements.
 - **Minor Bug Fixes:** Addressed several minor issues for a smoother user experience.
 - **Performance Enhancements:** Made small optimizations for improved stability and performance.
 
-Echelon 1.0 (Build 279) - macOS Release Notes
+ForwardFlow 1.0 (Build 279) - macOS Release Notes
 Release Date: June 25, 2025
 
 ## Overview
@@ -28,7 +28,7 @@ This release addresses a key UI bug to improve the visual experience and ensure 
 
 ---
 
-Echelon 1.0 (Build 278) - macOS Release Notes
+ForwardFlow 1.0 (Build 278) - macOS Release Notes
 Release Date: June 24, 2025
 
 ## Overview
@@ -47,7 +47,7 @@ This release focuses on user interface refinements and enhanced sequence variati
 
 ---
 
-Echelon 1.0 (Build 277) - macOS Release Notes
+ForwardFlow 1.0 (Build 277) - macOS Release Notes
 Release Date: June 21, 2025
 
 ## Overview
@@ -62,7 +62,7 @@ This release focuses on application optimization and improved user interface pol
 
 ---
 
-Echelon 1.0 (Build 276) - macOS Release Notes
+ForwardFlow 1.0 (Build 276) - macOS Release Notes
 Release Date: June 21, 2025
 
 ## Overview
@@ -75,7 +75,7 @@ This release includes user experience improvements and application stability enh
 
 ---
 
-## Previous Release: Echelon 1.0 (Build 275)
+## Previous Release: ForwardFlow 1.0 (Build 275)
 Release Date: June 21, 2025
 
 ## Overview
@@ -97,7 +97,7 @@ This release includes important multi-selection bug fixes and tutorial improveme
 
 ---
 
-## Previous Release: Echelon 1.0 (Build 273)
+## Previous Release: ForwardFlow 1.0 (Build 273)
 Release Date: June 21, 2025
 
 ## Overview
@@ -132,7 +132,7 @@ This release focuses on multi-selection improvements and user interface enhancem
 
 ---
 
-## Previous Release: Echelon 1.0 (Build 272)
+## Previous Release: ForwardFlow 1.0 (Build 272)
 Release Date: June 16, 2025
 
 ### 🎨 ANIMATED CUSTOM OPTIONS WIDGET
@@ -205,8 +205,8 @@ Release Date: June 16, 2025
 
 ## Installation
 1. Mount the DMG file
-2. Drag Echelon to your Applications folder
-3. Run Echelon from your Applications folder
+2. Drag ForwardFlow to your Applications folder
+3. Run ForwardFlow from your Applications folder
 
 ## Known Issues
 - None at this time 

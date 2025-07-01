@@ -88,7 +88,7 @@ def show_tutorial(app):
     layout.setSpacing(16)
     
     # Title
-    title_label = QLabel(f"{APP_NAME} User Guide")
+    title_label = QLabel(f"{get_styled_app_name()} User Guide")
     title_label.setFont(QFont("Arial", 18, QFont.Weight.Bold))
     title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     title_label.setStyleSheet(f"color: {colors['text']}; margin-bottom: 10px;")
@@ -107,7 +107,7 @@ def show_tutorial(app):
     intro_tab = QWidget()
     intro_layout = QVBoxLayout(intro_tab)
     intro_text = QLabel(
-        f"<p>New to {APP_NAME}? This quick overview will have you creating projects in minutes.</p>"
+        f"<p>New to {get_styled_app_name()}? This quick overview will have you creating projects in minutes.</p>"
         "<h3>1. Create or Select a Template</h3>"
         "<p>Templates are blueprints for your projects. You can create your own or use the examples provided. "
         "A template defines the folder structure and files that will be generated.</p>"
@@ -116,7 +116,7 @@ def show_tutorial(app):
         "You can use variables like <code>{date}</code>, <code>{project_name}</code>, or create your own custom inputs.</p>"
         "<h3>3. Create Your Project</h3>"
         "<p>Select your template, enter a project name, choose an output location, and click 'Create'. "
-        f"{APP_NAME} will build the entire project directory for you instantly.</p>"
+        f"{get_styled_app_name()} will build the entire project directory for you instantly.</p>"
     )
     intro_text.setWordWrap(True)
     intro_text.setOpenExternalLinks(True)
@@ -132,7 +132,7 @@ def show_tutorial(app):
         "<p><b>Edit:</b> Right-click any template and choose 'Edit' to open the structure editor.</p>"
         "<p><b>Duplicate:</b> Right-click and select 'Duplicate' to make a copy of an existing template.</p>"
         "<p><b>Export/Import:</b> You can export templates to a <code>.json</code> file to share them or back them up. "
-        f"Use <code>File > Import Template</code> to bring them into {APP_NAME}.</p>"
+        f"Use <code>File > Import Template</code> to bring them into {get_styled_app_name()}.</p>"
     )
     templates_text.setWordWrap(True)
     templates_text.setStyleSheet(f"color: {colors['text']};")
@@ -162,7 +162,7 @@ def show_tutorial(app):
         "that will appear in the main window when you select the template. This allows for dynamic, per-project customization.</p>"
         "<p><b>Sequence Variations:</b> When creating projects in batch, you can use the 'Sequence' option to generate numbered variations "
         "(e.g., Project_01, Project_02).</p>"
-        f"<p><b>Batch Creation:</b> Create multiple projects at once. {APP_NAME} intelligently handles naming conflicts and organization.</p>"
+        f"<p><b>Batch Creation:</b> Create multiple projects at once. {get_styled_app_name()} intelligently handles naming conflicts and organization.</p>"
     )
     advanced_text.setWordWrap(True)
     advanced_text.setStyleSheet(f"color: {colors['text']};")
