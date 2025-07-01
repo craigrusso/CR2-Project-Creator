@@ -24,7 +24,7 @@ STYLE_OVERRIDES = {
 
 # Tutorial content customization
 TUTORIAL_CONTENT = {
-    'app_name': 'Echelon',  # Your app name
+    'app_name': '<span style="color: white;">Forward</span><span style="color: #2d7096; font-style: italic;">Flow</span>',  # Your app name
     'welcome_title': '👋 Welcome to {app_name}!',
     'completion_message': '🎉 You\'re All Set!',
     'skip_confirmation': False,  # Whether to confirm before skipping
@@ -50,8 +50,8 @@ DEFAULT_PREFERENCES = {
 # Slideshow customization
 CUSTOM_SLIDESHOW_CONTENT = [
     {
-        'title': 'Welcome to Echelon',
-        'content': 'Stop recreating the same project folders over and over again.\n\nEchelon lets you create smart project templates that automatically generate organized folder structures with intelligent file naming.\n\n📁 **Step 1: Create Your Template**\nClick the "Add Template" button to get started, then give your template a descriptive name.\n\n🎯 **What you\'ll learn next:**\n• Build your ideal project structure\n• Set up automatic file naming\n• Generate projects instantly\n\nReady to streamline your workflow? Let\'s begin!',
+        'title': 'Welcome to <span style="color: white;">Forward</span><span style="color: #2d7096; font-style: italic;">Flow</span>',
+        'content': 'Stop recreating the same project folders over and over again.\n\nForwardFlow lets you create smart project templates that automatically generate organized folder structures with intelligent file naming.\n\n📁 **Step 1: Create Your Template**\nClick the "Add Template" button to get started, then give your template a descriptive name.\n\n🎯 **What you\'ll learn next:**\n• Build your ideal project structure\n• Set up automatic file naming\n• Generate projects instantly\n\nReady to streamline your workflow? Let\'s begin!',
         'image_path': 'slides/SLIDE_01.png',
         'duration': 6000  # Longer duration since there's more content
     },
@@ -111,7 +111,7 @@ CUSTOM_SLIDESHOW_CONTENT = [
     {
         'id': 'completion',
         'title': '🎉 Click "Create Project(s)" and You\'re Done!',
-        'content': 'This is it – the moment of magic! **Click the "Create Project(s)" button** and watch Echelon generate your complete project structure with all files properly named and organized.\n\n**You\'ve just learned how to:**\n✅ Build smart, reusable project templates\n✅ Set up automatic file and folder naming\n✅ Generate perfectly organized projects in seconds\n✅ Create multiple projects simultaneously\n\n🚀 **Ready to transform your workflow?** \nGo ahead and create your first template – your future self will thank you!\n\n💡 *Find this tutorial anytime in the Help menu.*',
+        'content': 'This is it – the moment of magic! **Click the "Create Project(s)" button** and watch <span style="color: white;">Forward</span><span style="color: #2d7096; font-style: italic;">Flow</span> generate your complete project structure with all files properly named and organized.\n\n**You\'ve just learned how to:**\n✅ Build smart, reusable project templates\n✅ Set up automatic file and folder naming\n✅ Generate perfectly organized projects in seconds\n✅ Create multiple projects simultaneously\n\n🚀 **Ready to transform your workflow?** \nGo ahead and create your first template – your future self will thank you!\n\n💡 *Find this tutorial anytime in the Help menu.*',
         'image_path': 'slides/SLIDE_05_BG.png',
     }
 ] 

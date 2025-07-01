@@ -52,6 +52,10 @@ from app.constants import (
     APP_RELEASE_STAGE as CURRENT_RELEASE_STAGE_CONST,
     USER_UPDATE_CHANNEL_PREFERENCE
 )
+from app.core.update_system.update_worker import UpdateWorker
+from app.dialogs.info_dialogs import show_about, show_tutorial  # Changed from show_user_guide
+from app.onboarding.slideshow import TutorialSlideshow  # Changed from SlideshowDialog
+from app.ui.ui_utils import get_styled_app_name
 
 # --- Worker for background update check ---
 class UpdateWorker(QObject):
@@ -1081,6 +1085,9 @@ class ProjectCreatorApp(QMainWindow):
         self.update_banner = UpdateNotificationBanner()
         self.main_layout.insertWidget(0, self.update_banner) # Insert at the top
         
+        # Initialize tutorial slideshow
+        self.tutorial_slideshow = TutorialSlideshow(self)  # Changed from SlideshowDialog
+    
     def _update_ui_from_config(self):
         """Update UI elements based on loaded configuration"""
         # Load last output directory if available
@@ -1253,7 +1260,7 @@ class ProjectCreatorApp(QMainWindow):
         self.help_menu.addSeparator()
         
         # About action
-        self.about_action = self.help_menu.addAction("About Echelon")
+        self.about_action = self.help_menu.addAction(f"About {get_styled_app_name()}")
         self.about_action.triggered.connect(self.show_about_dialog)
         
         # Update Checker action
@@ -1526,7 +1533,7 @@ class ProjectCreatorApp(QMainWindow):
         info_layout.setSpacing(8)
         
         info_label = QLabel(
-            f"<p>An update is available for Echelon!</p>"
+            f"<p>An update is available for {get_styled_app_name()}!</p>"
             f"<p><b>New Version: {available_version_display_str}</b></p>"
             f"<p>You are currently running: {current_display_version_str}</p>"
             f"<p>Would you like to visit the download page now?</p>"
@@ -1654,7 +1661,7 @@ class ProjectCreatorApp(QMainWindow):
         elif not update_was_found:
             if triggered_manually:
                 current_version_str = f"{APP_VERSION_NUMBER} (Build {CURRENT_BUILD_NUMBER_CONST})" # Corrected format
-                QMessageBox.information(self, "Up to Date", f"You are using the latest version of Echelon ({current_version_str}).")
+                QMessageBox.information(self, "Up to Date", f"You are using the latest version of {get_styled_app_name()} ({current_version_str}).")
             else:
                 # print("DEBUG: Automatic check completed, no update found.")
                 pass 
@@ -2738,6 +2745,41 @@ class ProjectCreatorApp(QMainWindow):
         """Reset all tutorials"""
         if hasattr(self, 'onboarding') and self.onboarding:
             self.onboarding.reset_tutorials()
+
+    def check_for_updates(self, triggered_manually=False):
+        """Check for application updates, typically triggered manually."""
+        if not triggered_manually:
+             # print("DEBUG: check_for_updates called without manual trigger flag, ignoring.")
+             return # Avoid accidental calls
+             
+        self.show_status_message("Checking for updates...", "info", 3000) # Show brief status
+        
+        # Create worker and thread for manual check
+        # Store as instance variables to prevent garbage collection before finished
+        self.manual_update_thread = QThread(self) 
+        self.manual_update_worker = UpdateWorker(self, force_check=True)
+        self.manual_update_worker.moveToThread(self.manual_update_thread)
+
+        # Connect signals
+        self.manual_update_worker.update_found.connect(self.handle_update_available)
+        self.manual_update_worker.check_complete.connect(lambda update_found, error_msg: self.handle_check_complete(update_found, error_msg, triggered_manually=True))
+        self.manual_update_thread.started.connect(self.manual_update_worker.run_check)
+        self.manual_update_worker.finished.connect(self.manual_update_thread.quit)
+        self.manual_update_worker.finished.connect(self.manual_update_worker.deleteLater)
+        self.manual_update_thread.finished.connect(self.manual_update_thread.deleteLater)
+
+        self.manual_update_thread.start()
+    
+    def show_up_to_date_message(self):
+        """
+        Show a message indicating the application is up to date.
+        """
+        current_version_str = f"{APP_VERSION_NUMBER} ({APP_RELEASE_STAGE}, Build {APP_BUILD_NUMBER})"
+        QMessageBox.information(self, "Up to Date", f"You are using the latest version of {get_styled_app_name()} ({current_version_str}).")
+
+    def _create_status_bar(self):
+        """Create the status bar."""
+        # ... existing code ...
 
 # Add a class variable to hold the single instance
 ProjectCreatorApp._instance = None

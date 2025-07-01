@@ -1,0 +1,211 @@
+Echelon 1.0 - Windows ARM64 Release Notes
+=========================================
+
+Echelon 1.0 (Build 280) - Windows ARM64 Release Notes
+Release Date: June 25, 2025
+
+## Overview
+This release includes minor bug fixes and performance improvements.
+
+## What's New in Build 280
+
+### 🚀 GENERAL IMPROVEMENTS
+- **Minor Bug Fixes:** Addressed several minor issues for a smoother user experience.
+- **Performance Enhancements:** Made small optimizations for improved stability and performance.
+
+Echelon 1.0 (Build 279) - Windows ARM64 Release Notes
+Release Date: June 25, 2025
+
+## Overview
+This release addresses a key UI bug to improve the visual experience and ensure application resources are loaded correctly in the built application.
+
+## What's New in Build 279
+
+### 🔧 UI & RESOURCE LOADING FIXES
+- **Fixed Missing UI Icons:** Resolved an issue where tree view disclosure arrows (twirl-down arrows) were not appearing in the packaged application.
+- **Robust Resource Paths:** Updated the application to use a more reliable method for finding and loading internal assets like icons, ensuring they display correctly across all parts of the app.
+- **Improved Visual Consistency:** Ensured that all UI elements, especially in the template structure editor, now appear as designed.
+
+---
+
+Echelon 1.0 (Build 278) - Windows ARM64 Release Notes
+Release Date: June 24, 2025
+
+## Overview
+This release focuses on user interface refinements and enhanced sequence variations.
+
+## What's New in Build 278
+
+### 🎛️ SEQUENCE VARIATIONS IMPROVEMENTS
+- **Increased Limits:** Sequence variation limits expanded from 50 to 1000 for more flexibility
+- **Enhanced UI:** Improved sequence variations user interface for better usability
+
+### 🎨 CROSS-PLATFORM FONT FIXES
+- **Windows Text Display:** Fixed slide 4 text cutoff by optimizing description font size
+- **Balanced Font Sizing:** Corrected giant headers and tiny text issues on Windows
+- **Slideshow Improvements:** Reduced description font size to prevent text cutoff
+- **Better Visual Balance:** Enhanced font sizing consistency across all platforms
+
+---
+
+Echelon 1.0 (Build 277) - Windows ARM64 Release Notes
+Release Date: June 21, 2025
+
+## Overview
+This release focuses on application optimization and improved user interface polish.
+
+## What's New in Build 277
+
+### 🎨 UI/UX IMPROVEMENTS
+- **Faster Application Startup:** Optimized app loading for quicker launch times
+- **Improved Resource Loading:** Enhanced asset loading for better performance
+- **Refined Tutorial Experience:** Better slideshow and tutorial presentation
+
+---
+
+Echelon 1.0 (Build 276) - Windows ARM64 Release Notes
+Release Date: June 21, 2025
+
+## Overview
+This release includes user experience improvements and application stability enhancements.
+
+## What's New in Build 276
+
+### 🛠️ USER EXPERIENCE IMPROVEMENTS
+- **Better State Management:** More reliable app behavior across launches
+
+---
+
+## Previous Release: Echelon 1.0 (Build 275)
+Release Date: June 21, 2025
+
+## Overview
+This release includes important multi-selection bug fixes and tutorial improvements.
+
+## What's New in Build 275
+
+### 🔧 BUG FIXES
+- **Fixed Multi-Selection Issues:** Resolved critical 'No Folder' multi-selection problems in grid view
+- **Improved Bulk Operations:** Multi-file 'Move to Folder' operations now work reliably
+- **Enhanced Context Menus:** Fixed multi-selection options in right-click menus
+- **Table View Fixes:** Corrected multi-selection behavior in table view
+
+### 📚 TUTORIAL IMPROVEMENTS
+- **Updated Tutorial Content:** Comprehensive tutorial improvements with better guidance
+- **Enhanced Navigation:** Improved tutorial tab navigation for better user experience
+- **Better Visual Design:** Improved text readability and visual presentation
+- **Refined Slideshow:** Better positioning and sizing of navigation elements
+
+---
+
+## Previous Release: Echelon 1.0 (Build 273)
+Release Date: June 21, 2025
+
+## Overview
+This release focuses on multi-selection improvements and user interface enhancements.
+
+## What's New in Build 273
+
+### 🔧 MULTI-SELECTION FIXES & IMPROVEMENTS
+- **Grid View Multi-Selection:** Fixed 'No Folder' multi-selection issue in grid view
+- **Move to Folder Operations:** Resolved grid view multi-selection 'Move to Folder' operations
+- **Context Menu Consistency:** Fixed multi-selection 'Move to Folder' option in context menus
+- **Table View Fix:** Corrected multi-selection 'No Folder' option in table context menu
+- **Enhanced Bulk Operations:** Improved reliability of multi-file operations across all views
+
+### 📚 TUTORIAL ENHANCEMENTS
+- **Updated Tutorial Content:** Comprehensive tutorial improvements with better guidance
+- **Enhanced Dialog Navigation:** Improved tutorial tab names for easier navigation
+- **Better Visual Design:** Improved tab text readability
+- **Slideshow Improvements:** Fixed navigation dots positioning and sizing
+- **Updated Visual Assets:** Refreshed slide assets for better presentation
+
+### 🎨 UI/UX IMPROVEMENTS
+- **Fixed Slideshow Display:** Resolved window sizing and image scaling issues
+- **Better Window Layout:** Increased window height to prevent content cutoff
+- **Improved Image Scaling:** Fixed image display issues with proper scaling
+- **Enhanced Color Scheme:** Better integration of app color scheme throughout interface
+
+### 🐛 CRITICAL BUG FIXES
+- **Fixed Application Crashes:** Resolved crashes caused by slideshow display issues
+- **Enhanced Stability:** Improved multi-selection operation reliability
+- **Better Error Handling:** Enhanced error prevention for slideshow and tutorial components
+
+---
+
+## Previous Release: Echelon 1.0 (Build 272)
+Release Date: June 16, 2025
+
+### 🎨 ANIMATED CUSTOM OPTIONS WIDGET
+- **Smooth Slide-Up Animation:** Beautiful animated custom options widget with smooth transitions
+- **Fixed Startup Issues:** Resolved widget initialization problems that caused app hangs
+- **Enhanced User Experience:** Smooth 250ms animations for better visual feedback
+- **Improved Functionality:** Widget properly opens and closes based on template selection
+
+### 🔧 ADVANCED PATTERN MANAGEMENT
+- **Industry-Specific Presets:** 6 specialized categories with ready-to-use naming patterns
+- **Video/Film Production:** Version numbering and sequence organization patterns
+- **Finance/Accounting:** Invoice numbering and audit-friendly formats
+- **Software Development:** Version control and branch reference patterns
+- **Design/Creative:** Asset management and approval tracking patterns
+- **Audio Production:** Multi-track and session-based naming patterns
+- **Custom Pattern Dialog:** Comprehensive interface with helpful placeholder reference guide
+
+### 📝 ENHANCED PROJECT NAMING
+- **Individual File Naming:** Right-click menu for Replace, Append, Prepend modes per file
+- **Template Persistence:** Project name options are saved when templates are saved/reopened
+- **Real-Time Preview:** Live preview of placeholder replacements in template editor
+- **BASE Placeholder Support:** Automatically uses original filename without extension
+- **COUNTER Placeholder:** Automatic numbering starting from 001
+- **Improved Processing:** Fixed placeholder replacement and separator handling
+
+### 🗓️ COMPREHENSIVE DATE SEQUENCES
+- **Multiple Date Formats:** Added YYYY_MM_DD, MM_DD_YYYY, YYYY.MM.DD, DD.MM.YYYY formats
+- **Smart Date Detection:** Automatically detects date sequences in project names
+- **Pattern Integration:** Custom patterns use sequence dates instead of current date
+- **Flexible Positioning:** Supports prefix/suffix date positions with various formats
+- **Duplicate Prevention:** Enhanced detection and resolution of duplicate dates
+
+### 🎛️ ENHANCED SEPARATOR CONTROL
+- **Master Separator Switch:** Unified control for all pattern separators
+- **Dynamic Format Dropdowns:** Automatic separator format conversion
+- **Industry-Specific Options:** Organized separator categories for different professional needs
+- **Real-Time Preview:** Live separator updates in pattern preview
+- **Format Synchronization:** Automatic separator updates across all date/time formats
+
+### 🔄 BULK OPERATIONS & MULTI-SELECTION
+- **Multi-Selection Support:** Enhanced right-click menu for bulk file operations
+- **Bulk Name Transformations:** Prepend, append, replace, and revert project names
+- **Improved Workflow:** Better integration between date sequences and project transformations
+- **Enhanced File Processing:** Process ALL files in template, not just the first one
+
+### 🎨 UI/UX IMPROVEMENTS
+- **Better Layout Proportions:** Increased project area size for better workspace
+- **Enhanced Gallery Layout:** Template gallery is taller with better folder organization
+- **Smooth Animations:** Slide-up/down animations for sequence variation menus
+- **Improved Checkbox Styling:** Better visibility with proper padding and spacing
+- **Calendar Enhancements:** Simple navigation arrows with better color formatting
+- **Consistent Dropdowns:** All dropdowns now have proper hover effects
+
+### 🐛 CRITICAL BUG FIXES
+- **Fixed Template Editor Crashes:** Resolved crashes and JSON serialization issues
+- **Context Menu Stability:** Fixed right-click crashes and unwanted menu persistence
+- **Calendar Functionality:** Fixed calendar widget implementation and date handling
+- **Folder Icon Display:** Fixed missing icons in sequences and new folder creation
+- **Custom Options Reopening:** Fixed widget not reopening after being closed
+- **Separator Replacement:** Fixed bug where separators weren't updating properly
+- **Dialog Cleanup:** Prevents context menu appearing after dialog close
+
+### 📱 CROSS-PLATFORM COMPATIBILITY
+- **Windows Checkbox Support:** Implemented proper checkbox display on Windows
+- **Enhanced Asset Loading:** Improved resource loading for all platforms
+- **File Naming Safety:** Improved cross-platform file naming compatibility
+
+## System Requirements
+- Windows 11 (ARM64)
+
+## Installation
+- Run the Echelon_installer.exe and follow the on-screen instructions.
+
+## Known Issues
+- None at this time 

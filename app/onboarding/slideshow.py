@@ -907,7 +907,7 @@ class TutorialSlideshow(QDialog):
 
     def _setup_ui(self):
         """Setup the main slideshow UI"""
-        self.setWindowTitle("Welcome to Echelon - Quick Start Guide")
+        self.setWindowTitle("Welcome to ForwardFlow - Quick Start Guide")
         
         # Keep original fixed size for slideshow images to display properly
         self.setFixedSize(1280, 760)

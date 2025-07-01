@@ -1,7 +1,7 @@
 # Version: 1.0
 END USER LICENSE AGREEMENT
 
-This is a sample End User License Agreement for testing purposes.
+This End User License Agreement ("Agreement") is a legal agreement between you and CR2 Creative for the ForwardFlow software application ("Software").
 
 1. ACCEPTANCE OF TERMS
 By using this software, you agree to be bound by the terms of this agreement.

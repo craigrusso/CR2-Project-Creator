@@ -32,7 +32,7 @@ except ImportError:
         'bg_medium': '#2A2A2A'
     }
     # For import failures, define the MIME type constant here as fallback
-    TEMPLATE_NAMES_MIME_TYPE = "application/x-echelon-template-names"
+    TEMPLATE_NAMES_MIME_TYPE = "application/x-forwardflow-template-names"
 
 # Placeholder for future model if needed separately
 # class TemplateTableModel(QStandardItemModel):

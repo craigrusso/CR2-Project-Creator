@@ -17,7 +17,7 @@ if not QCoreApplication.organizationDomain():
 if not QCoreApplication.applicationName():
     # Use a generic name if main hasn't set it yet, though ideally it should be
     # set before this module is imported heavily.
-    QCoreApplication.setApplicationName("Echelon")
+    QCoreApplication.setApplicationName("ForwardFlow_Fallback")
 
 
 SETTINGS_KEY_USER_DATA_ROOT = "UserDataRoot"
@@ -274,7 +274,7 @@ if __name__ == "__main__":
     except ImportError:
         # Fallback if running standalone without full package structure
         # print("WARN: Could not import APP_NAME from app_config for testing. Using default.")
-        APP_NAME = "Echelon_Test"
+        APP_NAME = "ForwardFlow_Test"
 
     print("--- Testing Config Manager ---")
     settings = QSettings()

@@ -2,18 +2,18 @@
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
 """
-Helper functions for drag and drop operations in the Echelon application.
-Provides consistent drag-and-drop behavior across different views (grid, list, etc.).
+Helper functions for drag and drop operations in the ForwardFlow application.
 """
 
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtCore import Qt, QSize, QRect, QRectF, QByteArray, QMimeData
-from PyQt6.QtGui import QPixmap, QPainter, QBrush, QColor, QPen, QFont, QPainterPath, QIcon
+from PyQt6.QtCore import Qt, QSize, QRect, QRectF, QByteArray, QMimeData, QUrl
+from PyQt6.QtGui import QPixmap, QPainter, QBrush, QColor, QPen, QFont, QPainterPath, QIcon, QDrag
+import json
 
 from app.ui.color_scheme_pyqt import colors
+from .mime_types import TEMPLATE_NAMES_MIME_TYPE
 
 # Define MIME type constants directly in this module to avoid circular imports
-TEMPLATE_NAMES_MIME_TYPE = "application/x-echelon-template-names"
 TEMPLATE_MULTI_DRAG_MIME_TYPE = "application/x-template-multi-drag"
 
 
@@ -122,3 +122,59 @@ def setup_drag_mime_data(templates_to_drag, mime_data, set_multi_drag=True):
         mime_data.setData(TEMPLATE_MULTI_DRAG_MIME_TYPE, QByteArray(b'1'))
     
     return template_names 
+
+def create_template_drag(parent, template_names: list[str], supported_actions):
+    """
+    Creates and starts a QDrag operation for one or more template names.
+
+    Args:
+        parent: The QWidget initiating the drag.
+        template_names (list[str]): A list of template names to be dragged.
+        supported_actions: The Qt.DropActions supported by the drag source.
+    
+    Returns:
+        The result of the drag operation.
+    """
+    if not template_names:
+        return
+
+    mime_data = QMimeData()
+    
+    # Use a custom MIME type to store the list of template names
+    # Join with newline, as it's a simple text-based format
+    encoded_data = "\n".join(template_names).encode('utf-8')
+    mime_data.setData(TEMPLATE_NAMES_MIME_TYPE, encoded_data)
+
+    # For external drops (like to a file explorer), provide file paths
+    # This part might need adjustment based on where templates are stored
+    # and if they can be represented as files.
+    # For now, let's assume we are not supporting external drops.
+    
+    drag = QDrag(parent)
+    drag.setMimeData(mime_data)
+    
+    # Set a pixmap for the drag object to give visual feedback
+    # (Optional but recommended)
+    # pixmap = parent.grab()
+    # drag.setPixmap(pixmap)
+    # drag.setHotSpot(pixmap.rect().center())
+
+    return drag.exec(supported_actions)
+
+def get_template_names_from_mime_data(mime_data: QMimeData) -> list[str]:
+    """
+    Extracts template names from QMimeData using the custom MIME type.
+
+    Args:
+        mime_data (QMimeData): The MIME data from a drop event.
+    
+    Returns:
+        A list of template names, or an empty list if not found.
+    """
+    if mime_data.hasFormat(TEMPLATE_NAMES_MIME_TYPE):
+        encoded_data = mime_data.data(TEMPLATE_NAMES_MIME_TYPE)
+        # Decode from bytes to string and split by newline
+        template_names = encoded_data.data().decode('utf-8').split('\n')
+        # Filter out any empty strings that might result from splitting
+        return [name for name in template_names if name]
+    return []

@@ -4,6 +4,121 @@
 import os
 import json
 import shutil
+from PyQt6.QtCore import QSettings
+
+from app.core import config_manager # Use the new unified config manager
+
+def get_legacy_structures_path():
+    """
+    Gets the path to the legacy `.forwardflow/structures` directory.
+    This is for migration purposes only.
+    """
+    home_dir = os.path.expanduser('~')
+    return os.path.join(home_dir, '.forwardflow', 'structures')
+
+def get_legacy_templates_path():
+    """
+    Gets the path to the legacy `.forwardflow/templates` directory.
+    This is for migration purposes only.
+    """
+    home_dir = os.path.expanduser('~')
+    return os.path.join(home_dir, '.forwardflow', 'templates')
+
+def migrate_legacy_structures(force_remigration=False):
+    """
+    Migrates standalone `.json` structure files from the old `.forwardflow/structures`
+    directory into the new template-centric system.
+
+    Each `.json` file in the legacy folder will be converted into a new template
+    in the main user templates directory. The structure data will be embedded
+    within the new template file.
+
+    This function is intended to be run once at application startup.
+    """
+    legacy_structures_path = get_legacy_structures_path()
+    
+    # Check if the legacy folder exists
+    if not os.path.isdir(legacy_structures_path):
+        print("INFO: Legacy structures folder not found. No migration needed.")
+        return
+
+    # Check if migration has already been done
+    settings = QSettings()
+    if settings.value("legacy_structures_migrated", False) and not force_remigration:
+        print("INFO: Legacy structures already migrated. Skipping.")
+        return
+        
+    structure_files = [f for f in os.listdir(legacy_structures_path) if f.endswith('.json')]
+    
+    if not structure_files:
+        print(f"INFO: Found empty .forwardflow/structures folder. This folder is no longer used.")
+        settings.setValue("legacy_structures_migrated", True)
+        return
+        
+    print(f"INFO: Found .forwardflow/structures folder with {len(structure_files)} files to migrate.")
+    
+    # Get the new central user data path for templates
+    new_templates_path = config_manager.get_user_templates_path()
+    os.makedirs(new_templates_path, exist_ok=True)
+    
+    migrated_count = 0
+    for file_name in structure_files:
+        legacy_file_path = os.path.join(legacy_structures_path, file_name)
+        
+        try:
+            with open(legacy_file_path, 'r') as f:
+                structure_data = json.load(f)
+            
+            # Create a new template name from the structure filename
+            template_name = os.path.splitext(file_name)[0].replace('_', ' ').title()
+            
+            # Create the new template dictionary
+            new_template = {
+                "name": template_name,
+                "description": f"Migrated from legacy structure '{file_name}'.",
+                "category": "Migrated",
+                "structure": structure_data,
+                "custom_options": {},
+                "version": "1.0"
+            }
+            
+            # Define the new template file path
+            new_file_path = os.path.join(new_templates_path, f"{template_name}.json")
+            
+            # Avoid overwriting existing templates with the same name
+            if os.path.exists(new_file_path):
+                print(f"WARNING: Template '{template_name}' already exists. Skipping migration for '{file_name}'.")
+                continue
+
+            # Write the new template file
+            with open(new_file_path, 'w') as f:
+                json.dump(new_template, f, indent=4)
+            
+            print(f"Successfully migrated '{file_name}' to '{new_file_path}'.")
+            migrated_count += 1
+
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"ERROR: Could not migrate '{file_name}': {e}")
+            
+    # Mark migration as complete
+    settings.setValue("legacy_structures_migrated", True)
+    print(f"INFO: Legacy structure migration complete. Migrated {migrated_count} files.")
+
+    # Optional: Rename the old directory to avoid re-running migration
+    try:
+        renamed_path = legacy_structures_path + '_migrated'
+        os.rename(legacy_structures_path, renamed_path)
+        print(f"INFO: Renamed legacy structures folder to '{renamed_path}'.")
+    except OSError as e:
+        print(f"WARNING: Could not rename legacy structures folder: {e}")
+
+def apply_migration(app=None):
+    """
+    Main entry point for all migration logic.
+    """
+    print("INFO: Checking for necessary data migrations...")
+    migrate_legacy_structures()
+    print("INFO: Migration check finished.")
 
 class TemplateManagerMigration:
     """
@@ -80,26 +195,24 @@ class TemplateManagerMigration:
         # Get home directory
         home_dir = os.path.expanduser("~")
         
-        # Path to the base old directory
-        echelon_dir = os.path.join(home_dir, '.echelon')
-        # templates_dir = os.path.join(echelon_dir, 'templates') # REMOVED old path
+        # Path to the base directory
+        app_dir = os.path.join(home_dir, '.forwardflow')
+        # templates_dir = os.path.join(app_dir, 'templates') # REMOVED old path
         
-        # Ensure base directory exists (only needed for structure check)
-        # os.makedirs(echelon_dir, exist_ok=True) # Potentially remove if structure check is robust
-        # os.makedirs(templates_dir, exist_ok=True) # REMOVED - Do not create old templates dir
+        # Create base directory if needed
+        # os.makedirs(app_dir, exist_ok=True) # Potentially remove if structure check is robust
         
-        # Check for old structures directory and remove the warning
-        # No need to migrate or rename it since we're moving away from it
-        structures_dir = os.path.join(echelon_dir, 'structures')
+        # Create structures directory if needed
+        structures_dir = os.path.join(app_dir, 'structures')
         if os.path.exists(structures_dir):
             # Check if it has any files
             try:
                 structure_files = [f for f in os.listdir(structures_dir) if os.path.isfile(os.path.join(structures_dir, f))]
                 if structure_files:
-                    print(f"INFO: Found .echelon/structures folder with {len(structure_files)} files.")
+                    print(f"INFO: Found .forwardflow/structures folder with {len(structure_files)} files.")
                     print(f"INFO: The structures folder is no longer used. All template data is now stored in the template JSON files.")
                 else:
-                    print(f"INFO: Found empty .echelon/structures folder. This folder is no longer used.")
+                    print(f"INFO: Found empty .forwardflow/structures folder. This folder is no longer used.")
                 
                 # Simply delete the directory if it's empty
                 if not structure_files:

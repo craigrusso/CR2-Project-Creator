@@ -6,7 +6,7 @@ Defines standardized MIME types for drag and drop operations throughout the appl
 """
 
 # MIME type for template names (single or multiple, newline-separated)
-TEMPLATE_NAMES_MIME_TYPE = "application/x-echelon-template-names"
+TEMPLATE_NAMES_MIME_TYPE = "application/x-forwardflow-template-names"
 
 # MIME type to indicate multi-template selection drag
 TEMPLATE_MULTI_DRAG_MIME_TYPE = "application/x-template-multi-drag"

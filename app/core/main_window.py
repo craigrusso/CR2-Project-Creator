@@ -15,6 +15,7 @@ from app.core.project_builder import ProjectBuilder
 from app.gallery.gallery_widget import TemplateGallery
 from app.ui.app_theme_pyqt import apply_dark_theme_to_template_gallery
 from app.ui.ui_components_pyqt import UpdateNotificationBanner
+from app.ui.ui_utils import get_styled_app_name
 
 # Import refactored modules
 from .update_system.update_worker import UpdateWorker
@@ -65,7 +66,7 @@ class ProjectCreatorApp(QMainWindow):
         super().__init__()
         
         # Set window properties
-        self.setWindowTitle(f"{APP_NAME} {APP_VERSION_NUMBER}")
+        self.setWindowTitle(f"{get_styled_app_name()} {APP_VERSION_NUMBER}")
         self.resize(1300, 850)
         self.center_window()
         self.set_app_icon()

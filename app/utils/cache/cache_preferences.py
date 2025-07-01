@@ -47,7 +47,7 @@ class CachePreferences:
                 # Fallback to old location as a last resort? Or raise error?
                 # Using a fallback might hide the underlying issue. Let's log and maybe use a temp name
                 home_dir = os.path.expanduser("~")
-                self.preferences_path = os.path.join(home_dir, ".echelon", "cache_preferences.json.error_fallback")
+                self.preferences_path = os.path.join(home_dir, ".forwardflow", "cache_preferences.json.error_fallback")
                 print(f"WARNING: Using fallback preferences path: {self.preferences_path}")
         else:
             self.preferences_path = preferences_path
@@ -175,3 +175,17 @@ class CachePreferences:
         max_size = self.get_preference("max_cache_size_mb", 1000)
         
         return max_age, max_size 
+
+    def _create_fallback_if_missing(self):
+        if not os.path.exists(self.preferences_path):
+            try:
+                with open(self.preferences_path, 'w') as f:
+                    json.dump(self.DEFAULT_PREFERENCES, f, indent=4)
+            except IOError:
+                # If creation fails, use an emergency fallback path
+                home_dir = os.path.expanduser("~")
+                self.preferences_path = os.path.join(home_dir, ".forwardflow", "cache_preferences.json.error_fallback")
+
+    def get(self, key, default=None):
+        """Get a value for a given key."""
+        return self.preferences.get(key, default) 

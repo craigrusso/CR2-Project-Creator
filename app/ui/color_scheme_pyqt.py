@@ -52,6 +52,10 @@ APP_COLORS = {
     # File browser colors
     "folder_icon": "#E8BA36",     # Golden yellow for folder icons
     "macos_folder_icon": "#3897F0",  # Exact match for macOS folder icon blue
+    "button_text_hover": "#FFFFFF",
+    "button_text_pressed": "#CCCCCC",
+    "info": "#4E98C3",
+    "styled_flow_blue": "#2d7096"
 }
 
 # Function to get a specific color by name
@@ -802,3 +806,75 @@ ACTION_LINK_STYLE = f"""
 #         
 #     except Exception as e:
 #         print(f"Error applying combobox consistency: {e}") 
+
+# Style for tab widgets
+TAB_STYLE = f"""
+    QTabWidget::pane {{
+        border: 1px solid {colors['border']};
+        background-color: {colors['card_bg']};
+        border-radius: 8px;
+        margin-top: 8px;
+    }}
+    QTabBar::tab {{
+        background-color: {colors['bg']};
+        color: {colors['text']};
+        padding: 12px 20px;
+        border: 1px solid {colors['border']};
+        border-bottom: none;
+        border-top-left-radius: 8px;
+        border-top-right-radius: 8px;
+        margin-right: 2px;
+        font-weight: 500;
+        min-width: 120px;
+    }}
+    QTabBar::tab:selected {{
+        background-color: {colors['card_bg']};
+        border-bottom: none;
+        border-top: 3px solid {colors['accent']};
+        color: white;
+        font-weight: 600;
+    }}
+    QTabBar::tab:!selected {{
+        margin-top: 4px;
+    }}
+"""
+
+# Style for scroll areas
+SCROLL_AREA_STYLE = f"""
+    QScrollArea {{
+        border: 1px solid {colors['border']};
+        background-color: {colors['card_bg']};
+        border-radius: 8px;
+    }}
+    QScrollBar:vertical {{
+        border: none;
+        background: {colors['bg']};
+        width: 14px;
+        margin: 0px;
+    }}
+    QScrollBar::handle:vertical {{
+        background: {colors['border']};
+        min-height: 20px;
+        border-radius: 7px;
+    }}
+    QScrollBar::add-line:vertical {{
+        border: none;
+        background: none;
+        height: 0px;
+    }}
+    QScrollBar::sub-line:vertical {{
+        border: none;
+        background: none;
+        height: 0px;
+    }}
+"""
+
+# Style for frames
+FRAME_STYLE = f"""
+    QFrame {{
+        border: 1px solid {colors['border']};
+        background-color: {colors['card_bg']};
+        border-radius: 8px;
+        padding: 16px;
+    }}
+""" 

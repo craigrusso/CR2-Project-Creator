@@ -30,7 +30,7 @@ _app_logger = None
 def get_log_file_path():
     """Return the full path to the log file."""
     log_dir = config_manager.get_log_path()
-    return os.path.join(log_dir, 'echelon.log')
+    return os.path.join(log_dir, 'forwardflow.log')
 
 def detect_and_set_environment():
     """
@@ -75,7 +75,7 @@ def set_production_mode():
             handler.setLevel(logging.INFO)
         info("Production logging mode enabled")
 
-def initialize_logging(logger_name='echelon', log_level_param=None, 
+def initialize_logging(logger_name='forwardflow', log_level_param=None, 
                       console_logging=DEFAULT_CONSOLE_LOGGING,
                       file_logging=DEFAULT_FILE_LOGGING,
                       log_format=DEFAULT_LOG_FORMAT,
@@ -249,13 +249,14 @@ def exception(message):
         import traceback
         traceback.print_exc()
 
-def get_logger():
+def get_logger(name=None):
     """Get the application logger instance"""
     global _app_logger
     
     if _app_logger is None:
-        _app_logger = initialize_logging()
-    
+        # If the logger hasn't been initialized, initialize it with default settings
+        # This is a fallback and ideally initialize_logging should be called first
+        initialize_logging()
     return _app_logger
 
 def set_log_level(level):

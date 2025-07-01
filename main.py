@@ -117,7 +117,7 @@ def deploy_example_templates():
         return
 
     try:
-        base_user_templates_path = get_templates_path() # e.g., $HOME/Library/Application Support/Echelon/Templates
+        base_user_templates_path = get_templates_path() # e.g., $HOME/Library/Application Support/ForwardFlow/Templates
         
         # Define the "Examples" subdirectory
         user_examples_subdirectory_path = os.path.join(base_user_templates_path, "Examples")
@@ -306,7 +306,7 @@ def log_system_info():
         error(f"Error logging system info: {e}")
 
 def main():
-    """Main entry point for the Echelon application"""
+    """Main entry point for the ForwardFlow application"""
     import faulthandler # Add import here
     
     # Safely enable faulthandler with try/except for packaged apps
@@ -371,7 +371,7 @@ def main():
                 # Set explicit AppUserModelID for Windows taskbar
                 # This MUST match the ID in the manifest file
                 app_version_for_id = APP_VERSION_NUMBER.replace('.', '_') # Ensure it's a valid ID component
-                myappid = f'cr2creative.echelon.{app_version_for_id}.{APP_BUILD_NUMBER}'
+                myappid = f'cr2creative.forwardflow.{app_version_for_id}.{APP_BUILD_NUMBER}'
                 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
                 info(f"Windows AppUserModelID set to: {myappid}")
             except Exception as e:
