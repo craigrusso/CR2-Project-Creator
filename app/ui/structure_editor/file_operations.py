@@ -963,3 +963,171 @@ class CustomPatternsDialog(QDialog):
         # Show/hide time format group based on ${TIME} presence
         has_time = self.format_managers.has_time_placeholder(pattern)
         self.time_format_group.setVisible(has_time)
+
+    def _create_buttons_section(self, layout):
+        """Create the dialog buttons"""
+        button_layout = QHBoxLayout()
+        button_layout.setSpacing(12)
+        
+        # Clear Pattern button - allows users to remove custom patterns
+        self.clear_button = QPushButton("Clear Pattern")
+        self.clear_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #FF6B6B;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 13px;
+            }}
+            QPushButton:hover {{
+                background-color: #FF5252;
+            }}
+            QPushButton:pressed {{
+                background-color: #E53935;
+            }}
+        """)
+        self.clear_button.clicked.connect(self._clear_pattern)
+        button_layout.addWidget(self.clear_button)
+        
+        button_layout.addStretch()
+        
+        # Cancel button
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {self.colors['card_bg']};
+                color: {self.colors['text']};
+                border: 1px solid {self.colors['border']};
+                padding: 10px 20px;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 13px;
+            }}
+            QPushButton:hover {{
+                background-color: {self.colors['highlight_bg']};
+                border-color: {self.colors['accent']};
+            }}
+        """)
+        self.cancel_button.clicked.connect(self.reject)
+        button_layout.addWidget(self.cancel_button)
+        
+        # Apply button
+        self.apply_button = QPushButton("Apply Pattern")
+        self.apply_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {self.colors['accent']};
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 13px;
+            }}
+            QPushButton:hover {{
+                background-color: {self.colors['accent_hover']};
+            }}
+            QPushButton:disabled {{
+                background-color: {self.colors['border']};
+                color: {self.colors['secondary_text']};
+            }}
+        """)
+        self.apply_button.clicked.connect(self.accept)
+        self.apply_button.setEnabled(False)  # Disabled until valid pattern entered
+        button_layout.addWidget(self.apply_button)
+        
+        layout.addLayout(button_layout)
+
+    def _clear_pattern(self):
+        """Clear the custom pattern and revert to original name or offer project name options"""
+        from PyQt6.QtWidgets import QMessageBox, QDialog
+        
+        # Get the original name
+        item_data = self.item.data(0, Qt.ItemDataRole.UserRole) or {}
+        original_name = item_data.get('original_name', self.item.text(0))
+        
+        # Show confirmation dialog with options
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Clear Custom Pattern")
+        msg_box.setText(f"What would you like to do after clearing the custom pattern?")
+        msg_box.setInformativeText(f"Original filename: {original_name}")
+        
+        # Custom buttons
+        revert_button = msg_box.addButton("Revert to Original Name", QMessageBox.ButtonRole.AcceptRole)
+        replace_button = msg_box.addButton("Replace with Project Name", QMessageBox.ButtonRole.ActionRole)
+        prepend_button = msg_box.addButton("Prepend Project Name", QMessageBox.ButtonRole.ActionRole)
+        append_button = msg_box.addButton("Append Project Name", QMessageBox.ButtonRole.ActionRole)
+        cancel_button = msg_box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        
+        msg_box.setDefaultButton(revert_button)
+        
+        result = msg_box.exec()
+        clicked_button = msg_box.clickedButton()
+        
+        if clicked_button == cancel_button:
+            return  # User cancelled
+        
+        # Apply the user's choice
+        try:
+            # Get the tree widget's file operations
+            tree_widget = self.tree_widget or self.item.treeWidget()
+            if hasattr(tree_widget, 'parent') and hasattr(tree_widget.parent(), 'file_operations'):
+                file_ops = tree_widget.parent().file_operations
+                item_ops = file_ops.item_operations
+                
+                if clicked_button == revert_button:
+                    # Clear everything and revert to original
+                    item_ops.reset_item_to_original(self.item)
+                    print(f"DEBUG: Cleared pattern and reverted to original: {original_name}")
+                    
+                elif clicked_button == replace_button:
+                    # Clear pattern and switch to replace mode
+                    item_ops.switch_from_pattern_to_project_name(self.item, 'replace')
+                    print(f"DEBUG: Cleared pattern and switched to replace mode")
+                    
+                elif clicked_button == prepend_button:
+                    # Clear pattern and switch to prepend mode
+                    item_ops.switch_from_pattern_to_project_name(self.item, 'prepend')
+                    print(f"DEBUG: Cleared pattern and switched to prepend mode")
+                    
+                elif clicked_button == append_button:
+                    # Clear pattern and switch to append mode
+                    item_ops.switch_from_pattern_to_project_name(self.item, 'append')
+                    print(f"DEBUG: Cleared pattern and switched to append mode")
+                
+                # Close the dialog
+                self.accept()  # or self.reject() depending on whether you want to signal success
+                
+            else:
+                print("DEBUG: Could not find file operations to clear pattern")
+                # Fallback - just clear the pattern data manually
+                item_data = self.item.data(0, Qt.ItemDataRole.UserRole) or {}
+                
+                # Clear pattern keys
+                pattern_keys = [
+                    'pattern', 'uses_custom_pattern', 'custom_options', 
+                    'separator', 'separator_type', 'custom_separator',
+                    'date_format_text', 'time_format_text', 'date_format', 'time_format'
+                ]
+                
+                for key in pattern_keys:
+                    item_data.pop(key, None)
+                
+                # Reset to original name
+                if 'original_name' in item_data:
+                    self.item.setText(0, item_data['original_name'])
+                
+                # Clear flags
+                item_data['uses_project_name'] = False
+                item_data['uses_custom_pattern'] = False
+                item_data['rename_flag'] = False
+                
+                self.item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+                
+                # Close dialog
+                self.accept()
+                
+        except Exception as e:
+            print(f"ERROR: Failed to clear pattern: {e}")
+            QMessageBox.warning(self, "Error", f"Failed to clear pattern: {str(e)}")

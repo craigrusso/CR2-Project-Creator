@@ -55,7 +55,21 @@ class BaseCustomOptionsWidget(QWidget):
     
     def set_custom_options(self, custom_prompts):
         """Set the custom options and create UI controls"""
+        print(f"DEBUG: set_custom_options called with {len(custom_prompts)} prompts")
         self.custom_options = custom_prompts
+        
+        # Store current selections before clearing
+        current_selections = {}
+        if self.combo_widgets:
+            for key, combo in self.combo_widgets.items():
+                try:
+                    if combo and combo.count() > 0:  # Check if combo still exists and has items
+                        current_selections[key] = combo.currentIndex()
+                except RuntimeError:
+                    # Combo box was already destroyed
+                    pass
+            print(f"DEBUG: Stored current selections: {current_selections}")
+        
         self.combo_widgets.clear()
         
         # Clear existing option widgets (keep title)
@@ -83,6 +97,19 @@ class BaseCustomOptionsWidget(QWidget):
                 display_label = f"Option {option_count}"
                 
             self._create_option_widget(display_label, options, key)
+            
+            # Restore previous selection if available
+            if key in current_selections:
+                if key in self.combo_widgets:
+                    combo = self.combo_widgets[key]
+                    stored_index = current_selections[key]
+                    if 0 <= stored_index < combo.count():
+                        combo.setCurrentIndex(stored_index)
+                        print(f"DEBUG: Restored combo['{key}'] to index {stored_index} ('{combo.currentText()}')")
+                    else:
+                        print(f"DEBUG: Stored index {stored_index} out of range for combo['{key}'], keeping default")
+                else:
+                    print(f"DEBUG: Could not find combo['{key}'] to restore selection")
     
     def _clear_option_widgets(self):
         """Clear existing option widgets while preserving title"""
@@ -150,7 +177,9 @@ class BaseCustomOptionsWidget(QWidget):
     
     def get_selected_values(self):
         """Get the selected values from all dropdowns"""
-        return {key: combo.currentText() for key, combo in self.combo_widgets.items()}
+        selected_values = {key: combo.currentText() for key, combo in self.combo_widgets.items()}
+        print(f"DEBUG: get_selected_values() returning: {selected_values}")
+        return selected_values
     
     def slide_up(self):
         """Show the widget (base implementation)"""
@@ -209,9 +238,9 @@ class AnimatedCustomOptionsWidget(BaseCustomOptionsWidget):
         pass
     
     def set_custom_options(self, custom_prompts):
-        """Override to update preview after setting options"""
+        """Override to update preview after setting options and restoring selections"""
         super().set_custom_options(custom_prompts)
-        # Update preview if we have a pattern
+        # Update preview if we have a pattern after restoring selections
         if hasattr(self, 'preview_pattern') and self.preview_pattern:
             self._update_preview()
     

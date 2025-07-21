@@ -32,80 +32,49 @@ class ContextMenuOperations:
         self.editor = editor
 
     def create_context_menu(self, position):
-        """Create and show context menu"""
+        """Create and show the context menu"""
         print(f"DEBUG: create_context_menu called with position {position}")
         
         if not self.tree_widget:
             print("DEBUG: create_context_menu - no tree widget available")
             return
         
-        # Check if tree_widget is still valid (not deleted)
-        try:
-            # Try to access the tree widget to verify it's still valid
-            if not hasattr(self.tree_widget, 'itemAt'):
-                print("DEBUG: create_context_menu - tree widget is invalid")
+        # Get the item at the click position
+        item = self.tree_widget.itemAt(position)
+        selected_items = self.tree_widget.selectedItems() if self.tree_widget else []
+        
+        # Ensure we have items to work with
+        if not selected_items:
+            if item:
+                selected_items = [item]
+                self.tree_widget.setCurrentItem(item)
+            else:
+                print("DEBUG: create_context_menu - no items to show menu for")
                 return
-        except (RuntimeError, AttributeError):
-            print("DEBUG: create_context_menu - tree widget has been deleted")
-            return
-        
-        print("DEBUG: create_context_menu - tree widget available, creating context menu")
-        
-        # Get selected items and item at position
-        try:
-            selected_items = self.tree_widget.selectedItems()
-            item_at_position = self.tree_widget.itemAt(position)
-            
-            # If clicked item is not in selection, select just that item
-            if item_at_position and item_at_position not in selected_items:
-                self.tree_widget.setCurrentItem(item_at_position)
-                selected_items = [item_at_position]
-            
-            # Use the clicked item or first selected item as context
-            self.current_context_item = item_at_position or (selected_items[0] if selected_items else None)
-            
-        except (RuntimeError, AttributeError):
-            print("DEBUG: create_context_menu - error getting items")
-            return
         
         print(f"DEBUG: Selected items count: {len(selected_items)}")
         
-        # Create menu with error handling
+        # Create the menu
         try:
+            from PyQt6.QtWidgets import QMenu
             menu = QMenu(self.tree_widget)
-        except (RuntimeError, AttributeError):
-            print("DEBUG: Failed to create menu - tree widget invalid")
+            
+            # Build menu content
+            self._build_menu_content(menu, selected_items)
+            
+            # Show the menu
+            global_pos = self.tree_widget.mapToGlobal(position)
+            print(f"DEBUG: Executing context menu at global position {global_pos}")
+            
+            # Execute the menu and handle the result
+            action = menu.exec(global_pos)
+            print(f"DEBUG: Menu action completed: {action}")
+            
+        except Exception as e:
+            print(f"ERROR: Exception in create_context_menu: {e}")
+            import traceback
+            traceback.print_exc()
             return
-        
-        # Style the menu
-        self._style_context_menu(menu)
-        
-        # Build menu content
-        self._build_menu_content(menu, selected_items)
-        
-        # Show menu if it has actions
-        if not menu.isEmpty():
-            try:
-                if self.tree_widget and hasattr(self.tree_widget, 'mapToGlobal'):
-                    global_pos = self.tree_widget.mapToGlobal(position)
-                    print(f"DEBUG: Executing context menu at global position {global_pos}")
-                    menu.exec(global_pos)
-                else:
-                    print("DEBUG: Tree widget invalid during menu execution")
-            except (RuntimeError, AttributeError) as e:
-                print(f"DEBUG: Error executing context menu: {e}")
-            finally:
-                # Always clean up the menu
-                try:
-                    menu.deleteLater()
-                except:
-                    pass
-        else:
-            print("DEBUG: Context menu is empty, not showing")
-            try:
-                menu.deleteLater()
-            except:
-                pass
 
     def _style_context_menu(self, menu):
         """Apply styling to the context menu"""
@@ -139,44 +108,167 @@ class ContextMenuOperations:
             pass
 
     def _build_menu_content(self, menu, selected_items):
-        """Build the content of the context menu"""
-        # Add basic actions first
+        """Build the context menu content based on selected items"""
+        print(f"DEBUG: Building context menu for {len(selected_items)} selected items")
+        
+        # Filter items by type
+        file_items = []
+        folder_items = []
+        
+        for item in selected_items:
+            try:
+                item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+                item_type = item_data.get('type', 'unknown')
+                if item_type == 'file':
+                    file_items.append(item)
+                elif item_type == 'folder':
+                    folder_items.append(item)
+            except (RuntimeError, AttributeError) as e:
+                print(f"DEBUG: Error getting item data for menu: {e}")
+                continue
+        
+        # Add basic actions
         add_file_action = menu.addAction("Add File")
-        add_file_action.triggered.connect(lambda: self.editor.add_file() if hasattr(self.editor, 'add_file') else None)
+        add_file_action.triggered.connect(self._add_file_handler)
         
         add_folder_action = menu.addAction("Add Folder")
-        add_folder_action.triggered.connect(lambda: self.editor.add_folder() if hasattr(self.editor, 'add_folder') else None)
+        add_folder_action.triggered.connect(self._add_folder_handler)
         
         if selected_items:
+            menu.addSeparator()
+            
+            # Delete action - store items reference safely
+            delete_text = f"Delete {len(selected_items)} items" if len(selected_items) > 1 else "Delete"
+            delete_action = menu.addAction(delete_text)
+            delete_action.triggered.connect(lambda checked=False, items=selected_items[:]: self._delete_selected_items(items))
+        
+        # Add file-specific operations
+        if file_items:
+            self._add_file_operations(menu, file_items)
+
+    def _add_file_handler(self):
+        """Handle add file action"""
+        try:
+            if self.editor and hasattr(self.editor, 'add_file'):
+                self.editor.add_file()
+        except Exception as e:
+            print(f"DEBUG: Error in add file handler: {e}")
+
+    def _add_folder_handler(self):
+        """Handle add folder action"""
+        try:
+            if self.editor and hasattr(self.editor, 'add_folder'):
+                self.editor.add_folder()
+        except Exception as e:
+            print(f"DEBUG: Error in add folder handler: {e}")
+
+    def _add_file_operations(self, menu, file_items):
+        """Add file-specific operations to menu"""
+        menu.addSeparator()
+        
+        if len(file_items) == 1:
+            # Single file operations
+            item = file_items[0]
             try:
+                item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+                
+                # Check current state of the file
+                is_using_custom_pattern = (item_data.get('uses_custom_pattern', False) and 
+                                         item_data.get('pattern'))
+                is_using_project_name = ((item_data.get('rename_flag', False) or 
+                                        item_data.get('uses_project_name', False)) and 
+                                       not is_using_custom_pattern)
+                
+                if is_using_custom_pattern:
+                    # File has custom pattern - offer to clear it
+                    clear_action = menu.addAction("Remove Custom Pattern")
+                    clear_action.triggered.connect(lambda checked=False, target_item=item: self._clear_custom_pattern(target_item))
+                    
+                    menu.addSeparator()
+                    
+                    # Options to switch to project name modes
+                    replace_action = menu.addAction("Replace with Project Name")
+                    replace_action.triggered.connect(lambda checked=False, target_item=item: self._switch_to_project_name_mode(target_item, 'replace'))
+                    
+                    prepend_action = menu.addAction("Prepend Project Name")
+                    prepend_action.triggered.connect(lambda checked=False, target_item=item: self._switch_to_project_name_mode(target_item, 'prepend'))
+                    
+                    append_action = menu.addAction("Append Project Name")
+                    append_action.triggered.connect(lambda checked=False, target_item=item: self._switch_to_project_name_mode(target_item, 'append'))
+                    
+                elif is_using_project_name:
+                    # File uses project name - offer to change mode or clear
+                    current_mode = item_data.get('project_name_mode', 'replace')
+                    
+                    revert_action = menu.addAction("Revert to Original Name")
+                    revert_action.triggered.connect(lambda checked=False, target_item=item: self._revert_to_original(target_item))
+                    
+                    menu.addSeparator()
+                    
+                    # Project name mode options (only show different modes)
+                    if current_mode != 'replace':
+                        replace_action = menu.addAction("Replace with Project Name")
+                        replace_action.triggered.connect(lambda checked=False, target_item=item: self._switch_to_project_name_mode(target_item, 'replace'))
+                    
+                    if current_mode != 'prepend':
+                        prepend_action = menu.addAction("Prepend Project Name")
+                        prepend_action.triggered.connect(lambda checked=False, target_item=item: self._switch_to_project_name_mode(target_item, 'prepend'))
+                    
+                    if current_mode != 'append':
+                        append_action = menu.addAction("Append Project Name")
+                        append_action.triggered.connect(lambda checked=False, target_item=item: self._switch_to_project_name_mode(target_item, 'append'))
+                    
+                else:
+                    # File uses original name - offer project name options
+                    replace_action = menu.addAction("Replace with Project Name")
+                    replace_action.triggered.connect(lambda checked=False, target_item=item: self._switch_to_project_name_mode(target_item, 'replace'))
+                    
+                    prepend_action = menu.addAction("Prepend Project Name")
+                    prepend_action.triggered.connect(lambda checked=False, target_item=item: self._switch_to_project_name_mode(target_item, 'prepend'))
+                    
+                    append_action = menu.addAction("Append Project Name")
+                    append_action.triggered.connect(lambda checked=False, target_item=item: self._switch_to_project_name_mode(target_item, 'append'))
+                
                 menu.addSeparator()
                 
-                # Multi-selection vs single selection actions
-                if len(selected_items) == 1:
-                    item = selected_items[0]
-                    # Single item actions
-                    rename_action = menu.addAction("Rename")
-                    rename_action.triggered.connect(lambda: self.tree_widget.editItem(item, 0) if self.tree_widget else None)
+                # Custom pattern option
+                pattern_action = menu.addAction("Custom Naming Pattern...")
+                pattern_action.triggered.connect(lambda checked=False, target_item=item: self._configure_custom_patterns(target_item))
                 
-                # Delete action (works for single or multiple)
-                delete_text = f"Delete {len(selected_items)} items" if len(selected_items) > 1 else "Delete"
-                delete_action = menu.addAction(delete_text)
-                delete_action.triggered.connect(lambda: self._delete_selected_items(selected_items))
+                # Versioning options
+                date_action = menu.addAction("Date Sequences...")
+                date_action.triggered.connect(lambda checked=False, target_item=item: self._configure_date_sequences(target_item))
                 
-                # Categorize selected items
-                file_items, folder_items = self._categorize_items(selected_items)
+            except Exception as e:
+                print(f"DEBUG: Error processing single file menu: {e}")
                 
-                # Handle folder-specific actions
-                if folder_items and len(selected_items) == 1:
-                    menu.addSeparator()
-                    self._add_folder_context_actions(menu, folder_items[0])
-                
-                # Handle file-specific actions
-                if file_items:
-                    self._add_file_context_actions(menu, file_items)
-                    
-            except (RuntimeError, AttributeError) as e:
-                print(f"DEBUG: Error building context menu for items: {e}")
+        else:
+            # Multiple files - bulk operations
+            menu.addSeparator()
+            
+            # Make a copy of the file items list to avoid reference issues
+            file_items_copy = file_items[:]
+            
+            # Bulk clear operations
+            clear_patterns_action = menu.addAction("Clear All Custom Patterns")
+            clear_patterns_action.triggered.connect(lambda checked=False, items=file_items_copy: self._bulk_clear_custom_patterns(items))
+            
+            revert_bulk_action = menu.addAction("Revert All to Original Names")
+            revert_bulk_action.triggered.connect(lambda checked=False, items=file_items_copy: self._bulk_revert_to_original(items))
+            
+            menu.addSeparator()
+            
+            # Bulk project name operations
+            prepend_bulk_action = menu.addAction("Prepend Project Name to All")
+            prepend_bulk_action.triggered.connect(lambda checked=False, items=file_items_copy: self._bulk_set_project_name_mode(items, 'prepend'))
+            
+            append_bulk_action = menu.addAction("Append Project Name to All")
+            append_bulk_action.triggered.connect(lambda checked=False, items=file_items_copy: self._bulk_set_project_name_mode(items, 'append'))
+            
+            replace_bulk_action = menu.addAction("Replace All with Project Name")
+            replace_bulk_action.triggered.connect(lambda checked=False, items=file_items_copy: self._bulk_set_project_name_mode(items, 'replace'))
+
+
 
     def _categorize_items(self, selected_items):
         """Categorize selected items into files and folders"""
@@ -196,72 +288,35 @@ class ContextMenuOperations:
                 
         return file_items, folder_items
 
-    def _add_file_context_actions(self, menu, file_items):
-        """Add file-specific context menu actions"""
-        menu.addSeparator()
-        
-        if len(file_items) == 1:
-            # Single file - original actions
-            item_data = file_items[0].data(0, Qt.ItemDataRole.UserRole) or {}
-            action_text = "Revert to Original Name" if item_data.get('rename_flag') or item_data.get('uses_project_name') else "Use Project Name"
-            use_project_name_action = menu.addAction(action_text)
-            use_project_name_action.triggered.connect(lambda: self.editor._toggle_project_name_for_file(file_items[0]) if hasattr(self.editor, '_toggle_project_name_for_file') else None)
-            
-            # Versioning menu for single file
-            versioning_menu = menu.addMenu("Versioning")
-            date_action = versioning_menu.addAction("Date Sequences...")
-            date_action.triggered.connect(lambda: self._configure_date_sequences(file_items[0]))
-            
-            patterns_action = menu.addAction("Custom Naming Patterns...")
-            patterns_action.triggered.connect(lambda: self._configure_custom_patterns(file_items[0]))
-        else:
-            # Multiple files - bulk operations
-            bulk_menu = menu.addMenu(f"Bulk Operations ({len(file_items)} files)")
-            
-            # Bulk project name operations
-            prepend_bulk_action = bulk_menu.addAction("Prepend Project Name to All")
-            prepend_bulk_action.triggered.connect(lambda: self._bulk_set_project_name_mode(file_items, 'prepend'))
-            
-            append_bulk_action = bulk_menu.addAction("Append Project Name to All")
-            append_bulk_action.triggered.connect(lambda: self._bulk_set_project_name_mode(file_items, 'append'))
-            
-            replace_bulk_action = bulk_menu.addAction("Replace All with Project Name")
-            replace_bulk_action.triggered.connect(lambda: self._bulk_set_project_name_mode(file_items, 'replace'))
-            
-            bulk_menu.addSeparator()
-            
-            revert_bulk_action = bulk_menu.addAction("Revert All to Original Names")
-            revert_bulk_action.triggered.connect(lambda: self._bulk_revert_to_original(file_items))
-        
-        # Project name mode actions (available for single or multiple)
-        menu.addSeparator()
-        project_menu = menu.addMenu("Project Name")
-        
-        prepend_action = project_menu.addAction("Prepend Project Name")
-        prepend_action.triggered.connect(lambda: self._bulk_set_project_name_mode(file_items, 'prepend'))
-        
-        append_action = project_menu.addAction("Append Project Name")
-        append_action.triggered.connect(lambda: self._bulk_set_project_name_mode(file_items, 'append'))
-        
-        replace_action = project_menu.addAction("Replace with Project Name")
-        replace_action.triggered.connect(lambda: self._bulk_set_project_name_mode(file_items, 'replace'))
-
     def _add_folder_context_actions(self, menu, folder_item):
         """Add folder-specific context menu actions"""
-        # Add folder-specific actions
-        expand_action = menu.addAction("Expand All")
+        menu.addSeparator()
+        
+        # Expand/collapse actions for folders
+        expand_action = menu.addAction("Expand")
         expand_action.triggered.connect(lambda: self.tree_widget.expandItem(folder_item) if self.tree_widget else None)
         
-        collapse_action = menu.addAction("Collapse All")
+        collapse_action = menu.addAction("Collapse")
         collapse_action.triggered.connect(lambda: self.tree_widget.collapseItem(folder_item) if self.tree_widget else None)
 
-    def _delete_selected_items(self, items):
-        """Delete selected items - delegates to editor"""
-        if self.editor and hasattr(self.editor, 'delete_selected'):
-            self.editor.delete_selected()
-        elif self.tree_widget:
-            # Fallback: remove items directly from tree
-            for item in items:
+    def _delete_selected_items(self, selected_items):
+        """Delete the selected items"""
+        if not selected_items:
+            return
+        
+        # Confirm deletion
+        from PyQt6.QtWidgets import QMessageBox
+        item_count = len(selected_items)
+        if item_count == 1:
+            message = f"Are you sure you want to delete '{selected_items[0].text(0)}'?"
+        else:
+            message = f"Are you sure you want to delete {item_count} items?"
+        
+        reply = QMessageBox.question(None, "Confirm Deletion", message,
+                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            for item in selected_items:
                 try:
                     parent = item.parent()
                     if parent:
@@ -270,7 +325,8 @@ class ContextMenuOperations:
                         index = self.tree_widget.indexOfTopLevelItem(item)
                         if index >= 0:
                             self.tree_widget.takeTopLevelItem(index)
-                except (RuntimeError, AttributeError):
+                except (RuntimeError, AttributeError) as e:
+                    print(f"DEBUG: Error deleting item: {e}")
                     continue
 
     def _bulk_set_project_name_mode(self, items, mode):
@@ -416,3 +472,55 @@ class ContextMenuOperations:
             self.editor._apply_date_sequence_to_item(item, date_data)
         else:
             print(f"DEBUG: No suitable method found for applying date sequence to item") 
+
+    def _switch_to_project_name_mode(self, item, mode):
+        """Switch a file from any current mode to project name mode"""
+        print(f"DEBUG: Switching item to project name mode: {mode}")
+        
+        if self.editor and hasattr(self.editor, 'file_operations') and hasattr(self.editor.file_operations, 'item_operations'):
+            # Use the enhanced method from ItemOperations
+            result = self.editor.file_operations.item_operations.switch_from_pattern_to_project_name(item, mode)
+            if result:
+                print(f"DEBUG: Successfully switched to {mode} mode")
+            else:
+                print(f"DEBUG: Failed to switch to {mode} mode")
+        else:
+            print(f"DEBUG: No suitable method found for switching to project name mode")
+
+    def _clear_custom_pattern(self, item):
+        """Clear custom pattern from a file and revert to original name"""
+        print(f"DEBUG: Clearing custom pattern from item: {item.text(0)}")
+        
+        if self.editor and hasattr(self.editor, 'file_operations') and hasattr(self.editor.file_operations, 'item_operations'):
+            # Use the reset method to completely clear everything
+            self.editor.file_operations.item_operations.reset_item_to_original(item)
+            print(f"DEBUG: Successfully cleared custom pattern")
+        else:
+            print(f"DEBUG: No suitable method found for clearing custom pattern")
+
+    def _revert_to_original(self, item):
+        """Revert a file to its original name"""
+        print(f"DEBUG: Reverting item to original name: {item.text(0)}")
+        
+        if self.editor and hasattr(self.editor, 'file_operations') and hasattr(self.editor.file_operations, 'item_operations'):
+            self.editor.file_operations.item_operations.reset_item_to_original(item)
+            print(f"DEBUG: Successfully reverted to original name")
+        else:
+            print(f"DEBUG: No suitable method found for reverting to original")
+
+    def _bulk_clear_custom_patterns(self, items):
+        """Clear custom patterns from multiple items"""
+        print(f"DEBUG: Clearing custom patterns from {len(items)} items")
+        
+        if self.editor and hasattr(self.editor, 'file_operations') and hasattr(self.editor.file_operations, 'item_operations'):
+            for item in items:
+                try:
+                    item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+                    if item_data.get('uses_custom_pattern', False):
+                        self.editor.file_operations.item_operations.reset_item_to_original(item)
+                        print(f"DEBUG: Cleared custom pattern from: {item.text(0)}")
+                except (RuntimeError, AttributeError) as e:
+                    print(f"DEBUG: Error clearing custom pattern: {e}")
+                    continue
+        else:
+            print(f"DEBUG: No suitable method found for bulk clearing custom patterns") 

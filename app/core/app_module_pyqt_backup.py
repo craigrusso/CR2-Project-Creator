@@ -2309,14 +2309,15 @@ class ProjectCreatorApp(MainWindowBase):
             sequence_names = self._generate_sequence_names(base_name)
             final_projects.extend(sequence_names)
         
-        # Show confirmation
-        if QMessageBox.question(
-            self, 
-            "Confirm Batch Creation", 
-            f"You are about to create {len(final_projects)} projects.\n\nDo you want to continue?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        ) == QMessageBox.StandardButton.No:
-            return
+        # Show confirmation only for larger batches
+        if len(final_projects) >= 10:
+            if QMessageBox.question(
+                self, 
+                "Confirm Batch Creation", 
+                f"You are about to create {len(final_projects)} projects.\n\nDo you want to continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            ) == QMessageBox.StandardButton.No:
+                return
         
         # Show creating message in status bar
         self.show_status_message(f"Creating {len(final_projects)} projects...", message_type="info")

@@ -88,7 +88,7 @@ class BatchManager:
             final_projects = project_names
         
         # Confirm with user if many projects
-        if len(final_projects) > 10:
+        if len(final_projects) >= 10:
             reply = QMessageBox.question(
                 self.app,
                 "Confirm Batch Creation",
@@ -278,10 +278,9 @@ class BatchManager:
             if successful_count > 0:
                 self.app.batch_text_edit.clear()
                 
-                # Reset custom options widget
-                if hasattr(self.app, 'reset_custom_options_widget'):
-                    self.app.reset_custom_options_widget()
-            
+                # Don't reset custom options widget - let users keep their selections
+                # The widget will be reset when they select a different template
+        
         except Exception as e:
             error_msg = f"Error during batch creation: {str(e)}"
             print(f"ERROR: {error_msg}")

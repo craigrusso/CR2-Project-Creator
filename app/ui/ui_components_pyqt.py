@@ -1548,14 +1548,15 @@ class ProjectNameInput(QDialog):
             self.reject()
             return
         
-        # Show confirmation with count
-        if QMessageBox.question(
-            self, 
-            "Confirm Batch Creation", 
-            f"You are about to create {len(project_names)} projects.\n\nDo you want to continue?",
-            QMessageBox.Yes | QMessageBox.No
-        ) == QMessageBox.No:
-            return
+        # Show confirmation with count only for larger batches
+        if len(project_names) >= 10:
+            if QMessageBox.question(
+                self, 
+                "Confirm Batch Creation", 
+                f"You are about to create {len(project_names)} projects.\n\nDo you want to continue?",
+                QMessageBox.Yes | QMessageBox.No
+            ) == QMessageBox.No:
+                return
             
         if self.callback:
             self.callback(project_names)

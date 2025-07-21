@@ -417,42 +417,74 @@ class ProjectBuilder:
         # Handle backup of existing directory if needed
         if os.path.exists(project_dir) and os.listdir(project_dir):
             if create_backup:
-                # Create backup of existing directory
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                backup_dir = f"{project_dir}_backup_{timestamp}"
+                # Interactive mode - show dialog to user
+                from app.dialogs.project_exists_dialog import ProjectExistsDialog
+                
+                # Get suggested version name
+                suggested_version = ProjectExistsDialog.get_next_version_name(project_name, output_dir)
+                
+                # Show dialog (need to get parent window - try to find main app window)
+                parent = None
                 try:
-                    # print(f"Creating backup at {backup_dir}")
-                    shutil.copytree(project_dir, backup_dir)
-                    # Also try to copy hidden files which might be missed by copytree
-                    if platform.system() != "Windows":
-                        # Unix-like systems
-                        os.system(f'cp -r "{project_dir}/."* "{backup_dir}" 2>/dev/null || true')
-                    # print(f"Created backup at {backup_dir}")
+                    from PyQt6.QtWidgets import QApplication
+                    app = QApplication.instance()
+                    if app:
+                        parent = app.activeWindow()
+                except:
+                    pass
+                
+                dialog = ProjectExistsDialog(parent, project_name, project_dir, suggested_version)
+                dialog.exec()
+                
+                action, data = dialog.get_result()
+                
+                if action == ProjectExistsDialog.CANCEL:
+                    return False, "Project creation cancelled by user"
+                elif action == ProjectExistsDialog.CREATE_VERSION:
+                    # Update project name and directory to use version
+                    project_name = data["version_name"]
+                    project_dir = os.path.join(output_dir, project_name)
                     
-                    # Remove old directory completely instead of just emptying it
-                    shutil.rmtree(project_dir)
-                    # print(f"Removed old project directory: {project_dir}")
+                    # Check if versioned project already exists
+                    if os.path.exists(project_dir) and os.listdir(project_dir):
+                        return False, f"Versioned project '{project_name}' already exists"
                     
-                    # Create a fresh empty directory
-                    os.makedirs(project_dir, exist_ok=True)
-                    # print(f"Created fresh project directory: {project_dir}")
-                    
-                except Exception as e:
-                    print(f"Failed to create backup or prepare project directory: {e}")
-                    return False, f"Failed to create backup: {str(e)}"
-            else:
-                # Simply empty the directory
-                # print(f"Emptying existing project directory: {project_dir}")
-                for item in os.listdir(project_dir):
-                    item_path = os.path.join(project_dir, item)
+                    # Create the versioned project directory
                     try:
-                        if os.path.isfile(item_path) or os.path.islink(item_path):
-                            os.unlink(item_path)
-                        elif os.path.isdir(item_path):
-                            shutil.rmtree(item_path)
+                        os.makedirs(project_dir, exist_ok=True)
                     except Exception as e:
-                        print(f"Failed to remove item {item_path}: {e}")
-                        return False, f"Failed to empty project directory: {str(e)}"
+                        return False, f"Failed to create versioned project directory: {str(e)}"
+                elif action == ProjectExistsDialog.OVERWRITE:
+                    # Handle overwrite with optional backup
+                    if data.get("backup_existing", True):
+                        # Create backup of existing directory
+                        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                        backup_dir = f"{project_dir}_backup_{timestamp}"
+                        try:
+                            print(f"Creating backup of existing project at {backup_dir}")
+                            shutil.copytree(project_dir, backup_dir)
+                            # Also try to copy hidden files which might be missed by copytree
+                            if platform.system() != "Windows":
+                                # Unix-like systems
+                                os.system(f'cp -r "{project_dir}/."* "{backup_dir}" 2>/dev/null || true')
+                            print(f"Created backup at {backup_dir}")
+                        except Exception as e:
+                            print(f"Failed to create backup: {e}")
+                            return False, f"Failed to create backup: {str(e)}"
+                    
+                    # Remove old directory completely
+                    try:
+                        shutil.rmtree(project_dir)
+                        print(f"Removed existing project directory: {project_dir}")
+                        
+                        # Create a fresh empty directory
+                        os.makedirs(project_dir, exist_ok=True)
+                        print(f"Created fresh project directory: {project_dir}")
+                    except Exception as e:
+                        return False, f"Failed to remove existing project directory: {str(e)}"
+            else:
+                # Batch mode - project should have been pre-versioned, but handle edge case
+                return False, f"Project '{project_name}' already exists (batch mode versioning failed)"
         
         # Check for valid structure - crucial step to validate structure exists
         if not structure_data:
@@ -1212,6 +1244,9 @@ class ProjectBuilder:
             uses_project_name = item.get('uses_project_name', False)
             pattern = item.get('pattern', None)
             sequence = item.get('sequence', None)
+            
+            # Check if custom pattern is actually being used
+            uses_custom_pattern = item.get('uses_custom_pattern', False)
 
             # --- Sequence support ---
             if pattern and sequence and "${COUNTER}" in pattern:
@@ -1342,8 +1377,9 @@ class ProjectBuilder:
                 else:
                     print(f"DEBUG: No CUSTOM value found for key '{custom_key}' or global 'CUSTOM'")
             
-            # Determine output name - prioritize custom patterns
-            if pattern:
+            # Determine output name - fix the prioritization logic
+            # Check if we have a valid custom pattern that's actually being used
+            if pattern and uses_custom_pattern and pattern.strip():
                 # Use custom pattern with enhanced features (highest priority)
                 output_name = self._process_custom_pattern(pattern, local_placeholders, item)
                 print(f"DEBUG: Used custom pattern processing, result: '{output_name}'")
@@ -1351,21 +1387,40 @@ class ProjectBuilder:
                 # Check if the filename contains a placeholder
                 output_name = self._replace_placeholders(item_name, local_placeholders)
             elif rename_flag or uses_project_name:
+                # This branch now works properly even if pattern data exists but custom patterns aren't being used
                 project_name = local_placeholders.get("PROJECT_NAME", "Unknown")
+                
+                # Get the project name mode and separator from item data
+                project_name_mode = item.get('project_name_mode', 'replace')
+                custom_separator = item.get('custom_separator', '_')
+                
+                # Split filename into base name and extension
                 name_parts = os.path.splitext(item_name)
                 if len(name_parts) == 2:
                     base_name, ext = name_parts
-                    if uses_project_name:
-                        output_name = f"{project_name}_{base_name}{ext}"
-                    else:
-                        output_name = f"{base_name}_{project_name}{ext}"
                 else:
-                    if uses_project_name:
-                        output_name = f"{project_name}_{item_name}"
-                    else:
-                        output_name = f"{item_name}_{project_name}"
+                    base_name = item_name
+                    ext = ''
+                
+                # Apply the correct naming mode
+                if project_name_mode == 'replace':
+                    # Replace filename entirely with project name + extension
+                    output_name = f"{project_name}{ext}"
+                elif project_name_mode == 'prepend':
+                    # Add project name before the filename
+                    output_name = f"{project_name}{custom_separator}{base_name}{ext}"
+                elif project_name_mode == 'append':
+                    # Add project name after the filename
+                    output_name = f"{base_name}{custom_separator}{project_name}{ext}"
+                else:
+                    # Default to replace mode for any unrecognized mode
+                    output_name = f"{project_name}{ext}"
+                
+                print(f"DEBUG: Applied project name mode '{project_name_mode}' to file '{item_name}', result: '{output_name}'")
             else:
+                # Use the original name as-is
                 output_name = item_name
+                print(f"DEBUG: Using original filename: '{output_name}'")
 
             file_path = os.path.join(parent_output_path, output_name)
             source_path = None
@@ -1650,16 +1705,11 @@ class ProjectBuilder:
         try:
             from app.core.app_module_pyqt import ProjectCreatorApp
             app_instance = ProjectCreatorApp.get_instance()
-            print(f"DEBUG: ProjectBuilder._collect_custom_options - app_instance found: {app_instance is not None}")
             if app_instance and hasattr(app_instance, 'get_custom_values_from_widget'):
-                print(f"DEBUG: ProjectBuilder._collect_custom_options - calling get_custom_values_from_widget()")
                 custom_values = app_instance.get_custom_values_from_widget()
-                print(f"DEBUG: ProjectBuilder._collect_custom_options - received custom_values: {custom_values}")
                 if custom_values:
-                    print(f"DEBUG: ProjectBuilder._collect_custom_options - returning custom values from widget: {custom_values}")
+                    print(f"DEBUG: Using custom values from widget: {custom_values}")
                     return custom_values
-                else:
-                    print(f"DEBUG: ProjectBuilder._collect_custom_options - no custom values from widget, falling back to dialog")
         except Exception as e:
             print(f"Warning: Could not get custom values from animated widget: {e}")
         
@@ -1880,9 +1930,8 @@ class ProjectBuilder:
         
         # Add custom values if provided
         if custom_values:
-            print(f"DEBUG: Processing custom_values in _create_placeholders: {custom_values}")
+            print(f"DEBUG: Processing custom_values: {custom_values}")
             for key, value in custom_values.items():
-                print(f"DEBUG: Processing custom value - key: '{key}', value: '{value}'")
                 # Extract the placeholder type from the key
                 if '_CUSTOM' in key:
                     # Handle numbered CUSTOM placeholders (CUSTOM1, CUSTOM2, CUSTOM3, CUSTOM4)
@@ -1890,13 +1939,11 @@ class ProjectBuilder:
                     
                     # Set the specific placeholder
                     placeholders[placeholder_part] = value
-                    print(f"DEBUG: Set placeholders['{placeholder_part}'] = '{value}'")
                     
                     # Also store with the full key for specific replacements
                     placeholders[key] = value
-                    print(f"DEBUG: Set placeholders['{key}'] = '{value}'")
         
-        print(f"DEBUG: Final placeholders in _create_placeholders: {placeholders}")
+        print(f"DEBUG: Final placeholders: {placeholders}")
         return placeholders
 
     def _convert_custom_date_format(self, date_format, datetime_obj):
@@ -2086,6 +2133,7 @@ class ProjectBuilder:
         # --- Custom Options ---
         # Find all ${CUSTOM...} placeholders in the pattern (${CUSTOM1}, ${CUSTOM2}, ${CUSTOM3}, ${CUSTOM4})
         custom_placeholders = re.findall(r'\$\{CUSTOM\d+\}', pattern)
+        
         for placeholder in custom_placeholders:
             # Get the value from the placeholders (which contains the selected values)
             # First try the specific placeholder (e.g., "CUSTOM1")
@@ -2103,6 +2151,7 @@ class ProjectBuilder:
             elif value is None:
                 value = ""
             
+            print(f"DEBUG: Replacing '{placeholder}' with '{value}' in pattern")
             pattern = pattern.replace(placeholder, str(value))
 
         # --- Base Placeholders ---
@@ -2215,91 +2264,100 @@ class ProjectBuilder:
         return False
 
     def _process_files_array(self, project_dir, files_array, placeholders, use_cached_files=True, template_name=None):
-        """
-        Process an array of files, copying them to the project directory with placeholders applied
+        """Process an array of file info dictionaries and create files in the project directory"""
+        if not isinstance(files_array, list):
+            print("DEBUG: files_array is not a list")
+            return
         
-        Args:
-            project_dir: The project directory to copy files to
-            files_array: Array of file information dictionaries
-            placeholders: Dictionary of placeholder replacements
-            use_cached_files: Whether to use cached files if available
-            template_name: Name of the template (for caching)
+        for file_info in files_array:
+            if not isinstance(file_info, dict):
+                print("DEBUG: Skipping non-dict file_info")
+                continue
+                
+            file_name = file_info.get('file_name', file_info.get('name', ''))
+            if not file_name:
+                print("DEBUG: No file_name found in file_info")
+                continue
             
-        Returns:
-            tuple: (success, copied_files_list)
-        """
-        if not files_array:
-            return True, []
+            folder_path = file_info.get('folder', '')
+            rename_flag = file_info.get('rename_flag', False)
+            uses_project_name = file_info.get('uses_project_name', False)
             
-        copied_files = []
-        
-        try:
-            for file_info in files_array:
-                if not isinstance(file_info, dict):
-                    continue
-                    
-                file_name = file_info.get('file_name', '')
-                folder = file_info.get('folder', '')
-                original_path = file_info.get('original_path', '')
-                cached_path = file_info.get('cached_path', '')
-                is_binary = file_info.get('is_binary', False)
-                rename_flag = file_info.get('rename_flag', False)
-                uses_project_name = file_info.get('uses_project_name', False)
+            # Check if custom pattern is actually being used
+            pattern = file_info.get('pattern', None)
+            uses_custom_pattern = file_info.get('uses_custom_pattern', False)
+            
+            # Determine final filename using the same improved logic as _process_file
+            if pattern and uses_custom_pattern and pattern.strip():
+                # Use custom pattern processing
+                final_filename = self._process_custom_pattern(pattern, placeholders, file_info)
+                print(f"DEBUG: Used custom pattern for '{file_name}', result: '{final_filename}'")
+            elif '${' in file_name:
+                # Handle placeholder replacement first
+                final_filename = self._replace_placeholders(file_name, placeholders)
+            elif rename_flag or uses_project_name:
+                # Handle project name modes
+                project_name = placeholders.get("PROJECT_NAME", "Unknown")
                 
-                if not file_name:
-                    continue
+                # Get the project name mode and separator from file info
+                project_name_mode = file_info.get('project_name_mode', 'replace')
+                custom_separator = file_info.get('custom_separator', '_')
                 
-                # Determine source path - prefer cached if available and use_cached_files is True
-                source_path = None
-                if use_cached_files and cached_path and os.path.exists(cached_path):
-                    source_path = cached_path
-                elif original_path and os.path.exists(original_path):
-                    source_path = original_path
+                # Split filename into base name and extension
+                name_parts = os.path.splitext(file_name)
+                if len(name_parts) == 2:
+                    base_name, ext = name_parts
+                else:
+                    base_name = file_name
+                    ext = ''
                 
-                if not source_path:
-                    # print(f"Warning: Could not find source file for {file_name}")
-                    continue
+                # Apply the correct naming mode
+                if project_name_mode == 'replace':
+                    # Replace filename entirely with project name + extension
+                    final_filename = f"{project_name}{ext}"
+                elif project_name_mode == 'prepend':
+                    # Add project name before the filename
+                    final_filename = f"{project_name}{custom_separator}{base_name}{ext}"
+                elif project_name_mode == 'append':
+                    # Add project name after the filename
+                    final_filename = f"{base_name}{custom_separator}{project_name}{ext}"
+                else:
+                    # Default to replace mode for any unrecognized mode
+                    final_filename = f"{project_name}{ext}"
                 
-                # Build destination path
-                folder_path = folder.rstrip('/') if folder else ''
-                dest_dir = os.path.join(project_dir, folder_path) if folder_path else project_dir
-                
-                # Apply placeholders to filename if needed
+                print(f"DEBUG: Applied project name mode '{project_name_mode}' to file '{file_name}', result: '{final_filename}'")
+            else:
+                # Use original filename
                 final_filename = file_name
-                if rename_flag or uses_project_name or '${' in file_name:
-                    final_filename = self._replace_placeholders(file_name, placeholders)
-                
-                dest_path = os.path.join(dest_dir, final_filename)
-                
-                # Create destination directory
-                os.makedirs(dest_dir, exist_ok=True)
-                
-                # Copy the file
-                try:
-                    if is_binary:
-                        # Binary file - direct copy
-                        shutil.copy2(source_path, dest_path)
-                    else:
-                        # Text file - process placeholders in content
-                        with open(source_path, 'r', encoding='utf-8') as f:
-                            content = f.read()
-                        
-                        # Apply placeholders to content
-                        processed_content = self._replace_placeholders(content, placeholders)
-                        
-                        with open(dest_path, 'w', encoding='utf-8') as f:
-                            f.write(processed_content)
-                    
-                    copied_files.append(dest_path)
-                    
-                except Exception as e:
-                    # print(f"Error copying file {file_name}: {e}")
-                    continue
+                print(f"DEBUG: Using original filename: '{final_filename}'")
+
+            dest_dir = os.path.join(project_dir, folder_path.rstrip('/')) if folder_path else project_dir
+            dest_path = os.path.join(dest_dir, final_filename)
             
-            return True, copied_files
+            # Create destination directory
+            os.makedirs(dest_dir, exist_ok=True)
             
-        except Exception as e:
-            return False, f"Error processing files array: {str(e)}"
+            # Copy the file
+            try:
+                if file_info.get('is_binary', False):
+                    # Binary file - direct copy
+                    shutil.copy2(file_info['path'], dest_path)
+                else:
+                    # Text file - process placeholders in content
+                    with open(file_info['path'], 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    
+                    # Apply placeholders to content
+                    processed_content = self._replace_placeholders(content, placeholders)
+                    
+                    with open(dest_path, 'w', encoding='utf-8') as f:
+                        f.write(processed_content)
+                
+            except Exception as e:
+                # print(f"Error copying file {file_name}: {e}")
+                continue
+        
+        return True, [dest_path]
 
     def batch_create_projects(self, project_names, template_name=None, structure_name=None, 
                             output_dir=None, template_data=None, use_cached_files=True):
@@ -2352,6 +2410,17 @@ class ProjectBuilder:
                     progress_window.update_progress(i)
                     QApplication.processEvents()
                 
+                # Check if project already exists and auto-version in batch mode
+                original_project_name = project_name
+                project_dir = os.path.join(output_dir, project_name)
+                
+                if os.path.exists(project_dir) and os.listdir(project_dir):
+                    # Auto-version the project name for batch creation
+                    from app.dialogs.project_exists_dialog import ProjectExistsDialog
+                    versioned_name = ProjectExistsDialog.get_next_version_name(project_name, output_dir)
+                    project_name = versioned_name
+                    print(f"Project '{original_project_name}' already exists, creating as '{project_name}'")
+                
                 # Create the individual project
                 success, result = self.create_project(
                     project_name=project_name,
@@ -2359,7 +2428,7 @@ class ProjectBuilder:
                     template_file=template_data,
                     project_type="Standard",
                     structure_name=structure_name,
-                    create_backup=True,
+                    create_backup=False,  # Don't backup in batch mode, just version
                     use_cached_files=use_cached_files
                 )
                 

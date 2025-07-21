@@ -33,6 +33,9 @@ class ItemOperations:
         if 'original_name' not in item_data:
             item_data['original_name'] = item.text(0)
         
+        # Clear custom pattern data first - this is key to fixing the issue
+        self._clear_all_custom_pattern_data(item_data)
+        
         # Update the project name mode
         item_data['project_name_mode'] = mode
         item_data['uses_project_name'] = True
@@ -47,7 +50,56 @@ class ItemOperations:
         # Update visual styling
         self.update_item_display(item)
         
-        print(f"DEBUG: Set {mode} mode for {item.text(0)}")
+        print(f"DEBUG: Set {mode} mode for {item.text(0)} (cleared custom patterns)")
+
+    def _clear_all_custom_pattern_data(self, item_data):
+        """Clear all custom pattern related data from item data"""
+        # Remove all custom pattern related keys
+        pattern_keys = [
+            'pattern', 'uses_custom_pattern', 'custom_options', 
+            'separator', 'separator_type', 'custom_separator',
+            'date_format_text', 'time_format_text', 'date_format', 'time_format'
+        ]
+        
+        for key in pattern_keys:
+            item_data.pop(key, None)
+        
+        print(f"DEBUG: Cleared custom pattern data keys: {pattern_keys}")
+
+    def switch_from_pattern_to_project_name(self, item, mode='replace'):
+        """Switch an item from custom pattern back to project name mode
+        
+        This is the key method to solve the user's issue - it completely
+        clears custom pattern data and switches to project name mode.
+        """
+        if not item:
+            return False
+        
+        item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+        
+        # Store original name if not already stored
+        if 'original_name' not in item_data:
+            item_data['original_name'] = item.text(0)
+        
+        # Completely clear all custom pattern data
+        self._clear_all_custom_pattern_data(item_data)
+        
+        # Set project name mode
+        item_data['project_name_mode'] = mode
+        item_data['uses_project_name'] = True
+        item_data['rename_flag'] = True
+        
+        # Update the tree item data
+        item.setData(0, Qt.ItemDataRole.UserRole, item_data)
+        
+        # Update the display name
+        self.update_project_name_display(item, mode)
+        
+        # Update visual styling
+        self.update_item_display(item)
+        
+        print(f"DEBUG: Successfully switched item from custom pattern to project name mode: {mode}")
+        return True
 
     def update_item_display(self, item):
         """Update the visual display of an item based on its properties"""
@@ -184,14 +236,17 @@ class ItemOperations:
         # Reset display name
         item.setText(0, original_name)
         
-        # Clear flags
+        # Clear ALL flags and pattern data
         item_data['uses_project_name'] = False
         item_data['uses_custom_pattern'] = False
         item_data['rename_flag'] = False
         
-        # Clear pattern-specific data
-        pattern_keys = ['pattern', 'project_name_mode', 'custom_options', 'date_format', 'time_format']
-        for key in pattern_keys:
+        # Clear all pattern-specific data more thoroughly
+        self._clear_all_custom_pattern_data(item_data)
+        
+        # Also clear project name specific data
+        project_name_keys = ['project_name_mode', 'custom_separator', 'original_extension']
+        for key in project_name_keys:
             item_data.pop(key, None)
         
         item.setData(0, Qt.ItemDataRole.UserRole, item_data)
@@ -210,6 +265,23 @@ class ItemOperations:
         return (item_data.get('uses_project_name', False) or 
                 item_data.get('uses_custom_pattern', False) or 
                 item_data.get('rename_flag', False))
+
+    def is_item_using_custom_pattern(self, item):
+        """Check if an item is currently using a custom pattern"""
+        if not item:
+            return False
+        
+        item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+        return item_data.get('uses_custom_pattern', False) and item_data.get('pattern')
+
+    def is_item_using_project_name(self, item):
+        """Check if an item is currently using project name mode"""
+        if not item:
+            return False
+        
+        item_data = item.data(0, Qt.ItemDataRole.UserRole) or {}
+        return (item_data.get('uses_project_name', False) or 
+                item_data.get('rename_flag', False)) and not item_data.get('uses_custom_pattern', False)
 
     def get_item_type(self, item):
         """Get the type of an item (file or folder)"""
