@@ -1,3 +1,27 @@
+**ForwardFlow v1.0 (Build 282) - Release Candidate**
+
+This Release Candidate build focuses on stability and user experience improvements, moving us closer to the final v1.0 release.
+
+**🐛 Bug Fixes & Improvements**
+
+*   **Custom Options Dropdown Fix:** Resolved an issue where custom options dropdown selections were not being properly preserved, ensuring your preferences are maintained throughout your workflow.
+*   **Enhanced Stability:** Continued refinements to the underlying code for improved performance and reliability.
+
+**📋 About This Release**
+
+This is a **Release Candidate** build, meaning we believe it's ready for production use but are conducting final testing before the stable v1.0 release. Please report any issues you encounter.
+
+**🔄 What's New Since Last Release (Build 281)**
+
+Build 281 introduced the complete rebranding to ForwardFlow with major stability improvements. This RC build builds upon that foundation with targeted bug fixes based on user feedback.
+
+**📱 System Requirements**
+
+*   Windows 10 or later (Intel x64)
+*   64-bit processor required
+
+---
+
 **ForwardFlow v1.0 (Build 281) - Beta Release Notes**
 
 This update introduces our new identity, **ForwardFlow**, along with significant stability improvements and bug fixes.
