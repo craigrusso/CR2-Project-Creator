@@ -1260,7 +1260,7 @@ class ProjectCreatorApp(QMainWindow):
         self.help_menu.addSeparator()
         
         # About action
-        self.about_action = self.help_menu.addAction(f"About {get_styled_app_name()}")
+        self.about_action = self.help_menu.addAction("About ForwardFlow")
         self.about_action.triggered.connect(self.show_about_dialog)
         
         # Update Checker action
