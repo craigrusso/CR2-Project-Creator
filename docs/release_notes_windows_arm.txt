@@ -2,10 +2,19 @@
 
 This Release Candidate build focuses on stability and user experience improvements, moving us closer to the final v1.0 release.
 
+**✨ Major Features & Enhancements**
+
+*   **🆕 Project Versioning Dialog:** Introduced a new comprehensive dialog system for handling project versioning and duplicate project management.
+*   **🔧 Enhanced Structure Editor:** Significant improvements to file operations with better functionality and user experience.
+*   **📋 Advanced Context Menus:** Major enhancements to right-click context menus with improved functionality and reliability.
+
 **🐛 Bug Fixes & Improvements**
 
-*   **Custom Options Dropdown Fix:** Resolved an issue where custom options dropdown selections were not being properly preserved, ensuring your preferences are maintained throughout your workflow.
-*   **Enhanced Stability:** Continued refinements to the underlying code for improved performance and reliability.
+*   **Custom Options Dropdown Fix:** Resolved a critical issue where custom pattern dropdown selections were being reset after template validation, ensuring your preferences are maintained throughout your workflow.
+*   **⚡ Improved Project Builder:** Enhanced debug tracking, simplified output, and better error handling for project creation.
+*   **🔄 Better Batch Operations:** Improved batch manager functionality with reduced widget resets and enhanced processing.
+*   **🎯 Structure Editor Operations:** Enhanced item operations and file handling within the structure editor.
+*   **🖼️ Visual Assets:** Added new application icons and visual improvements.
 
 **📋 About This Release**
 
