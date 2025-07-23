@@ -1722,15 +1722,33 @@ class ProjectCreatorApp(QMainWindow):
             # print(f"DEBUG: Current: v{APP_VERSION_NUMBER} (parsed {current_v_num_parsed}), b{CURRENT_BUILD_NUMBER_CONST} (key {current_b_key}), s{CURRENT_RELEASE_STAGE_CONST}")
             # print(f"DEBUG: Available: v{available_v_num_str} (parsed {available_v_num_parsed}), b{available_b_num_str} (key {available_b_key}), s{available_r_stage_str}")
 
+            # Enhanced version comparison logic
+            def get_release_stage_priority(stage):
+                """Return priority number for release stage (higher = more stable/newer)"""
+                stage_priorities = {
+                    "Alpha": 1,
+                    "Beta": 2, 
+                    "Release Candidate": 3,
+                    "RC": 3,  # Alias for Release Candidate
+                    "Stable": 4
+                }
+                return stage_priorities.get(stage, 0)
+            
             is_newer = False
             if available_v_num_parsed > current_v_num_parsed:
                 is_newer = True
             elif available_v_num_parsed == current_v_num_parsed:
                 if available_b_key > current_b_key:
                     is_newer = True
+                elif available_b_key == current_b_key:
+                    # Same version and build - check release stage hierarchy
+                    current_stage_priority = get_release_stage_priority(CURRENT_RELEASE_STAGE_CONST)
+                    available_stage_priority = get_release_stage_priority(available_r_stage_str)
+                    if available_stage_priority > current_stage_priority:
+                        is_newer = True
             
             if not is_newer:
-                # print(f"DEBUG: Available version {available_v_num_str} b{available_b_num_str} is not newer than current.")
+                # print(f"DEBUG: Available version {available_v_num_str} b{available_b_num_str} ({available_r_stage_str}) is not newer than current.")
                 return None
 
             # --- Release Stage Handling ---
@@ -1742,6 +1760,8 @@ class ProjectCreatorApp(QMainWindow):
                 allowed_stages = ["Stable"]
             elif user_preference == "Beta":
                 allowed_stages = ["Stable", "Release Candidate", "Beta"]
+            elif user_preference == "RC" or user_preference == "Release Candidate":
+                allowed_stages = ["Stable", "Release Candidate", "Beta"]
             elif user_preference == "Alpha":
                 allowed_stages = ["Stable", "Release Candidate", "Beta", "Alpha"]
             else: # Fallback to stable if preference is unknown
@@ -1752,6 +1772,8 @@ class ProjectCreatorApp(QMainWindow):
                 # print(f"DEBUG: Available version {available_v_num_str} ({available_r_stage_str}) does not meet user preference '{user_preference}' (Allowed: {allowed_stages}).")
                 return None
             
+
+                    
             # Promotion path check:
             # If current is Beta and Stable of same version.build is available, it should be offered (if user allows stable).
             # This is naturally handled if get_latest_version_info provides the "best" build and the filtering above allows it.
