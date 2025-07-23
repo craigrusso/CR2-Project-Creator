@@ -1,3 +1,34 @@
+**ForwardFlow v1.0 (Build 283) - Release Candidate**
+
+This Release Candidate build includes stability improvements and system enhancements, continuing our path toward the final v1.0 release.
+
+**✨ Enhancements & Improvements**
+
+*   **🔧 Update System Enhancement:** Improved update system with better RC (Release Candidate) preference support and release stage hierarchy for more reliable update management.
+*   **🖥️ Cross-Platform Compatibility:** Enhanced menu styling fixes for consistent appearance across Windows and macOS platforms.
+*   **⚡ System Stability:** Additional stability improvements and optimizations for better overall performance.
+
+**🐛 Bug Fixes & Improvements**
+
+*   **Update Management:** Fixed update system to properly handle RC preference settings and maintain consistent release stage detection.
+*   **UI Consistency:** Resolved menu styling issues, specifically for "About ForwardFlow" menu item on Windows platforms.
+*   **System Optimization:** Minor performance improvements and code optimizations for enhanced user experience.
+
+**📋 About This Release**
+
+This is a **Release Candidate** build focused on system stability and cross-platform consistency. We continue to refine the application based on user feedback as we approach the stable v1.0 release.
+
+**🔄 What's New Since Last Release (Build 282)**
+
+Build 282 was our major RC release with significant feature enhancements. This build (283) focuses on behind-the-scenes improvements and system stability, ensuring a robust foundation for the final release.
+
+**📱 System Requirements**
+
+*   Windows 10 or later (Intel x64)
+*   64-bit processor required
+
+---
+
 **ForwardFlow v1.0 (Build 282) - Release Candidate**
 
 This Release Candidate build focuses on stability and user experience improvements, moving us closer to the final v1.0 release.

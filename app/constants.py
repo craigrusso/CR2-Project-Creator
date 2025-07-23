@@ -32,7 +32,7 @@ def get_resource_path(relative_path):
 # App constants
 APP_NAME = "ForwardFlow"
 APP_VERSION_NUMBER = "1.0"
-APP_BUILD_NUMBER = "282"
+APP_BUILD_NUMBER = "283"
 APP_RELEASE_STAGE = "RC"
 USER_UPDATE_CHANNEL_PREFERENCE = "RC"
 RECENT_PROJECTS_MAX = 5
