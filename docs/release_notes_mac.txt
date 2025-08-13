@@ -1,3 +1,32 @@
+**ForwardFlow v1.0 (Build 284) - Stable**
+
+This Stable release delivers a polished v1.0 experience with UI consistency improvements, verified resource paths for dropdown and twirl arrows, and a fully signed and notarized macOS app for seamless installation.
+
+**✨ Enhancements & Improvements**
+
+*   **Stable Update Channel:** Default release channel set to STABLE; user update preferences respected.
+*   **UI Consistency:** Dropdown arrows and tree branch indicators display reliably across the app.
+*   **First‑Run Experience:** Bundled example templates included for an easy start if your local cache is empty.
+*   **Performance:** Minor optimizations for faster startup and smoother UI.
+*   **macOS Readiness:** Final signing + notarization workflow ensures smooth Gatekeeper acceptance on Apple Silicon.
+
+**🐛 Bug Fixes & Improvements**
+
+*   Fixed occasional styling issues in tree widgets and dropdowns.
+*   Ensured example templates resolve correctly when the user templates folder is empty.
+*   Addressed edge cases where resource paths could fail in frozen builds.
+
+**📋 About This Release**
+
+This is a Stable v1.0 build focused on polish, reliability, and a frictionless install experience on macOS.
+
+**📱 System Requirements**
+
+*   macOS 11.0 or later
+*   Apple Silicon (M1/M2/M3/M4) Mac
+*   64‑bit processor required
+
+---
 **ForwardFlow v1.0 (Build 283) - Release Candidate**
 
 This Release Candidate build includes stability improvements and system enhancements, continuing our path toward the final v1.0 release.

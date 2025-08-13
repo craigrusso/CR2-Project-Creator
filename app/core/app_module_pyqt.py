@@ -1728,6 +1728,19 @@ class ProjectCreatorApp(QMainWindow):
             # print(f"DEBUG: Available: v{available_v_num_str} (parsed {available_v_num_parsed}), b{available_b_num_str} (key {available_b_key}), s{available_r_stage_str}")
 
             # Enhanced version comparison logic
+            def _norm_stage(stage):
+                s = str(stage or "").strip()
+                # Map common abbreviations and normalize
+                if s.lower() in ("rc", "release candidate"):
+                    return "Release Candidate"
+                if s.lower() in ("stable",):
+                    return "Stable"
+                if s.lower() in ("beta",):
+                    return "Beta"
+                if s.lower() in ("alpha",):
+                    return "Alpha"
+                return "Stable" if not s else s
+
             def get_release_stage_priority(stage):
                 """Return priority number for release stage (higher = more stable/newer)"""
                 stage_priorities = {
@@ -1737,7 +1750,7 @@ class ProjectCreatorApp(QMainWindow):
                     "RC": 3,  # Alias for Release Candidate
                     "Stable": 4
                 }
-                return stage_priorities.get(stage, 0)
+                return stage_priorities.get(_norm_stage(stage), 0)
             
             is_newer = False
             if available_v_num_parsed > current_v_num_parsed:
@@ -1761,13 +1774,14 @@ class ProjectCreatorApp(QMainWindow):
             user_preference = USER_UPDATE_CHANNEL_PREFERENCE 
             
             allowed_stages = []
-            if user_preference == "Stable": # Default
+            norm_pref = _norm_stage(user_preference)
+            if norm_pref == "Stable": # Default
                 allowed_stages = ["Stable"]
-            elif user_preference == "Beta":
+            elif norm_pref == "Beta":
                 allowed_stages = ["Stable", "Release Candidate", "Beta"]
-            elif user_preference == "RC" or user_preference == "Release Candidate":
+            elif norm_pref == "Release Candidate":
                 allowed_stages = ["Stable", "Release Candidate", "Beta"]
-            elif user_preference == "Alpha":
+            elif norm_pref == "Alpha":
                 allowed_stages = ["Stable", "Release Candidate", "Beta", "Alpha"]
             else: # Fallback to stable if preference is unknown
                 allowed_stages = ["Stable"]
@@ -2800,7 +2814,7 @@ class ProjectCreatorApp(QMainWindow):
         """
         Show a message indicating the application is up to date.
         """
-        current_version_str = f"{APP_VERSION_NUMBER} ({APP_RELEASE_STAGE}, Build {APP_BUILD_NUMBER})"
+        current_version_str = f"{APP_VERSION_NUMBER} ({CURRENT_RELEASE_STAGE_CONST}, Build {CURRENT_BUILD_NUMBER_CONST})"
         QMessageBox.information(self, "Up to Date", f"You are using the latest version of {get_styled_app_name()} ({current_version_str}).")
 
     def _create_status_bar(self):

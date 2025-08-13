@@ -1,3 +1,28 @@
+**ForwardFlow v1.0 (Build 284) - Stable**
+
+This Stable release focuses on UI consistency and overall reliability, with small performance improvements to keep the app responsive.
+
+**✨ Enhancements & Improvements**
+
+*   **Stable Update Channel:** Default release channel set to STABLE; user update preferences respected.
+*   **UI Consistency:** Improved dropdown visuals and consistent icon rendering across views.
+*   **Performance:** Minor optimizations for faster startup and smoother UI interactions.
+
+**🐛 Bug Fixes & Improvements**
+
+*   Fixed occasional styling issues in tree widgets and dropdowns.
+*   Improved handling of default/example templates when user libraries are empty.
+
+**📋 About This Release**
+
+This is a Stable v1.0 build focusing on polish and reliability.
+
+**📱 System Requirements**
+
+*   Windows 10 or later (Intel x64)
+*   64‑bit processor required
+
+---
 **ForwardFlow v1.0 (Build 283) - Release Candidate**
 
 This Release Candidate build includes stability improvements and system enhancements, continuing our path toward the final v1.0 release.

@@ -24,6 +24,17 @@ def natural_sort_key(s):
         return []
     return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s_str)]
 
+def _as_bool(value):
+    """Coerce common truthy values to boolean."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "y"}
+    if isinstance(value, (int, float)):
+        return value == 1
+    return False
+
+
 def get_latest_version_info(api_url):
     """
     Fetches version info from the public API and returns the latest 
@@ -68,7 +79,8 @@ def get_latest_version_info(api_url):
                 continue
                 
             api_platform = version_info.get('platform')
-            if not (api_platform and api_platform.lower() == target_platform_api and version_info.get('isAvailable') is True):
+            is_available = _as_bool(version_info.get('isAvailable'))
+            if not (api_platform and api_platform.lower() == target_platform_api and is_available):
                 continue
 
             current_entry_v_num_str = version_info.get('versionNumber')
