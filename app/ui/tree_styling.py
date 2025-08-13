@@ -77,23 +77,26 @@ def apply_enhanced_tree_styling(tree_widget):
     branch_closed_path = get_resource_path('app/assets/css/branch-closed.svg').replace('\\', '/')
     branch_open_path = get_resource_path('app/assets/css/branch-open.svg').replace('\\', '/')
     
+    # Avoid forcing white backgrounds on Windows so native icons render as expected
+    bg_color = APP_COLORS['card_bg']
+    text_color = APP_COLORS['text']
+    
     # Apply custom stylesheet for consistent appearance
-    # Use the application color scheme for consistency
     tree_widget.setStyleSheet(f"""
         QTreeWidget {{
-            background-color: {APP_COLORS['card_bg']};
-            color: {APP_COLORS['text']};
+            background-color: {bg_color};
+            color: {text_color};
             border: 1px solid {APP_COLORS['border']};
             outline: none;
             alternate-background-color: {APP_COLORS['card_bg_alt']};
-            font-size: 13px; /* Reverted from 10px */
+            font-size: 13px;
         }}
         
         QTreeWidget::item {{
             border: none;
             border-bottom: 1px solid {APP_COLORS['border']};
-            padding: 4px 2px; /* Reverted from 3px vertical padding */
-            min-height: 24px; /* Reverted from 18px */
+            padding: 4px 2px;
+            min-height: 24px;
         }}
         
         QTreeWidget::item:selected {{
@@ -119,29 +122,15 @@ def apply_enhanced_tree_styling(tree_widget):
         QTreeWidget::branch:has-children:!has-siblings:closed,
         QTreeWidget::branch:closed:has-children:has-siblings {{
             image: url({branch_closed_path});
-            width: 5px; /* Reduced by 50% from 10px */
-            height: 5px; /* Reduced by 50% from 10px */
+            width: 9px;
+            height: 9px;
         }}
         
         QTreeWidget::branch:open:has-children:!has-siblings,
         QTreeWidget::branch:open:has-children:has-siblings {{
             image: url({branch_open_path});
-            width: 5px; /* Reduced by 50% from 10px */
-            height: 5px; /* Reduced by 50% from 10px */
-        }}
-        
-        /* Style for folder items to make them stand out */
-        QTreeWidget::item:has-children {{
-            font-weight: bold;
-        }}
-        
-        /* Ensure icons are displayed properly */
-        QTreeWidget::item:has-children:!selected {{
-            padding-left: 2px;
-        }}
-        
-        QTreeWidget::item:!has-children:!selected {{
-            padding-left: 2px;
+            width: 9px;
+            height: 9px;
         }}
     """)
     

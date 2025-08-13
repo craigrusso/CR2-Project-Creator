@@ -168,6 +168,12 @@ class StructureEditorTree(QTreeWidget):
         if isinstance(item_data, dict) and 'type' in item_data:
             item_type = item_data.get('type')
         
+        # Heuristic: if type is missing, treat names without extensions as folders
+        if not item_type:
+            name_text = item.text(0) if hasattr(item, 'text') else ''
+            if name_text and ('.' not in name_text or name_text.endswith('/')):
+                item_type = 'folder'
+        
         # If it's explicitly a folder or has children, use folder icon
         if item_type == 'folder' or item.childCount() > 0:
             is_expanded = item.isExpanded()

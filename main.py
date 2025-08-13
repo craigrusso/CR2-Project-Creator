@@ -13,7 +13,10 @@ import struct # For checking if we're running on ARM64
 class DummyIO:
     """Dummy IO class to handle PyInstaller packaging issues with stdout/stderr"""
     def write(self, data):
-        pass
+        try:
+            return len(data)
+        except Exception:
+            return 0
     
     def flush(self):
         pass
