@@ -1,3 +1,22 @@
+**ForwardFlow v1.0 (Build 285) - Stable**
+
+This Stable release improves update reliability and adds small UI polish for Windows Intel users.
+
+**✨ Highlights**
+
+*   **Reliable Update Checks:** Improved detection logic so new Stable versions are recognized.
+*   **UI Polish:** Minor refinements for consistency and responsiveness.
+
+**🐛 Fixes**
+
+*   Addressed edge cases that could prevent surfacing new Stable builds.
+
+**📱 System Requirements**
+
+*   Windows 10 or later (Intel x64)
+*   64‑bit processor required
+
+---
 **ForwardFlow v1.0 (Build 284) - Stable**
 
 This Stable release focuses on UI consistency and overall reliability, with small performance improvements to keep the app responsive.

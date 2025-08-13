@@ -1,3 +1,25 @@
+**ForwardFlow v1.0 (Build 285) - Stable**
+
+This Stable release focuses on rock‑solid update reliability and final polish for macOS.
+
+**✨ Highlights**
+
+*   **Reliable Update Checks:** Improved detection so newer Stable releases are recognized immediately.
+*   **User Experience:** Minor UI polish and responsiveness improvements.
+*   **First‑Run Experience:** Example templates remain bundled for an easy start when your cache is empty.
+
+**🐛 Fixes**
+
+*   Resolved cases where the app could report “up to date” when a newer Stable build was available.
+*   Improved handling of release stages from the server for consistent update prompts.
+
+**📱 System Requirements**
+
+*   macOS 11.0 or later
+*   Apple Silicon (M1/M2/M3/M4) Mac
+*   64‑bit processor required
+
+---
 **ForwardFlow v1.0 (Build 284) - Stable**
 
 This Stable release delivers a polished v1.0 experience with UI consistency improvements, verified resource paths for dropdown and twirl arrows, and a fully signed and notarized macOS app for seamless installation.

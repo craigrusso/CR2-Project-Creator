@@ -1,3 +1,22 @@
+**ForwardFlow v1.0 (Build 285) - Stable**
+
+This Stable release brings improved update reliability and small UI polish for a smoother Windows ARM64 experience.
+
+**✨ Highlights**
+
+*   **Reliable Update Checks:** Better handling of availability flags and release stages from the server.
+*   **UI Polish:** Minor improvements to visual consistency and responsiveness.
+
+**🐛 Fixes**
+
+*   Fixed edge cases where newer Stable releases might not be surfaced promptly.
+
+**📱 System Requirements**
+
+*   Windows 11 (ARM64)
+*   64‑bit processor required
+
+---
 **ForwardFlow v1.0 (Build 284) - Stable**
 
 This Stable release consolidates recent improvements for a smoother user experience. It emphasizes UI consistency and reliability while keeping performance snappy.
