@@ -11,6 +11,12 @@ This Stable release improves update reliability and adds small UI polish for Win
 
 *   Addressed edge cases that could prevent surfacing new Stable builds.
 
+**🪟 Windows-specific improvements**
+
+*   **Native Folder Icons:** Use `QFileIconProvider` for folder icons for a consistent native appearance in Structure Editor.
+*   **Smarter Folder Detection:** Items without extensions are treated as folders when type metadata is missing.
+*   **Tree Styling Tweaks:** Adjusted branch indicator sizing and styling so native icons render cleanly.
+
 **📱 System Requirements**
 
 *   Windows 10 or later (Intel x64)
