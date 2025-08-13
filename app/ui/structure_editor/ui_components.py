@@ -1196,8 +1196,14 @@ class UIBuilder(QObject):
                     rename_action = None
                     delete_action = None
             
-            # Show the menu at the cursor position
-            menu.exec(self.tree.viewport().mapToGlobal(position))
+            # Show the menu at the cursor position (non-blocking) and hold reference
+            global_pos = self.tree.viewport().mapToGlobal(position)
+            self._active_menu = menu
+            try:
+                menu.aboutToHide.connect(lambda: setattr(self, '_active_menu', None))
+            except Exception:
+                pass
+            menu.popup(global_pos)
             
         except Exception as e:
             print(f"ERROR showing context menu: {e}")

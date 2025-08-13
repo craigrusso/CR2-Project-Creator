@@ -62,13 +62,17 @@ class ContextMenuOperations:
             # Build menu content
             self._build_menu_content(menu, selected_items)
             
-            # Show the menu
+            # Show the menu (non-blocking) and keep a reference to prevent GC
             global_pos = self.tree_widget.mapToGlobal(position)
-            print(f"DEBUG: Executing context menu at global position {global_pos}")
-            
-            # Execute the menu and handle the result
-            action = menu.exec(global_pos)
-            print(f"DEBUG: Menu action completed: {action}")
+            print(f"DEBUG: Showing context menu (popup) at global position {global_pos}")
+
+            # Keep reference to avoid premature deletion while visible
+            self._active_menu = menu
+            try:
+                menu.aboutToHide.connect(lambda: setattr(self, '_active_menu', None))
+            except Exception:
+                pass
+            menu.popup(global_pos)
             
         except Exception as e:
             print(f"ERROR: Exception in create_context_menu: {e}")

@@ -179,6 +179,10 @@ class ProjectCreatorApp(QMainWindow):
         
         # Text input for batch projects
         self.batch_text_edit = QTextEdit()
+        try:
+            self.batch_text_edit.setAcceptRichText(False)
+        except Exception:
+            pass
         self.batch_text_edit.setPlaceholderText("Project 1\nProject 2\nProject 3")
         self.batch_text_edit.setStyleSheet(f"""
             QTextEdit {{

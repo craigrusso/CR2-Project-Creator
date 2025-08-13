@@ -1449,6 +1449,11 @@ class ProjectNameInput(QDialog):
         
         # Text input area
         self.text_edit = QTextEdit()
+        try:
+            # Strip formatting on paste to keep names readable
+            self.text_edit.setAcceptRichText(False)
+        except Exception:
+            pass
         self.text_edit.setPlaceholderText("Project 1\nProject 2\nProject 3")
         self.text_edit.setStyleSheet(f"""
             QTextEdit {{

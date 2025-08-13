@@ -502,19 +502,30 @@ class EnhancedStructureEditor(QDialog):
                 delattr(self.file_operations, 'current_context_item')
             return
         
-        # If we have a menu, show it
+        # If we have a menu, show it (non-blocking)
         if menu and not menu.isEmpty():
-            # Execute menu at the right position
             global_pos = self.tree_widget.viewport().mapToGlobal(position)
-            print(f"DEBUG: Executing context menu at global position {global_pos}")
-            menu.exec(global_pos)
+            print(f"DEBUG: Showing context menu (popup) at global position {global_pos}")
+            self._active_menu = menu
+            try:
+                menu.aboutToHide.connect(lambda: setattr(self, '_active_menu', None))
+            except Exception:
+                pass
+            menu.popup(global_pos)
             return
         
         # Fallback - create our own menu if file_operations couldn't provide one
         if item:
             fallback_menu = self._create_fallback_context_menu(item)
             if fallback_menu:
-                fallback_menu.exec(self.tree_widget.viewport().mapToGlobal(position))
+                # Show fallback menu non-blocking and keep reference
+                global_pos = self.tree_widget.viewport().mapToGlobal(position)
+                self._active_menu = fallback_menu
+                try:
+                    fallback_menu.aboutToHide.connect(lambda: setattr(self, '_active_menu', None))
+                except Exception:
+                    pass
+                fallback_menu.popup(global_pos)
         else:
             # No item selected, show general menu
             general_menu = QMenu(self)
@@ -526,7 +537,14 @@ class EnhancedStructureEditor(QDialog):
             add_folder_action = general_menu.addAction("Add Folder")
             add_folder_action.triggered.connect(lambda: self.add_folder())
             
-            general_menu.exec(self.tree_widget.viewport().mapToGlobal(position))
+            # Show general menu non-blocking and keep reference
+            global_pos = self.tree_widget.viewport().mapToGlobal(position)
+            self._active_menu = general_menu
+            try:
+                general_menu.aboutToHide.connect(lambda: setattr(self, '_active_menu', None))
+            except Exception:
+                pass
+            general_menu.popup(global_pos)
     
     def _create_fallback_context_menu(self, item):
         """Create a fallback context menu when file_operations is not available"""

@@ -109,6 +109,11 @@ class LayoutManager:
         middle_layout.setContentsMargins(0, 0, 0, 0)
         
         self.app.batch_text_edit = QTextEdit()
+        try:
+            # Enforce plain-text paste to avoid styled content from web clients
+            self.app.batch_text_edit.setAcceptRichText(False)
+        except Exception:
+            pass
         self.app.batch_text_edit.setPlaceholderText("Project 1\nProject 2\nProject 3")
         self.app.batch_text_edit.setStyleSheet(f"""
             QTextEdit {{

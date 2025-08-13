@@ -350,6 +350,11 @@ class ProjectCreatorApp(QMainWindow):
         
         # Text input area for batch projects - this should expand
         self.batch_text_edit = QTextEdit()
+        # Ensure pasted content is plain text only (strip rich formatting from web clients)
+        try:
+            self.batch_text_edit.setAcceptRichText(False)
+        except Exception:
+            pass
         self.batch_text_edit.setPlaceholderText("Project 1\nProject 2\nProject 3")
         self.batch_text_edit.setStyleSheet(f"""
             QTextEdit {{

@@ -41,6 +41,10 @@ class LayoutManager:
         left_layout.addWidget(text_label)
         
         self.main_window.batch_text_edit = QTextEdit()
+        try:
+            self.main_window.batch_text_edit.setAcceptRichText(False)
+        except Exception:
+            pass
         self.main_window.batch_text_edit.setPlaceholderText("Project One\nProject Two\nProject Three")
         self.main_window.batch_text_edit.setMaximumHeight(150)
         self.main_window.batch_text_edit.setStyleSheet(f"""
