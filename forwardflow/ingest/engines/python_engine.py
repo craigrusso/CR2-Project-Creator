@@ -41,6 +41,17 @@ class _JobStats:
     lock: threading.Lock
 
 
+@dataclass
+class _FileStats:
+    file_id: str
+    filename: str
+    total_bytes: int
+    copied_bytes: int
+    start_time: float
+    last_emit: float
+    lock: threading.Lock
+
+
 class PythonCopyEngine(Engine):
     def __init__(self, sink: Optional[EventSink] = None) -> None:
         self._logger = get_logger("forwardflow.ingest.engine.python")
@@ -48,6 +59,7 @@ class PythonCopyEngine(Engine):
         self._pauses: dict[str, threading.Event] = {}
         self._sink = sink
         self._job_stats: dict[str, _JobStats] = {}
+        self._file_stats: dict[str, _FileStats] = {}
 
     def start(self, job: JobSpec) -> None:  # pragma: no cover - used via CLI/UI later
         policy = SimplePolicy()
@@ -61,7 +73,7 @@ class PythonCopyEngine(Engine):
             last_emit=0.0,
             lock=threading.Lock(),
         )
-        self._emit(job.job_id, "job.started", {"total_bytes": total_bytes})
+        self._emit(job.job_id, "job.started", {"total_bytes": total_bytes, "total_files": len(files)})
         results = self._copy_files(job, files)
         # Write MHL only for BALANCED mode
         if (job.options.mode or "BALANCED").upper() == "BALANCED":
@@ -112,6 +124,28 @@ class PythonCopyEngine(Engine):
         dst_tmp = dst.with_suffix(dst.suffix + ".part")
         dst.parent.mkdir(parents=True, exist_ok=True)
 
+        # Create file ID for tracking
+        file_id = f"{job.job_id}_{src.name}"
+        filename = src.name
+        
+        # Initialize file stats
+        self._file_stats[file_id] = _FileStats(
+            file_id=file_id,
+            filename=filename,
+            total_bytes=spec.size_bytes,
+            copied_bytes=0,
+            start_time=time.time(),
+            last_emit=0.0,
+            lock=threading.Lock(),
+        )
+        
+        # Emit file started event
+        self._emit(job.job_id, "file.started", {
+            "file_id": file_id,
+            "filename": filename,
+            "total_bytes": spec.size_bytes,
+        })
+
         # Single-threaded baseline with optional multi-stream
         try:
             # Resume: if final file exists and matches size+hash from existing MHL, skip
@@ -124,6 +158,14 @@ class PythonCopyEngine(Engine):
             if rel_key in existing:
                 expected_size, algo, hexdigest = existing[rel_key]
                 if expected_size == spec.size_bytes and hash_file_xxh(src).hexdigest == hexdigest:
+                    # Emit file completed event for skipped file
+                    self._emit(job.job_id, "file.completed", {
+                        "file_id": file_id,
+                        "filename": filename,
+                        "bytes": spec.size_bytes,
+                        "total": spec.size_bytes,
+                        "skipped": True,
+                    })
                     return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=True, hexdigest=hexdigest)
 
             # Choose strategy
@@ -133,7 +175,7 @@ class PythonCopyEngine(Engine):
                 if dst_tmp.exists() and dst_tmp.stat().st_size < spec.size_bytes:
                     streams = 1
                 else:
-                    self._copy_multistream(job, src, dst_tmp, spec.size_bytes, streams)
+                    self._copy_multistream(job, src, dst_tmp, spec.size_bytes, streams, file_id)
             else:
                 # Resume simple: if .part exists, append from current size
                 start_offset = dst_tmp.stat().st_size if dst_tmp.exists() else 0
@@ -145,6 +187,11 @@ class PythonCopyEngine(Engine):
                     while True:
                         if self._cancels.get(job.job_id, threading.Event()).is_set():
                             # Leave .part file intact
+                            self._emit(job.job_id, "file.failed", {
+                                "file_id": file_id,
+                                "filename": filename,
+                                "error": "canceled",
+                            })
                             return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error="canceled")
                         if self._pauses.get(job.job_id, threading.Event()).is_set():
                             threading.Event().wait(0.05)
@@ -153,18 +200,38 @@ class PythonCopyEngine(Engine):
                         if not buf:
                             break
                         wf.write(buf)
-                        self._progress(job.job_id, len(buf))
+                        self._progress(job.job_id, len(buf), file_id)
             # Verify (BALANCED): xxHash64 source vs dest
             src_hash = hash_file_xxh(src)
             dst_hash = hash_file_xxh(dst_tmp)
             if src_hash.hexdigest != dst_hash.hexdigest:
+                self._emit(job.job_id, "file.failed", {
+                    "file_id": file_id,
+                    "filename": filename,
+                    "error": "hash_mismatch",
+                })
                 return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error="hash_mismatch")
             dst_tmp.replace(dst)
+            
+            # Emit file completed event
+            self._emit(job.job_id, "file.completed", {
+                "file_id": file_id,
+                "filename": filename,
+                "bytes": spec.size_bytes,
+                "total": spec.size_bytes,
+                "skipped": False,
+            })
+            
             return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=True, hexdigest=src_hash.hexdigest)
         except Exception as exc:  # noqa: BLE001
+            self._emit(job.job_id, "file.failed", {
+                "file_id": file_id,
+                "filename": filename,
+                "error": str(exc),
+            })
             return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error=str(exc))
 
-    def _copy_multistream(self, job: JobSpec, src: Path, dst_tmp: Path, size_bytes: int, streams: int) -> None:
+    def _copy_multistream(self, job: JobSpec, src: Path, dst_tmp: Path, size_bytes: int, streams: int, file_id: str) -> None:
         # Pre-size destination
         with dst_tmp.open("wb") as wf:
             wf.truncate(size_bytes)
@@ -197,33 +264,51 @@ class PythonCopyEngine(Engine):
                         break
                     wf.write(buf)
                     remaining -= len(buf)
-                    self._progress(job.job_id, len(buf))
+                    self._progress(job.job_id, len(buf), file_id)
 
         with ThreadPoolExecutor(max_workers=streams) as execu:
             futs = [execu.submit(worker, r) for r in ranges]
             for f in as_completed(futs):
                 f.result()
 
-    def _progress(self, job_id: str, nbytes: int) -> None:
+    def _progress(self, job_id: str, nbytes: int, file_id: Optional[str] = None) -> None:
+        # Update job stats
         stats = self._job_stats.get(job_id)
-        if not stats:
-            return
-        with stats.lock:
-            stats.copied_bytes += nbytes
-            now = time.time()
-            if now - stats.last_emit < 0.2:
-                return
-            stats.last_emit = now
-            elapsed = max(1e-3, now - stats.start_time)
-            mbps = (stats.copied_bytes / elapsed) / (1024 * 1024)
-            remaining = max(0, stats.total_bytes - stats.copied_bytes)
-            eta_s = remaining / (mbps * 1024 * 1024) if mbps > 0 else 0
-            self._emit(job_id, "job.progress", {
-                "bytes": stats.copied_bytes,
-                "total": stats.total_bytes,
-                "mbps": mbps,
-                "eta_seconds": eta_s,
-            })
+        if stats:
+            with stats.lock:
+                stats.copied_bytes += nbytes
+                now = time.time()
+                if now - stats.last_emit < 0.2:
+                    pass  # Continue to file stats
+                else:
+                    stats.last_emit = now
+                    elapsed = max(1e-3, now - stats.start_time)
+                    mbps = (stats.copied_bytes / elapsed) / (1024 * 1024)
+                    remaining = max(0, stats.total_bytes - stats.copied_bytes)
+                    eta_s = remaining / (mbps * 1024 * 1024) if mbps > 0 else 0
+                    self._emit(job_id, "job.progress", {
+                        "bytes": stats.copied_bytes,
+                        "total": stats.total_bytes,
+                        "mbps": mbps,
+                        "eta_seconds": eta_s,
+                    })
+        
+        # Update file stats if provided
+        if file_id:
+            file_stats = self._file_stats.get(file_id)
+            if file_stats:
+                with file_stats.lock:
+                    file_stats.copied_bytes += nbytes
+                    now = time.time()
+                    if now - file_stats.last_emit < 0.1:  # More frequent file updates
+                        return
+                    file_stats.last_emit = now
+                    self._emit(job_id, "file.progress", {
+                        "file_id": file_id,
+                        "filename": file_stats.filename,
+                        "bytes": file_stats.copied_bytes,
+                        "total": file_stats.total_bytes,
+                    })
 
     def _emit(self, job_id: str, event_type: str, payload: dict) -> None:
         if self._sink:
