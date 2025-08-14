@@ -31,9 +31,15 @@ from PyQt6.QtWidgets import (
 from .ingest_vm import IngestViewModel
 from ..engines.python_engine import PythonCopyEngine
 
+# Import app's existing styles
+from app.ui.color_scheme_pyqt import (
+    colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, 
+    COMBOBOX_STYLE, LINEEDIT_STYLE, LABEL_STYLE
+)
 
-class ModernProgressBar(QProgressBar):
-    """Modern dark theme progress bar with custom styling."""
+
+class AppProgressBar(QProgressBar):
+    """Progress bar using the app's color scheme."""
     
     def __init__(self, height: int = 8):
         super().__init__()
@@ -41,21 +47,20 @@ class ModernProgressBar(QProgressBar):
         self.setTextVisible(False)
         self.setStyleSheet(f"""
             QProgressBar {{
-                border: none;
+                border: 1px solid {colors['border']};
                 border-radius: {height//2}px;
-                background-color: #2d2d2d;
+                background-color: {colors['bg']};
                 text-align: center;
             }}
             QProgressBar::chunk {{
                 border-radius: {height//2}px;
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                    stop:0 #0078d4, stop:1 #00a2ff);
+                background-color: {colors['accent']};
             }}
         """)
 
 
 class FileProgressCard(QFrame):
-    """Modern file progress card with clean design."""
+    """File progress card using app styling."""
     
     def __init__(self, filename: str, total_bytes: int):
         super().__init__()
@@ -77,28 +82,20 @@ class FileProgressCard(QFrame):
         # Filename (truncated if too long)
         display_name = filename[:40] + "..." if len(filename) > 40 else filename
         self.name_label = QLabel(display_name)
-        self.name_label.setStyleSheet("""
-            font-weight: 600;
-            color: #ffffff;
-            font-size: 13px;
-        """)
+        self.name_label.setStyleSheet(LABEL_STYLE + f"font-weight: 600; font-size: 13px;")
         self.name_label.setToolTip(filename)
         header_layout.addWidget(self.name_label)
         
         # Percentage
         self.percent_label = QLabel("0%")
-        self.percent_label.setStyleSheet("""
-            color: #0078d4;
-            font-weight: 600;
-            font-size: 12px;
-        """)
+        self.percent_label.setStyleSheet(f"color: {colors['accent']}; font-weight: 600; font-size: 12px;")
         self.percent_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         header_layout.addWidget(self.percent_label)
         
         layout.addLayout(header_layout)
         
         # Progress bar
-        self.progress_bar = ModernProgressBar(height=6)
+        self.progress_bar = AppProgressBar(height=6)
         layout.addWidget(self.progress_bar)
         
         # Status row
@@ -107,30 +104,24 @@ class FileProgressCard(QFrame):
         # File size
         size_mb = total_bytes / (1024 * 1024)
         self.size_label = QLabel(f"{size_mb:.1f} MB")
-        self.size_label.setStyleSheet("""
-            color: #888888;
-            font-size: 11px;
-        """)
+        self.size_label.setStyleSheet(f"color: {colors['secondary_text']}; font-size: 11px;")
         status_layout.addWidget(self.size_label)
         
         # Speed (will be updated)
         self.speed_label = QLabel("")
-        self.speed_label.setStyleSheet("""
-            color: #888888;
-            font-size: 11px;
-        """)
+        self.speed_label.setStyleSheet(f"color: {colors['secondary_text']}; font-size: 11px;")
         self.speed_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         status_layout.addWidget(self.speed_label)
         
         layout.addLayout(status_layout)
         
-        # Card styling
-        self.setStyleSheet("""
-            QFrame {
-                background-color: #1e1e1e;
-                border: 1px solid #333333;
+        # Card styling using app colors
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: {colors['card_bg']};
+                border: 1px solid {colors['border']};
                 border-radius: 8px;
-            }
+            }}
         """)
     
     def update_progress(self, copied_bytes: int, speed_mbps: float = 0):
@@ -147,21 +138,21 @@ class FileProgressCard(QFrame):
         self.progress_bar.setValue(100)
         self.percent_label.setText("100%")
         self.speed_label.setText("Complete")
-        self.setStyleSheet("""
-            QFrame {
-                background-color: #1e1e1e;
-                border: 1px solid #00aa00;
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: {colors['card_bg']};
+                border: 1px solid {colors['success']};
                 border-radius: 8px;
-            }
+            }}
         """)
     
     def mark_failed(self, error: str):
-        self.setStyleSheet("""
-            QFrame {
-                background-color: #1e1e1e;
-                border: 1px solid #aa0000;
+        self.setStyleSheet(f"""
+            QFrame {{
+                background-color: {colors['card_bg']};
+                border: 1px solid {colors['error']};
                 border-radius: 8px;
-            }
+            }}
         """)
         self.speed_label.setText(f"Failed: {error}")
 
@@ -175,51 +166,18 @@ def build_ingest_tab() -> QWidget:
 
     # Header
     header_label = QLabel("Turbo Ingest")
-    header_label.setStyleSheet("""
-        font-size: 24px;
-        font-weight: 700;
-        color: #ffffff;
-        margin-bottom: 8px;
-    """)
+    header_label.setStyleSheet(f"font-size: 24px; font-weight: 700; color: {colors['text']}; margin-bottom: 8px;")
     layout.addWidget(header_label)
 
     # Source picker
     src_row = QHBoxLayout()
     src_label = QLabel("Source (card):")
-    src_label.setStyleSheet("font-weight: 600; color: #ffffff; min-width: 120px;")
+    src_label.setStyleSheet(f"font-weight: 600; color: {colors['text']}; min-width: 120px;")
     src_edit = QLineEdit()
-    src_edit.setStyleSheet("""
-        QLineEdit {
-            background-color: #2d2d2d;
-            border: 1px solid #444444;
-            border-radius: 6px;
-            padding: 8px 12px;
-            color: #ffffff;
-            font-size: 13px;
-        }
-        QLineEdit:focus {
-            border-color: #0078d4;
-        }
-    """)
+    src_edit.setStyleSheet(LINEEDIT_STYLE)
     src_edit.setPlaceholderText("Select source folder...")
     src_btn = QPushButton("Browse…")
-    src_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #0078d4;
-            border: none;
-            border-radius: 6px;
-            padding: 8px 16px;
-            color: white;
-            font-weight: 600;
-            font-size: 13px;
-        }
-        QPushButton:hover {
-            background-color: #106ebe;
-        }
-        QPushButton:pressed {
-            background-color: #005a9e;
-        }
-    """)
+    src_btn.setStyleSheet(BUTTON_STYLE)
     src_btn.clicked.connect(lambda: _pick_dir(src_edit))
     src_row.addWidget(src_label)
     src_row.addWidget(src_edit, 1)
@@ -229,40 +187,12 @@ def build_ingest_tab() -> QWidget:
     # Destination picker
     dst_row = QHBoxLayout()
     dst_label = QLabel("Destination:")
-    dst_label.setStyleSheet("font-weight: 600; color: #ffffff; min-width: 120px;")
+    dst_label.setStyleSheet(f"font-weight: 600; color: {colors['text']}; min-width: 120px;")
     dst_edit = QLineEdit()
-    dst_edit.setStyleSheet("""
-        QLineEdit {
-            background-color: #2d2d2d;
-            border: 1px solid #444444;
-            border-radius: 6px;
-            padding: 8px 12px;
-            color: #ffffff;
-            font-size: 13px;
-        }
-        QLineEdit:focus {
-            border-color: #0078d4;
-        }
-    """)
+    dst_edit.setStyleSheet(LINEEDIT_STYLE)
     dst_edit.setPlaceholderText("Select destination folder...")
     dst_btn = QPushButton("Browse…")
-    dst_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #0078d4;
-            border: none;
-            border-radius: 6px;
-            padding: 8px 16px;
-            color: white;
-            font-weight: 600;
-            font-size: 13px;
-        }
-        QPushButton:hover {
-            background-color: #106ebe;
-        }
-        QPushButton:pressed {
-            background-color: #005a9e;
-        }
-    """)
+    dst_btn.setStyleSheet(BUTTON_STYLE)
     dst_btn.clicked.connect(lambda: _pick_dir(dst_edit))
     dst_row.addWidget(dst_label)
     dst_row.addWidget(dst_edit, 1)
@@ -275,34 +205,14 @@ def build_ingest_tab() -> QWidget:
     # Verification settings
     verify_layout = QVBoxLayout()
     verify_label = QLabel("Verification:")
-    verify_label.setStyleSheet("font-weight: 600; color: #ffffff; margin-bottom: 4px;")
+    verify_label.setStyleSheet(f"font-weight: 600; color: {colors['text']}; margin-bottom: 4px;")
     verify_combo = QComboBox()
     verify_combo.addItems([
         "None — fastest transfer (no hashing)",
         "xxHash64 — fast verification",
         "Cryptographic (disabled)",
     ])
-    verify_combo.setStyleSheet("""
-        QComboBox {
-            background-color: #2d2d2d;
-            border: 1px solid #444444;
-            border-radius: 6px;
-            padding: 8px 12px;
-            color: #ffffff;
-            font-size: 13px;
-            min-width: 200px;
-        }
-        QComboBox::drop-down {
-            border: none;
-            width: 20px;
-        }
-        QComboBox::down-arrow {
-            image: none;
-            border-left: 5px solid transparent;
-            border-right: 5px solid transparent;
-            border-top: 5px solid #888888;
-        }
-    """)
+    verify_combo.setStyleSheet(COMBOBOX_STYLE)
     verify_combo.setCurrentIndex(1)
     verify_combo.setToolTip("Choose data verification level. None is fastest, xxHash64 is fast and safe for ingest.")
     verify_layout.addWidget(verify_label)
@@ -312,30 +222,10 @@ def build_ingest_tab() -> QWidget:
     # Link speed presets
     preset_layout = QVBoxLayout()
     preset_label = QLabel("Link preset:")
-    preset_label.setStyleSheet("font-weight: 600; color: #ffffff; margin-bottom: 4px;")
+    preset_label.setStyleSheet(f"font-weight: 600; color: {colors['text']}; margin-bottom: 4px;")
     preset_combo = QComboBox()
     preset_combo.addItems(["Auto/Default", "1 GbE", "10 GbE", "25/40 GbE or IB"])
-    preset_combo.setStyleSheet("""
-        QComboBox {
-            background-color: #2d2d2d;
-            border: 1px solid #444444;
-            border-radius: 6px;
-            padding: 8px 12px;
-            color: #ffffff;
-            font-size: 13px;
-            min-width: 150px;
-        }
-        QComboBox::drop-down {
-            border: none;
-            width: 20px;
-        }
-        QComboBox::down-arrow {
-            image: none;
-            border-left: 5px solid transparent;
-            border-right: 5px solid transparent;
-            border-top: 5px solid #888888;
-        }
-    """)
+    preset_combo.setStyleSheet(COMBOBOX_STYLE)
     preset_combo.setToolTip("Sets sensible defaults for concurrency based on your network link.")
     preset_layout.addWidget(preset_label)
     preset_layout.addWidget(preset_combo)
@@ -346,31 +236,31 @@ def build_ingest_tab() -> QWidget:
     # Concurrency sliders
     conc_row = QHBoxLayout()
     conc_label = QLabel("Per-file concurrency:")
-    conc_label.setStyleSheet("font-weight: 600; color: #ffffff; min-width: 150px;")
+    conc_label.setStyleSheet(f"font-weight: 600; color: {colors['text']}; min-width: 150px;")
     conc_slider = QSlider(Qt.Orientation.Horizontal)
     conc_slider.setRange(1, 16)
     conc_slider.setValue(2)
-    conc_slider.setStyleSheet("""
-        QSlider::groove:horizontal {
-            border: 1px solid #444444;
+    conc_slider.setStyleSheet(f"""
+        QSlider::groove:horizontal {{
+            border: 1px solid {colors['border']};
             height: 6px;
-            background: #2d2d2d;
+            background: {colors['card_bg']};
             border-radius: 3px;
-        }
-        QSlider::handle:horizontal {
-            background: #0078d4;
-            border: 1px solid #0078d4;
+        }}
+        QSlider::handle:horizontal {{
+            background: {colors['accent']};
+            border: 1px solid {colors['accent']};
             width: 18px;
             margin: -6px 0;
             border-radius: 9px;
-        }
-        QSlider::handle:horizontal:hover {
-            background: #106ebe;
-        }
+        }}
+        QSlider::handle:horizontal:hover {{
+            background: {colors['accent_hover']};
+        }}
     """)
     conc_slider.setToolTip("How many files to copy at the same time. Higher = more files concurrently.")
     conc_value = QLabel("2")
-    conc_value.setStyleSheet("color: #0078d4; font-weight: 600; min-width: 30px;")
+    conc_value.setStyleSheet(f"color: {colors['accent']}; font-weight: 600; min-width: 30px;")
     conc_slider.valueChanged.connect(lambda v: conc_value.setText(str(v)))
     conc_row.addWidget(conc_label)
     conc_row.addWidget(conc_slider, 1)
@@ -379,31 +269,31 @@ def build_ingest_tab() -> QWidget:
 
     stream_row = QHBoxLayout()
     stream_label = QLabel("Stream concurrency:")
-    stream_label.setStyleSheet("font-weight: 600; color: #ffffff; min-width: 150px;")
+    stream_label.setStyleSheet(f"font-weight: 600; color: {colors['text']}; min-width: 150px;")
     stream_slider = QSlider(Qt.Orientation.Horizontal)
     stream_slider.setRange(1, 32)
     stream_slider.setValue(8)
-    stream_slider.setStyleSheet("""
-        QSlider::groove:horizontal {
-            border: 1px solid #444444;
+    stream_slider.setStyleSheet(f"""
+        QSlider::groove:horizontal {{
+            border: 1px solid {colors['border']};
             height: 6px;
-            background: #2d2d2d;
+            background: {colors['card_bg']};
             border-radius: 3px;
-        }
-        QSlider::handle:horizontal {
-            background: #0078d4;
-            border: 1px solid #0078d4;
+        }}
+        QSlider::handle:horizontal {{
+            background: {colors['accent']};
+            border: 1px solid {colors['accent']};
             border-radius: 9px;
             width: 18px;
             margin: -6px 0;
-        }
-        QSlider::handle:horizontal:hover {
-            background: #106ebe;
-        }
+        }}
+        QSlider::handle:horizontal:hover {{
+            background: {colors['accent_hover']};
+        }}
     """)
     stream_slider.setToolTip("How many parallel streams to use per file >1 GiB. 8 is a good default for 10 GbE.")
     stream_value = QLabel("8")
-    stream_value.setStyleSheet("color: #0078d4; font-weight: 600; min-width: 30px;")
+    stream_value.setStyleSheet(f"color: {colors['accent']}; font-weight: 600; min-width: 30px;")
     stream_slider.valueChanged.connect(lambda v: stream_value.setText(str(v)))
     stream_row.addWidget(stream_label)
     stream_row.addWidget(stream_slider, 1)
@@ -432,75 +322,54 @@ def build_ingest_tab() -> QWidget:
     # Controls
     btn_row = QHBoxLayout()
     start_btn = QPushButton("Start Transfer")
-    start_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #00aa00;
-            border: none;
-            border-radius: 8px;
-            padding: 12px 24px;
-            color: white;
-            font-weight: 700;
-            font-size: 14px;
-            min-width: 120px;
-        }
-        QPushButton:hover {
-            background-color: #008800;
-        }
-        QPushButton:pressed {
-            background-color: #006600;
-        }
-        QPushButton:disabled {
-            background-color: #444444;
-            color: #888888;
-        }
-    """)
+    start_btn.setStyleSheet(ACCENT_BUTTON_STYLE + "min-width: 120px; padding: 12px 24px; font-size: 14px; font-weight: 700;")
     
     pause_btn = QPushButton("Pause")
-    pause_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #ff8c00;
+    pause_btn.setStyleSheet(f"""
+        QPushButton {{
+            background-color: {colors['warning']};
+            color: white;
             border: none;
             border-radius: 8px;
             padding: 12px 24px;
-            color: white;
             font-weight: 600;
             font-size: 14px;
             min-width: 100px;
-        }
-        QPushButton:hover {
+        }}
+        QPushButton:hover {{
             background-color: #e67e00;
-        }
-        QPushButton:pressed {
+        }}
+        QPushButton:pressed {{
             background-color: #cc7000;
-        }
-        QPushButton:disabled {
-            background-color: #444444;
-            color: #888888;
-        }
+        }}
+        QPushButton:disabled {{
+            background-color: {colors['border']};
+            color: {colors['secondary_text']};
+        }}
     """)
     
     cancel_btn = QPushButton("Cancel")
-    cancel_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #d13438;
+    cancel_btn.setStyleSheet(f"""
+        QPushButton {{
+            background-color: {colors['error']};
+            color: white;
             border: none;
             border-radius: 8px;
             padding: 12px 24px;
-            color: white;
             font-weight: 600;
             font-size: 14px;
             min-width: 100px;
-        }
-        QPushButton:hover {
+        }}
+        QPushButton:hover {{
             background-color: #b02a2e;
-        }
-        QPushButton:pressed {
+        }}
+        QPushButton:pressed {{
             background-color: #8f2124;
-        }
-        QPushButton:disabled {
-            background-color: #444444;
-            color: #888888;
-        }
+        }}
+        QPushButton:disabled {{
+            background-color: {colors['border']};
+            color: {colors['secondary_text']};
+        }}
     """)
     
     btn_row.addWidget(start_btn)
@@ -510,13 +379,13 @@ def build_ingest_tab() -> QWidget:
 
     # Total Progress Section
     total_progress_frame = QFrame()
-    total_progress_frame.setStyleSheet("""
-        QFrame {
-            background-color: #2a2a2a;
-            border: 1px solid #444444;
+    total_progress_frame.setStyleSheet(f"""
+        QFrame {{
+            background-color: {colors['card_bg']};
+            border: 1px solid {colors['border']};
             border-radius: 12px;
             padding: 20px;
-        }
+        }}
     """)
     total_layout = QVBoxLayout(total_progress_frame)
     total_layout.setSpacing(16)
@@ -524,17 +393,17 @@ def build_ingest_tab() -> QWidget:
     # Total progress header
     total_header = QHBoxLayout()
     total_label = QLabel("TOTAL TRANSFER")
-    total_label.setStyleSheet("font-size: 18px; font-weight: 700; color: #ffffff;")
+    total_label.setStyleSheet(f"font-size: 18px; font-weight: 700; color: {colors['text']};")
     total_header.addWidget(total_label)
     
     total_percent = QLabel("0%")
-    total_percent.setStyleSheet("font-size: 18px; font-weight: 700; color: #0078d4;")
+    total_percent.setStyleSheet(f"font-size: 18px; font-weight: 700; color: {colors['accent']};")
     total_percent.setAlignment(Qt.AlignmentFlag.AlignRight)
     total_header.addWidget(total_percent)
     total_layout.addLayout(total_header)
     
     # Total progress bar
-    total_progress = ModernProgressBar(height=12)
+    total_progress = AppProgressBar(height=12)
     total_layout.addWidget(total_progress)
     
     # Speed and status row
@@ -542,12 +411,12 @@ def build_ingest_tab() -> QWidget:
     
     # Speed display
     speed_label = QLabel("0 MB/s")
-    speed_label.setStyleSheet("font-size: 24px; font-weight: 700; color: #00aa00;")
+    speed_label.setStyleSheet(f"font-size: 24px; font-weight: 700; color: {colors['success']};")
     status_row.addWidget(speed_label)
     
     # Status message
     status_msg = QLabel("Ready to transfer")
-    status_msg.setStyleSheet("font-size: 14px; color: #888888;")
+    status_msg.setStyleSheet(f"font-size: 14px; color: {colors['secondary_text']};")
     status_msg.setAlignment(Qt.AlignmentFlag.AlignRight)
     status_row.addWidget(status_msg)
     
@@ -557,11 +426,11 @@ def build_ingest_tab() -> QWidget:
     # Individual File Progress Section
     files_header = QHBoxLayout()
     files_label = QLabel("Individual Files")
-    files_label.setStyleSheet("font-size: 16px; font-weight: 700; color: #ffffff;")
+    files_label.setStyleSheet(f"font-size: 16px; font-weight: 700; color: {colors['text']};")
     files_header.addWidget(files_label)
     
     files_count = QLabel("0 files")
-    files_count.setStyleSheet("font-size: 14px; color: #888888;")
+    files_count.setStyleSheet(f"font-size: 14px; color: {colors['secondary_text']};")
     files_count.setAlignment(Qt.AlignmentFlag.AlignRight)
     files_header.addWidget(files_count)
     
@@ -571,25 +440,25 @@ def build_ingest_tab() -> QWidget:
     scroll_area = QScrollArea()
     scroll_area.setWidgetResizable(True)
     scroll_area.setMaximumHeight(300)
-    scroll_area.setStyleSheet("""
-        QScrollArea {
-            border: 1px solid #444444;
+    scroll_area.setStyleSheet(f"""
+        QScrollArea {{
+            border: 1px solid {colors['border']};
             border-radius: 8px;
-            background-color: #1e1e1e;
-        }
-        QScrollBar:vertical {
-            background-color: #2d2d2d;
+            background-color: {colors['bg']};
+        }}
+        QScrollBar:vertical {{
+            background-color: {colors['card_bg']};
             width: 12px;
             border-radius: 6px;
-        }
-        QScrollBar::handle:vertical {
-            background-color: #555555;
+        }}
+        QScrollBar::handle:vertical {{
+            background-color: {colors['border']};
             border-radius: 6px;
             min-height: 20px;
-        }
-        QScrollBar::handle:vertical:hover {
-            background-color: #666666;
-        }
+        }}
+        QScrollBar::handle:vertical:hover {{
+            background-color: {colors['accent']};
+        }}
     """)
     
     files_container = QWidget()
@@ -602,7 +471,7 @@ def build_ingest_tab() -> QWidget:
 
     # Job log path label
     log_label = QLabel("")
-    log_label.setStyleSheet("color: #888888; font-size: 12px; margin-top: 8px;")
+    log_label.setStyleSheet(f"color: {colors['secondary_text']}; font-size: 12px; margin-top: 8px;")
     layout.addWidget(log_label)
 
     # File tracking
@@ -654,6 +523,7 @@ def build_ingest_tab() -> QWidget:
                     self._file_stats = {}
 
                 def emit(self, event_type: str, payload: dict) -> None:
+                    print(f"DEBUG: Received event {event_type}: {payload}")  # Debug logging
                     if event_type == "job.progress":
                         mbps = payload.get("mbps", 0.0)
                         eta = payload.get("eta_seconds", 0.0)
