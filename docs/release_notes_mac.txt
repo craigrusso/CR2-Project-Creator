@@ -1,3 +1,26 @@
+**ForwardFlow v1.0 (Build 286) - Stable**
+
+This Stable release delivers improved menu stability on macOS 26, safer text pasting, and final polish to UI interactions.
+
+**✨ Highlights**
+
+*   **Context Menu Reliability (macOS 26):** Right‑click menus now open more reliably and avoid rare crashes by using non‑blocking menus under the hood.
+*   **Safer Text Pasting:** Paste is sanitized to plain text in batch project name fields for consistent results.
+*   **UI Polish:** Minor visual refinements and responsiveness improvements.
+*   **First‑Run Experience:** Example templates remain bundled for a smooth start when your cache is empty.
+
+**🐛 Fixes**
+
+*   Prevented sporadic QMenu crashes by switching to non‑blocking menu behavior and ensuring proper lifecycle handling.
+*   General stability improvements and small visual fixes across dialogs and menus.
+
+**📱 System Requirements**
+
+*   macOS 11.0 or later
+*   Apple Silicon (M1/M2/M3/M4) Mac
+*   64‑bit processor required
+
+---
 **ForwardFlow v1.0 (Build 285) - Stable**
 
 This Stable release focuses on rock‑solid update reliability and final polish for macOS.

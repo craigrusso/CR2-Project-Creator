@@ -23,7 +23,7 @@ APP_COLORS = {
     "text": "#CCCCCC",            # Primary text color
     "secondary_text": "#858585",  # Secondary/dimmed text
     
-    # Accent colors
+    # Accent colors (original subtle blue used across the app)
     "accent": "#2C4F76",          # Dark blue accent color - more subtle and elegant
     "accent_hover": "#36648B",    # Darker blue for hover states
     

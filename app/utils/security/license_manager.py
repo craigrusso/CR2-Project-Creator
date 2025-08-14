@@ -65,62 +65,114 @@ class LicenseManager:
             # or ensure validation always fails.
         
     def _get_machine_id(self):
-        """Generate a unique machine ID based on hardware information"""
-        # Try to get an existing machine ID first
-        machine_id = self.settings.value("license/machine_id", "")
-        if machine_id:
-            return machine_id
-            
-        # Generate a new machine ID if one doesn't exist
-        system_info = [
-            platform.node(),                    # Computer name
-            platform.machine(),                 # Architecture (arm64, x86_64)
-            platform.processor(),               # Processor info
-            str(uuid.getnode()),                # MAC address
-            platform.system(),                  # Operating system
-            platform.version()[:50],            # OS version (truncated to avoid too long strings)
-        ]
-        
-        # Add additional platform-specific identifiers
+        """Generate a stable machine ID.
+
+        Design goals:
+        - Prefer a single, hardware-stable identifier per platform
+        - Avoid volatile fields (hostname, OS version) that change over time
+        - Persist the first successful value and always reuse it
+        - Fall back to a random UUID that is persisted locally
+        """
+        # 1) Reuse previously stored ID if present
+        stored = self.settings.value("license/machine_id", "")
+        if stored:
+            return stored
+
+        candidate: str | None = None
+
         try:
-            if platform.system() == "Darwin":  # macOS
-                # Add system boot UUID if available
+            system_name = platform.system()
+
+            if system_name == "Darwin":
+                # macOS: IOPlatformUUID is stable for the device
                 import subprocess
-                result = subprocess.run(["system_profiler", "SPHardwareDataType"], 
-                                      capture_output=True, text=True, timeout=5)
-                if result.returncode == 0:
-                    # Extract hardware UUID if present
-                    for line in result.stdout.split('\n'):
-                        if 'Hardware UUID' in line:
-                            uuid_part = line.split(':')[-1].strip()
-                            if uuid_part:
-                                system_info.append(uuid_part)
-                            break
-            elif platform.system() == "Windows":
-                # Add Windows machine GUID
+                try:
+                    ioreg = subprocess.run(
+                        ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if ioreg.returncode == 0:
+                        for line in ioreg.stdout.split("\n"):
+                            if "IOPlatformUUID" in line:
+                                # Format:  "IOPlatformUUID" = "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+                                parts = line.split("\"")
+                                if len(parts) >= 3 and parts[1]:
+                                    candidate = parts[1]
+                                    break
+                except Exception:
+                    pass
+
+                if not candidate:
+                    # Fallback: system_profiler Hardware UUID
+                    try:
+                        sp = subprocess.run(
+                            ["system_profiler", "SPHardwareDataType"],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                        )
+                        if sp.returncode == 0:
+                            for line in sp.stdout.split("\n"):
+                                if "Hardware UUID" in line:
+                                    hw = line.split(":")[-1].strip()
+                                    if hw:
+                                        candidate = hw
+                                        break
+                    except Exception:
+                        pass
+
+            elif system_name == "Windows":
+                # Windows: machine GUID
                 try:
                     import subprocess
-                    result = subprocess.run(["wmic", "csproduct", "get", "UUID"], 
-                                          capture_output=True, text=True, timeout=5)
+                    result = subprocess.run(
+                        ["wmic", "csproduct", "get", "UUID"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
                     if result.returncode == 0:
-                        lines = result.stdout.strip().split('\n')
-                        if len(lines) > 1:
-                            uuid_part = lines[1].strip()
-                            if uuid_part and uuid_part != "UUID":
-                                system_info.append(uuid_part)
-                except:
+                        lines = [l.strip() for l in result.stdout.split("\n") if l.strip()]
+                        if len(lines) >= 2 and lines[1].upper() != "UUID":
+                            candidate = lines[1]
+                except Exception:
                     pass
+
+            else:
+                # Linux/other: try /etc/machine-id or D-Bus machine-id
+                for path in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+                    try:
+                        if os.path.exists(path):
+                            with open(path, "r") as f:
+                                machine_id_raw = f.read().strip()
+                                if machine_id_raw:
+                                    candidate = machine_id_raw
+                                    break
+                    except Exception:
+                        pass
+
+            # Generic MAC address fallback (not ideal on systems with randomization)
+            if not candidate:
+                mac_val = uuid.getnode()
+                if mac_val and mac_val != uuid.getnode.__code__.co_consts[1]:
+                    candidate = str(mac_val)
+
+            # Absolute fallback: generate a random UUID4 and persist it
+            if not candidate:
+                candidate = str(uuid.uuid4())
+
+            # For privacy, store a SHA-256 fingerprint of the candidate
+            fingerprint = hashlib.sha256(candidate.encode("utf-8")).hexdigest()
+            self.settings.setValue("license/machine_id", fingerprint)
+            return fingerprint
+
         except Exception:
-            # If platform-specific info fails, continue with basic info
-            pass
-        
-        # Create a hash of the system information
-        combined_info = "|".join(str(info) for info in system_info if info)
-        fingerprint = hashlib.sha256(combined_info.encode('utf-8')).hexdigest()
-        
-        # Save the machine ID
-        self.settings.setValue("license/machine_id", fingerprint)
-        return fingerprint
+            # Ultimate fallback if anything above failed unexpectedly
+            fallback = hashlib.sha256(str(uuid.uuid4()).encode("utf-8")).hexdigest()
+            self.settings.setValue("license/machine_id", fallback)
+            return fallback
 
     def _get_machine_name(self):
         """Get a human-readable machine name"""
@@ -417,32 +469,67 @@ class LicenseManager:
                 try:
                     error_data = response.json()
                     error_message = error_data.get("message", f"Activation failed (Status: {response.status_code})")
-                    
-                    # Enhanced error handling for 1-machine-per-license policy
-                    if response.status_code == 409:  # Conflict - license already activated
-                        if "already activated" in error_message.lower():
-                            existing_machine = error_data.get("existingMachine", "another machine")
-                            enhanced_message = (
-                                f"This license is already activated on {existing_machine}.\n\n"
-                                f"Each license can only be used on one machine at a time.\n\n"
-                                f"To use this license on this machine:\n"
-                                f"1. Deactivate the license on {existing_machine}\n"
-                                f"2. Then activate it on this machine\n\n"
-                                f"Contact support at https://www.cr2creative.com/support.html if you need help."
-                            )
-                            return False, enhanced_message
-                    elif response.status_code == 400:  # Bad request
+
+                    # Enhanced handling for 409 Conflict (already activated/registered)
+                    if response.status_code == 409:
+                        # Normalize the message to catch common phrasings from the server
+                        msg_lower = (error_message or "").lower()
+                        already_synonyms = [
+                            "already activated",
+                            "already registered",
+                            "already active",
+                            "already licensed",
+                            "already in use",
+                            "is active"
+                        ]
+
+                        # If server indicates the license is already active, attempt a validation call.
+                        if any(phrase in msg_lower for phrase in already_synonyms):
+                            # Try to validate the provided key. If it validates, accept as success and persist locally.
+                            if self.validate_license(license_key):
+                                # Persist the license key and provided email (or server email if already set by validate)
+                                self.settings.setValue("license/key", license_key)
+                                if email:
+                                    # Do not overwrite if validate() already stored a canonical email
+                                    stored_email = self.settings.value("license/email", "")
+                                    if not stored_email:
+                                        self.settings.setValue("license/email", email)
+                                self.settings.setValue("license/is_valid", True)
+                                success_message = error_data.get(
+                                    "message",
+                                    "License already activated. Your installation is now linked to your license."
+                                )
+                                return True, success_message
+
+                        # If we get a 409 but cannot confirm validity, provide a clear next-step message.
+                        existing_machine = (
+                            error_data.get("existingMachine")
+                            or error_data.get("machineName")
+                            or "another machine"
+                        )
+                        enhanced_message = (
+                            f"This license appears to be active on {existing_machine}.<br><br>"
+                            f"Each license can only be used on one machine at a time.<br><br>"
+                            f"To use it here, deactivate it on the other machine and try again.<br><br>"
+                            f"You can sign in at <a style=\"color:#b1def2;\" href=\"https://www.cr2creative.com/account-login.html\">your account</a> to manage activations, "
+                            f"or visit <a style=\"color:#b1def2;\" href=\"https://www.cr2creative.com/support.html\">support</a> for help."
+                        )
+                        return False, enhanced_message
+
+                    # Handle 400 Bad Request with clearer guidance
+                    if response.status_code == 400:
                         if "invalid" in error_message.lower() or "not found" in error_message.lower():
                             enhanced_message = (
-                                f"License key not found or invalid.\n\n"
-                                f"Please check:\n"
-                                f"• License key is entered correctly\n"
-                                f"• Email matches your purchase receipt\n"
-                                f"• License hasn't been refunded or cancelled\n\n"
-                                f"Contact support at https://www.cr2creative.com/support.html if you need help."
+                                f"License key not found or invalid.<br><br>"
+                                f"Please check:<br>"
+                                f"&bull; License key is entered correctly<br>"
+                                f"&bull; Email matches your purchase receipt<br>"
+                                f"&bull; License hasn't been refunded or cancelled<br><br>"
+                                f"Need help? Visit <a style=\"color:#b1def2;\" href=\"https://www.cr2creative.com/support.html\">support</a>."
                             )
                             return False, enhanced_message
-                    
+
+                    # Fallback to server-provided message or a generic status message
                     return False, error_message
                 except json.JSONDecodeError:
                     error_message = f"Activation failed (Status: {response.status_code}) - Non-JSON response: {response.text}"
@@ -1369,10 +1456,21 @@ class LicenseActivationDialog(QDialog):
         progress_dialog.close()
         
         if success:
-            QMessageBox.information(self, "Activation Successful", message)
+            # Enable rich text so embedded links are clickable
+            info_box = QMessageBox(self)
+            info_box.setWindowTitle("Activation Successful")
+            info_box.setIcon(QMessageBox.Icon.Information)
+            info_box.setTextFormat(Qt.TextFormat.RichText)
+            info_box.setText(message)
+            info_box.exec()
             self.accept()
         else:
-            QMessageBox.warning(self, "Activation Failed", message)
+            warn_box = QMessageBox(self)
+            warn_box.setWindowTitle("Activation Failed")
+            warn_box.setIcon(QMessageBox.Icon.Warning)
+            warn_box.setTextFormat(Qt.TextFormat.RichText)
+            warn_box.setText(message)
+            warn_box.exec()
 
 class TrialNagDialog(QDialog):
     """Dialog shown when trial period is active or expired"""

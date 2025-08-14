@@ -1,4 +1,4 @@
-**ForwardFlow v1.0 (Build 285) - Stable**
+**ForwardFlow v1.0 (Build 286) - Stable**
 
 This Stable release improves update reliability and adds small UI polish for Windows Intel users.
 
@@ -6,10 +6,12 @@ This Stable release improves update reliability and adds small UI polish for Win
 
 *   **Reliable Update Checks:** Improved detection logic so new Stable versions are recognized.
 *   **UI Polish:** Minor refinements for consistency and responsiveness.
+*   **Context Menu Stability:** Non‑blocking context menus and improved lifecycle handling to avoid rare crashes.
 
 **🐛 Fixes**
 
 *   Addressed edge cases that could prevent surfacing new Stable builds.
+*   Fixed rare right‑click menu issues observed on some machines.
 
 **🪟 Windows-specific improvements**
 

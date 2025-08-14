@@ -1,4 +1,4 @@
-**ForwardFlow v1.0 (Build 285) - Stable**
+**ForwardFlow v1.0 (Build 286) - Stable**
 
 This Stable release brings improved update reliability and small UI polish for a smoother Windows ARM64 experience.
 
@@ -6,10 +6,12 @@ This Stable release brings improved update reliability and small UI polish for a
 
 *   **Reliable Update Checks:** Better handling of availability flags and release stages from the server.
 *   **UI Polish:** Minor improvements to visual consistency and responsiveness.
+*   **Context Menu Stability:** Switched context menus to non‑blocking behavior and ensured proper lifecycle to avoid rare crashes.
 
 **🐛 Fixes**
 
 *   Fixed edge cases where newer Stable releases might not be surfaced promptly.
+*   Addressed rare right‑click menu issues that could lead to crashes on some systems.
 
 **🪟 Windows-specific improvements**
 
