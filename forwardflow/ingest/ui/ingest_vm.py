@@ -22,6 +22,7 @@ class IngestViewModel:
     mode: str = "BALANCED"  # FAST | BALANCED | STRICT(disabled)
     per_file_concurrency: int = 2
     stream_concurrency: int = 8
+    _engine_override: Optional[PythonCopyEngine] = None
 
     def start(self, job_id: str) -> None:  # pragma: no cover - UI wireup later
         if not self.enabled:
@@ -39,7 +40,8 @@ class IngestViewModel:
             destination_root=self.destination,
             options=opts,
         )
-        engine = getattr(self, "_engine_override", None) or PythonCopyEngine()
+        # Use the engine override (with event sink) if provided, otherwise create default
+        engine = self._engine_override or PythonCopyEngine()
         # Track current job for pause/cancel wiring
         self._current_job_id = job_id
         self._current_engine = engine
