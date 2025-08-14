@@ -1,0 +1,32 @@
+"""Ingest configuration and feature flags.
+
+All flags default to a safe, internal state. The primary gating flag
+`FF_INGEST_ENABLED` must be set to True to expose any UI or CLI
+surfaces beyond internal testing.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional
+
+
+# Primary feature flag for exposing ingest functionality publicly
+FF_INGEST_ENABLED: bool = True
+
+
+@dataclass(frozen=True)
+class IngestDefaults:
+    # Phase 1 defaults (kept here for centralized configuration)
+    # Presets for common link speeds
+    # Users shouldn't need to tweak in most cases; UI can set based on chosen preset
+    per_file_concurrency: int = 2
+    stream_concurrency: int = 8
+    min_multistream_size_bytes: int = 1 * 1024 * 1024 * 1024  # 1 GiB
+    io_chunk_size_bytes: int = 16 * 1024 * 1024  # 16 MiB
+    verify_algorithm: str = "xxh64"  # Phase 1: non-cryptographic
+
+
+DEFAULTS = IngestDefaults()
+
+

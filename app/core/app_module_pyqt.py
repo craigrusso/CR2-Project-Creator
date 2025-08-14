@@ -1056,10 +1056,35 @@ class ProjectCreatorApp(QMainWindow):
         self.right_layout.setContentsMargins(0, 0, 0, 0)
         
         print("DEBUG: Creating TemplateGallery...")
-        # Create template gallery
+        # Create template gallery (always add directly first as fallback)
         self.template_gallery = TemplateGallery(app=self)
         print("DEBUG: TemplateGallery created successfully")
         self.right_layout.addWidget(self.template_gallery)
+
+        # Ingest tab (feature-gated)
+        try:
+            from forwardflow.ingest.config import FF_INGEST_ENABLED
+            if FF_INGEST_ENABLED:
+                from PyQt6.QtWidgets import QTabWidget
+                from forwardflow.ingest.ui.ingest_tab import build_ingest_tab
+                tabs = QTabWidget()
+                # Remove direct gallery widget from right layout and move into tabs
+                try:
+                    self.right_layout.removeWidget(self.template_gallery)
+                except Exception:
+                    pass
+                tabs.addTab(self.template_gallery, "Templates")
+                tabs.addTab(build_ingest_tab(), "Ingest")
+                self.right_layout.addWidget(tabs)
+                self._ff_tabs = tabs
+        except Exception as e:
+            print(f"DEBUG: Ingest tab not added: {e}")
+            # Fallback: ensure template gallery remains visible if tabs failed
+            try:
+                if self.template_gallery.parent() is None:
+                    self.right_layout.addWidget(self.template_gallery)
+            except Exception:
+                pass
         
         # Connect template selection signal to check for custom options
         self.template_gallery.template_selected.connect(self.check_template_for_custom_options)
