@@ -160,6 +160,10 @@ class FileProgressCard(QFrame):
 def build_ingest_tab() -> QWidget:
     vm = IngestViewModel()
     root = QWidget()
+    
+    # Make vm accessible to the widget
+    root.vm = vm
+    
     layout = QVBoxLayout(root)
     layout.setContentsMargins(20, 20, 20, 20)
     layout.setSpacing(20)
@@ -475,8 +479,8 @@ def build_ingest_tab() -> QWidget:
     layout.addWidget(log_label)
 
     # File tracking
-    file_widgets = {}  # file_id -> FileProgressCard
-    active_files = 0
+    root.file_widgets = {}  # file_id -> FileProgressCard
+    root.active_files = 0
 
     # Wire up
     def on_start():
@@ -503,11 +507,11 @@ def build_ingest_tab() -> QWidget:
         cancel_btn.setEnabled(True)
         
         # Clear previous file widgets
-        for widget in file_widgets.values():
+        for widget in root.file_widgets.values():
             files_layout.removeWidget(widget)
             widget.deleteLater()
-        file_widgets.clear()
-        active_files = 0
+        root.file_widgets.clear()
+        root.active_files = 0
         files_count.setText("0 files")
         
         # Reset progress
@@ -536,54 +540,51 @@ def build_ingest_tab() -> QWidget:
                         QTimer.singleShot(0, upd)
                     elif event_type == "file.started":
                         def upd():
-                            nonlocal active_files
                             file_id = payload.get("file_id")
                             filename = payload.get("filename")
                             total_bytes = payload.get("total_bytes", 0)
                             widget = FileProgressCard(filename, total_bytes)
-                            file_widgets[file_id] = widget
+                            root.file_widgets[file_id] = widget
                             files_layout.addWidget(widget)
-                            active_files += 1
-                            files_count.setText(f"{active_files} files")
+                            root.active_files += 1
+                            files_count.setText(f"{root.active_files} files")
                             self._file_stats[file_id] = {'start_time': time.time()}
                         QTimer.singleShot(0, upd)
                     elif event_type == "file.progress":
                         def upd():
                             file_id = payload.get("file_id")
                             copied_bytes = payload.get("bytes", 0)
-                            if file_id in file_widgets:
+                            if file_id in root.file_widgets:
                                 # Calculate speed for this file
                                 file_stats = self._file_stats.get(file_id, {})
                                 if file_stats:
                                     elapsed = time.time() - file_stats.get('start_time', time.time())
                                     if elapsed > 0:
                                         speed = (copied_bytes / elapsed) / (1024 * 1024)
-                                        file_widgets[file_id].update_progress(copied_bytes, speed)
+                                        root.file_widgets[file_id].update_progress(copied_bytes, speed)
                                     else:
-                                        file_widgets[file_id].update_progress(copied_bytes)
+                                        root.file_widgets[file_id].update_progress(copied_bytes)
                                 else:
-                                    file_widgets[file_id].update_progress(copied_bytes)
+                                    root.file_widgets[file_id].update_progress(copied_bytes)
                         QTimer.singleShot(0, upd)
                     elif event_type == "file.completed":
                         def upd():
-                            nonlocal active_files
                             file_id = payload.get("file_id")
-                            if file_id in file_widgets:
-                                file_widgets[file_id].mark_completed()
-                                active_files -= 1
-                                files_count.setText(f"{active_files} files")
+                            if file_id in root.file_widgets:
+                                root.file_widgets[file_id].mark_completed()
+                                root.active_files -= 1
+                                files_count.setText(f"{root.active_files} files")
                                 # Remove completed files after a delay
                                 QTimer.singleShot(2000, lambda: _remove_file_widget(file_id))
                         QTimer.singleShot(0, upd)
                     elif event_type == "file.failed":
                         def upd():
-                            nonlocal active_files
                             file_id = payload.get("file_id")
                             error = payload.get("error", "Unknown error")
-                            if file_id in file_widgets:
-                                file_widgets[file_id].mark_failed(error)
-                                active_files -= 1
-                                files_count.setText(f"{active_files} files")
+                            if file_id in root.file_widgets:
+                                root.file_widgets[file_id].mark_failed(error)
+                                root.active_files -= 1
+                                files_count.setText(f"{root.active_files} files")
                         QTimer.singleShot(0, upd)
 
             engine = PythonCopyEngine(sink=QtSink())
@@ -611,11 +612,11 @@ def build_ingest_tab() -> QWidget:
         threading.Thread(target=run, daemon=True).start()
 
     def _remove_file_widget(file_id: str):
-        if file_id in file_widgets:
-            widget = file_widgets[file_id]
+        if file_id in root.file_widgets:
+            widget = root.file_widgets[file_id]
             files_layout.removeWidget(widget)
             widget.deleteLater()
-            del file_widgets[file_id]
+            del root.file_widgets[file_id]
 
     def on_pause():
         vm.pause_current()
@@ -624,6 +625,12 @@ def build_ingest_tab() -> QWidget:
     def on_cancel():
         vm.cancel_current()
         status_msg.setText("Canceled. Partial files kept with .part extension.")
+
+    # Make functions attributes of the widget
+    root.on_start = on_start
+    root.on_pause = on_pause
+    root.on_cancel = on_cancel
+    root._remove_file_widget = _remove_file_widget
 
     start_btn.clicked.connect(on_start)
     pause_btn.clicked.connect(on_pause)
