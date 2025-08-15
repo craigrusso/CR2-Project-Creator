@@ -48,12 +48,12 @@ class TemplateGallery(QWidget):
         else:
             print("[GalleryWidget] WARNING: Could not get CategoryUpdateManager instance.")
 
-        # Connect to ProjectCreatorApp signal for preference changes
+        # Connect to ForwardFlowApp signal for preference changes
         if hasattr(self.app, "gallery_preference_changed"):
             self.app.gallery_preference_changed.connect(self._handle_gallery_preference_changed)
-            print("[GalleryWidget] Connected to ProjectCreatorApp.gallery_preference_changed signal.")
+            print("[GalleryWidget] Connected to ForwardFlowApp.gallery_preference_changed signal.")
         else:
-            print("[GalleryWidget] WARNING: ProjectCreatorApp instance does not have 'gallery_preference_changed' signal.")
+            print("[GalleryWidget] WARNING: ForwardFlowApp instance does not have 'gallery_preference_changed' signal.")
         
         self.selection_manager = GallerySelectionManager(self)
         self.selection_manager.selection_changed.connect(self._handle_selection_manager_update)

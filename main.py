@@ -54,7 +54,7 @@ if getattr(sys, 'frozen', False):
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import Qt, QCoreApplication, QSettings, QTimer
 from PyQt6.QtGui import QIcon
-from app.core.app_module_pyqt import ProjectCreatorApp
+from app.core.app_module_pyqt import ForwardFlowApp
 from app.config.app_config import APP_NAME, APP_VERSION_NUMBER, setup_dpi_awareness, APP_BUILD_NUMBER
 from app.ui.app_theme_pyqt import apply_dark_theme_to_template_section, force_app_palette, configure_styles
 from app.templates.template_manager_migration import TemplateManagerMigration
@@ -385,6 +385,9 @@ def main():
         app.setApplicationName(APP_NAME)
         app.setApplicationVersion(APP_VERSION_NUMBER)
         
+        # Ensure the app stays in the foreground
+        app.setQuitOnLastWindowClosed(True)
+        
         # Setup has succeeded, show splash window
         # splash_window.hide()  # Commented out as splash_window doesn't exist in this version
         
@@ -497,20 +500,27 @@ def main():
             info("Example templates already deployed for current version.")
         
         # Create and show the main window
-        info("Creating ProjectCreatorApp instance...")
-        main_window = ProjectCreatorApp()
-        info("ProjectCreatorApp instance created successfully")
-        
-        # Store the instance for future reference
-        ProjectCreatorApp._instance = main_window
-        
-        info("Initializing CategoryUpdateManager...")
-        category_manager = get_category_update_manager_instance(main_window)
-        info(f"CategoryUpdateManager initialized: {category_manager}")
-        
-        info("Showing main window...")
-        main_window.show()
-        info("Main window shown successfully")
+        info("Creating ForwardFlowApp instance...")
+        try:
+            main_window = ForwardFlowApp()
+            info("ForwardFlowApp instance created successfully")
+            
+            # Store the instance for future reference
+            ForwardFlowApp._instance = main_window
+            
+            info("Initializing CategoryUpdateManager...")
+            category_manager = get_category_update_manager_instance(main_window)
+            info(f"CategoryUpdateManager initialized: {category_manager}")
+            
+            info("Showing main window...")
+            main_window.show()
+            main_window.raise_()  # Bring window to front
+            main_window.activateWindow()  # Activate the window
+            info("Main window shown successfully")
+        except Exception as e:
+            error(f"Failed to create or show main window: {e}")
+            exception("Main window creation failure details:")
+            return 1
         
         styled_count = apply_styling_to_all_tree_widgets(main_window)
         
@@ -559,6 +569,15 @@ def main():
             error(f"Error applying dark theme to template section: {e}")
             exception("Dark theme application failure details:")
         
+        # Ensure the app is visible and active
+        try:
+            main_window.show()
+            main_window.raise_()
+            main_window.activateWindow()
+        except Exception as e:
+            error(f"Error ensuring window visibility: {e}")
+        
+        info("ForwardFlow application startup complete")
         return app.exec()
     except Exception as e:
         critical(f"CRITICAL ERROR during application startup: {e}")

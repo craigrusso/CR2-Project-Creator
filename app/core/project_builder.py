@@ -1703,8 +1703,8 @@ class ProjectBuilder:
         """
         # Try to get custom values from the main app's animated widget first
         try:
-            from app.core.app_module_pyqt import ProjectCreatorApp
-            app_instance = ProjectCreatorApp.get_instance()
+            from app.core.app_module_pyqt import ForwardFlowApp
+            app_instance = ForwardFlowApp.get_instance()
             if app_instance and hasattr(app_instance, 'get_custom_values_from_widget'):
                 custom_values = app_instance.get_custom_values_from_widget()
                 if custom_values:

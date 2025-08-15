@@ -3,7 +3,7 @@
 
 import os
 import platform
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QApplication
+from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QApplication, QTabWidget
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSettings
 from PyQt6.QtGui import QIcon
 
@@ -29,8 +29,8 @@ from .file_operations.import_export import ImportExportManager
 from app.constants import APP_VERSION_NUMBER
 
 
-class ProjectCreatorApp(QMainWindow):
-    """Main application class for CR2 Creative Pro using PyQt"""
+class ForwardFlowApp(QMainWindow):
+    """Main application class for ForwardFlow using PyQt"""
     
     # Signals
     template_updated = pyqtSignal()
@@ -126,15 +126,34 @@ class ProjectCreatorApp(QMainWindow):
         # Setup left panel using layout manager
         self.left_panel = self.layout_manager.create_left_panel()
         
-        # Create right panel with template gallery
+        # Create right panel with tab system
         self.right_panel = QWidget()
         self.right_layout = QVBoxLayout(self.right_panel)
         self.right_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Create template gallery
+        # Create tab widget
+        self.tab_widget = QTabWidget()
+        self.right_layout.addWidget(self.tab_widget)
+        
+        # Create Templates tab
         self.template_gallery = TemplateGallery(app=self)
-        self.right_layout.addWidget(self.template_gallery)
+        self.tab_widget.addTab(self.template_gallery, "Templates")
         apply_dark_theme_to_template_gallery(self.template_gallery)
+        
+        # Create Ingest tab
+        try:
+            from forwardflow.ingest.ui.ingest_tab import build_ingest_tab
+            self.ingest_tab = build_ingest_tab()
+            self.tab_widget.addTab(self.ingest_tab, "Ingest")
+        except ImportError as e:
+            print(f"Warning: Could not import ingest module: {e}")
+            # Create a placeholder tab
+            self.ingest_tab = QWidget()
+            placeholder_layout = QVBoxLayout(self.ingest_tab)
+            placeholder_label = QLabel("Ingest module not available")
+            placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            placeholder_layout.addWidget(placeholder_label)
+            self.tab_widget.addTab(self.ingest_tab, "Ingest")
         
         # Add panels to splitter
         self.main_splitter.addWidget(self.left_panel)

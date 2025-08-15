@@ -31,10 +31,69 @@ from PyQt6.QtWidgets import (
 from .ingest_vm import IngestViewModel
 from ..engines.python_engine import PythonCopyEngine
 
-# Import app's existing styles
-from app.ui.color_scheme_pyqt import (
-    colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE, LINEEDIT_STYLE
-)
+# Define colors locally to avoid circular imports
+colors = {
+    'border': '#2C4F76',
+    'card_bg': '#383838', 
+    'text': '#CCCCCC',
+    'secondary_text': '#858585',  # Add missing secondary_text color
+    'accent': '#3498db',
+    'bg': '#2A2A2A',
+    'success': '#27ae60',
+    'warning': '#f39c12',
+    'error': '#e74c3c',
+    'info': '#3498db'
+}
+
+BUTTON_STYLE = f"""
+    QPushButton {{
+        background-color: {colors['card_bg']};
+        color: {colors['text']};
+        border: 1px solid {colors['border']};
+        padding: 8px 16px;
+        border-radius: 4px;
+        font-weight: 600;
+    }}
+    QPushButton:hover {{
+        background-color: #454545;
+        border: 1px solid {colors['accent']};
+    }}
+"""
+
+ACCENT_BUTTON_STYLE = f"""
+    QPushButton {{
+        background-color: {colors['accent']};
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 14px;
+    }}
+    QPushButton:hover {{
+        background-color: #2980b9;
+    }}
+"""
+
+COMBOBOX_STYLE = f"""
+    QComboBox {{
+        background-color: {colors['card_bg']};
+        color: {colors['text']};
+        border: 1px solid {colors['border']};
+        padding: 6px 12px;
+        border-radius: 4px;
+    }}
+"""
+
+LINEEDIT_STYLE = f"""
+    QLineEdit {{
+        background-color: {colors['card_bg']};
+        color: {colors['text']};
+        border: 1px solid {colors['border']};
+        padding: 6px 12px;
+        border-radius: 4px;
+    }}
+"""
 
 
 class CleanProgressBar(QProgressBar):
@@ -402,9 +461,9 @@ def build_ingest_tab() -> QWidget:
     """)
     
     files_container = QWidget()
-    self.files_layout = QVBoxLayout(files_container)
-    self.files_layout.setSpacing(4)
-    self.files_layout.setContentsMargins(0, 0, 0, 0)
+    files_layout = QVBoxLayout(files_container)
+    files_layout.setSpacing(4)
+    files_layout.setContentsMargins(0, 0, 0, 0)
     
     scroll_area.setWidget(files_container)
     files_layout.addWidget(scroll_area)
@@ -444,7 +503,7 @@ def build_ingest_tab() -> QWidget:
         
         # Clear previous file widgets
         for widget in root.file_widgets.values():
-            self.files_layout.removeWidget(widget)
+            files_layout.removeWidget(widget)
             widget.deleteLater()
         root.file_widgets.clear()
         root.active_files = 0
@@ -454,68 +513,73 @@ def build_ingest_tab() -> QWidget:
         total_progress.setValue(0)
         speed_label.setText("0 MB/s Transfer")
 
+        # Create sink for progress events
+        file_stats = {}
+        
+        def handle_job_progress(payload):
+            mbps = payload.get("mbps", 0.0)
+            total = max(1, payload.get("total", 1))
+            percent = int(100 * payload.get("bytes", 0) / total)
+            total_progress.setValue(percent)
+            speed_label.setText(f"{mbps:.0f} MB/s Transfer")
+            
+        def handle_file_started(payload):
+            file_id = payload.get("file_id")
+            filename = payload.get("filename")
+            total_bytes = payload.get("total_bytes", 0)
+            widget = FileProgressLine(filename, total_bytes)
+            root.file_widgets[file_id] = widget
+            files_layout.addWidget(widget)
+            root.active_files += 1
+            files_count.setText(f"{root.active_files} files")
+            file_stats[file_id] = {'start_time': time.time()}
+            
+        def handle_file_progress(payload):
+            file_id = payload.get("file_id")
+            copied_bytes = payload.get("bytes", 0)
+            if file_id in root.file_widgets:
+                stats = file_stats.get(file_id, {})
+                if stats:
+                    elapsed = time.time() - stats.get('start_time', time.time())
+                    if elapsed > 0:
+                        speed = (copied_bytes / elapsed) / (1024 * 1024)
+                        root.file_widgets[file_id].update_progress(copied_bytes, speed)
+                    else:
+                        root.file_widgets[file_id].update_progress(copied_bytes)
+                else:
+                    root.file_widgets[file_id].update_progress(copied_bytes)
+                    
+        def handle_file_completed(payload):
+            file_id = payload.get("file_id")
+            if file_id in root.file_widgets:
+                root.file_widgets[file_id].mark_completed()
+                root.active_files -= 1
+                files_count.setText(f"{root.active_files} files")
+                # Remove completed files after a delay
+                QTimer.singleShot(2000, lambda: _remove_file_widget(file_id))
+                
+        def handle_file_failed(payload):
+            file_id = payload.get("file_id")
+            error = payload.get("error", "Unknown error")
+            if file_id in root.file_widgets:
+                root.file_widgets[file_id].mark_failed(error)
+                root.active_files -= 1
+                files_count.setText(f"{root.active_files} files")
+
         def run():
             # Attach a sink to receive progress and update UI
             class QtSink:
-                def __init__(self):
-                    self._file_stats = {}
-
                 def emit(self, event_type: str, payload: dict) -> None:
                     if event_type == "job.progress":
-                        mbps = payload.get("mbps", 0.0)
-                        def upd():
-                            total = max(1, payload.get("total", 1))
-                            percent = int(100 * payload.get("bytes", 0) / total)
-                            total_progress.setValue(percent)
-                            speed_label.setText(f"{mbps:.0f} MB/s Transfer")
-                        QTimer.singleShot(0, upd)
+                        QTimer.singleShot(0, lambda: handle_job_progress(payload))
                     elif event_type == "file.started":
-                        def upd():
-                            file_id = payload.get("file_id")
-                            filename = payload.get("filename")
-                            total_bytes = payload.get("total_bytes", 0)
-                            widget = FileProgressLine(filename, total_bytes)
-                            root.file_widgets[file_id] = widget
-                            self.files_layout.addWidget(widget)
-                            root.active_files += 1
-                            files_count.setText(f"{root.active_files} files")
-                            self._file_stats[file_id] = {'start_time': time.time()}
-                        QTimer.singleShot(0, upd)
+                        QTimer.singleShot(0, lambda: handle_file_started(payload))
                     elif event_type == "file.progress":
-                        def upd():
-                            file_id = payload.get("file_id")
-                            copied_bytes = payload.get("bytes", 0)
-                            if file_id in root.file_widgets:
-                                file_stats = self._file_stats.get(file_id, {})
-                                if file_stats:
-                                    elapsed = time.time() - file_stats.get('start_time', time.time())
-                                    if elapsed > 0:
-                                        speed = (copied_bytes / elapsed) / (1024 * 1024)
-                                        root.file_widgets[file_id].update_progress(copied_bytes, speed)
-                                    else:
-                                        root.file_widgets[file_id].update_progress(copied_bytes)
-                                else:
-                                    root.file_widgets[file_id].update_progress(copied_bytes)
-                        QTimer.singleShot(0, upd)
+                        QTimer.singleShot(0, lambda: handle_file_progress(payload))
                     elif event_type == "file.completed":
-                        def upd():
-                            file_id = payload.get("file_id")
-                            if file_id in root.file_widgets:
-                                root.file_widgets[file_id].mark_completed()
-                                root.active_files -= 1
-                                files_count.setText(f"{root.active_files} files")
-                                # Remove completed files after a delay
-                                QTimer.singleShot(2000, lambda: _remove_file_widget(file_id))
-                        QTimer.singleShot(0, upd)
+                        QTimer.singleShot(0, lambda: handle_file_completed(payload))
                     elif event_type == "file.failed":
-                        def upd():
-                            file_id = payload.get("file_id")
-                            error = payload.get("error", "Unknown error")
-                            if file_id in root.file_widgets:
-                                root.file_widgets[file_id].mark_failed(error)
-                                root.active_files -= 1
-                                files_count.setText(f"{root.active_files} files")
-                        QTimer.singleShot(0, upd)
+                        QTimer.singleShot(0, lambda: handle_file_failed(payload))
 
             engine = PythonCopyEngine(sink=QtSink())
             vm._engine_override = engine
@@ -554,7 +618,7 @@ def build_ingest_tab() -> QWidget:
     def _remove_file_widget(file_id: str):
         if file_id in root.file_widgets:
             widget = root.file_widgets[file_id]
-            self.files_layout.removeWidget(widget)
+            files_layout.removeWidget(widget)
             widget.deleteLater()
             del root.file_widgets[file_id]
 

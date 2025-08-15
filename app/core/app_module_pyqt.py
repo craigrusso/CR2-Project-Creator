@@ -8,13 +8,14 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QFileDialog, QMessageBox, QMenu,
                            QStatusBar, QFrame, QSplitter, QScrollArea, QSizePolicy,
                            QApplication, QGroupBox, QListView, QTextEdit, QLayout, QGridLayout,
-                           QWIDGETSIZE_MAX, QCheckBox, QDateEdit, QSpinBox, QToolButton)
+                           QWIDGETSIZE_MAX, QCheckBox, QDateEdit, QSpinBox, QToolButton,
+                           QStackedWidget, QTabWidget)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex, QPoint, QUrl, QMimeData, QSettings, QObject, QThread, QDate, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, QPixmap, QDesktopServices, QCursor, QDragEnterEvent, QDropEvent, QFontMetrics, QStandardItemModel, QStandardItem, QAction, QTextCharFormat
 
 from app.core.app_config import APP_NAME, RECENT_TEMPLATES_MAX
 # Import the refactored main window
-from .main_window import ProjectCreatorApp as RefactoredProjectCreatorApp
+from .main_window import ForwardFlowApp as RefactoredForwardFlowApp
 from app.ui.color_scheme_pyqt import get_color, colors, BUTTON_STYLE, COMBOBOX_STYLE, ACCENT_BUTTON_STYLE, LISTVIEW_POPUP_STYLE, APP_COLORS, ACTION_LINK_STYLE, SPINBOX_STYLE
 from app.utils.utils import load_config, save_config, truncate_path, normalize_path_for_storage
 from app.ui.ui_components_pyqt import ToolTip, CardFrame, SearchBox, TemplateFileCard, ScrollableFrame, UI_FONT, UpdateNotificationBanner
@@ -109,8 +110,8 @@ class UpdateWorker(QObject):
 
 # ---------------------------------------
 
-class ProjectCreatorApp(QMainWindow):
-    """Main application class for CR2 Creative Pro using PyQt"""
+class ForwardFlowApp(QMainWindow):
+    """Main application class for ForwardFlow using PyQt"""
     
     # Signal for template updates
     template_updated = pyqtSignal()
@@ -272,24 +273,78 @@ class ProjectCreatorApp(QMainWindow):
         print("DEBUG: Menu bar created")
         
         print("DEBUG: Creating status bar...")
-        # Create status bar
+        # Create status bar with bottom tabs
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
+        
+        # Add status message on the left
         self.status_message = QLabel("")
         self.status_bar.addWidget(self.status_message)
+        
+        # Add bottom tabs centered in status bar
+        self.bottom_tab_widget = QTabWidget()
+        self.bottom_tab_widget.setMaximumHeight(30)
+        self.bottom_tab_widget.setStyleSheet("""
+            QTabWidget::pane {
+                border: none;
+                background: transparent;
+            }
+            QTabBar::tab {
+                background-color: #383838;
+                color: #CCCCCC;
+                padding: 4px 12px;
+                margin: 0px 2px;
+                border: 1px solid #2C4F76;
+                border-top: none;
+                border-radius: 0px 0px 4px 4px;
+                min-width: 80px;
+            }
+            QTabBar::tab:selected {
+                background-color: #2C4F76;
+                color: white;
+                border-color: #2C4F76;
+            }
+            QTabBar::tab:hover:!selected {
+                background-color: #454545;
+            }
+        """)
+        
+        # Add Templates tab (default)
+        self.templates_tab = QWidget()
+        self.bottom_tab_widget.addTab(self.templates_tab, "Templates")
+        
+        # Add Ingest tab
+        self.ingest_tab = QWidget()
+        self.bottom_tab_widget.addTab(self.ingest_tab, "Ingest")
+        
+        # Connect tab changes to switch content
+        self.bottom_tab_widget.currentChanged.connect(self._on_tab_changed)
+        
+        # Center the bottom tabs in the status bar
+        # First add the status message on the left
+        self.status_bar.addWidget(self.status_message)
+        
+        # Add a stretch to push tabs to center
+        self.status_bar.addPermanentWidget(QLabel(""), 1)  # Stretch factor 1
+        
+        # Add the bottom tabs in the center
+        self.status_bar.addPermanentWidget(self.bottom_tab_widget)
+        
+        # Add another stretch to balance the centering
+        self.status_bar.addPermanentWidget(QLabel(""), 1)  # Stretch factor 1
         
         # Configure status bar for proper text display
         self.status_bar.setStyleSheet("""
             QStatusBar { 
                 padding-left: 8px; 
-                min-height: 24px;
+                min-height: 30px;
             }
             QStatusBar::item {
                 border: none;
                 padding-left: 8px;
             }
         """)
-        print("DEBUG: Status bar created")
+        print("DEBUG: Status bar with bottom tabs created")
         
         print("DEBUG: Setting minimum window size...")
         # Set minimum window size to ensure all elements are visible
@@ -298,14 +353,16 @@ class ProjectCreatorApp(QMainWindow):
         print("DEBUG: Creating main splitter...")
         # Add main horizontal splitter
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.main_layout.addWidget(self.main_splitter)
         print("DEBUG: Main splitter created")
         
         print("DEBUG: Creating left panel (CardFrame)...")
-        # Create left panel with project settings
+        # Create left panel (simplified - project settings will be moved to Templates tab)
         self.left_panel = CardFrame()
         self.left_layout = self.left_panel.main_layout
         print("DEBUG: Left panel created")
+        
+        # Left panel is now minimal - just a placeholder or can be used for other features
+        # self.left_panel.setVisible(False)  # Hide the left panel for now
         
         # Project settings header
         self.settings_header = QLabel("Project Settings")
@@ -1060,31 +1117,6 @@ class ProjectCreatorApp(QMainWindow):
         self.template_gallery = TemplateGallery(app=self)
         print("DEBUG: TemplateGallery created successfully")
         self.right_layout.addWidget(self.template_gallery)
-
-        # Ingest tab (feature-gated)
-        try:
-            from forwardflow.ingest.config import FF_INGEST_ENABLED
-            if FF_INGEST_ENABLED:
-                from PyQt6.QtWidgets import QTabWidget
-                from forwardflow.ingest.ui.ingest_tab import build_ingest_tab
-                tabs = QTabWidget()
-                # Remove direct gallery widget from right layout and move into tabs
-                try:
-                    self.right_layout.removeWidget(self.template_gallery)
-                except Exception:
-                    pass
-                tabs.addTab(self.template_gallery, "Templates")
-                tabs.addTab(build_ingest_tab(), "Ingest")
-                self.right_layout.addWidget(tabs)
-                self._ff_tabs = tabs
-        except Exception as e:
-            print(f"DEBUG: Ingest tab not added: {e}")
-            # Fallback: ensure template gallery remains visible if tabs failed
-            try:
-                if self.template_gallery.parent() is None:
-                    self.right_layout.addWidget(self.template_gallery)
-            except Exception:
-                pass
         
         # Connect template selection signal to check for custom options
         self.template_gallery.template_selected.connect(self.check_template_for_custom_options)
@@ -1092,9 +1124,60 @@ class ProjectCreatorApp(QMainWindow):
         # Apply theme to template gallery
         apply_dark_theme_to_template_gallery(self.template_gallery)
         
+        # Create content stack to switch between main UI and ingest UI
+        self.content_stack = QStackedWidget()
+        
+        # Main UI container (left panel + splitter + right panel)
+        self.main_ui_container = QWidget()
+        main_ui_layout = QVBoxLayout(self.main_ui_container)
+        main_ui_layout.setContentsMargins(0, 0, 0, 0)
+        main_ui_layout.addWidget(self.main_splitter)
+        
+        # Ingest UI container
+        self.ingest_ui_container = QWidget()
+        ingest_ui_layout = QVBoxLayout(self.ingest_ui_container)
+        ingest_ui_layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Add a placeholder label for the Ingest tab
+        ingest_label = QLabel("Ingest Module")
+        ingest_label.setStyleSheet("""
+            QLabel {
+                color: #CCCCCC;
+                font-size: 18px;
+                font-weight: bold;
+                padding: 20px;
+            }
+        """)
+        ingest_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ingest_ui_layout.addWidget(ingest_label)
+        
+        # Add description
+        ingest_desc = QLabel("Media ingest functionality will be available here.")
+        ingest_desc.setStyleSheet("""
+            QLabel {
+                color: #858585;
+                font-size: 14px;
+                padding: 10px;
+            }
+        """)
+        ingest_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ingest_ui_layout.addWidget(ingest_desc)
+        
+        # Add both containers to the content stack
+        self.content_stack.addWidget(self.main_ui_container)
+        self.content_stack.addWidget(self.ingest_ui_container)
+        
+        # Set initial content to main UI
+        self.content_stack.setCurrentWidget(self.main_ui_container)
+        
+        # Add content stack to main layout
+        self.main_layout.addWidget(self.content_stack)
+        
         # Add panels to splitter
         self.main_splitter.addWidget(self.left_panel)
         self.main_splitter.addWidget(self.right_panel)
+        
+
         
         # Set minimum widths for panels to ensure they're always usable
         self.left_panel.setMinimumWidth(280)
@@ -2846,5 +2929,129 @@ class ProjectCreatorApp(QMainWindow):
         """Create the status bar."""
         # ... existing code ...
 
+    def _toggle_ingest_view(self):
+        """Toggle between Templates and Ingest views"""
+        current_index = self.stacked_widget.currentIndex()
+        if current_index == 0:
+            # Switch to Ingest
+            self.stacked_widget.setCurrentIndex(1)
+            self.toggle_btn.setText("← Back to Templates")
+            self.toggle_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #e74c3c;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 10px 20px;
+                    font-weight: 600;
+                    font-size: 13px;
+                    margin: 8px;
+                }
+                QPushButton:hover {
+                    background-color: #c0392b;
+                }
+                QPushButton:pressed {
+                    background-color: #a93226;
+                }
+            """)
+        else:
+            # Switch to Templates
+            self.stacked_widget.setCurrentIndex(0)
+            self.toggle_btn.setText("Switch to Ingest")
+            self.toggle_btn.setStyleSheet("""
+                QPushButton {
+                    background-color: #3498db;
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    padding: 10px 20px;
+                    font-weight: 600;
+                    font-size: 13px;
+                    margin: 8px;
+                }
+                QPushButton:hover {
+                    background-color: #2980b9;
+                }
+                QPushButton:pressed {
+                    background-color: #21618c;
+                }
+            """)
+
+    def _browse_output_directory(self):
+        """Browse for output directory"""
+        directory = QFileDialog.getExistingDirectory(self, "Select Output Directory")
+        if directory:
+            self.output_dir_input.setText(directory)
+            # Save to config
+            if hasattr(self, 'config'):
+                self.config['last_output_dir'] = directory
+                save_config(self.config)
+
+    def _create_batch_projects(self):
+        """Create batch projects using selected template and project names"""
+        if not hasattr(self, 'batch_text_edit') or not hasattr(self, 'output_dir_input'):
+            QMessageBox.warning(self, "Error", "Project creation controls not available")
+            return
+            
+        # Get project names
+        project_names_text = self.batch_text_edit.toPlainText().strip()
+        if not project_names_text:
+            QMessageBox.warning(self, "Error", "Please enter at least one project name")
+            return
+            
+        # Get output directory
+        output_dir = self.output_dir_input.text().strip()
+        if not output_dir:
+            QMessageBox.warning(self, "Error", "Please select an output directory")
+            return
+            
+        # Parse project names (split by newlines, commas, or semicolons)
+        project_names = []
+        for line in project_names_text.split('\n'):
+            for name in line.split(','):
+                for subname in name.split(';'):
+                    clean_name = subname.strip()
+                    if clean_name:
+                        project_names.append(clean_name)
+        
+        if not project_names:
+            QMessageBox.warning(self, "Error", "No valid project names found")
+            return
+            
+        # Check if a template is selected
+        if hasattr(self.template_gallery, 'get_selected_template'):
+            selected_template = self.template_gallery.get_selected_template()
+            if not selected_template:
+                QMessageBox.warning(self, "Error", "Please select a template first")
+                return
+        else:
+            QMessageBox.warning(self, "Error", "Template selection not available")
+            return
+            
+        # Show confirmation
+        msg = f"Create {len(project_names)} projects using template '{selected_template.get('name', 'Unknown')}'?\n\nProjects:\n" + "\n".join(f"• {name}" for name in project_names[:10])
+        if len(project_names) > 10:
+            msg += f"\n... and {len(project_names) - 10} more"
+        msg += f"\n\nOutput: {output_dir}"
+        
+        reply = QMessageBox.question(self, "Confirm Project Creation", msg, 
+                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            # TODO: Implement actual project creation logic
+            QMessageBox.information(self, "Success", f"Would create {len(project_names)} projects (implementation pending)")
+            self.show_status_message(f"Created {len(project_names)} projects", "success", 5000)
+
+    def _on_tab_changed(self, index):
+        """Handle tab changes - switch between main UI and ingest UI"""
+        print(f"DEBUG: Tab changed to index {index}")
+        if index == 0:  # Templates tab
+            print("DEBUG: Switching to Templates view")
+            self.content_stack.setCurrentWidget(self.main_ui_container)
+        elif index == 1:  # Ingest tab
+            print("DEBUG: Switching to Ingest view")
+            self.content_stack.setCurrentWidget(self.ingest_ui_container)
+        print(f"DEBUG: Current content stack index: {self.content_stack.currentIndex()}")
+
 # Add a class variable to hold the single instance
-ProjectCreatorApp._instance = None
+        ForwardFlowApp._instance = None
