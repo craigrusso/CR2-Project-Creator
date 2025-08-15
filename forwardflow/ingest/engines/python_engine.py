@@ -314,7 +314,9 @@ class PythonCopyEngine(Engine):
         if self._sink:
             try:
                 self._sink.emit(event_type, {"job_id": job_id, **payload})
-            except Exception:
+            except Exception as e:
+                # Log the error for debugging
+                self._logger.error(f"Failed to emit {event_type}: {e}")
                 pass
 
 
