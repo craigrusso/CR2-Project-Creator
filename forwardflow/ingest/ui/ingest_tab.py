@@ -17,6 +17,7 @@ from PyQt6.QtCore import (
     QTimer,
     Qt,
     pyqtSignal,
+    QObject,
 )
 from PyQt6.QtWidgets import (
     QWidget,
@@ -39,6 +40,7 @@ from PyQt6.QtWidgets import (
 from .ingest_vm import IngestViewModel
 from .file_progress_line import FileProgressLine
 from ..engines.python_engine import PythonCopyEngine
+from ..api.models import JobSpec, JobOptions
 
 # Import styling from the main app
 try:
@@ -219,9 +221,23 @@ def build_ingest_tab():
     # Create the main widget and layout
     root = QWidget()
     root.setObjectName("ingest_tab")
-    root.file_widgets = {}  # Track file progress widgets
-    root.active_files = 0   # Track active file count
-    root.current_job = None # Track current job for cleanup
+    # Store references to widgets for event handlers
+    root.file_widgets = {}
+    root.active_files = 0
+    root.job_start_time = None
+    root.current_job = None  # Track current job for cleanup
+    
+    # Timer for updating elapsed time display
+    root.time_update_timer = QTimer()
+    root.time_update_timer.timeout.connect(lambda: update_elapsed_time())
+    root.time_update_timer.start(1000)  # Update every second
+    
+    def update_elapsed_time():
+        """Update elapsed time display every second"""
+        if root.job_start_time and root.current_job:
+            elapsed_seconds = time.time() - root.job_start_time
+            elapsed_str = f"{int(elapsed_seconds//3600):02d}:{int((elapsed_seconds%3600)//60):02d}:{int(elapsed_seconds%60):02d}"
+            root.elapsed_label.setText(f"Elapsed: {elapsed_str}")
     
     # Make vm accessible to the widget
     root.vm = vm
@@ -457,8 +473,12 @@ def build_ingest_tab():
     files_frame = QFrame()
     files_frame.setStyleSheet(f"background-color: {colors['card_bg']}; border-radius: 8px; padding: 20px;")
     files_layout = QVBoxLayout(files_frame)
+    files_layout.setSpacing(12)
+    files_layout.setContentsMargins(20, 20, 20, 20)
     
+    # Files header - properly positioned at top
     files_header = QHBoxLayout()
+    files_header.setContentsMargins(0, 0, 0, 12)  # Add bottom margin for separation
     files_label = QLabel("Individual Files")
     files_label.setStyleSheet(f"font-size: 16px; font-weight: 600; color: {colors['text']};")
     files_count = QLabel("0 files")
@@ -467,6 +487,35 @@ def build_ingest_tab():
     files_header.addStretch()
     files_header.addWidget(files_count)
     files_layout.addLayout(files_header)
+    
+    # Time display section
+    time_frame = QFrame()
+    time_frame.setStyleSheet(f"background-color: {colors['bg']}; border-radius: 6px; padding: 12px; border: 1px solid {colors['border']};")
+    time_layout = QHBoxLayout(time_frame)
+    time_layout.setSpacing(20)
+    
+    # Elapsed time
+    elapsed_label = QLabel("Elapsed: 00:00:00")
+    elapsed_label.setStyleSheet(f"color: {colors['text']}; font-size: 13px; font-weight: 500;")
+    time_layout.addWidget(elapsed_label)
+    
+    # ETA
+    eta_label = QLabel("ETA: --:--:--")
+    eta_label.setStyleSheet(f"color: {colors['text']}; font-size: 13px; font-weight: 500;")
+    time_layout.addWidget(eta_label)
+    
+    # Total time
+    total_time_label = QLabel("Total: --:--:--")
+    total_time_label.setStyleSheet(f"color: {colors['text']}; font-size: 13px; font-weight: 500;")
+    time_layout.addWidget(total_time_label)
+    
+    time_layout.addStretch()
+    files_layout.addWidget(time_frame)
+    
+    # Store references to time labels for event handlers
+    root.elapsed_label = elapsed_label
+    root.eta_label = eta_label
+    root.total_time_label = total_time_label
     
     # Scrollable area for file progress
     scroll_area = QScrollArea()
@@ -490,11 +539,12 @@ def build_ingest_tab():
         }}
     """)
     
-    # Files container
+    # Files container - ensure proper layout
     files_container = QWidget()
     files_container_layout = QVBoxLayout(files_container)
-    files_container_layout.setSpacing(6)
+    files_container_layout.setSpacing(8)  # Consistent spacing between file widgets
     files_container_layout.setContentsMargins(0, 0, 0, 0)
+    files_container_layout.setAlignment(Qt.AlignmentFlag.AlignTop)  # Align widgets to top
     
     scroll_area.setWidget(files_container)
     files_layout.addWidget(scroll_area)
@@ -505,16 +555,17 @@ def build_ingest_tab():
     def apply_preset():
         preset = preset_combo.currentText()
         if "1 GbE" in preset:
-            conc_slider.setValue(1)
-            stream_slider.setValue(2)
+            # Optimized for gigabit: more aggressive settings
+            conc_slider.setValue(4)  # Increased from 1 to 4 for parallel file processing
+            stream_slider.setValue(8)  # Increased from 2 to 8 for multi-stream within files
         elif "10 GbE" in preset:
-            conc_slider.setValue(4)
-            stream_slider.setValue(8)
-        elif "25/40 GbE" in preset:
             conc_slider.setValue(8)
             stream_slider.setValue(16)
+        elif "25/40 GbE" in preset:
+            conc_slider.setValue(16)
+            stream_slider.setValue(32)
         else:  # Auto/Default
-            conc_slider.setValue(2)
+            conc_slider.setValue(4)
             stream_slider.setValue(8)
     
     preset_combo.currentTextChanged.connect(apply_preset)
@@ -523,185 +574,400 @@ def build_ingest_tab():
     # Define event handlers in the outer scope so they can access UI widgets
     def handle_job_started(payload):
         print(f"DEBUG: handle_job_started called with: {payload}")
-        total_bytes = payload.get("total_bytes", 0)
-        total_files = payload.get("total_files", 0)
-        print(f"DEBUG: Job started with {total_bytes} bytes and {total_files} files")
-        print(f"DEBUG: Resetting UI for new job")
-        # Reset progress and file count
-        total_progress.setValue(0)
-        speed_label.setText("0 MB/s Transfer")
-        files_count.setText("0 files")
-        # Clear any existing file widgets
-        for widget in root.file_widgets.values():
-            files_container_layout.removeWidget(widget)
-            widget.deleteLater()
-        root.file_widgets.clear()
-        root.active_files = 0
-        print(f"DEBUG: UI reset completed")
-        print(f"DEBUG: Files container now has {files_container_layout.count()} widgets")
-        
+        try:
+            total_bytes = payload.get("total_bytes", 0)
+            total_files = payload.get("total_files", 0)
+            print(f"DEBUG: Job started with {total_files} files, {total_bytes} total bytes")
+            
+            # Initialize time tracking
+            root.job_start_time = time.time()
+            root.elapsed_label.setText("Elapsed: 00:00:00")
+            root.eta_label.setText("ETA: --:--:--")
+            root.total_time_label.setText("Total: --:--:--")
+            
+            # Reset UI state
+            print(f"DEBUG: Resetting UI state...")
+            total_progress.setValue(0)
+            speed_label.setText("0 MB/s Transfer")
+            files_count.setText("0 files")
+            root.active_files = 0
+            
+            # Clear existing file widgets
+            print(f"DEBUG: Clearing existing file widgets...")
+            for widget in list(root.file_widgets.values()):
+                print(f"DEBUG: Removing widget: {widget}")
+                files_container_layout.removeWidget(widget)
+                widget.deleteLater()
+            root.file_widgets.clear()
+            print(f"DEBUG: UI reset completed")
+            print(f"DEBUG: Files container now has {files_container_layout.count()} widgets")
+            
+        except Exception as e:
+            print(f"DEBUG: Error in handle_job_started: {e}")
+            import traceback
+            traceback.print_exc()
+            
     def handle_job_progress(payload):
         print(f"DEBUG: handle_job_progress called with: {payload}")
-        mbps = payload.get("mbps", 0.0)
-        total = max(1, payload.get("total", 1))
-        percent = int(100 * payload.get("bytes", 0) / total)
-        print(f"DEBUG: Setting total progress to {percent}% and speed to {mbps:.0f} MB/s")
-        print(f"DEBUG: total_progress widget: {total_progress}")
-        print(f"DEBUG: speed_label widget: {speed_label}")
-        print(f"DEBUG: total_progress current value: {total_progress.value()}")
-        print(f"DEBUG: speed_label current text: {speed_label.text()}")
-        print(f"DEBUG: total_progress is visible: {total_progress.isVisible()}")
-        print(f"DEBUG: total_progress size: {total_progress.size()}")
-        total_progress.setValue(percent)
-        speed_label.setText(f"{mbps:.0f} MB/s Transfer")
-        print(f"DEBUG: Progress and speed updated successfully")
-        print(f"DEBUG: total_progress new value: {total_progress.value()}")
-        print(f"DEBUG: speed_label new text: {speed_label.text()}")
-        # Force a repaint
-        total_progress.repaint()
-        speed_label.repaint()
-        
+        try:
+            mbps = payload.get("mbps", 0.0)
+            total = max(1, payload.get("total", 1))
+            bytes_copied = payload.get("bytes", 0)
+            percent = int(100 * bytes_copied / total)
+            print(f"DEBUG: Setting total progress to {percent}% and speed to {mbps:.0f} MB/s")
+            
+            # Update the progress bar
+            total_progress.setValue(percent)
+            print(f"DEBUG: Progress bar value set to {percent}")
+            
+            # Update the speed label
+            speed_label.setText(f"{mbps:.0f} MB/s Transfer")
+            print(f"DEBUG: Speed label text set to {mbps:.0f} MB/s Transfer")
+            
+            # Update time displays
+            if root.job_start_time:
+                elapsed_seconds = time.time() - root.job_start_time
+                elapsed_str = f"{int(elapsed_seconds//3600):02d}:{int((elapsed_seconds%3600)//60):02d}:{int(elapsed_seconds%60):02d}"
+                root.elapsed_label.setText(f"Elapsed: {elapsed_str}")
+                
+                # Calculate ETA
+                if mbps > 0:
+                    remaining_bytes = total - bytes_copied
+                    eta_seconds = remaining_bytes / (mbps * 1024 * 1024)
+                    eta_str = f"{int(eta_seconds//3600):02d}:{int((eta_seconds%3600)//60):02d}:{int(eta_seconds%60):02d}"
+                    root.eta_label.setText(f"ETA: {eta_str}")
+                    
+                    # Calculate total estimated time
+                    total_eta_seconds = elapsed_seconds + eta_seconds
+                    total_eta_str = f"{int(total_eta_seconds//3600):02d}:{int((total_eta_seconds%3600)//60):02d}:{int(total_eta_seconds%60):02d}"
+                    root.total_time_label.setText(f"Total: {total_eta_str}")
+            
+            print(f"DEBUG: Progress and speed updated successfully")
+            print(f"DEBUG: total_progress new value: {total_progress.value()}")
+            print(f"DEBUG: speed_label new text: {speed_label.text()}")
+            
+            # Force a repaint
+            total_progress.repaint()
+            speed_label.repaint()
+            print(f"DEBUG: Progress widgets repainted")
+            
+        except Exception as e:
+            print(f"DEBUG: Error in handle_job_progress: {e}")
+            import traceback
+            traceback.print_exc()
+            
     def handle_file_started(payload):
         print(f"DEBUG: handle_file_started called with: {payload}")
-        file_id = payload.get("file_id")
-        filename = payload.get("filename")
-        total_bytes = payload.get("total_bytes", 0)
-        print(f"DEBUG: Creating FileProgressLine for {filename} with {total_bytes} bytes")
-        widget = FileProgressLine(filename, total_bytes)
-        root.file_widgets[file_id] = widget
-        files_container_layout.addWidget(widget)
-        root.active_files += 1
-        files_count.setText(f"{root.active_files} files")
-        # Store start time in the widget itself for speed calculation
-        widget.start_time = time.time()
-        print(f"DEBUG: File widget added, active files: {root.active_files}")
-        print(f"DEBUG: File widgets now: {list(root.file_widgets.keys())}")
-        print(f"DEBUG: Widget parent: {widget.parent()}")
-        print(f"DEBUG: Widget visible: {widget.isVisible()}")
-        print(f"DEBUG: Widget size: {widget.size()}")
-        print(f"DEBUG: Container layout count: {files_container_layout.count()}")
-        # Force widget to be visible
-        widget.show()
-        widget.raise_()
-        # Force a repaint of the container
-        files_container.update()
-        files_container.repaint()
-        
+        try:
+            file_id = payload.get("file_id")
+            filename = payload.get("filename")
+            total_bytes = payload.get("total_bytes", 0)
+            print(f"DEBUG: Creating FileProgressLine for {filename} with {total_bytes} bytes")
+            
+            # Check if we have the necessary imports
+            print(f"DEBUG: FileProgressLine import check...")
+            # FileProgressLine is already imported at the top
+            print(f"DEBUG: FileProgressLine imported successfully")
+            
+            widget = FileProgressLine(filename, total_bytes)
+            print(f"DEBUG: FileProgressLine widget created: {widget}")
+            
+            # Store widget reference
+            root.file_widgets[file_id] = widget
+            print(f"DEBUG: Widget added to root.file_widgets: {file_id}")
+            
+            # Add widget to layout at the top (newest files appear at top)
+            files_container_layout.insertWidget(0, widget)
+            print(f"DEBUG: Widget added to layout at position 0")
+            
+            root.active_files += 1
+            files_count.setText(f"{root.active_files} files")
+            print(f"DEBUG: Active files count updated: {root.active_files}")
+            
+            # Store start time in the widget itself for speed calculation
+            widget.start_time = time.time()
+            print(f"DEBUG: Start time stored in widget")
+            
+            print(f"DEBUG: File widget added, active files: {root.active_files}")
+            print(f"DEBUG: File widgets now: {list(root.file_widgets.keys())}")
+            print(f"DEBUG: Widget parent: {widget.parent()}")
+            print(f"DEBUG: Widget visible: {widget.isVisible()}")
+            print(f"DEBUG: Widget size: {widget.size()}")
+            print(f"DEBUG: Container layout count: {files_container_layout.count()}")
+            
+            # Force widget to be visible
+            widget.show()
+            widget.raise_()
+            # Force a repaint of the container
+            files_container.update()
+            files_container.repaint()
+            print(f"DEBUG: Widget visibility forced and container repainted")
+            
+        except Exception as e:
+            print(f"DEBUG: Error in handle_file_started: {e}")
+            import traceback
+            traceback.print_exc()
+            
     def handle_file_progress(payload):
         print(f"DEBUG: handle_file_progress called with: {payload}")
-        file_id = payload.get("file_id")
-        copied_bytes = payload.get("bytes", 0)
-        print(f"DEBUG: Updating progress for file {file_id}: {copied_bytes} bytes")
-        if file_id in root.file_widgets:
-            widget = root.file_widgets[file_id]
-            # Calculate speed using the widget's start time
-            if hasattr(widget, 'start_time'):
-                elapsed = time.time() - widget.start_time
-                if elapsed > 0:
-                    speed = (copied_bytes / elapsed) / (1024 * 1024)
-                    print(f"DEBUG: Calculating speed: {speed:.1f} MB/s")
-                    print(f"DEBUG: Calling update_progress on widget {file_id}")
-                    widget.update_progress(copied_bytes, speed)
-                    print(f"DEBUG: update_progress completed for {file_id}")
+        try:
+            file_id = payload.get("file_id")
+            copied_bytes = payload.get("bytes", 0)
+            print(f"DEBUG: Updating progress for file {file_id}: {copied_bytes} bytes")
+            print(f"DEBUG: Available file widgets: {list(root.file_widgets.keys())}")
+            
+            if file_id in root.file_widgets:
+                widget = root.file_widgets[file_id]
+                print(f"DEBUG: Found widget for {file_id}: {widget}")
+                
+                # Calculate speed using the widget's start time
+                if hasattr(widget, 'start_time'):
+                    elapsed = time.time() - widget.start_time
+                    if elapsed > 0:
+                        speed = (copied_bytes / elapsed) / (1024 * 1024)
+                        print(f"DEBUG: Calculating speed: {speed:.1f} MB/s")
+                        print(f"DEBUG: Calling update_progress on widget {file_id}")
+                        widget.update_progress(copied_bytes, speed)
+                        print(f"DEBUG: update_progress completed for {file_id}")
+                    else:
+                        print(f"DEBUG: No elapsed time, updating progress without speed")
+                        print(f"DEBUG: Calling update_progress on widget {file_id}")
+                        widget.update_progress(copied_bytes)
+                        print(f"DEBUG: update_progress completed for {file_id}")
                 else:
-                    print(f"DEBUG: No elapsed time, updating progress without speed")
+                    print(f"DEBUG: No start time, updating progress without speed")
                     print(f"DEBUG: Calling update_progress on widget {file_id}")
                     widget.update_progress(copied_bytes)
                     print(f"DEBUG: update_progress completed for {file_id}")
             else:
-                print(f"DEBUG: No start time, updating progress without speed")
-                print(f"DEBUG: Calling update_progress on widget {file_id}")
-                widget.update_progress(copied_bytes)
-                print(f"DEBUG: update_progress completed for {file_id}")
-        else:
-            print(f"DEBUG: File widget not found for file_id: {file_id}")
-            print(f"DEBUG: Available file widgets: {list(root.file_widgets.keys())}")
+                print(f"DEBUG: File widget not found for file_id: {file_id}")
+                print(f"DEBUG: Available file widgets: {list(root.file_widgets.keys())}")
+                print(f"DEBUG: This suggests handle_file_started was not called or failed")
+                
+        except Exception as e:
+            print(f"DEBUG: Error in handle_file_progress: {e}")
+            import traceback
+            traceback.print_exc()
             
     def handle_file_completed(payload):
         print(f"DEBUG: handle_file_completed called with: {payload}")
-        file_id = payload.get("file_id")
-        if file_id in root.file_widgets:
-            root.file_widgets[file_id].mark_completed()
-            root.active_files -= 1
-            files_count.setText(f"{root.active_files} files")
-            # Remove completed files after a delay
-            # Use QTimer.singleShot to ensure this happens on the main thread
-            QTimer.singleShot(2000, lambda f=file_id: _remove_file_widget(f))
+        try:
+            file_id = payload.get("file_id")
+            filename = payload.get("filename")
+            bytes_copied = payload.get("bytes", 0)
+            total_bytes = payload.get("total", 0)
+            skipped = payload.get("skipped", False)
+            print(f"DEBUG: File completed: {filename} ({bytes_copied}/{total_bytes} bytes, skipped: {skipped})")
+            
+            if file_id in root.file_widgets:
+                root.file_widgets[file_id].mark_completed()
+                root.active_files -= 1
+                files_count.setText(f"{root.active_files} files")
+                print(f"DEBUG: File marked as completed, active files: {root.active_files}")
+                
+                # Remove completed files after a delay
+                # Use QTimer.singleShot to ensure this happens on the main thread
+                QTimer.singleShot(2000, lambda f=file_id: _remove_file_widget(f))
+                print(f"DEBUG: Scheduled removal of file widget {file_id} in 2 seconds")
+            else:
+                print(f"DEBUG: File widget not found for completed file: {file_id}")
+                
+        except Exception as e:
+            print(f"DEBUG: Error in handle_file_completed: {e}")
+            import traceback
+            traceback.print_exc()
             
     def handle_file_failed(payload):
         print(f"DEBUG: handle_file_failed called with: {payload}")
-        file_id = payload.get("file_id")
-        error = payload.get("error", "Unknown error")
-        if file_id in root.file_widgets:
-            root.file_widgets[file_id].mark_failed(error)
-            root.active_files -= 1
-            files_count.setText(f"{root.active_files} files")
+        try:
+            file_id = payload.get("file_id")
+            filename = payload.get("filename")
+            error = payload.get("error", "Unknown error")
+            print(f"DEBUG: File failed: {filename} - Error: {error}")
+            
+            if file_id in root.file_widgets:
+                root.file_widgets[file_id].mark_failed(error)
+                root.active_files -= 1
+                files_count.setText(f"{root.active_files} files")
+                print(f"DEBUG: File marked as failed, active files: {root.active_files}")
+            else:
+                print(f"DEBUG: File widget not found for failed file: {file_id}")
+                
+        except Exception as e:
+            print(f"DEBUG: Error in handle_file_failed: {e}")
+            import traceback
+            traceback.print_exc()
 
     def handle_job_completed(payload):
         print(f"DEBUG: handle_job_completed called with: {payload}")
-        total_progress.setValue(100)
-        start_btn.setEnabled(True)
-        pause_btn.setEnabled(False)
-        cancel_btn.setEnabled(False)
-        
-        # Re-enable controls
-        conc_slider.setEnabled(True)
-        stream_slider.setEnabled(True)
-        verify_combo.setEnabled(True)
-        preset_combo.setEnabled(True)
-        
-        # Clear job reference
-        root.current_job = None
+        try:
+            bytes_copied = payload.get("bytes", 0)
+            total_bytes = payload.get("total", 0)
+            elapsed_s = payload.get("elapsed_s", 0)
+            mbps = payload.get("mbps", 0)
+            print(f"DEBUG: Job completed: {bytes_copied}/{total_bytes} bytes in {elapsed_s:.1f}s at {mbps:.1f} MB/s")
+            
+            # Stop the time update timer
+            if root.time_update_timer.isActive():
+                root.time_update_timer.stop()
+                print("DEBUG: Time update timer stopped")
+            
+            # Update progress to 100%
+            total_progress.setValue(100)
+            print(f"DEBUG: Progress bar set to 100%")
+            
+            # Show final time statistics
+            if root.job_start_time:
+                total_elapsed = time.time() - root.job_start_time
+                total_elapsed_str = f"{int(total_elapsed//3600):02d}:{int((total_elapsed%3600)//60):02d}:{int(total_elapsed%60):02d}"
+                root.elapsed_label.setText(f"Elapsed: {total_elapsed_str}")
+                root.eta_label.setText("ETA: Complete")
+                root.total_time_label.setText(f"Total: {total_elapsed_str}")
+            
+            # Re-enable start button and disable pause/cancel
+            start_btn.setEnabled(True)
+            pause_btn.setEnabled(False)
+            cancel_btn.setEnabled(False)
+            print("DEBUG: Button states updated")
+            
+            # Re-enable controls
+            conc_slider.setEnabled(True)
+            stream_slider.setEnabled(True)
+            verify_combo.setEnabled(True)
+            preset_combo.setEnabled(True)
+            print("DEBUG: Controls re-enabled")
+            
+            # Clear job reference
+            root.current_job = None
+            print("DEBUG: Job reference cleared")
+            
+        except Exception as e:
+            print(f"DEBUG: Error in handle_job_completed: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _remove_file_widget(file_id: str):
         print(f"DEBUG: _remove_file_widget called for {file_id}")
-        if file_id in root.file_widgets:
-            widget = root.file_widgets[file_id]
-            print(f"DEBUG: Removing widget {file_id} from layout")
-            files_container_layout.removeWidget(widget)
-            widget.deleteLater()
-            del root.file_widgets[file_id]
-            print(f"DEBUG: Widget {file_id} removed successfully")
-        else:
-            print(f"DEBUG: Widget {file_id} not found in root.file_widgets")
+        try:
+            if file_id in root.file_widgets:
+                widget = root.file_widgets[file_id]
+                print(f"DEBUG: Removing widget {file_id} from layout")
+                files_container_layout.removeWidget(widget)
+                widget.deleteLater()
+                del root.file_widgets[file_id]
+                print(f"DEBUG: Widget {file_id} removed successfully")
+                print(f"DEBUG: Remaining file widgets: {list(root.file_widgets.keys())}")
+                print(f"DEBUG: Container layout count: {files_container_layout.count()}")
+            else:
+                print(f"DEBUG: Widget {file_id} not found in root.file_widgets")
+                print(f"DEBUG: Available file widgets: {list(root.file_widgets.keys())}")
+                
+        except Exception as e:
+            print(f"DEBUG: Error in _remove_file_widget: {e}")
+            import traceback
+            traceback.print_exc()
 
     # Create the QtSink class in the outer scope so it can reference the event handlers
-    class QtSink:
+    class QtSink(QObject):
+        def __init__(self):
+            super().__init__()
+            print("DEBUG: QtSink.__init__ called")
+            self.pending_events = []
+            self._timer = QTimer()
+            self._timer.timeout.connect(self._process_pending_events)
+            self._timer.start(50)  # Process events every 50ms
+            print(f"DEBUG: QtSink timer started with interval 50ms")
+        
         def emit(self, event_type: str, payload: dict) -> None:
             print(f"DEBUG: QtSink received event: {event_type} with payload: {payload}")
-            # Use QTimer.singleShot to ensure UI updates happen on the main thread
-            # This is required because the engine runs in a background thread
-            if event_type == "job.started":
-                print(f"DEBUG: Scheduling handle_job_started on main thread")
-                QTimer.singleShot(0, lambda: handle_job_started(payload))
-            elif event_type == "job.progress":
-                print(f"DEBUG: Scheduling handle_job_progress on main thread")
-                QTimer.singleShot(0, lambda: handle_job_progress(payload))
-            elif event_type == "file.started":
-                print(f"DEBUG: Scheduling handle_file_started on main thread")
-                QTimer.singleShot(0, lambda: handle_file_started(payload))
-            elif event_type == "file.progress":
-                print(f"DEBUG: Scheduling handle_file_progress on main thread")
-                QTimer.singleShot(0, lambda: handle_file_progress(payload))
-            elif event_type == "file.completed":
-                print(f"DEBUG: Scheduling handle_file_completed on main thread")
-                QTimer.singleShot(0, lambda: handle_file_completed(payload))
-            elif event_type == "file.failed":
-                print(f"DEBUG: Scheduling handle_file_failed on main thread")
-                QTimer.singleShot(0, lambda: handle_file_failed(payload))
-            elif event_type == "job.completed":
-                print(f"DEBUG: Scheduling handle_job_completed on main thread")
-                QTimer.singleShot(0, lambda: handle_job_completed(payload))
-            else:
-                print(f"DEBUG: Unknown event type: {event_type}")
+            # Add event to pending queue instead of using QTimer.singleShot
+            # This avoids issues with cross-thread QTimer calls
+            self.pending_events.append((event_type, payload))
+            print(f"DEBUG: Event queued, pending events: {len(self.pending_events)}")
+        
+        def _process_pending_events(self):
+            """Process pending events on the main thread"""
+            if not self.pending_events:
+                return
+            
+            # Process all pending events
+            events_to_process = self.pending_events.copy()
+            self.pending_events.clear()
+            
+            print(f"DEBUG: Processing {len(events_to_process)} pending events")
+            
+            for event_type, payload in events_to_process:
+                try:
+                    print(f"DEBUG: Processing event: {event_type}")
+                    if event_type == "job.started":
+                        print(f"DEBUG: Calling handle_job_started")
+                        handle_job_started(payload)
+                    elif event_type == "job.progress":
+                        print(f"DEBUG: Calling handle_job_progress")
+                        handle_job_progress(payload)
+                    elif event_type == "file.started":
+                        print(f"DEBUG: Calling handle_file_started")
+                        handle_file_started(payload)
+                    elif event_type == "file.progress":
+                        print(f"DEBUG: Calling handle_file_progress")
+                        handle_file_progress(payload)
+                    elif event_type == "file.completed":
+                        print(f"DEBUG: Calling handle_file_completed")
+                        handle_file_completed(payload)
+                    elif event_type == "file.failed":
+                        print(f"DEBUG: Calling handle_file_failed")
+                        handle_file_failed(payload)
+                    elif event_type == "job.completed":
+                        print(f"DEBUG: Calling handle_job_completed")
+                        handle_job_completed(payload)
+                    else:
+                        print(f"DEBUG: Unknown event type: {event_type}")
+                except Exception as e:
+                    print(f"DEBUG: Error processing event {event_type}: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            print(f"DEBUG: Finished processing events")
+        
+        def cleanup(self):
+            """Clean up resources when the widget is destroyed"""
+            print("DEBUG: QtSink cleanup called")
+            try:
+                if hasattr(self, '_timer') and self._timer and self._timer.isActive():
+                    self._timer.stop()
+                    print("DEBUG: QtSink timer stopped")
+            except Exception as e:
+                print(f"DEBUG: Error during cleanup: {e}")
+                # Timer may have been deleted already, which is fine
+        
+        def closeEvent(self, event):
+            """Handle close event to ensure cleanup"""
+            print("DEBUG: QtSink closeEvent called")
+            self.cleanup()
+            super().closeEvent(event)
     
     # Create the sink instance and attach it to the root widget
+    print("DEBUG: Creating QtSink instance...")
     root.qt_sink = QtSink()
+    root.qt_sink.setParent(root)  # Ensure proper parenting for event loop integration
+    print(f"DEBUG: QtSink instance created and attached: {root.qt_sink}")
+    print(f"DEBUG: QtSink timer active: {root.qt_sink._timer.isActive()}")
+    print(f"DEBUG: QtSink parent: {root.qt_sink.parent()}")
+    
+    # Connect the widget's destroyed signal to the QtSink cleanup
+    root.destroyed.connect(root.qt_sink.cleanup)
+    print("DEBUG: Connected widget destroyed signal to QtSink cleanup")
     
     # Wire up button handlers
     def on_start():
         if not src_edit.text().strip() or not dst_edit.text().strip():
             print("DEBUG: Source or destination path is empty")
+            return
+        
+        # Check if we're resuming a paused job
+        if root.current_job and hasattr(root.current_job, 'resume'):
+            print("DEBUG: Resuming paused job")
+            on_resume()
             return
         
         # Create a unique job ID
@@ -730,10 +996,13 @@ def build_ingest_tab():
             
             try:
                 # Import the necessary classes for creating a proper job
-                from ..api.models import JobSpec, JobOptions
+                print(f"DEBUG: Importing JobSpec and JobOptions...")
+                # JobSpec and JobOptions are already imported at the top
                 from pathlib import Path
+                print(f"DEBUG: JobSpec and JobOptions imported successfully")
                 
                 # Create a JobSpec with the source and destination
+                print(f"DEBUG: Creating JobSpec...")
                 job = JobSpec(
                     job_id=job_id,
                     source_root=source_path,
@@ -749,16 +1018,27 @@ def build_ingest_tab():
                 
                 # Use the locally created QtSink
                 sink = root.qt_sink
+                print(f"DEBUG: Using QtSink: {sink}")
                 
                 # Create and start the engine
+                print(f"DEBUG: Importing PythonCopyEngine...")
+                # PythonCopyEngine is already imported at the top
+                print(f"DEBUG: PythonCopyEngine imported successfully")
+                
+                print(f"DEBUG: Creating PythonCopyEngine instance...")
                 engine = PythonCopyEngine(sink=sink)
-                root.current_job = engine  # Track for cleanup
+                print(f"DEBUG: PythonCopyEngine created: {engine}")
+                
+                # Store the engine reference (not the thread)
+                root.current_job = engine
+                print(f"DEBUG: Engine stored in root.current_job")
                 
                 # Freeze controls during copy
                 conc_slider.setEnabled(False)
                 stream_slider.setEnabled(False)
                 verify_combo.setEnabled(False)
                 preset_combo.setEnabled(False)
+                print(f"DEBUG: Controls frozen")
                 
                 print(f"DEBUG: Starting engine with job: {job}")
                 engine.start(job)
@@ -776,59 +1056,124 @@ def build_ingest_tab():
                 start_btn.setEnabled(True)
                 pause_btn.setEnabled(False)
                 cancel_btn.setEnabled(False)
+                print(f"DEBUG: Controls re-enabled after error")
 
         # Start in background thread
         job_thread = threading.Thread(target=run, daemon=True)
         job_thread.start()
-        root.current_job = job_thread
+        # Don't store the thread in current_job - store the engine instead
     
     def on_pause():
         print("DEBUG: Pause button clicked")
-        if root.current_job and hasattr(root.current_job, 'pause'):
-            print("DEBUG: Pausing engine")
-            root.current_job.pause(root.current_job.job_id if hasattr(root.current_job, 'job_id') else 'current')
-        pause_btn.setEnabled(False)
-        start_btn.setEnabled(True)
+        try:
+            if root.current_job and hasattr(root.current_job, 'pause'):
+                print("DEBUG: Pausing engine")
+                # Get the job ID from the engine
+                if hasattr(root.current_job, 'get_current_job_id'):
+                    job_id = root.current_job.get_current_job_id() or 'current'
+                else:
+                    job_id = 'current'
+                
+                root.current_job.pause(job_id)
+                print("DEBUG: Pause command sent to engine")
+                
+                # Update button states
+                pause_btn.setEnabled(False)
+                start_btn.setEnabled(True)
+                print("DEBUG: Button states updated for pause")
+            else:
+                print("DEBUG: No current job or job doesn't have pause method")
+                print(f"DEBUG: root.current_job: {root.current_job}")
+                if root.current_job:
+                    print(f"DEBUG: Job type: {type(root.current_job)}")
+                    print(f"DEBUG: Job attributes: {dir(root.current_job)}")
+        except Exception as e:
+            print(f"DEBUG: Error in on_pause: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def on_resume():
+        """Resume a paused transfer"""
+        print("DEBUG: Resume button clicked")
+        try:
+            if root.current_job and hasattr(root.current_job, 'resume'):
+                print("DEBUG: Resuming engine")
+                # Get the job ID from the engine
+                if hasattr(root.current_job, 'get_current_job_id'):
+                    job_id = root.current_job.get_current_job_id() or 'current'
+                else:
+                    job_id = 'current'
+                
+                root.current_job.resume(job_id)
+                print("DEBUG: Resume command sent to engine")
+                
+                # Update button states
+                start_btn.setEnabled(False)
+                pause_btn.setEnabled(True)
+                print("DEBUG: Button states updated for resume")
+            else:
+                print("DEBUG: No current job or job doesn't have resume method")
+        except Exception as e:
+            print(f"DEBUG: Error in on_resume: {e}")
+            import traceback
+            traceback.print_exc()
 
     def on_cancel():
         print("DEBUG: Cancel button clicked")
-        if root.current_job and hasattr(root.current_job, 'cancel'):
-            print("DEBUG: Canceling engine")
-            root.current_job.cancel(root.current_job.job_id if hasattr(root.current_job, 'job_id') else 'current')
+        try:
+            if root.current_job and hasattr(root.current_job, 'cancel'):
+                print("DEBUG: Canceling engine")
+                # Get the job ID from the engine
+                if hasattr(root.current_job, 'get_current_job_id'):
+                    job_id = root.current_job.get_current_job_id() or 'current'
+                else:
+                    job_id = 'current'
+                
+                root.current_job.cancel(job_id)
+                print("DEBUG: Cancel command sent to engine")
+                
+                # Update button states
+                start_btn.setEnabled(True)
+                pause_btn.setEnabled(False)
+                cancel_btn.setEnabled(False)
+                print("DEBUG: Button states updated for cancel")
+            else:
+                print("DEBUG: No current job or job doesn't have cancel method")
+                print(f"DEBUG: root.current_job: {root.current_job}")
+                if root.current_job:
+                    print(f"DEBUG: Job type: {type(root.current_job)}")
+                    print(f"DEBUG: Job attributes: {dir(root.current_job)}")
+        except Exception as e:
+            print(f"DEBUG: Error in on_cancel: {e}")
+            import traceback
+            traceback.print_exc()
         
         start_btn.setEnabled(True)
         pause_btn.setEnabled(False)
         cancel_btn.setEnabled(False)
-        
-        # Re-enable controls
-        conc_slider.setEnabled(True)
-        stream_slider.setEnabled(True)
-        verify_combo.setEnabled(True)
-        preset_combo.setEnabled(True)
-
-    # Make functions attributes of the widget
-    root.on_start = on_start
-    root.on_pause = on_pause
-    root.on_cancel = on_cancel
-
-    # Connect buttons
+        print("DEBUG: Button states updated")
+    
+    # Wire up browse buttons
+    def _browse_for_path(line_edit: QLineEdit):
+        path = QFileDialog.getExistingDirectory(
+            root,
+            "Select Source Folder",
+            line_edit.text(),
+            QFileDialog.Option.ShowDirsOnly | QFileDialog.Option.DontResolveSymlinks
+        )
+        if path:
+            line_edit.setText(path)
+            print(f"DEBUG: Source path selected: {path}")
+    
+    # Connect button handlers
     start_btn.clicked.connect(on_start)
     pause_btn.clicked.connect(on_pause)
     cancel_btn.clicked.connect(on_cancel)
+    print("DEBUG: Button handlers connected")
     
-    # Browse button handlers
-    def browse_source():
-        path = QFileDialog.getExistingDirectory(root, "Select Source Directory")
-        if path:
-            src_edit.setText(path)
-    
-    def browse_dest():
-        path = QFileDialog.getExistingDirectory(root, "Select Destination Directory")
-        if path:
-            dst_edit.setText(path)
-    
-    src_btn.clicked.connect(browse_source)
-    dst_btn.clicked.connect(browse_dest)
+    src_btn.clicked.connect(lambda: _browse_for_path(src_edit))
+    dst_btn.clicked.connect(lambda: _browse_for_path(dst_edit))
+    print("DEBUG: Browse button handlers connected")
     
     return root
 

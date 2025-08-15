@@ -99,6 +99,14 @@ class PythonCopyEngine(Engine):
     def pause(self, job_id: str) -> None:  # pragma: no cover - simple flag
         self._pauses.setdefault(job_id, threading.Event()).set()
 
+    def resume(self, job_id: str) -> None:  # pragma: no cover - clear pause flag
+        if job_id in self._pauses:
+            self._pauses[job_id].clear()
+
+    def get_current_job_id(self) -> Optional[str]:
+        """Get the current job ID if any job is running"""
+        return next(iter(self._job_stats.keys()), None) if self._job_stats else None
+
     def cancel(self, job_id: str) -> None:  # pragma: no cover - simple flag
         self._cancels.setdefault(job_id, threading.Event()).set()
 
