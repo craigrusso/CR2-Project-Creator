@@ -72,6 +72,32 @@ class LayoutManager:
         self.main_window.batch_create_btn.setMinimumHeight(40)
         left_layout.addWidget(self.main_window.batch_create_btn)
         
+        # Add navigation button to switch between Templates and Transfer
+        left_layout.addSpacing(20)  # Add some spacing
+        
+        self.main_window.toggle_btn = QPushButton("Switch to Transfer")
+        self.main_window.toggle_btn.clicked.connect(self.main_window._toggle_transfer_view)
+        self.main_window.toggle_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-weight: 600;
+                font-size: 13px;
+                margin: 8px;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+            QPushButton:pressed {
+                background-color: #21618c;
+            }
+        """)
+        self.main_window.toggle_btn.setMinimumHeight(40)
+        left_layout.addWidget(self.main_window.toggle_btn)
+        
         # Store reference for access from main window
         self.main_window.left_layout = left_layout
         

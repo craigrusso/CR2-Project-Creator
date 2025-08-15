@@ -313,9 +313,9 @@ class ForwardFlowApp(QMainWindow):
         self.templates_tab = QWidget()
         self.bottom_tab_widget.addTab(self.templates_tab, "Templates")
         
-        # Add Ingest tab
-        self.ingest_tab = QWidget()
-        self.bottom_tab_widget.addTab(self.ingest_tab, "Ingest")
+        # Add Transfer tab
+        self.transfer_tab = QWidget()
+        self.bottom_tab_widget.addTab(self.transfer_tab, "Transfer")
         
         # Connect tab changes to switch content
         self.bottom_tab_widget.currentChanged.connect(self._on_tab_changed)
@@ -1133,39 +1133,88 @@ class ForwardFlowApp(QMainWindow):
         main_ui_layout.setContentsMargins(0, 0, 0, 0)
         main_ui_layout.addWidget(self.main_splitter)
         
-        # Ingest UI container
-        self.ingest_ui_container = QWidget()
-        ingest_ui_layout = QVBoxLayout(self.ingest_ui_container)
-        ingest_ui_layout.setContentsMargins(20, 20, 20, 20)
+        # Transfer UI container
+        self.transfer_ui_container = QWidget()
+        transfer_ui_layout = QVBoxLayout(self.transfer_ui_container)
+        transfer_ui_layout.setContentsMargins(20, 20, 20, 20)
         
-        # Add a placeholder label for the Ingest tab
-        ingest_label = QLabel("Ingest Module")
-        ingest_label.setStyleSheet("""
-            QLabel {
-                color: #CCCCCC;
-                font-size: 18px;
-                font-weight: bold;
-                padding: 20px;
-            }
-        """)
-        ingest_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ingest_ui_layout.addWidget(ingest_label)
+        # Check if ingest module is enabled before trying to import
+        # Debug: Try to import ingest module step by step
+        print("DEBUG: Starting ingest module integration...")
         
-        # Add description
-        ingest_desc = QLabel("Media ingest functionality will be available here.")
-        ingest_desc.setStyleSheet("""
-            QLabel {
-                color: #858585;
-                font-size: 14px;
-                padding: 10px;
-            }
-        """)
-        ingest_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        ingest_ui_layout.addWidget(ingest_desc)
+        try:
+            print("DEBUG: Importing config...")
+            from forwardflow.ingest.config import FF_INGEST_ENABLED
+            print(f"DEBUG: Feature flag: {FF_INGEST_ENABLED}")
+            
+            if FF_INGEST_ENABLED:
+                print("DEBUG: Importing ingest tab...")
+                from forwardflow.ingest.ui.ingest_tab import build_ingest_tab
+                print("DEBUG: Building ingest tab...")
+                ingest_tab = build_ingest_tab()
+                print("DEBUG: Ingest tab built successfully")
+                
+                # Add the ingest tab widget directly to our container
+                print("DEBUG: Adding ingest tab widget to container...")
+                transfer_ui_layout.addWidget(ingest_tab)
+                print("DEBUG: Widget added successfully")
+            else:
+                print("DEBUG: Feature flag disabled, showing placeholder")
+                # Show placeholder
+                transfer_label = QLabel("Transfer Module")
+                transfer_label.setStyleSheet("""
+                    QLabel {
+                        color: #CCCCCC;
+                        font-size: 18px;
+                        font-weight: bold;
+                        padding: 20px;
+                    }
+                """)
+                transfer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                transfer_ui_layout.addWidget(transfer_label)
+                
+                transfer_desc = QLabel("Media transfer functionality will be available here.")
+                transfer_desc.setStyleSheet("""
+                    QLabel {
+                        color: #858585;
+                        font-size: 14px;
+                        padding: 10px;
+                    }
+                """)
+                transfer_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                transfer_ui_layout.addWidget(transfer_desc)
+                
+        except Exception as e:
+            print(f"ERROR: Ingest module integration failed: {e}")
+            import traceback
+            traceback.print_exc()
+            # Fallback to placeholder
+            transfer_label = QLabel("Transfer Module (Error)")
+            transfer_label.setStyleSheet("""
+                QLabel {
+                    color: #e74c3c;
+                    font-size: 18px;
+                    font-weight: bold;
+                    padding: 20px;
+                }
+            """)
+            transfer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            transfer_ui_layout.addWidget(transfer_label)
+            
+            transfer_desc = QLabel(f"Error loading transfer module: {e}")
+            transfer_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            transfer_desc.setStyleSheet("""
+                QLabel {
+                    color: #e74c3c;
+                    font-size: 14px;
+                    padding: 10px;
+                }
+            """)
+            transfer_ui_layout.addWidget(transfer_desc)
         
         # Add both containers to the content stack
         self.content_stack.addWidget(self.main_ui_container)
-        self.content_stack.addWidget(self.ingest_ui_container)
+        self.content_stack.addWidget(self.transfer_ui_container)
         
         # Set initial content to main UI
         self.content_stack.setCurrentWidget(self.main_ui_container)
@@ -2929,12 +2978,12 @@ class ForwardFlowApp(QMainWindow):
         """Create the status bar."""
         # ... existing code ...
 
-    def _toggle_ingest_view(self):
-        """Toggle between Templates and Ingest views"""
-        current_index = self.stacked_widget.currentIndex()
+    def _toggle_transfer_view(self):
+        """Toggle between Templates and Transfer views"""
+        current_index = self.content_stack.currentIndex()
         if current_index == 0:
-            # Switch to Ingest
-            self.stacked_widget.setCurrentIndex(1)
+            # Switch to Transfer
+            self.content_stack.setCurrentIndex(1)
             self.toggle_btn.setText("← Back to Templates")
             self.toggle_btn.setStyleSheet("""
                 QPushButton {
@@ -2956,8 +3005,8 @@ class ForwardFlowApp(QMainWindow):
             """)
         else:
             # Switch to Templates
-            self.stacked_widget.setCurrentIndex(0)
-            self.toggle_btn.setText("Switch to Ingest")
+            self.content_stack.setCurrentIndex(0)
+            self.toggle_btn.setText("Switch to Transfer")
             self.toggle_btn.setStyleSheet("""
                 QPushButton {
                     background-color: #3498db;
@@ -3043,14 +3092,14 @@ class ForwardFlowApp(QMainWindow):
             self.show_status_message(f"Created {len(project_names)} projects", "success", 5000)
 
     def _on_tab_changed(self, index):
-        """Handle tab changes - switch between main UI and ingest UI"""
+        """Handle tab changes - switch between main UI and transfer UI"""
         print(f"DEBUG: Tab changed to index {index}")
         if index == 0:  # Templates tab
             print("DEBUG: Switching to Templates view")
             self.content_stack.setCurrentWidget(self.main_ui_container)
-        elif index == 1:  # Ingest tab
-            print("DEBUG: Switching to Ingest view")
-            self.content_stack.setCurrentWidget(self.ingest_ui_container)
+        elif index == 1:  # Transfer tab
+            print("DEBUG: Switching to Transfer view")
+            self.content_stack.setCurrentWidget(self.transfer_ui_container)
         print(f"DEBUG: Current content stack index: {self.content_stack.currentIndex()}")
 
 # Add a class variable to hold the single instance

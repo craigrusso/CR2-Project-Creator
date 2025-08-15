@@ -31,69 +31,144 @@ from PyQt6.QtWidgets import (
 from .ingest_vm import IngestViewModel
 from ..engines.python_engine import PythonCopyEngine
 
-# Define colors locally to avoid circular imports
-colors = {
-    'border': '#2C4F76',
-    'card_bg': '#383838', 
-    'text': '#CCCCCC',
-    'secondary_text': '#858585',  # Add missing secondary_text color
-    'accent': '#3498db',
-    'bg': '#2A2A2A',
-    'success': '#27ae60',
-    'warning': '#f39c12',
-    'error': '#e74c3c',
-    'info': '#3498db'
-}
-
-BUTTON_STYLE = f"""
-    QPushButton {{
-        background-color: {colors['card_bg']};
-        color: {colors['text']};
-        border: 1px solid {colors['border']};
-        padding: 8px 16px;
-        border-radius: 4px;
-        font-weight: 600;
-    }}
-    QPushButton:hover {{
-        background-color: #454545;
-        border: 1px solid {colors['accent']};
-    }}
-"""
-
-ACCENT_BUTTON_STYLE = f"""
-    QPushButton {{
-        background-color: {colors['accent']};
-        color: white;
-        border: none;
-        padding: 10px 20px;
-        border-radius: 6px;
-        font-weight: 600;
-        font-size: 14px;
-    }}
-    QPushButton:hover {{
-        background-color: #2980b9;
-    }}
-"""
-
-COMBOBOX_STYLE = f"""
-    QComboBox {{
-        background-color: {colors['card_bg']};
-        color: {colors['text']};
-        border: 1px solid {colors['border']};
-        padding: 6px 12px;
-        border-radius: 4px;
-    }}
-"""
-
-LINEEDIT_STYLE = f"""
-    QLineEdit {{
-        background-color: {colors['card_bg']};
-        color: {colors['text']};
-        border: 1px solid {colors['border']};
-        padding: 6px 12px;
-        border-radius: 4px;
-    }}
-"""
+# Import app's standard styles to ensure consistency
+try:
+    from app.ui.color_scheme_pyqt import colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, COMBOBOX_STYLE, LINEEDIT_STYLE
+    from app.ui.custom_delegates import apply_hover_delegate
+    print("DEBUG: Successfully imported centralized styles and hover delegate from app.ui.color_scheme_pyqt")
+except ImportError as e:
+    print(f"DEBUG: Failed to import centralized styles: {e}")
+    print("DEBUG: Falling back to local style definitions")
+    # Note: Hover delegate won't be available in fallback mode
+    # Fallback to local definitions if import fails
+    colors = {
+        'border': '#3C3C3C',
+        'card_bg': '#252526',
+        'text': '#CCCCCC',
+        'secondary_text': '#858585',
+        'accent': '#2C4F76',
+        'accent_hover': '#36648B',
+        'bg': '#1E1E1E',
+        'hover_bg': '#454545',
+        'success': '#4CAF50',
+        'warning': '#F1AE3C',
+        'error': '#E8574C',
+        'info': '#4E98C3',
+        'highlight_border': '#4682B4',
+        'highlight_bg': '#2C4F76',
+        'highlight_bg_transparent': '#2C4F7633',
+        'highlight_text': '#FFFFFF'
+    }
+    
+    BUTTON_STYLE = f"""
+        QPushButton {{
+            background-color: {colors['card_bg']};
+            color: {colors['text']};
+            border: 1px solid {colors['border']};
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-weight: 600;
+        }}
+        QPushButton:hover {{
+            background-color: {colors['hover_bg']};
+            border: 1px solid {colors['accent']};
+        }}
+    """
+    
+    ACCENT_BUTTON_STYLE = f"""
+        QPushButton {{
+            background-color: {colors['accent']};
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 14px;
+        }}
+        QPushButton:hover {{
+            background-color: {colors['accent_hover']};
+        }}
+    """
+    
+    COMBOBOX_STYLE = f"""
+        QComboBox {{
+            background-color: {colors['card_bg']};
+            color: {colors['text']};
+            border: 1px solid {colors['border']};
+            padding: 5px 25px 5px 5px;
+            border-radius: 3px;
+            min-height: 22px;
+        }}
+        QComboBox:hover {{
+            border: 1px solid {colors['highlight_border']};
+            background-color: {colors['hover_bg']};
+        }}
+        QComboBox:focus {{
+            border: 1px solid {colors['highlight_border']};
+            background-color: {colors['highlight_bg_transparent']};
+        }}
+        QComboBox::drop-down {{
+            subcontrol-origin: padding;
+            subcontrol-position: top right;
+            width: 20px;
+            border: none;
+            border-left: 1px solid {colors['border']};
+            border-top-right-radius: 3px;
+            border-bottom-right-radius: 3px;
+        }}
+        QComboBox::drop-down:hover {{
+            background-color: {colors['accent']};
+        }}
+        QComboBox::down-arrow {{
+            image: none;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 5px solid {colors['text']};
+            margin-right: 5px;
+        }}
+        QComboBox QAbstractItemView {{
+            border: 1px solid {colors['highlight_border']};
+            background-color: {colors['card_bg']};
+            color: {colors['text']};
+            outline: none;
+            selection-background-color: {colors['highlight_bg']};
+            selection-color: {colors['highlight_text']}
+        }}
+        QComboBox QAbstractItemView::item {{
+            border-left: 3px solid transparent;
+            padding: 6px;
+            min-height: 24px;
+        }}
+        QComboBox QAbstractItemView::item:hover {{
+            background-color: {colors['accent']};
+            color: white;
+            font-weight: bold;
+            border-left: 5px solid white;
+        }}
+        QComboBox QAbstractItemView::item:selected {{
+            background-color: {colors['highlight_bg']};
+            color: {colors['highlight_text']};
+            border-left: 3px solid {colors['accent']};
+        }}
+    """
+    
+    LINEEDIT_STYLE = f"""
+        QLineEdit {{
+            background-color: {colors['card_bg']};
+            color: {colors['text']};
+            border: 1px solid {colors['border']};
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+        }}
+        QLineEdit:hover {{
+            border: 1px solid {colors['accent']};
+        }}
+        QLineEdit:focus {{
+            border: 1px solid {colors['accent']};
+            background-color: {colors['bg']};
+        }}
+    """
 
 
 class CleanProgressBar(QProgressBar):
@@ -225,24 +300,36 @@ def _pick_dir(edit: QLineEdit):
 
 
 def build_ingest_tab() -> QWidget:
+    print("DEBUG: Creating IngestViewModel...")
     vm = IngestViewModel()
+    print("DEBUG: IngestViewModel created successfully")
+    
+    print("DEBUG: Creating root widget...")
     root = QWidget()
+    print("DEBUG: Root widget created successfully")
     
     # Make vm accessible to the widget
     root.vm = vm
+    print("DEBUG: VM attached to root widget")
     
+    print("DEBUG: Creating layout...")
     layout = QVBoxLayout(root)
     layout.setContentsMargins(20, 20, 20, 20)
     layout.setSpacing(16)
+    print("DEBUG: Layout created successfully")
 
+    print("DEBUG: Creating header...")
     # Header
-    header_label = QLabel("Turbo Ingest")
+    header_label = QLabel("Turbo Transfer")
     header_label.setStyleSheet(f"font-size: 20px; font-weight: 700; color: {colors['text']}; margin-bottom: 8px;")
     layout.addWidget(header_label)
+    print("DEBUG: Header created and added successfully")
 
+    print("DEBUG: Creating source and destination paths...")
     # Source and Destination (compact)
     paths_layout = QHBoxLayout()
     
+    print("DEBUG: Creating source section...")
     # Source
     src_layout = QVBoxLayout()
     src_label = QLabel("Source:")
@@ -253,15 +340,19 @@ def build_ingest_tab() -> QWidget:
     src_btn = QPushButton("Browse…")
     src_btn.setStyleSheet(BUTTON_STYLE)
     src_btn.clicked.connect(lambda: _pick_dir(src_edit))
+    print("DEBUG: Source section created successfully")
     
     src_row = QHBoxLayout()
+    print("DEBUG: Adding source widgets to layout...")
     src_row.addWidget(src_edit, 1)
     src_row.addWidget(src_btn)
     
     src_layout.addWidget(src_label)
     src_layout.addLayout(src_row)
     paths_layout.addLayout(src_layout)
+    print("DEBUG: Source layout added to paths layout")
     
+    print("DEBUG: Creating destination section...")
     # Destination
     dst_layout = QVBoxLayout()
     dst_label = QLabel("Destination:")
@@ -272,20 +363,27 @@ def build_ingest_tab() -> QWidget:
     dst_btn = QPushButton("Browse…")
     dst_btn.setStyleSheet(BUTTON_STYLE)
     dst_btn.clicked.connect(lambda: _pick_dir(dst_edit))
+    print("DEBUG: Destination section created successfully")
     
     dst_row = QHBoxLayout()
     dst_row.addWidget(dst_edit, 1)
     dst_row.addWidget(dst_btn)
     
+    print("DEBUG: Adding destination widgets to layout...")
     dst_layout.addWidget(dst_label)
     dst_layout.addLayout(dst_row)
     paths_layout.addLayout(dst_layout)
+    print("DEBUG: Destination layout added to paths layout")
     
+    print("DEBUG: Adding paths layout to main layout...")
     layout.addLayout(paths_layout)
+    print("DEBUG: Paths layout added to main layout successfully")
 
+    print("DEBUG: Creating settings section...")
     # Settings (compact)
     settings_layout = QHBoxLayout()
     
+    print("DEBUG: Creating verification section...")
     # Verification
     verify_layout = QVBoxLayout()
     verify_label = QLabel("Verification:")
@@ -298,10 +396,20 @@ def build_ingest_tab() -> QWidget:
     ])
     verify_combo.setStyleSheet(COMBOBOX_STYLE)
     verify_combo.setCurrentIndex(1)
+    
+    # Apply hover delegate for proper hover effects
+    try:
+        apply_hover_delegate(verify_combo)
+        print("DEBUG: Applied hover delegate to verify_combo")
+    except Exception as e:
+        print(f"DEBUG: Failed to apply hover delegate to verify_combo: {e}")
+    
     verify_layout.addWidget(verify_label)
     verify_layout.addWidget(verify_combo)
     settings_layout.addLayout(verify_layout)
+    print("DEBUG: Verification section created successfully")
     
+    print("DEBUG: Creating link preset section...")
     # Link preset
     preset_layout = QVBoxLayout()
     preset_label = QLabel("Link preset:")
@@ -310,10 +418,20 @@ def build_ingest_tab() -> QWidget:
     preset_combo.addItems(["Auto/Default", "1 GbE", "10 GbE", "25/40 GbE or IB"])
     preset_combo.setStyleSheet(COMBOBOX_STYLE)
     preset_combo.setCurrentIndex(1)
+    
+    # Apply hover delegate for proper hover effects
+    try:
+        apply_hover_delegate(preset_combo)
+        print("DEBUG: Applied hover delegate to preset_combo")
+    except Exception as e:
+        print(f"DEBUG: Failed to apply hover delegate to preset_combo: {e}")
+    
     preset_layout.addWidget(preset_label)
     preset_layout.addWidget(preset_combo)
     settings_layout.addLayout(preset_layout)
+    print("DEBUG: Link preset section created successfully")
     
+    print("DEBUG: Creating concurrency sliders section...")
     # Concurrency sliders
     conc_layout = QVBoxLayout()
     conc_label = QLabel("Per-file concurrency:")
@@ -347,7 +465,9 @@ def build_ingest_tab() -> QWidget:
     conc_layout.addWidget(conc_label)
     conc_layout.addLayout(conc_row)
     settings_layout.addLayout(conc_layout)
+    print("DEBUG: Concurrency sliders section created successfully")
     
+    print("DEBUG: Creating stream concurrency section...")
     # Stream concurrency
     stream_layout = QVBoxLayout()
     stream_label = QLabel("Stream concurrency:")
@@ -381,54 +501,80 @@ def build_ingest_tab() -> QWidget:
     stream_layout.addWidget(stream_label)
     stream_layout.addLayout(stream_row)
     settings_layout.addLayout(stream_layout)
+    print("DEBUG: Stream concurrency section created successfully")
     
+    print("DEBUG: Adding settings layout to main layout...")
     layout.addLayout(settings_layout)
+    print("DEBUG: Settings layout added to main layout successfully")
 
+    print("DEBUG: Creating control buttons section...")
     # Control buttons
     buttons_layout = QHBoxLayout()
     
+    print("DEBUG: Creating start button...")
     start_btn = QPushButton("Start Transfer")
     start_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
     start_btn.setFixedHeight(40)
+    print("DEBUG: Start button created successfully")
     
+    print("DEBUG: Creating pause button...")
     pause_btn = QPushButton("Pause")
     pause_btn.setStyleSheet(BUTTON_STYLE)
     pause_btn.setFixedHeight(40)
     pause_btn.setEnabled(False)
+    print("DEBUG: Pause button created successfully")
     
+    print("DEBUG: Creating cancel button...")
     cancel_btn = QPushButton("Cancel")
     cancel_btn.setStyleSheet(BUTTON_STYLE)
     cancel_btn.setFixedHeight(40)
     cancel_btn.setEnabled(False)
+    print("DEBUG: Cancel button created successfully")
     
+    print("DEBUG: Adding buttons to buttons layout...")
     buttons_layout.addWidget(start_btn)
     buttons_layout.addWidget(pause_btn)
     buttons_layout.addWidget(cancel_btn)
+    print("DEBUG: Buttons added to buttons layout successfully")
+    
+    print("DEBUG: Adding buttons layout to main layout...")
     layout.addLayout(buttons_layout)
+    print("DEBUG: Buttons layout added to main layout successfully")
 
+    print("DEBUG: Creating progress frame...")
     # Main progress display (clean, like your example)
     progress_frame = QFrame()
     progress_frame.setStyleSheet(f"background-color: {colors['card_bg']}; border-radius: 8px; padding: 16px;")
     progress_layout = QVBoxLayout(progress_frame)
     progress_layout.setSpacing(12)
+    print("DEBUG: Progress frame created successfully")
     
+    print("DEBUG: Creating total progress bar...")
     # Total progress with integrated label
     total_progress = CleanProgressBar("TOTAL TRANSFER", height=24)
     progress_layout.addWidget(total_progress)
+    print("DEBUG: Total progress bar created and added successfully")
     
+    print("DEBUG: Creating speed label...")
     # Speed display (large and prominent)
     speed_label = QLabel("0 MB/s Transfer")
     speed_label.setStyleSheet(f"font-size: 18px; font-weight: 700; color: {colors['success']}; text-align: center;")
     speed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     progress_layout.addWidget(speed_label)
+    print("DEBUG: Speed label created and added successfully")
     
+    print("DEBUG: Adding progress frame to main layout...")
     layout.addWidget(progress_frame)
+    print("DEBUG: Progress frame added to main layout successfully")
 
+    print("DEBUG: Creating files frame...")
     # Individual files (compact)
     files_frame = QFrame()
     files_frame.setStyleSheet(f"background-color: {colors['card_bg']}; border-radius: 8px; padding: 16px;")
     files_layout = QVBoxLayout(files_frame)
+    print("DEBUG: Files frame created successfully")
     
+    print("DEBUG: Creating files header...")
     files_header = QHBoxLayout()
     files_label = QLabel("Individual Files")
     files_label.setStyleSheet(f"font-size: 14px; font-weight: 600; color: {colors['text']};")
@@ -438,7 +584,9 @@ def build_ingest_tab() -> QWidget:
     files_header.addStretch()
     files_header.addWidget(files_count)
     files_layout.addLayout(files_header)
+    print("DEBUG: Files header created and added successfully")
     
+    print("DEBUG: Creating scroll area...")
     # Scrollable area for file progress
     scroll_area = QScrollArea()
     scroll_area.setWidgetResizable(True)
@@ -459,16 +607,28 @@ def build_ingest_tab() -> QWidget:
             min-height: 20px;
         }}
     """)
+    print("DEBUG: Scroll area created successfully")
     
+    print("DEBUG: Creating files container...")
     files_container = QWidget()
-    files_layout = QVBoxLayout(files_container)
-    files_layout.setSpacing(4)
-    files_layout.setContentsMargins(0, 0, 0, 0)
+    files_container_layout = QVBoxLayout(files_container)
+    files_container_layout.setSpacing(4)
+    files_container_layout.setContentsMargins(0, 0, 0, 0)
+    print("DEBUG: Files container created successfully")
     
+    print("DEBUG: Setting up scroll area...")
+    print("DEBUG: About to call scroll_area.setWidget(files_container)...")
     scroll_area.setWidget(files_container)
-    files_layout.addWidget(scroll_area)
+    print("DEBUG: scroll_area.setWidget() completed successfully")
+    print("DEBUG: Scroll area setup completed successfully")
     
+    print("DEBUG: Adding scroll area to files frame...")
+    files_layout.addWidget(scroll_area)
+    print("DEBUG: Scroll area added to files frame successfully")
+    
+    print("DEBUG: Adding files frame to main layout...")
     layout.addWidget(files_frame)
+    print("DEBUG: Files frame added to main layout successfully")
 
     # File tracking
     root.file_widgets = {}  # file_id -> FileProgressLine
@@ -503,7 +663,7 @@ def build_ingest_tab() -> QWidget:
         
         # Clear previous file widgets
         for widget in root.file_widgets.values():
-            files_layout.removeWidget(widget)
+            files_container_layout.removeWidget(widget)
             widget.deleteLater()
         root.file_widgets.clear()
         root.active_files = 0
@@ -529,7 +689,7 @@ def build_ingest_tab() -> QWidget:
             total_bytes = payload.get("total_bytes", 0)
             widget = FileProgressLine(filename, total_bytes)
             root.file_widgets[file_id] = widget
-            files_layout.addWidget(widget)
+            files_container_layout.addWidget(widget)
             root.active_files += 1
             files_count.setText(f"{root.active_files} files")
             file_stats[file_id] = {'start_time': time.time()}

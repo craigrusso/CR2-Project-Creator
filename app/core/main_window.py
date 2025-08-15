@@ -140,20 +140,20 @@ class ForwardFlowApp(QMainWindow):
         self.tab_widget.addTab(self.template_gallery, "Templates")
         apply_dark_theme_to_template_gallery(self.template_gallery)
         
-        # Create Ingest tab
+        # Create Transfer tab
         try:
             from forwardflow.ingest.ui.ingest_tab import build_ingest_tab
-            self.ingest_tab = build_ingest_tab()
-            self.tab_widget.addTab(self.ingest_tab, "Ingest")
+            self.transfer_tab = build_ingest_tab()
+            self.tab_widget.addTab(self.transfer_tab, "Transfer")
         except ImportError as e:
             print(f"Warning: Could not import ingest module: {e}")
             # Create a placeholder tab
-            self.ingest_tab = QWidget()
-            placeholder_layout = QVBoxLayout(self.ingest_tab)
-            placeholder_label = QLabel("Ingest module not available")
+            self.transfer_tab = QWidget()
+            placeholder_layout = QVBoxLayout(self.transfer_tab)
+            placeholder_label = QLabel("Transfer module not available")
             placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             placeholder_layout.addWidget(placeholder_label)
-            self.tab_widget.addTab(self.ingest_tab, "Ingest")
+            self.tab_widget.addTab(self.transfer_tab, "Transfer")
         
         # Add panels to splitter
         self.main_splitter.addWidget(self.left_panel)
