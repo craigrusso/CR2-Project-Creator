@@ -253,17 +253,17 @@ def build_ingest_tab():
     buttons_layout.setSpacing(5)  # Reduced to 5px for tight spacing
     
     start_btn = QPushButton("Start Transfer")
-    start_btn.setStyleSheet(BUTTON_STYLE)
+    start_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
     start_btn.setFixedHeight(40)
     start_btn.setEnabled(False)
     
     pause_btn = QPushButton("Pause")
-    pause_btn.setStyleSheet(BUTTON_STYLE)
+    pause_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
     pause_btn.setFixedHeight(40)
     pause_btn.setEnabled(False)
     
     cancel_btn = QPushButton("Cancel")
-    cancel_btn.setStyleSheet(BUTTON_STYLE)
+    cancel_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
     cancel_btn.setFixedHeight(40)
     cancel_btn.setEnabled(False)
     
