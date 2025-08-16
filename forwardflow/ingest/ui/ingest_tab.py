@@ -253,8 +253,9 @@ def build_ingest_tab():
     buttons_layout.setSpacing(5)  # Reduced to 5px for tight spacing
     
     start_btn = QPushButton("Start Transfer")
-    start_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
+    start_btn.setStyleSheet(BUTTON_STYLE)
     start_btn.setFixedHeight(40)
+    start_btn.setEnabled(False)
     
     pause_btn = QPushButton("Pause")
     pause_btn.setStyleSheet(BUTTON_STYLE)
@@ -269,6 +270,8 @@ def build_ingest_tab():
     buttons_layout.addWidget(start_btn)
     buttons_layout.addWidget(pause_btn)
     buttons_layout.addWidget(cancel_btn)
+    
+    layout.addLayout(buttons_layout)
     
     # Main progress display (clean, compact)
     progress_frame = QFrame()
