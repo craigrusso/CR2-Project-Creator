@@ -47,185 +47,47 @@ try:
     from app.ui.color_scheme_pyqt import (
         colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, 
         LINEEDIT_STYLE, LABEL_STYLE, COMBOBOX_STYLE,
-        GROUPBOX_STYLE
+        GROUPBOX_STYLE, PROGRESS_BAR_STYLE, SCROLL_AREA_STYLE,
+        SLIDER_STYLE, SPEED_LABEL_STYLE, SECTION_HEADER_STYLE,
+        SECONDARY_TEXT_STYLE, HEADER_LABEL_STYLE, FIELD_LABEL_STYLE,
+        TIME_LABEL_STYLE, ACCENT_VALUE_STYLE, CARD_FRAME_STYLE
     )
     from app.ui.custom_delegates import apply_hover_delegate
     print("DEBUG: Successfully imported centralized styles and hover delegate from app.ui.color_scheme_pyqt")
     STYLING_AVAILABLE = True
 except ImportError as e:
     print(f"DEBUG: Failed to import centralized styles: {e}")
-    print("DEBUG: Falling back to local style definitions")
-    STYLING_AVAILABLE = False
-    colors = {
-        'border': '#3C3C3C',
-        'card_bg': '#252526',
-        'text': '#CCCCCC',
-        'secondary_text': '#858585',
-        'accent': '#2C4F76',
-        'accent_hover': '#36648B',
-        'bg': '#1E1E1E',
-        'hover_bg': '#454545',
-        'success': '#4CAF50',
-        'warning': '#F1AE3C',
-        'error': '#E8574C',
-        'info': '#4E98C3',
-        'highlight_border': '#4682B4',
-        'highlight_bg': '#2C4F76',
-        'highlight_bg_transparent': '#2C4F7633',
-        'highlight_text': '#FFFFFF'
-    }
-    
-    BUTTON_STYLE = f"""
-        QPushButton {{
-            background-color: {colors['card_bg']};
-            color: {colors['text']};
-            border: 1px solid {colors['border']};
-            padding: 8px 16px;
-            border-radius: 4px;
-            font-weight: 600;
-        }}
-        QPushButton:hover {{
-            background-color: {colors['hover_bg']};
-            border: 1px solid {colors['accent']};
-        }}
-    """
-    
-    ACCENT_BUTTON_STYLE = f"""
-        QPushButton {{
-            background-color: {colors['accent']};
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            font-weight: 600;
-            font-size: 14px;
-        }}
-        QPushButton:hover {{
-            background-color: {colors['accent_hover']};
-        }}
-    """
-    
-    COMBOBOX_STYLE = f"""
-        QComboBox {{
-            background-color: {colors['card_bg']};
-            color: {colors['text']};
-            border: 1px solid {colors['border']};
-            padding: 5px 25px 5px 5px;
-            border-radius: 3px;
-            min-height: 22px;
-        }}
-        QComboBox:hover {{
-            border: 1px solid {colors['highlight_border']};
-            background-color: {colors['hover_bg']};
-        }}
-        QComboBox:focus {{
-            border: 1px solid {colors['highlight_border']};
-            background-color: {colors['highlight_bg_transparent']};
-        }}
-        QComboBox::drop-down {{
-            subcontrol-origin: padding;
-            subcontrol-position: top right;
-            width: 20px;
-            border: none;
-            border-left: 1px solid {colors['border']};
-            border-top-right-radius: 3px;
-            border-bottom-right-radius: 3px;
-        }}
-        QComboBox::drop-down:hover {{
-            background-color: {colors['accent']};
-        }}
-        QComboBox::down-arrow {{
-            image: none;
-            border-left: 5px solid transparent;
-            border-right: 5px solid transparent;
-            border-top: 5px solid {colors['text']};
-            margin-right: 5px;
-        }}
-        QComboBox QAbstractItemView {{
-            border: 1px solid {colors['highlight_border']};
-            background-color: {colors['card_bg']};
-            color: {colors['text']};
-            outline: none;
-            selection-background-color: {colors['highlight_bg']};
-            selection-color: {colors['highlight_text']}
-        }}
-        QComboBox QAbstractItemView::item {{
-            border-left: 3px solid transparent;
-            padding: 6px;
-            min-height: 24px;
-        }}
-        QComboBox QAbstractItemView::item:hover {{
-            background-color: {colors['accent']};
-            color: white;
-            font-weight: bold;
-            border-left: 5px solid white;
-        }}
-        QComboBox QAbstractItemView::item:selected {{
-            background-color: {colors['highlight_bg']};
-            color: {colors['highlight_text']};
-            border-left: 3px solid {colors['accent']};
-        }}
-    """
-    
-    LINEEDIT_STYLE = f"""
-        QLineEdit {{
-            background-color: {colors['card_bg']};
-            color: {colors['text']};
-            border: 1px solid {colors['border']};
-            padding: 6px 12px;
-            border-radius: 4px;
-            font-size: 13px;
-        }}
-        QLineEdit:hover {{
-            border: 1px solid {colors['accent']};
-        }}
-        QLineEdit:focus {{
-            border: 1px solid {colors['accent']};
-            background-color: {colors['bg']};
-        }}
-    """
-    
-    LABEL_STYLE = f"""
-        QLabel {{
-            color: {colors['text']};
-            background-color: transparent;
-            padding: 2px;
-        }}
-    """
-    
-    GROUPBOX_STYLE = f"""
-        QGroupBox {{
-            border: 1px solid {colors['border']};
-            margin-top: 10px;
-            padding: 10px;
-            border-radius: 3px;
-        }}
-        QGroupBox::title {{
-            subcontrol-origin: margin;
-            subcontrol-position: top left;
-            padding: 0 5px 0 5px;
-            left: 10px;
-            color: {colors['text']};
-            background-color: {colors['bg']};
-        }}
-    """
+    raise ImportError("Centralized styles are required for the ingest tab")
 
 
 def build_ingest_tab():
-    """Build the ingest tab with all necessary controls and progress tracking."""
+    """Build the ingest tab UI."""
+    print("DEBUG: Building ingest tab...")
+    
+    # Create the main widget
+    root = QWidget()
+    root.setObjectName("ingest_tab")  # Changed back to match expected name
+    
+    # Initialize file tracking
+    root.file_widgets = {}
+    root.active_files = 0
+    root.current_job = None
+    root.job_start_time = None
+    root.total_bytes = 0
+    root.copied_bytes = 0
+    
+    # Main layout
+    layout = QVBoxLayout(root)
+    layout.setContentsMargins(5, 5, 5, 5)  # Reduced to 5px for tight spacing
+    layout.setSpacing(5)  # Reduced to 5px for tight spacing
     
     print("DEBUG: Creating IngestViewModel...")
     vm = IngestViewModel()
     print("DEBUG: IngestViewModel created successfully")
     
-    # Create the main widget and layout
-    root = QWidget()
-    root.setObjectName("ingest_tab")
-    # Store references to widgets for event handlers
-    root.file_widgets = {}
-    root.active_files = 0
-    root.job_start_time = None
-    root.current_job = None  # Track current job for cleanup
+    # Make vm accessible to the widget
+    root.vm = vm
+    print("DEBUG: VM attached to root widget")
     
     # Timer for updating elapsed time display
     root.time_update_timer = QTimer()
@@ -239,26 +101,20 @@ def build_ingest_tab():
             elapsed_str = f"{int(elapsed_seconds//3600):02d}:{int((elapsed_seconds%3600)//60):02d}:{int(elapsed_seconds%60):02d}"
             root.elapsed_label.setText(f"Elapsed: {elapsed_str}")
     
-    # Make vm accessible to the widget
-    root.vm = vm
-    print("DEBUG: VM attached to root widget")
-    
-    layout = QVBoxLayout(root)
-    layout.setContentsMargins(20, 20, 20, 20)
-    layout.setSpacing(16)
-    
     # Header
     header_label = QLabel("Turbo Transfer")
-    header_label.setStyleSheet(f"font-size: 20px; font-weight: 700; color: {colors['text']}; margin-bottom: 8px;")
+    header_label.setStyleSheet(HEADER_LABEL_STYLE)
     layout.addWidget(header_label)
     
     # Source and Destination (compact)
     paths_layout = QHBoxLayout()
+    paths_layout.setSpacing(5)  # Reduced to 5px for tight spacing
     
     # Source
     src_layout = QVBoxLayout()
+    src_layout.setSpacing(2)  # Reduced to 2px for very tight spacing
     src_label = QLabel("Source:")
-    src_label.setStyleSheet(f"font-weight: 600; color: {colors['text']}; font-size: 12px;")
+    src_label.setStyleSheet(FIELD_LABEL_STYLE)
     src_edit = QLineEdit()
     src_edit.setStyleSheet(LINEEDIT_STYLE)
     src_edit.setPlaceholderText("Select source folder...")
@@ -266,6 +122,7 @@ def build_ingest_tab():
     src_btn.setStyleSheet(BUTTON_STYLE)
     
     src_row = QHBoxLayout()
+    src_row.setSpacing(2)  # Reduced to 2px for very tight spacing
     src_row.addWidget(src_edit, 1)
     src_row.addWidget(src_btn)
     
@@ -275,8 +132,9 @@ def build_ingest_tab():
     
     # Destination
     dst_layout = QVBoxLayout()
+    dst_layout.setSpacing(2)  # Reduced to 2px for very tight spacing
     dst_label = QLabel("Destination:")
-    dst_label.setStyleSheet(f"font-weight: 600; color: {colors['text']}; font-size: 12px;")
+    dst_label.setStyleSheet(FIELD_LABEL_STYLE)
     dst_edit = QLineEdit()
     dst_edit.setStyleSheet(LINEEDIT_STYLE)
     dst_edit.setPlaceholderText("Select destination folder...")
@@ -284,6 +142,7 @@ def build_ingest_tab():
     dst_btn.setStyleSheet(BUTTON_STYLE)
     
     dst_row = QHBoxLayout()
+    dst_row.setSpacing(2)  # Reduced to 2px for very tight spacing
     dst_row.addWidget(dst_edit, 1)
     dst_row.addWidget(dst_btn)
     
@@ -295,11 +154,13 @@ def build_ingest_tab():
     
     # Settings (compact)
     settings_layout = QHBoxLayout()
+    settings_layout.setSpacing(5)  # Reduced to 5px for tight spacing
     
     # Verification
     verify_layout = QVBoxLayout()
+    verify_layout.setSpacing(2)  # Reduced to 2px for very tight spacing
     verify_label = QLabel("Verification:")
-    verify_label.setStyleSheet(f"font-weight: 600; color: {colors['text']}; font-size: 12px;")
+    verify_label.setStyleSheet(FIELD_LABEL_STYLE)
     verify_combo = QComboBox()
     verify_combo.addItems([
         "None — fastest transfer",
@@ -322,8 +183,9 @@ def build_ingest_tab():
     
     # Link preset
     preset_layout = QVBoxLayout()
+    preset_layout.setSpacing(2)  # Reduced to 2px for very tight spacing
     preset_label = QLabel("Link preset:")
-    preset_label.setStyleSheet(f"font-weight: 600; color: {colors['text']}; font-size: 12px;")
+    preset_label.setStyleSheet(FIELD_LABEL_STYLE)
     preset_combo = QComboBox()
     preset_combo.addItems(["Auto/Default", "1 GbE", "10 GbE", "25/40 GbE or IB"])
     preset_combo.setStyleSheet(COMBOBOX_STYLE)
@@ -342,31 +204,19 @@ def build_ingest_tab():
     
     # Concurrency sliders
     conc_layout = QVBoxLayout()
+    conc_layout.setSpacing(2)  # Reduced to 2px for very tight spacing
     conc_label = QLabel("Per-file concurrency:")
-    conc_label.setStyleSheet(f"font-weight: 600; color: {colors['text']}; font-size: 12px;")
+    conc_label.setStyleSheet(FIELD_LABEL_STYLE)
     conc_slider = QSlider(Qt.Orientation.Horizontal)
     conc_slider.setRange(1, 16)
     conc_slider.setValue(1)
-    conc_slider.setStyleSheet(f"""
-        QSlider::groove:horizontal {{
-            border: 1px solid {colors['border']};
-            height: 4px;
-            background: {colors['card_bg']};
-            border-radius: 2px;
-        }}
-        QSlider::handle:horizontal {{
-            background: {colors['accent']};
-            border: 1px solid {colors['accent']};
-            width: 16px;
-            margin: -6px 0;
-            border-radius: 8px;
-        }}
-    """)
+    conc_slider.setStyleSheet(SLIDER_STYLE)
     conc_value = QLabel("1")
-    conc_value.setStyleSheet(f"color: {colors['accent']}; font-weight: 600; font-size: 12px;")
+    conc_value.setStyleSheet(ACCENT_VALUE_STYLE)
     conc_slider.valueChanged.connect(lambda v: conc_value.setText(str(v)))
     
     conc_row = QHBoxLayout()
+    conc_row.setSpacing(2)  # Reduced to 2px for very tight spacing
     conc_row.addWidget(conc_slider, 1)
     conc_row.addWidget(conc_value)
     
@@ -376,31 +226,19 @@ def build_ingest_tab():
     
     # Stream concurrency
     stream_layout = QVBoxLayout()
+    stream_layout.setSpacing(2)  # Reduced to 2px for very tight spacing
     stream_label = QLabel("Stream concurrency:")
-    stream_label.setStyleSheet(f"font-weight: 600; color: {colors['text']}; font-size: 12px;")
+    stream_label.setStyleSheet(FIELD_LABEL_STYLE)
     stream_slider = QSlider(Qt.Orientation.Horizontal)
     stream_slider.setRange(1, 32)
     stream_slider.setValue(2)
-    stream_slider.setStyleSheet(f"""
-        QSlider::groove:horizontal {{
-            border: 1px solid {colors['border']};
-            height: 4px;
-            background: {colors['card_bg']};
-            border-radius: 2px;
-        }}
-        QSlider::handle:horizontal {{
-            background: {colors['accent']};
-            border: 1px solid {colors['accent']};
-            width: 16px;
-            margin: -6px 0;
-            border-radius: 8px;
-        }}
-    """)
+    stream_slider.setStyleSheet(SLIDER_STYLE)
     stream_value = QLabel("2")
-    stream_value.setStyleSheet(f"color: {colors['accent']}; font-weight: 600; font-size: 12px;")
+    stream_value.setStyleSheet(ACCENT_VALUE_STYLE)
     stream_slider.valueChanged.connect(lambda v: stream_value.setText(str(v)))
     
     stream_row = QHBoxLayout()
+    stream_row.setSpacing(2)  # Reduced to 2px for very tight spacing
     stream_row.addWidget(stream_slider, 1)
     stream_row.addWidget(stream_value)
     
@@ -412,6 +250,7 @@ def build_ingest_tab():
     
     # Control buttons
     buttons_layout = QHBoxLayout()
+    buttons_layout.setSpacing(5)  # Reduced to 5px for tight spacing
     
     start_btn = QPushButton("Start Transfer")
     start_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
@@ -431,118 +270,88 @@ def build_ingest_tab():
     buttons_layout.addWidget(pause_btn)
     buttons_layout.addWidget(cancel_btn)
     
-    layout.addLayout(buttons_layout)
-    
-    # Main progress display (clean, like your example)
+    # Main progress display (clean, compact)
     progress_frame = QFrame()
-    progress_frame.setStyleSheet(f"background-color: {colors['card_bg']}; border-radius: 8px; padding: 20px;")
+    progress_frame.setStyleSheet(CARD_FRAME_STYLE)
     progress_layout = QVBoxLayout(progress_frame)
-    progress_layout.setSpacing(16)
+    progress_layout.setSpacing(0)  # No spacing between speed and progress bar
+    progress_layout.setContentsMargins(5, 5, 5, 5)  # Reduced to 5px for tight spacing
     
-    # Total progress with integrated label
-    total_progress = QProgressBar()
-    total_progress.setRange(0, 100)
-    total_progress.setValue(0)
-    total_progress.setFixedHeight(24)
-    total_progress.setStyleSheet(f"""
-        QProgressBar {{
-            border: 1px solid {colors['border']};
-            border-radius: 2px;
-            text-align: center;
-            background-color: {colors['card_bg']};
-            color: {colors['text']};
-            font-size: 12px;
-            font-weight: 600;
-        }}
-        QProgressBar::chunk {{
-            background-color: {colors['accent']};
-            border-radius: 1px;
-        }}
-    """)
-    progress_layout.addWidget(total_progress)
-    
-    # Speed display (large and prominent)
+    # Speed display (above progress bar, smaller and white)
     speed_label = QLabel("0 MB/s Transfer")
-    speed_label.setStyleSheet(f"font-size: 24px; font-weight: 700; color: {colors['success']}; text-align: center; margin: 8px 0;")
+    speed_label.setStyleSheet(SPEED_LABEL_STYLE)
     speed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     progress_layout.addWidget(speed_label)
     
+    # Total progress with integrated label - now 3x taller with gradient
+    total_progress = QProgressBar()
+    total_progress.setRange(0, 100)
+    total_progress.setValue(0)
+    total_progress.setFixedHeight(60)  # 3x taller (was 20px)
+    total_progress.setStyleSheet(PROGRESS_BAR_STYLE)
+    progress_layout.addWidget(total_progress)
+    
     layout.addWidget(progress_frame)
     
-    # Individual files (compact)
+    # Individual files section (compact and efficient)
     files_frame = QFrame()
-    files_frame.setStyleSheet(f"background-color: {colors['card_bg']}; border-radius: 8px; padding: 20px;")
+    files_frame.setStyleSheet(CARD_FRAME_STYLE)
     files_layout = QVBoxLayout(files_frame)
-    files_layout.setSpacing(12)
-    files_layout.setContentsMargins(20, 20, 20, 20)
+    files_layout.setSpacing(5)  # Reduced to 5px for tight spacing
+    files_layout.setContentsMargins(5, 5, 5, 5)  # Reduced to 5px for tight spacing
     
-    # Files header - properly positioned at top
+    # Files header - positioned efficiently at top
     files_header = QHBoxLayout()
-    files_header.setContentsMargins(0, 0, 0, 12)  # Add bottom margin for separation
+    files_header.setSpacing(5)  # Reduced to 5px for tight spacing
+    files_header.setContentsMargins(0, 0, 0, 5)  # Reduced bottom margin to 5px
     files_label = QLabel("Individual Files")
-    files_label.setStyleSheet(f"font-size: 16px; font-weight: 600; color: {colors['text']};")
+    files_label.setStyleSheet(SECTION_HEADER_STYLE)
     files_count = QLabel("0 files")
-    files_count.setStyleSheet(f"font-size: 14px; color: {colors['secondary_text']};")
+    files_count.setStyleSheet(SECONDARY_TEXT_STYLE)
     files_header.addWidget(files_label)
     files_header.addStretch()
     files_header.addWidget(files_count)
     files_layout.addLayout(files_header)
     
-    # Time display section
-    time_frame = QFrame()
-    time_frame.setStyleSheet(f"background-color: {colors['bg']}; border-radius: 6px; padding: 12px; border: 1px solid {colors['border']};")
-    time_layout = QHBoxLayout(time_frame)
-    time_layout.setSpacing(20)
+    # Time display section - compact horizontal layout
+    time_layout = QHBoxLayout()
+    time_layout.setSpacing(5)  # Reduced to 5px for tight spacing
     
     # Elapsed time
     elapsed_label = QLabel("Elapsed: 00:00:00")
-    elapsed_label.setStyleSheet(f"color: {colors['text']}; font-size: 13px; font-weight: 500;")
+    elapsed_label.setStyleSheet(TIME_LABEL_STYLE)
     time_layout.addWidget(elapsed_label)
     
     # ETA
     eta_label = QLabel("ETA: --:--:--")
-    eta_label.setStyleSheet(f"color: {colors['text']}; font-size: 13px; font-weight: 500;")
+    eta_label.setStyleSheet(TIME_LABEL_STYLE)
     time_layout.addWidget(eta_label)
     
     # Total time
     total_time_label = QLabel("Total: --:--:--")
-    total_time_label.setStyleSheet(f"color: {colors['text']}; font-size: 13px; font-weight: 500;")
+    total_time_label.setStyleSheet(TIME_LABEL_STYLE)
     time_layout.addWidget(total_time_label)
     
     time_layout.addStretch()
-    files_layout.addWidget(time_frame)
+    files_layout.addLayout(time_layout)
     
     # Store references to time labels for event handlers
     root.elapsed_label = elapsed_label
     root.eta_label = eta_label
     root.total_time_label = total_time_label
     
-    # Scrollable area for file progress
+    # Scrollable area for file progress - more compact
     scroll_area = QScrollArea()
     scroll_area.setWidgetResizable(True)
-    scroll_area.setMinimumHeight(150)
-    scroll_area.setMaximumHeight(300)
-    scroll_area.setStyleSheet(f"""
-        QScrollArea {{
-            border: none;
-            background-color: transparent;
-        }}
-        QScrollBar:vertical {{
-            background-color: {colors['card_bg']};
-            width: 8px;
-            border-radius: 4px;
-        }}
-        QScrollBar::handle:vertical {{
-            background-color: {colors['border']};
-            border-radius: 4px;
-            min-height: 20px;
-        }}
-    """)
+    scroll_area.setMinimumHeight(100)  # Reduced minimum height
+    scroll_area.setMaximumHeight(400)  # Increased maximum height for resizability
+    scroll_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)  # Make it resizable
+    scroll_area.setStyleSheet(SCROLL_AREA_STYLE)
     
     # Files container - ensure proper layout
     files_container = QWidget()
     files_container_layout = QVBoxLayout(files_container)
-    files_container_layout.setSpacing(8)  # Consistent spacing between file widgets
+    files_container_layout.setSpacing(2)  # Very tight spacing between file widgets
     files_container_layout.setContentsMargins(0, 0, 0, 0)
     files_container_layout.setAlignment(Qt.AlignmentFlag.AlignTop)  # Align widgets to top
     

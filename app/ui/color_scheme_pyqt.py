@@ -877,4 +877,223 @@ FRAME_STYLE = f"""
         border-radius: 8px;
         padding: 16px;
     }}
+"""
+
+# Style for progress bars
+PROGRESS_BAR_STYLE = f"""
+    QProgressBar {{
+        border: 1px solid {colors['border']};
+        border-radius: 2px;
+        text-align: center;
+        background-color: {colors['bg']};
+        color: {colors['text']};
+        font-size: 11px;
+        font-weight: 600;
+        margin: 0;
+        padding: 0;
+        min-height: 60px;
+    }}
+    QProgressBar::chunk {{
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                                   stop:0 {colors['accent']}, 
+                                   stop:1 {colors['accent_hover']});
+        border-radius: 1px;
+    }}
+"""
+
+# Style for file progress lines
+FILE_PROGRESS_LINE_STYLE = f"""
+    QWidget {{
+        background-color: {colors['card_bg']};
+        border: 1px solid {colors['border']};
+        border-radius: 6px;
+    }}
+    QProgressBar {{
+        border: 1px solid {colors['border']};
+        border-radius: 2px;
+        text-align: center;
+        background-color: {colors['bg']};
+        color: {colors['text']};
+        font-size: 10px;
+        font-weight: 600;
+        margin: 0;
+        padding: 0;
+    }}
+    QProgressBar::chunk {{
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                                   stop:0 {colors['accent']}, 
+                                   stop:1 {colors['accent_hover']});
+        border-radius: 1px;
+    }}
+"""
+
+# Style for completed file progress lines
+FILE_PROGRESS_LINE_COMPLETED_STYLE = f"""
+    QWidget {{
+        background-color: {colors['success']}20;
+        border: 1px solid {colors['success']};
+        border-radius: 4px;
+    }}
+    QProgressBar {{
+        border: 1px solid {colors['success']};
+        border-radius: 2px;
+        text-align: center;
+        background-color: {colors['bg']};
+        color: {colors['text']};
+        font-size: 10px;
+        font-weight: 600;
+    }}
+    QProgressBar::chunk {{
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                                   stop:0 {colors['success']}, 
+                                   stop:1 {colors['success']}CC);
+        border-radius: 1px;
+    }}
+"""
+
+# Style for failed file progress lines
+FILE_PROGRESS_LINE_FAILED_STYLE = f"""
+    QWidget {{
+        background-color: {colors['error']}20;
+        border: 1px solid {colors['error']};
+        border-radius: 4px;
+    }}
+    QProgressBar {{
+        border: 1px solid {colors['error']};
+        border-radius: 2px;
+        text-align: center;
+        background-color: {colors['bg']};
+        color: {colors['text']};
+        font-size: 10px;
+        font-weight: 600;
+    }}
+    QProgressBar::chunk {{
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                                   stop:0 {colors['error']}, 
+                                   stop:1 {colors['error']}CC);
+        border-radius: 1px;
+    }}
+"""
+
+# Style for sliders
+SLIDER_STYLE = f"""
+    QSlider::groove:horizontal {{
+        border: 1px solid {colors['border']};
+        height: 4px;
+        background: {colors['card_bg']};
+        border-radius: 2px;
+    }}
+    QSlider::handle:horizontal {{
+        background: {colors['accent']};
+        border: 1px solid {colors['accent']};
+        width: 16px;
+        margin: -6px 0;
+        border-radius: 8px;
+    }}
+    QSlider::handle:horizontal:hover {{
+        background: {colors['accent_hover']};
+        border: 1px solid {colors['accent_hover']};
+    }}
+"""
+
+# Style for speed labels
+SPEED_LABEL_STYLE = f"""
+    QLabel {{
+        font-size: 16px;
+        font-weight: 600;
+        color: {colors['text']};
+        text-align: center;
+        margin: 0;
+        padding: 0;
+    }}
+"""
+
+# Style for section headers
+SECTION_HEADER_STYLE = f"""
+    QLabel {{
+        font-size: 16px;
+        font-weight: 600;
+        color: {colors['text']};
+    }}
+"""
+
+# Style for secondary text labels
+SECONDARY_TEXT_STYLE = f"""
+    QLabel {{
+        font-size: 14px;
+        color: {colors['secondary_text']};
+    }}
+"""
+
+# Style for main header labels
+HEADER_LABEL_STYLE = f"""
+    QLabel {{
+        font-size: 20px;
+        font-weight: 700;
+        color: {colors['text']};
+        margin-bottom: 4px;
+    }}
+"""
+
+# Style for field labels
+FIELD_LABEL_STYLE = f"""
+    QLabel {{
+        font-weight: 600;
+        color: {colors['text']};
+        font-size: 12px;
+    }}
+"""
+
+# Style for time labels
+TIME_LABEL_STYLE = f"""
+    QLabel {{
+        color: {colors['text']};
+        font-size: 13px;
+        font-weight: 500;
+    }}
+"""
+
+# Style for accent value labels
+ACCENT_VALUE_STYLE = f"""
+    QLabel {{
+        color: {colors['accent']};
+        font-weight: 600;
+        font-size: 12px;
+    }}
+"""
+
+# Style for card frames
+CARD_FRAME_STYLE = f"""
+    QFrame {{
+        background-color: {colors['card_bg']};
+        border-radius: 8px;
+        padding: 5px;
+    }}
+"""
+
+# Style for filename labels
+FILENAME_LABEL_STYLE = f"""
+    QLabel {{
+        color: {colors['text']};
+        font-size: 12px;
+        font-weight: 500;
+    }}
+"""
+
+# Style for speed labels in file progress
+FILE_SPEED_LABEL_STYLE = f"""
+    QLabel {{
+        color: {colors['text']};
+        font-size: 11px;
+        font-weight: 600;
+    }}
+"""
+
+# Style for status labels in file progress
+FILE_STATUS_LABEL_STYLE = f"""
+    QLabel {{
+        color: {colors['text']};
+        font-size: 11px;
+        font-weight: 500;
+    }}
 """ 
