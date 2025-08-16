@@ -258,12 +258,12 @@ def build_ingest_tab():
     start_btn.setEnabled(False)
     
     pause_btn = QPushButton("Pause")
-    pause_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
+    pause_btn.setStyleSheet(BUTTON_STYLE)
     pause_btn.setFixedHeight(40)
     pause_btn.setEnabled(False)
     
     cancel_btn = QPushButton("Cancel")
-    cancel_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
+    cancel_btn.setStyleSheet(BUTTON_STYLE)
     cancel_btn.setFixedHeight(40)
     cancel_btn.setEnabled(False)
     
