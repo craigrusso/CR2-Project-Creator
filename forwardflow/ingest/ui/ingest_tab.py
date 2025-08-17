@@ -45,7 +45,7 @@ from ..api.models import JobSpec, JobOptions
 # Import styling from the main app
 try:
     from app.ui.color_scheme_pyqt import (
-        colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, 
+        colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, DANGER_BUTTON_STYLE,
         LINEEDIT_STYLE, LABEL_STYLE, COMBOBOX_STYLE,
         GROUPBOX_STYLE, PROGRESS_BAR_STYLE, SCROLL_AREA_STYLE,
         SLIDER_STYLE, SPEED_LABEL_STYLE, SECTION_HEADER_STYLE,
@@ -119,7 +119,25 @@ def build_ingest_tab():
     src_edit.setStyleSheet(LINEEDIT_STYLE)
     src_edit.setPlaceholderText("Select source folder...")
     src_btn = QPushButton("Browse…")
-    src_btn.setStyleSheet(BUTTON_STYLE)
+    src_btn.setObjectName("src_browse_btn")
+    # Use simple styling like the working main app buttons
+    src_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #2D2D30;
+            color: white;
+            border: 1px solid #3F3F46;
+            padding: 5px 10px;
+            border-radius: 3px;
+        }
+        QPushButton:hover {
+            background-color: #3F3F46;
+            border: 1px solid #0078D4;
+        }
+        QPushButton:pressed {
+            background-color: #0078D4;
+            color: white;
+        }
+    """)
     
     src_row = QHBoxLayout()
     src_row.setSpacing(2)  # Reduced to 2px for very tight spacing
@@ -139,7 +157,25 @@ def build_ingest_tab():
     dst_edit.setStyleSheet(LINEEDIT_STYLE)
     dst_edit.setPlaceholderText("Select destination folder...")
     dst_btn = QPushButton("Browse…")
-    dst_btn.setStyleSheet(BUTTON_STYLE)
+    dst_btn.setObjectName("dst_browse_btn")
+    # Use simple styling like the working main app buttons
+    dst_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #2D2D30;
+            color: white;
+            border: 1px solid #3F3F46;
+            padding: 5px 10px;
+            border-radius: 3px;
+        }
+        QPushButton:hover {
+            background-color: #3F3F46;
+            border: 1px solid #0078D4;
+        }
+        QPushButton:pressed {
+            background-color: #0078D4;
+            color: white;
+        }
+    """)
     
     dst_row = QHBoxLayout()
     dst_row.setSpacing(2)  # Reduced to 2px for very tight spacing
@@ -253,17 +289,83 @@ def build_ingest_tab():
     buttons_layout.setSpacing(5)  # Reduced to 5px for tight spacing
     
     start_btn = QPushButton("Start Transfer")
-    start_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
+    start_btn.setObjectName("start_transfer_btn")
+    # Use simple styling like the working main app buttons
+    start_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #0078D4;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+        }
+        QPushButton:hover {
+            background-color: #106EBE;
+        }
+        QPushButton:pressed {
+            background-color: #005A9E;
+        }
+        QPushButton:disabled {
+            background-color: #1E1E1E;
+            color: #666666;
+            border: 1px solid #666666;
+        }
+    """)
     start_btn.setFixedHeight(40)
     start_btn.setEnabled(False)
     
     pause_btn = QPushButton("Pause")
-    pause_btn.setStyleSheet(BUTTON_STYLE)
+    pause_btn.setObjectName("pause_btn")
+    # Use simple styling like the working main app buttons
+    pause_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #2D2D30;
+            color: white;
+            border: 1px solid #3F3F46;
+            padding: 5px 10px;
+            border-radius: 3px;
+        }
+        QPushButton:hover {
+            background-color: #3F3F46;
+            border: 1px solid #0078D4;
+        }
+        QPushButton:pressed {
+            background-color: #0078D4;
+            color: white;
+        }
+        QPushButton:disabled {
+            background-color: #1E1E1E;
+            color: #666666;
+            border: 1px solid #666666;
+        }
+    """)
     pause_btn.setFixedHeight(40)
     pause_btn.setEnabled(False)
     
     cancel_btn = QPushButton("Cancel")
-    cancel_btn.setStyleSheet(BUTTON_STYLE)
+    cancel_btn.setObjectName("cancel_btn")
+    # Use simple styling like the working main app buttons
+    cancel_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #902A2A;
+            color: white;
+            border: 1px solid #732121;
+            padding: 5px 10px;
+            border-radius: 3px;
+        }
+        QPushButton:hover {
+            background-color: #A33030;
+            border: 1px solid #8A2727;
+        }
+        QPushButton:pressed {
+            background-color: #7D2525;
+        }
+        QPushButton:disabled {
+            background-color: #1E1E1E;
+            color: #666666;
+            border: 1px solid #666666;
+        }
+    """)
     cancel_btn.setFixedHeight(40)
     cancel_btn.setEnabled(False)
     
@@ -976,6 +1078,24 @@ def build_ingest_tab():
         if path:
             line_edit.setText(path)
             print(f"DEBUG: Source path selected: {path}")
+            
+            # Enable start button if both paths are selected
+            if src_edit.text().strip() and dst_edit.text().strip():
+                start_btn.setEnabled(True)
+                print("DEBUG: Both paths selected, enabling start button")
+    
+    # Function to check if buttons should be enabled
+    def check_button_states():
+        if src_edit.text().strip() and dst_edit.text().strip():
+            start_btn.setEnabled(True)
+            print("DEBUG: Both paths selected, enabling start button")
+        else:
+            start_btn.setEnabled(False)
+            print("DEBUG: Paths not complete, disabling start button")
+    
+    # Connect text changed signals to check button states
+    src_edit.textChanged.connect(check_button_states)
+    dst_edit.textChanged.connect(check_button_states)
     
     # Connect button handlers
     start_btn.clicked.connect(on_start)
@@ -986,6 +1106,9 @@ def build_ingest_tab():
     src_btn.clicked.connect(lambda: _browse_for_path(src_edit))
     dst_btn.clicked.connect(lambda: _browse_for_path(dst_edit))
     print("DEBUG: Browse button handlers connected")
+    
+    # Initial button state check
+    check_button_states()
     
     return root
 

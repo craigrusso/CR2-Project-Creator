@@ -197,6 +197,8 @@ def configure_styles(app):
         /* Apply QComboBox styling */
         {COMBOBOX_STYLE}
         
+
+        
         /* Force macOS menu bar to use dark theme */
         QMenuBar {{
             background-color: {colors['card_bg']};
