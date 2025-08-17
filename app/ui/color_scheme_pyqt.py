@@ -906,7 +906,7 @@ ENHANCED_PROGRESS_BAR_STYLE = f"""
     }}
 """
 
-# Style for file progress lines
+# Style for file progress lines - using green gradient instead of blue
 FILE_PROGRESS_LINE_STYLE = f"""
     QWidget {{
         background-color: {colors['card_bg']};
@@ -926,8 +926,9 @@ FILE_PROGRESS_LINE_STYLE = f"""
     }}
     QProgressBar::chunk {{
         background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                                   stop:0 {colors['accent']}, 
-                                   stop:1 {colors['accent_hover']});
+                                   stop:0 #2d5a2d, 
+                                   stop:0.5 #4a7c4a, 
+                                   stop:1 #6ba06b);
         border-radius: 1px;
     }}
 """

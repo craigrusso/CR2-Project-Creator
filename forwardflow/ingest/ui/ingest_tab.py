@@ -120,23 +120,23 @@ def build_ingest_tab():
     src_edit.setPlaceholderText("Select source folder...")
     src_btn = QPushButton("Browse…")
     src_btn.setObjectName("src_browse_btn")
-    # Use simple styling like the working main app buttons
-    src_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #2D2D30;
-            color: white;
-            border: 1px solid #3F3F46;
+    # Use the standard app colors
+    src_btn.setStyleSheet(f"""
+        QPushButton {{
+            background-color: {colors['card_bg']};
+            color: {colors['text']};
+            border: 1px solid {colors['border']};
             padding: 5px 10px;
             border-radius: 3px;
-        }
-        QPushButton:hover {
-            background-color: #3F3F46;
-            border: 1px solid #0078D4;
-        }
-        QPushButton:pressed {
-            background-color: #0078D4;
+        }}
+        QPushButton:hover {{
+            background-color: {colors['hover_bg']};
+            border: 1px solid {colors['accent']};
+        }}
+        QPushButton:pressed {{
+            background-color: {colors['accent']};
             color: white;
-        }
+        }}
     """)
     
     src_row = QHBoxLayout()
@@ -158,23 +158,23 @@ def build_ingest_tab():
     dst_edit.setPlaceholderText("Select destination folder...")
     dst_btn = QPushButton("Browse…")
     dst_btn.setObjectName("dst_browse_btn")
-    # Use simple styling like the working main app buttons
-    dst_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #2D2D30;
-            color: white;
-            border: 1px solid #3F3F46;
+    # Use the standard app colors
+    dst_btn.setStyleSheet(f"""
+        QPushButton {{
+            background-color: {colors['card_bg']};
+            color: {colors['text']};
+            border: 1px solid {colors['border']};
             padding: 5px 10px;
             border-radius: 3px;
-        }
-        QPushButton:hover {
-            background-color: #3F3F46;
-            border: 1px solid #0078D4;
-        }
-        QPushButton:pressed {
-            background-color: #0078D4;
+        }}
+        QPushButton:hover {{
+            background-color: {colors['hover_bg']};
+            border: 1px solid {colors['accent']};
+        }}
+        QPushButton:pressed {{
+            background-color: {colors['accent']};
             color: white;
-        }
+        }}
     """)
     
     dst_row = QHBoxLayout()
@@ -290,54 +290,54 @@ def build_ingest_tab():
     
     start_btn = QPushButton("Start Transfer")
     start_btn.setObjectName("start_transfer_btn")
-    # Use simple styling like the working main app buttons
-    start_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #0078D4;
+    # Use the standard app accent color
+    start_btn.setStyleSheet(f"""
+        QPushButton {{
+            background-color: {colors['accent']};
             color: white;
             border: none;
             padding: 5px 10px;
             border-radius: 3px;
-        }
-        QPushButton:hover {
-            background-color: #106EBE;
-        }
-        QPushButton:pressed {
-            background-color: #005A9E;
-        }
-        QPushButton:disabled {
+        }}
+        QPushButton:hover {{
+            background-color: {colors['accent_hover']};
+        }}
+        QPushButton:pressed {{
+            background-color: {colors['highlight_darker']};
+        }}
+        QPushButton:disabled {{
             background-color: #1E1E1E;
             color: #666666;
             border: 1px solid #666666;
-        }
+        }}
     """)
     start_btn.setFixedHeight(40)
     start_btn.setEnabled(False)
     
     pause_btn = QPushButton("Pause")
     pause_btn.setObjectName("pause_btn")
-    # Use simple styling like the working main app buttons
-    pause_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #2D2D30;
-            color: white;
-            border: 1px solid #3F3F46;
+    # Use the standard app colors
+    pause_btn.setStyleSheet(f"""
+        QPushButton {{
+            background-color: {colors['card_bg']};
+            color: {colors['text']};
+            border: 1px solid {colors['border']};
             padding: 5px 10px;
             border-radius: 3px;
-        }
-        QPushButton:hover {
-            background-color: #3F3F46;
-            border: 1px solid #0078D4;
-        }
-        QPushButton:pressed {
-            background-color: #0078D4;
+        }}
+        QPushButton:hover {{
+            background-color: {colors['hover_bg']};
+            border: 1px solid {colors['accent']};
+        }}
+        QPushButton:pressed {{
+            background-color: {colors['accent']};
             color: white;
-        }
-        QPushButton:disabled {
+        }}
+        QPushButton:disabled {{
             background-color: #1E1E1E;
             color: #666666;
             border: 1px solid #666666;
-        }
+        }}
     """)
     pause_btn.setFixedHeight(40)
     pause_btn.setEnabled(False)
@@ -398,29 +398,38 @@ def build_ingest_tab():
     
     layout.addWidget(progress_frame)
     
-    # Individual files section (compact and efficient)
+    # Individual files section - restored from C++ engine layout
     files_frame = QFrame()
     files_frame.setStyleSheet(CARD_FRAME_STYLE)
     files_layout = QVBoxLayout(files_frame)
-    files_layout.setSpacing(5)  # Reduced to 5px for tight spacing
-    files_layout.setContentsMargins(5, 5, 5, 5)  # Reduced to 5px for tight spacing
+    files_layout.setSpacing(5)
+    files_layout.setContentsMargins(5, 5, 5, 5)
     
-    # Files header - positioned efficiently at top
-    files_header = QHBoxLayout()
-    files_header.setSpacing(5)  # Reduced to 5px for tight spacing
-    files_header.setContentsMargins(0, 0, 0, 5)  # Reduced bottom margin to 5px
-    files_label = QLabel("Individual Files")
-    files_label.setStyleSheet(SECTION_HEADER_STYLE)
-    files_count = QLabel("0 files")
-    files_count.setStyleSheet(SECONDARY_TEXT_STYLE)
-    files_header.addWidget(files_label)
-    files_header.addStretch()
-    files_header.addWidget(files_count)
-    files_layout.addLayout(files_header)
+    # Speed metrics section - positioned at top like we had
+    speed_metrics_layout = QHBoxLayout()
+    speed_metrics_layout.setSpacing(10)
     
-    # Time display section - compact horizontal layout
+    # Current speed
+    current_speed_label = QLabel("Speed: 0 MB/s")
+    current_speed_label.setStyleSheet(SPEED_LABEL_STYLE)
+    speed_metrics_layout.addWidget(current_speed_label)
+    
+    # Average speed
+    avg_speed_label = QLabel("Avg: 0 MB/s")
+    avg_speed_label.setStyleSheet(SPEED_LABEL_STYLE)
+    speed_metrics_layout.addWidget(avg_speed_label)
+    
+    # Peak speed
+    peak_speed_label = QLabel("Peak: 0 MB/s")
+    peak_speed_label.setStyleSheet(SPEED_LABEL_STYLE)
+    speed_metrics_layout.addWidget(peak_speed_label)
+    
+    speed_metrics_layout.addStretch()
+    files_layout.addLayout(speed_metrics_layout)
+    
+    # Time display section - positioned below speed metrics
     time_layout = QHBoxLayout()
-    time_layout.setSpacing(5)  # Reduced to 5px for tight spacing
+    time_layout.setSpacing(10)
     
     # Elapsed time
     elapsed_label = QLabel("Elapsed: 00:00:00")
@@ -432,18 +441,28 @@ def build_ingest_tab():
     eta_label.setStyleSheet(TIME_LABEL_STYLE)
     time_layout.addWidget(eta_label)
     
-    # Total time
-    total_time_label = QLabel("Total: --:--:--")
-    total_time_label.setStyleSheet(TIME_LABEL_STYLE)
-    time_layout.addWidget(total_time_label)
-    
     time_layout.addStretch()
     files_layout.addLayout(time_layout)
     
-    # Store references to time labels for event handlers
+    # Files header - positioned below time display
+    files_header = QHBoxLayout()
+    files_header.setSpacing(5)
+    files_header.setContentsMargins(0, 0, 0, 5)
+    files_label = QLabel("Individual Files")
+    files_label.setStyleSheet(SECTION_HEADER_STYLE)
+    files_count = QLabel("0 files")
+    files_count.setStyleSheet(SECONDARY_TEXT_STYLE)
+    files_header.addWidget(files_label)
+    files_header.addStretch()
+    files_header.addWidget(files_count)
+    files_layout.addLayout(files_header)
+    
+    # Store references to labels for event handlers
     root.elapsed_label = elapsed_label
     root.eta_label = eta_label
-    root.total_time_label = total_time_label
+    root.current_speed_label = current_speed_label
+    root.avg_speed_label = avg_speed_label
+    root.peak_speed_label = peak_speed_label
     
     # Scrollable area for file progress - more compact
     scroll_area = QScrollArea()
@@ -497,7 +516,14 @@ def build_ingest_tab():
             root.job_start_time = time.time()
             root.elapsed_label.setText("Elapsed: 00:00:00")
             root.eta_label.setText("ETA: --:--:--")
-            root.total_time_label.setText("Total: --:--:--")
+            
+            # Reset speed metrics
+            if hasattr(root, 'current_speed_label'):
+                root.current_speed_label.setText("Speed: 0 MB/s")
+            if hasattr(root, 'avg_speed_label'):
+                root.avg_speed_label.setText("Avg: 0 MB/s")
+            if hasattr(root, 'peak_speed_label'):
+                root.peak_speed_label.setText("Peak: 0 MB/s")
             
             # Reset UI state
             print(f"DEBUG: Resetting UI state...")
@@ -515,6 +541,9 @@ def build_ingest_tab():
             root.file_widgets.clear()
             print(f"DEBUG: UI reset completed")
             print(f"DEBUG: Files container now has {files_container_layout.count()} widgets")
+            print(f"DEBUG: Progress bar value: {total_progress.value()}")
+            print(f"DEBUG: Progress bar is visible: {total_progress.isVisible()}")
+            print(f"DEBUG: Progress bar size: {total_progress.size()}")
             
         except Exception as e:
             print(f"DEBUG: Error in handle_job_started: {e}")
@@ -533,6 +562,9 @@ def build_ingest_tab():
             # Update the progress bar
             total_progress.setValue(percent)
             print(f"DEBUG: Progress bar value set to {percent}")
+            print(f"DEBUG: Progress bar current value: {total_progress.value()}")
+            print(f"DEBUG: Progress bar is visible: {total_progress.isVisible()}")
+            print(f"DEBUG: Progress bar size: {total_progress.size()}")
             
             # Update the speed label
             speed_label.setText(f"{mbps:.0f} MB/s Transfer")
@@ -551,10 +583,21 @@ def build_ingest_tab():
                     eta_str = f"{int(eta_seconds//3600):02d}:{int((eta_seconds%3600)//60):02d}:{int(eta_seconds%60):02d}"
                     root.eta_label.setText(f"ETA: {eta_str}")
                     
-                    # Calculate total estimated time
-                    total_eta_seconds = elapsed_seconds + eta_seconds
-                    total_eta_str = f"{int(total_eta_seconds//3600):02d}:{int((total_eta_seconds%3600)//60):02d}:{int(total_eta_seconds%60):02d}"
-                    root.total_time_label.setText(f"Total: {total_eta_str}")
+                    # Update speed metrics
+                    if hasattr(root, 'current_speed_label'):
+                        root.current_speed_label.setText(f"Speed: {mbps:.0f} MB/s")
+                    
+                    # Calculate average speed (simple average for now)
+                    if hasattr(root, 'avg_speed_label') and root.job_start_time:
+                        total_mb = total / (1024 * 1024)
+                        avg_speed = total_mb / elapsed_seconds if elapsed_seconds > 0 else 0
+                        root.avg_speed_label.setText(f"Avg: {avg_speed:.0f} MB/s")
+                    
+                    # Update peak speed if current speed is higher
+                    if hasattr(root, 'peak_speed_label'):
+                        current_peak = float(root.peak_speed_label.text().split(': ')[1].split(' ')[0])
+                        if mbps > current_peak:
+                            root.peak_speed_label.setText(f"Peak: {mbps:.0f} MB/s")
             
             print(f"DEBUG: Progress and speed updated successfully")
             print(f"DEBUG: total_progress new value: {total_progress.value()}")
