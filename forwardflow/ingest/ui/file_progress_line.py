@@ -41,12 +41,12 @@ class FileProgressLine(QWidget):
         layout.setSpacing(2)  # Reduced to 2px for very tight spacing
         
         # Filename label (truncated if too long)
-        filename_label = QLabel(self._truncate_filename(self.filename))
-        filename_label.setMinimumWidth(150)  # Reduced minimum width
-        filename_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)  # Allow expansion
-        filename_label.setToolTip(self.filename)  # Show full name on hover
-        filename_label.setStyleSheet(FILENAME_LABEL_STYLE)
-        layout.addWidget(filename_label)
+        self.filename_label = QLabel(self._truncate_filename(self.filename))
+        self.filename_label.setMinimumWidth(150)  # Reduced minimum width
+        self.filename_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)  # Allow expansion
+        self.filename_label.setToolTip(self.filename)  # Show full name on hover
+        self.filename_label.setStyleSheet(FILENAME_LABEL_STYLE)
+        layout.addWidget(self.filename_label)
         
         # Progress bar
         self.progress_bar = QProgressBar()
@@ -156,6 +156,15 @@ class FileProgressLine(QWidget):
                                            stop:0.5 #4a7c4a, 
                                            stop:1 #6ba06b);
                 border-radius: 1px;
+            }}
+        """)
+        
+        # Fix the filename label color - change from brown to a nice blue
+        self.filename_label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['accent']};
+                font-size: 12px;
+                font-weight: 600;
             }}
         """)
         

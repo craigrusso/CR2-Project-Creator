@@ -450,12 +450,14 @@ def build_ingest_tab():
     files_header.addWidget(files_count)
     files_layout.addLayout(files_header)
     
-    # Store references to labels for event handlers
+    # Store references to labels and progress bar for event handlers
     root.elapsed_label = elapsed_label
     root.eta_label = eta_label
     root.current_speed_label = current_speed_label
     root.avg_speed_label = avg_speed_label
     root.peak_speed_label = peak_speed_label
+    root.total_progress = total_progress
+    root.speed_label = speed_label
     
     # Scrollable area for file progress - more compact
     scroll_area = QScrollArea()
@@ -520,8 +522,8 @@ def build_ingest_tab():
             
             # Reset UI state
             print(f"DEBUG: Resetting UI state...")
-            total_progress.setValue(0)
-            speed_label.setText("0 MB/s Transfer")
+            root.total_progress.setValue(0)
+            root.speed_label.setText("0 MB/s Transfer")
             files_count.setText("0 files")
             root.active_files = 0
             
@@ -534,9 +536,9 @@ def build_ingest_tab():
             root.file_widgets.clear()
             print(f"DEBUG: UI reset completed")
             print(f"DEBUG: Files container now has {files_container_layout.count()} widgets")
-            print(f"DEBUG: Progress bar value: {total_progress.value()}")
-            print(f"DEBUG: Progress bar is visible: {total_progress.isVisible()}")
-            print(f"DEBUG: Progress bar size: {total_progress.size()}")
+            print(f"DEBUG: Progress bar value: {root.total_progress.value()}")
+            print(f"DEBUG: Progress bar is visible: {root.total_progress.isVisible()}")
+            print(f"DEBUG: Progress bar size: {root.total_progress.size()}")
             
         except Exception as e:
             print(f"DEBUG: Error in handle_job_started: {e}")
@@ -554,16 +556,16 @@ def build_ingest_tab():
             
             # Update the progress bar
             print(f"DEBUG: About to set progress bar to {percent}%")
-            print(f"DEBUG: Progress bar before update: {total_progress.value()}")
-            total_progress.setValue(percent)
+            print(f"DEBUG: Progress bar before update: {root.total_progress.value()}")
+            root.total_progress.setValue(percent)
             print(f"DEBUG: Progress bar value set to {percent}")
-            print(f"DEBUG: Progress bar current value: {total_progress.value()}")
-            print(f"DEBUG: Progress bar is visible: {total_progress.isVisible()}")
-            print(f"DEBUG: Progress bar size: {total_progress.size()}")
-            print(f"DEBUG: Progress bar range: {total_progress.minimum()} to {total_progress.maximum()}")
+            print(f"DEBUG: Progress bar current value: {root.total_progress.value()}")
+            print(f"DEBUG: Progress bar is visible: {root.total_progress.isVisible()}")
+            print(f"DEBUG: Progress bar size: {root.total_progress.size()}")
+            print(f"DEBUG: Progress bar range: {root.total_progress.minimum()} to {root.total_progress.maximum()}")
             
             # Update the speed label
-            speed_label.setText(f"{mbps:.0f} MB/s Transfer")
+            root.speed_label.setText(f"{mbps:.0f} MB/s Transfer")
             print(f"DEBUG: Speed label text set to {mbps:.0f} MB/s Transfer")
             
             # Update time displays and speed metrics
@@ -607,12 +609,12 @@ def build_ingest_tab():
                         root.peak_speed_label.setText(f"Peak: {mbps:.0f} MB/s")
             
             print(f"DEBUG: Progress and speed updated successfully")
-            print(f"DEBUG: total_progress new value: {total_progress.value()}")
-            print(f"DEBUG: speed_label new text: {speed_label.text()}")
+            print(f"DEBUG: total_progress new value: {root.total_progress.value()}")
+            print(f"DEBUG: speed_label new text: {root.speed_label.text()}")
             
             # Force a repaint
-            total_progress.repaint()
-            speed_label.repaint()
+            root.total_progress.repaint()
+            root.speed_label.repaint()
             print(f"DEBUG: Progress widgets repainted")
             
         except Exception as e:
@@ -867,7 +869,7 @@ def build_ingest_tab():
                         print(f"DEBUG: Calling handle_job_started")
                         handle_job_started(payload)
                     elif event_type == "job.progress":
-                        print(f"DEBUG: Calling handle_job_progress")
+                        print(f"DEBUG: Calling handle_job_progress with payload: {payload}")
                         handle_job_progress(payload)
                     elif event_type == "file.started":
                         print(f"DEBUG: Calling handle_file_started")
