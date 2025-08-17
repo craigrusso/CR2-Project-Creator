@@ -290,20 +290,20 @@ def build_ingest_tab():
     
     start_btn = QPushButton("Start Transfer")
     start_btn.setObjectName("start_transfer_btn")
-    # Use the standard app accent color
+    # Use the standard app accent color - force the blue color
     start_btn.setStyleSheet(f"""
         QPushButton {{
-            background-color: {colors['accent']};
+            background-color: #2C4F76;
             color: white;
             border: none;
             padding: 5px 10px;
             border-radius: 3px;
         }}
         QPushButton:hover {{
-            background-color: {colors['accent_hover']};
+            background-color: #36648B;
         }}
         QPushButton:pressed {{
-            background-color: {colors['highlight_darker']};
+            background-color: #1E3A5C;
         }}
         QPushButton:disabled {{
             background-color: #1E1E1E;
@@ -405,44 +405,37 @@ def build_ingest_tab():
     files_layout.setSpacing(5)
     files_layout.setContentsMargins(5, 5, 5, 5)
     
-    # Speed metrics section - positioned at top like we had
-    speed_metrics_layout = QHBoxLayout()
-    speed_metrics_layout.setSpacing(10)
-    
-    # Current speed
-    current_speed_label = QLabel("Speed: 0 MB/s")
-    current_speed_label.setStyleSheet(SPEED_LABEL_STYLE)
-    speed_metrics_layout.addWidget(current_speed_label)
-    
-    # Average speed
-    avg_speed_label = QLabel("Avg: 0 MB/s")
-    avg_speed_label.setStyleSheet(SPEED_LABEL_STYLE)
-    speed_metrics_layout.addWidget(avg_speed_label)
-    
-    # Peak speed
-    peak_speed_label = QLabel("Peak: 0 MB/s")
-    peak_speed_label.setStyleSheet(SPEED_LABEL_STYLE)
-    speed_metrics_layout.addWidget(peak_speed_label)
-    
-    speed_metrics_layout.addStretch()
-    files_layout.addLayout(speed_metrics_layout)
-    
-    # Time display section - positioned below speed metrics
-    time_layout = QHBoxLayout()
-    time_layout.setSpacing(10)
+    # Combined time and speed display section - inline to save space
+    time_speed_layout = QHBoxLayout()
+    time_speed_layout.setSpacing(15)
     
     # Elapsed time
     elapsed_label = QLabel("Elapsed: 00:00:00")
     elapsed_label.setStyleSheet(TIME_LABEL_STYLE)
-    time_layout.addWidget(elapsed_label)
+    time_speed_layout.addWidget(elapsed_label)
     
     # ETA
     eta_label = QLabel("ETA: --:--:--")
     eta_label.setStyleSheet(TIME_LABEL_STYLE)
-    time_layout.addWidget(eta_label)
+    time_speed_layout.addWidget(eta_label)
     
-    time_layout.addStretch()
-    files_layout.addLayout(time_layout)
+    # Current speed
+    current_speed_label = QLabel("Speed: 0 MB/s")
+    current_speed_label.setStyleSheet(SPEED_LABEL_STYLE)
+    time_speed_layout.addWidget(current_speed_label)
+    
+    # Average speed
+    avg_speed_label = QLabel("Avg: 0 MB/s")
+    avg_speed_label.setStyleSheet(SPEED_LABEL_STYLE)
+    time_speed_layout.addWidget(avg_speed_label)
+    
+    # Peak speed
+    peak_speed_label = QLabel("Peak: 0 MB/s")
+    peak_speed_label.setStyleSheet(SPEED_LABEL_STYLE)
+    time_speed_layout.addWidget(peak_speed_label)
+    
+    time_speed_layout.addStretch()
+    files_layout.addLayout(time_speed_layout)
     
     # Files header - positioned below time display
     files_header = QHBoxLayout()
@@ -560,44 +553,58 @@ def build_ingest_tab():
             print(f"DEBUG: Setting total progress to {percent}% and speed to {mbps:.0f} MB/s")
             
             # Update the progress bar
+            print(f"DEBUG: About to set progress bar to {percent}%")
+            print(f"DEBUG: Progress bar before update: {total_progress.value()}")
             total_progress.setValue(percent)
             print(f"DEBUG: Progress bar value set to {percent}")
             print(f"DEBUG: Progress bar current value: {total_progress.value()}")
             print(f"DEBUG: Progress bar is visible: {total_progress.isVisible()}")
             print(f"DEBUG: Progress bar size: {total_progress.size()}")
+            print(f"DEBUG: Progress bar range: {total_progress.minimum()} to {total_progress.maximum()}")
             
             # Update the speed label
             speed_label.setText(f"{mbps:.0f} MB/s Transfer")
             print(f"DEBUG: Speed label text set to {mbps:.0f} MB/s Transfer")
             
-            # Update time displays
+            # Update time displays and speed metrics
             if root.job_start_time:
                 elapsed_seconds = time.time() - root.job_start_time
                 elapsed_str = f"{int(elapsed_seconds//3600):02d}:{int((elapsed_seconds%3600)//60):02d}:{int(elapsed_seconds%60):02d}"
                 root.elapsed_label.setText(f"Elapsed: {elapsed_str}")
                 
-                # Calculate ETA
-                if mbps > 0:
+                # Calculate ETA - only if we have speed and remaining bytes
+                if mbps > 0 and bytes_copied < total:
                     remaining_bytes = total - bytes_copied
                     eta_seconds = remaining_bytes / (mbps * 1024 * 1024)
-                    eta_str = f"{int(eta_seconds//3600):02d}:{int((eta_seconds%3600)//60):02d}:{int(eta_seconds%60):02d}"
-                    root.eta_label.setText(f"ETA: {eta_str}")
-                    
-                    # Update speed metrics
-                    if hasattr(root, 'current_speed_label'):
-                        root.current_speed_label.setText(f"Speed: {mbps:.0f} MB/s")
-                    
-                    # Calculate average speed (simple average for now)
-                    if hasattr(root, 'avg_speed_label') and root.job_start_time:
-                        total_mb = total / (1024 * 1024)
-                        avg_speed = total_mb / elapsed_seconds if elapsed_seconds > 0 else 0
-                        root.avg_speed_label.setText(f"Avg: {avg_speed:.0f} MB/s")
-                    
-                    # Update peak speed if current speed is higher
-                    if hasattr(root, 'peak_speed_label'):
-                        current_peak = float(root.peak_speed_label.text().split(': ')[1].split(' ')[0])
-                        if mbps > current_peak:
-                            root.peak_speed_label.setText(f"Peak: {mbps:.0f} MB/s")
+                    if eta_seconds > 0:
+                        eta_str = f"{int(eta_seconds//3600):02d}:{int((eta_seconds%3600)//60):02d}:{int(eta_seconds%60):02d}"
+                        root.eta_label.setText(f"ETA: {eta_str}")
+                    else:
+                        root.eta_label.setText("ETA: --:--:--")
+                else:
+                    root.eta_label.setText("ETA: --:--:--")
+                
+                # Update speed metrics
+                if hasattr(root, 'current_speed_label'):
+                    root.current_speed_label.setText(f"Speed: {mbps:.0f} MB/s")
+                
+                # Calculate average speed (simple average for now)
+                if hasattr(root, 'avg_speed_label'):
+                    total_mb = total / (1024 * 1024)
+                    avg_speed = total_mb / elapsed_seconds if elapsed_seconds > 0 else 0
+                    root.avg_speed_label.setText(f"Avg: {avg_speed:.0f} MB/s")
+                
+                # Update peak speed if current speed is higher
+                if hasattr(root, 'peak_speed_label'):
+                    try:
+                        current_peak_text = root.peak_speed_label.text()
+                        if "Peak: " in current_peak_text:
+                            current_peak = float(current_peak_text.split(': ')[1].split(' ')[0])
+                            if mbps > current_peak:
+                                root.peak_speed_label.setText(f"Peak: {mbps:.0f} MB/s")
+                    except (ValueError, IndexError):
+                        # If we can't parse the current peak, just set it
+                        root.peak_speed_label.setText(f"Peak: {mbps:.0f} MB/s")
             
             print(f"DEBUG: Progress and speed updated successfully")
             print(f"DEBUG: total_progress new value: {total_progress.value()}")

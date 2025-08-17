@@ -139,6 +139,26 @@ class FileProgressLine(QWidget):
         # Change styling to indicate completion with centralized styles
         self.setStyleSheet(FILE_PROGRESS_LINE_COMPLETED_STYLE)
         
+        # Explicitly style the progress bar to ensure green gradient
+        self.progress_bar.setStyleSheet(f"""
+            QProgressBar {{
+                border: 1px solid {colors['success']};
+                border-radius: 2px;
+                text-align: center;
+                background-color: {colors['bg']};
+                color: {colors['text']};
+                font-size: 10px;
+                font-weight: 600;
+            }}
+            QProgressBar::chunk {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                                           stop:0 #2d5a2d, 
+                                           stop:0.5 #4a7c4a, 
+                                           stop:1 #6ba06b);
+                border-radius: 1px;
+            }}
+        """)
+        
         # Also update individual label styles to ensure proper green colors
         self.status_label.setStyleSheet(f"""
             QLabel {{
