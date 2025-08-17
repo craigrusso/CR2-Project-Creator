@@ -13,6 +13,7 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional, Tuple
+from datetime import datetime
 
 from ..api.interfaces import Engine, EventSink
 from ..api.models import JobSpec, FileSpec, Results
@@ -39,6 +40,7 @@ class _JobStats:
     start_time: float
     last_emit: float
     lock: threading.Lock
+    last_emit_bytes: int = 0 # Added for performance monitoring
 
 
 @dataclass
@@ -82,13 +84,49 @@ class PythonCopyEngine(Engine):
                 (f.destination, f.size_bytes, o.hexdigest or "")
                 for f, o in zip(files, self._outcomes) if o.ok
             ), base_root=Path(job.destination_root))
+            self._logger.info(f"BALANCED mode: MHL verification report written to {mhl_path}")
         elif (job.options.mode or "BALANCED").upper() == "FAST":
             # FAST mode: size check only; warn about missing hashes
             self._logger.warning("FAST mode selected: hashes not computed; integrity not verified")
+            # Write a FAST mode report
+            fast_report_path = Path(job.destination_root) / f"{job.job_id}_fast_report.txt"
+            with fast_report_path.open("w") as f:
+                f.write(f"FAST MODE TRANSFER REPORT - {job.job_id}\n")
+                f.write(f"Transfer completed: {datetime.now().isoformat()}\n")
+                f.write(f"Mode: FAST (no hash verification)\n")
+                f.write(f"Files transferred: {sum(1 for o in self._outcomes if o.ok)}\n")
+                f.write(f"Total bytes: {sum(o.size for o in self._outcomes if o.ok)}\n")
+                f.write(f"Verification: Size checks only (no hash verification)\n")
+                f.write(f"Note: Use BALANCED mode for full xxHash64 verification\n")
+            self._logger.info(f"FAST mode: Transfer report written to {fast_report_path}")
+        elif (job.options.mode or "BALANCED").upper() == "NONE":
+            # NONE mode: absolutely no verification, fastest possible
+            self._logger.warning("NONE mode selected: no verification, fastest possible copy")
+            # Write a NONE mode report
+            none_report_path = Path(job.destination_root) / f"{job.job_id}_none_report.txt"
+            with none_report_path.open("w") as f:
+                f.write(f"NONE MODE TRANSFER REPORT - {job.job_id}\n")
+                f.write(f"Transfer completed: {datetime.now().isoformat()}\n")
+                f.write(f"Mode: NONE (no verification)\n")
+                f.write(f"Files transferred: {sum(1 for o in self._outcomes if o.ok)}\n")
+                f.write(f"Total bytes: {sum(o.size for o in self._outcomes if o.ok)}\n")
+                f.write(f"Verification: NONE (no verification)\n")
+                f.write(f"Note: Use BALANCED or FAST modes for verification\n")
+            self._logger.info(f"NONE mode: Transfer report written to {none_report_path}")
         stats = self._job_stats.get(job.job_id)
         if stats:
             elapsed = max(1e-3, time.time() - stats.start_time)
             mbps = (stats.copied_bytes / elapsed) / (1024 * 1024)
+            
+            # Ensure final progress is 100%
+            self._emit(job.job_id, "job.progress", {
+                "bytes_copied": stats.copied_bytes,
+                "total_bytes": stats.total_bytes,
+                "progress_percent": 100.0,
+                "speed_mbps": mbps,
+                "elapsed_time": elapsed
+            })
+            
             self._emit(job.job_id, "job.completed", {
                 "bytes": stats.copied_bytes,
                 "total": stats.total_bytes,
@@ -178,7 +216,7 @@ class PythonCopyEngine(Engine):
 
             # Choose strategy
             streams = max(1, job.options.stream_concurrency or DEFAULTS.stream_concurrency)
-            if streams > 1:
+            if streams > 1 and spec.size_bytes >= DEFAULTS.min_multistream_size_bytes:
                 # If a previous partial exists, fall back to single-stream resume
                 if dst_tmp.exists() and dst_tmp.stat().st_size < spec.size_bytes:
                     streams = 1
@@ -192,6 +230,8 @@ class PythonCopyEngine(Engine):
                     if start_offset:
                         rf.seek(start_offset)
                         wf.seek(start_offset)
+                    # Use larger chunks for single-stream copy
+                    chunk_size = max(DEFAULTS.io_chunk_size_bytes, 512 * 1024 * 1024)  # At least 512MB chunks for maximum performance
                     while True:
                         if self._cancels.get(job.job_id, threading.Event()).is_set():
                             # Leave .part file intact
@@ -204,21 +244,41 @@ class PythonCopyEngine(Engine):
                         if self._pauses.get(job.job_id, threading.Event()).is_set():
                             threading.Event().wait(0.05)
                             continue
-                        buf = rf.read(DEFAULTS.io_chunk_size_bytes)
+                        buf = rf.read(chunk_size)
                         if not buf:
                             break
                         wf.write(buf)
                         self._progress(job.job_id, len(buf), file_id)
-            # Verify (BALANCED): xxHash64 source vs dest
-            src_hash = hash_file_xxh(src)
-            dst_hash = hash_file_xxh(dst_tmp)
-            if src_hash.hexdigest != dst_hash.hexdigest:
-                self._emit(job.job_id, "file.failed", {
-                    "file_id": file_id,
-                    "filename": filename,
-                    "error": "hash_mismatch",
-                })
-                return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error="hash_mismatch")
+            
+            # Only verify in BALANCED mode, not in FAST mode
+            if (job.options.mode or "BALANCED").upper() == "BALANCED":
+                # Verify (BALANCED): xxHash64 source vs dest
+                src_hash = hash_file_xxh(src)
+                dst_hash = hash_file_xxh(dst_tmp)
+                if src_hash.hexdigest != dst_hash.hexdigest:
+                    self._emit(job.job_id, "file.failed", {
+                        "file_id": file_id,
+                        "filename": filename,
+                        "error": "hash_mismatch",
+                    })
+                    return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error="hash_mismatch")
+                hexdigest = src_hash.hexdigest
+            elif (job.options.mode or "BALANCED").upper() == "FAST":
+                # FAST mode: size check only, no hashing
+                hexdigest = None
+                # Quick size verification only
+                if dst_tmp.stat().st_size != spec.size_bytes:
+                    self._emit(job.job_id, "file.failed", {
+                        "file_id": file_id,
+                        "filename": filename,
+                        "error": "size_mismatch",
+                    })
+                    return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error="size_mismatch")
+            else:
+                # NONE mode: absolutely no verification, fastest possible
+                hexdigest = None
+                # Skip all verification - trust the copy operation
+            
             dst_tmp.replace(dst)
             
             # Emit file completed event
@@ -230,7 +290,7 @@ class PythonCopyEngine(Engine):
                 "skipped": False,
             })
             
-            return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=True, hexdigest=src_hash.hexdigest)
+            return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=True, hexdigest=hexdigest)
         except Exception as exc:  # noqa: BLE001
             self._emit(job.job_id, "file.failed", {
                 "file_id": file_id,
@@ -244,7 +304,7 @@ class PythonCopyEngine(Engine):
         with dst_tmp.open("wb") as wf:
             wf.truncate(size_bytes)
 
-        # Compute ranges
+        # Compute ranges with larger chunks for better performance
         chunk = size_bytes // streams
         ranges: list[tuple[int, int]] = []
         offset = 0
@@ -260,13 +320,15 @@ class PythonCopyEngine(Engine):
                 rf.seek(start)
                 wf.seek(start)
                 remaining = end - start
+                # Use larger chunks for multi-stream to reduce overhead
+                chunk_size = max(DEFAULTS.io_chunk_size_bytes, 128 * 1024 * 1024)  # At least 128MB chunks for maximum performance
                 while remaining > 0:
                     if self._cancels.get(job.job_id, threading.Event()).is_set():
                         return
                     if self._pauses.get(job.job_id, threading.Event()).is_set():
                         threading.Event().wait(0.05)
                         continue
-                    to_read = min(DEFAULTS.io_chunk_size_bytes, remaining)
+                    to_read = min(chunk_size, remaining)
                     buf = rf.read(to_read)
                     if not buf:
                         break
@@ -285,21 +347,33 @@ class PythonCopyEngine(Engine):
         if stats:
             with stats.lock:
                 stats.copied_bytes += nbytes
-                now = time.time()
-                if now - stats.last_emit < 0.2:
-                    pass  # Continue to file stats
-                else:
-                    stats.last_emit = now
-                    elapsed = max(1e-3, now - stats.start_time)
-                    mbps = (stats.copied_bytes / elapsed) / (1024 * 1024)
-                    remaining = max(0, stats.total_bytes - stats.copied_bytes)
-                    eta_s = remaining / (mbps * 1024 * 1024) if mbps > 0 else 0
-                    self._emit(job_id, "job.progress", {
-                        "bytes": stats.copied_bytes,
-                        "total": stats.total_bytes,
-                        "mbps": mbps,
-                        "eta_seconds": eta_s,
-                    })
+                current_time = time.time()
+                
+                # Calculate and emit performance metrics every 50MB or 0.5 seconds for more responsive updates
+                if (stats.copied_bytes - stats.last_emit_bytes >= 50 * 1024 * 1024 or 
+                    current_time - stats.last_emit >= 0.5):
+                    
+                    elapsed = current_time - stats.start_time
+                    if elapsed > 0:
+                        speed_mbps = (stats.copied_bytes / (1024 * 1024)) / elapsed
+                        progress = (stats.copied_bytes / stats.total_bytes) * 100 if stats.total_bytes > 0 else 0
+                        
+                        # Ensure progress never exceeds 100%
+                        progress = min(progress, 100.0)
+                        
+                        self._emit(job_id, "job.progress", {
+                            "bytes_copied": stats.copied_bytes,
+                            "total_bytes": stats.total_bytes,
+                            "progress_percent": progress,
+                            "speed_mbps": speed_mbps,
+                            "elapsed_time": elapsed
+                        })
+                        
+                        # Log performance for debugging
+                        self._logger.info(f"Transfer progress: {progress:.1f}% - {speed_mbps:.1f} MB/s")
+                        
+                        stats.last_emit = current_time
+                        stats.last_emit_bytes = stats.copied_bytes
         
         # Update file stats if provided
         if file_id:

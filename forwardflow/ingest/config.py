@@ -20,10 +20,10 @@ class IngestDefaults:
     # Phase 1 defaults (kept here for centralized configuration)
     # Presets for common link speeds
     # Users shouldn't need to tweak in most cases; UI can set based on chosen preset
-    per_file_concurrency: int = 2
-    stream_concurrency: int = 8
-    min_multistream_size_bytes: int = 1 * 1024 * 1024 * 1024  # 1 GiB
-    io_chunk_size_bytes: int = 16 * 1024 * 1024  # 16 MiB
+    per_file_concurrency: int = 4  # Increased from 2
+    stream_concurrency: int = 16   # Increased from 8
+    min_multistream_size_bytes: int = 100 * 1024 * 1024  # Reduced to 100 MiB for more files
+    io_chunk_size_bytes: int = 256 * 1024 * 1024  # Increased to 128 MiB for much better performance
     verify_algorithm: str = "xxh64"  # Phase 1: non-cryptographic
 
 

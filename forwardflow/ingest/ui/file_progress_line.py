@@ -5,7 +5,9 @@ from PyQt6.QtWidgets import (
     QLabel,
     QProgressBar,
     QFrame,
+    QSizePolicy,
 )
+import os
 
 # Import app colors for consistent styling
 try:
@@ -40,8 +42,8 @@ class FileProgressLine(QWidget):
         
         # Filename label (truncated if too long)
         filename_label = QLabel(self._truncate_filename(self.filename))
-        filename_label.setMinimumWidth(200)  # Reduced minimum width
-        filename_label.setMaximumWidth(350)  # Reduced maximum width
+        filename_label.setMinimumWidth(150)  # Reduced minimum width
+        filename_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)  # Allow expansion
         filename_label.setToolTip(self.filename)  # Show full name on hover
         filename_label.setStyleSheet(FILENAME_LABEL_STYLE)
         layout.addWidget(filename_label)
@@ -50,8 +52,8 @@ class FileProgressLine(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        self.progress_bar.setMinimumWidth(150)  # Reduced minimum width
-        self.progress_bar.setMaximumWidth(250)  # Reduced maximum width
+        self.progress_bar.setMinimumWidth(120)  # Reduced minimum width
+        self.progress_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)  # Allow expansion
         self.progress_bar.setFixedHeight(20)  # Reduced height for more compact display
         layout.addWidget(self.progress_bar)
         
@@ -69,8 +71,8 @@ class FileProgressLine(QWidget):
         self.status_label.setStyleSheet(FILE_STATUS_LABEL_STYLE)
         layout.addWidget(self.status_label)
         
-        # Add stretch to push everything to the left
-        layout.addStretch()
+        # Remove the stretch to allow widgets to expand
+        # layout.addStretch()
         
         self.setLayout(layout)
         
@@ -80,11 +82,24 @@ class FileProgressLine(QWidget):
         # Apply app-consistent styling
         self._apply_default_styling()
         
-    def _truncate_filename(self, filename: str, max_length: int = 25) -> str:
+    def _truncate_filename(self, filename: str, max_length: int = 35) -> str:
         """Truncate filename to fit in UI."""
         if len(filename) <= max_length:
             return filename
-        return filename[:max_length-3] + "..."
+        
+        # Try to keep the extension if possible
+        name, ext = os.path.splitext(filename)
+        if ext:
+            # Keep extension and truncate name part
+            max_name_length = max_length - len(ext) - 3  # 3 for "..."
+            if max_name_length > 0:
+                return name[:max_name_length] + "..." + ext
+            else:
+                # If we can't fit even the extension, just truncate
+                return filename[:max_length-3] + "..."
+        else:
+            # No extension, just truncate
+            return filename[:max_length-3] + "..."
         
     def _apply_default_styling(self):
         """Apply the default app styling."""
@@ -123,6 +138,31 @@ class FileProgressLine(QWidget):
         
         # Change styling to indicate completion with centralized styles
         self.setStyleSheet(FILE_PROGRESS_LINE_COMPLETED_STYLE)
+        
+        # Also update individual label styles to ensure proper green colors
+        self.status_label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['success']};
+                font-size: 11px;
+                font-weight: 600;
+                background-color: {colors['success']}20;
+                padding: 2px 6px;
+                border-radius: 3px;
+                border: 1px solid {colors['success']};
+            }}
+        """)
+        
+        self.speed_label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['success']};
+                font-size: 11px;
+                font-weight: 600;
+                background-color: {colors['success']}20;
+                padding: 2px 6px;
+                border-radius: 3px;
+                border: 1px solid {colors['success']};
+            }}
+        """)
         
     def mark_failed(self, error: str):
         """Mark the file transfer as failed."""

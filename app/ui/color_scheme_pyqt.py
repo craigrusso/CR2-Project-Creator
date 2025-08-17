@@ -107,6 +107,29 @@ ACCENT_BUTTON_STYLE = f"""
     }}
 """
 
+# Style for danger/cancel buttons (red)
+DANGER_BUTTON_STYLE = f"""
+    QWidget#ingest_tab QPushButton#cancel_btn {{
+        background-color: #902A2A !important;
+        color: white !important;
+        border: 1px solid #732121 !important;
+        padding: 5px 10px !important;
+        border-radius: 3px !important;
+    }}
+    QWidget#ingest_tab QPushButton#cancel_btn:hover {{
+        background-color: #A33030 !important;
+        border: 1px solid #8A2727 !important;
+    }}
+    QWidget#ingest_tab QPushButton#cancel_btn:pressed {{
+        background-color: #7D2525 !important;
+    }}
+    QWidget#ingest_tab QPushButton#cancel_btn:disabled {{
+        background-color: {colors['bg']} !important;
+        color: {colors['secondary_text']} !important;
+        border: 1px solid {colors['secondary_text']} !important;
+    }}
+"""
+
 # Style for dialog message box buttons
 MESSAGE_BOX_BUTTON_STYLE = f"""
     /* Base style for all QMessageBox buttons */
@@ -138,28 +161,6 @@ MESSAGE_BOX_BUTTON_STYLE = f"""
         background-color: {colors['highlight_darker']};
     }}
     
-    /* Style for "No" and cancel buttons - gray color */
-    QMessageBox QPushButton[text="No"],
-    QMessageBox QPushButton[text="Cancel"],
-    QMessageBox QPushButton[text="&No"] {{
-        background-color: {colors['card_bg']};
-        color: {colors['text']};
-        border: 1px solid {colors['border']};
-    }}
-    
-    QMessageBox QPushButton[text="No"]:hover,
-    QMessageBox QPushButton[text="Cancel"]:hover,
-    QMessageBox QPushButton[text="&No"]:hover {{
-        background-color: {colors['hover_bg']};
-        border: 1px solid {colors['accent']};
-    }}
-    
-    QMessageBox QPushButton[text="No"]:pressed,
-    QMessageBox QPushButton[text="Cancel"]:pressed,
-    QMessageBox QPushButton[text="&No"]:pressed {{
-        background-color: {colors['hover_bg']};
-        color: {colors['highlight_text']};
-    }}
 """
 
 # Style for dialog buttons in QInputDialog and other standard dialogs
@@ -190,25 +191,6 @@ DIALOG_BUTTON_STYLE = f"""
         background-color: {colors['highlight_darker']};
     }}
     
-    /* Style for "Cancel" button - gray color */
-    QDialog QPushButton[text="Cancel"],
-    QDialog QPushButton[text="&Cancel"] {{
-        background-color: {colors['card_bg']};
-        color: {colors['text']};
-        border: 1px solid {colors['border']};
-    }}
-    
-    QDialog QPushButton[text="Cancel"]:hover,
-    QDialog QPushButton[text="&Cancel"]:hover {{
-        background-color: {colors['hover_bg']};
-        border: 1px solid {colors['accent']};
-    }}
-    
-    QDialog QPushButton[text="Cancel"]:pressed,
-    QDialog QPushButton[text="&Cancel"]:pressed {{
-        background-color: {colors['hover_bg']};
-        color: {colors['highlight_text']};
-    }}
 """
 
 # Get SVG icon paths using resource helper
@@ -879,24 +861,47 @@ FRAME_STYLE = f"""
     }}
 """
 
-# Style for progress bars
+# Progress bar styling with proper green gradient
 PROGRESS_BAR_STYLE = f"""
+    QProgressBar {{
+        border: 1px solid {colors['border']};
+        border-radius: 3px;
+        text-align: center;
+        background-color: {colors['bg']};
+        color: {colors['text']};
+        font-size: 14px;
+        font-weight: 600;
+        margin: 0;
+        padding: 0;
+        min-height: 30px;
+    }}
+    QProgressBar::chunk {{
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                                   stop:0 #2d5a2d, 
+                                   stop:0.5 #4a7c4a, 
+                                   stop:1 #6ba06b);
+        border-radius: 2px;
+    }}
+"""
+
+# Enhanced progress bar style with stronger gradient and larger text
+ENHANCED_PROGRESS_BAR_STYLE = f"""
     QProgressBar {{
         border: 1px solid {colors['border']};
         border-radius: 2px;
         text-align: center;
         background-color: {colors['bg']};
         color: {colors['text']};
-        font-size: 11px;
-        font-weight: 600;
+        font-size: 18px;
+        font-weight: 700;
         margin: 0;
         padding: 0;
         min-height: 60px;
     }}
     QProgressBar::chunk {{
         background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                                   stop:0 {colors['accent']}, 
-                                   stop:1 {colors['accent_hover']});
+                                   stop:0 {QColor(colors['accent']).darker(120).name()}, 
+                                   stop:1 {QColor(colors['accent_hover']).lighter(120).name()});
         border-radius: 1px;
     }}
 """
@@ -996,6 +1001,52 @@ SLIDER_STYLE = f"""
     }}
 """
 
+# Enhanced slider style with thicker track and better visibility
+ENHANCED_SLIDER_STYLE = f"""
+    QSlider::groove:horizontal {{
+        border: 1px solid {colors['border']};
+        height: 8px;
+        background: {colors['card_bg']};
+        border-radius: 4px;
+    }}
+    QSlider::handle:horizontal {{
+        background: {colors['accent']};
+        border: 1px solid {colors['accent']};
+        width: 18px;
+        margin: -5px 0;
+        border-radius: 9px;
+    }}
+    QSlider::handle:horizontal:hover {{
+        background: {colors['accent_hover']};
+        border: 1px solid {colors['accent_hover']};
+    }}
+"""
+
+# Enhanced button style with better hover effects
+ENHANCED_BUTTON_STYLE = f"""
+    QPushButton {{
+        background-color: {colors['card_bg']};
+        color: {colors['text']};
+        border: 1px solid {colors['border']};
+        padding: 5px 10px;
+        border-radius: 3px;
+    }}
+    QPushButton:hover {{
+        background-color: {colors['hover_bg']};
+        border: 1px solid {colors['accent']};
+        color: white;
+    }}
+    QPushButton:pressed {{
+        background-color: {colors['accent']};
+        color: {colors['highlight_text']};
+    }}
+    QPushButton:disabled {{
+        background-color: {colors['bg']};
+        color: {colors['secondary_text']};
+        border: 1px solid {colors['secondary_text']};
+    }}
+"""
+
 # Style for speed labels
 SPEED_LABEL_STYLE = f"""
     QLabel {{
@@ -1041,6 +1092,8 @@ FIELD_LABEL_STYLE = f"""
         font-weight: 600;
         color: {colors['text']};
         font-size: 12px;
+        padding-top: 5px;
+        padding-bottom: 5px;
     }}
 """
 
@@ -1056,9 +1109,14 @@ TIME_LABEL_STYLE = f"""
 # Style for accent value labels
 ACCENT_VALUE_STYLE = f"""
     QLabel {{
-        color: {colors['accent']};
+        color: white;
         font-weight: 600;
         font-size: 12px;
+        background-color: {colors['accent']};
+        padding: 2px 6px;
+        border-radius: 3px;
+        min-width: 20px;
+        text-align: center;
     }}
 """
 
