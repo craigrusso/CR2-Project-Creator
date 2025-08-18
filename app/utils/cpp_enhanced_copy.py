@@ -9,7 +9,8 @@ file copying engine for maximum performance.
 import os
 import sys
 import time
-from typing import List, Optional, Dict, Any, Callable
+import platform
+from typing import List, Optional, Dict, Any, Callable, Union
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -59,17 +60,72 @@ class CopyStats:
 
 @dataclass
 class CopyOptions:
-    """Options for copy operations"""
-    block_size: int = 1024 * 1024  # 1MB default
+    """Options for copy operations with safer defaults"""
+    block_size: int = 4 * 1024 * 1024  # 4MB default (safer)
     thread_count: int = 0  # 0 = auto-detect
-    use_direct_io: bool = True
-    verify_integrity: bool = True
+    use_direct_io: Union[bool, str] = "auto"  # "auto", True, or False
+    verify_integrity: bool = False  # FAST by default; user can enable
     hash_algorithm: str = "xxhash64"
     mtu_size: int = 0  # 0 = auto-detect
     socket_buffer_size: int = 0  # 0 = auto-detect
     adaptive_parameters: bool = True
-    large_file_threshold: int = 100 * 1024 * 1024  # 100MB
+    large_file_threshold: int = 256 * 1024 * 1024  # 256MB (safer)
     progress_callback: Optional[Callable] = None
+
+class PathAnalyzer:
+    """Analyze paths to determine optimal copy parameters"""
+    
+    @staticmethod
+    def is_usb_or_thunderbolt(path: str) -> bool:
+        """Detect if path is on USB or Thunderbolt device"""
+        try:
+            if platform.system() == "Darwin":  # macOS
+                # Check if path contains /Volumes/ (external drives)
+                if "/Volumes/" in path:
+                    return True
+                # Could add more sophisticated detection here
+            elif platform.system() == "Windows":
+                # Check for removable drives (D:, E:, etc.)
+                if len(path) >= 2 and path[1] == ':' and path[0] in 'DEFGHIJKLMNOPQRSTUVWXYZ':
+                    # This is a simple heuristic - could be improved
+                    return True
+            # Linux: could check /proc/mounts for USB devices
+            return False
+        except:
+            return False
+    
+    @staticmethod
+    def is_network_path(path: str) -> bool:
+        """Detect if path is a network location"""
+        try:
+            # Common network path patterns
+            network_patterns = [
+                "//", "\\\\",  # SMB/CIFS
+                "smb://", "nfs://", "ftp://", "sftp://",  # Various protocols
+                "/mnt/", "/media/",  # Linux mount points
+            ]
+            
+            path_lower = path.lower()
+            return any(pattern in path_lower for pattern in network_patterns)
+        except:
+            return False
+    
+    @staticmethod
+    def is_nvme_path(path: str) -> bool:
+        """Detect if path is on NVMe storage (heuristic)"""
+        try:
+            if platform.system() == "Darwin":  # macOS
+                # Check for common NVMe mount points
+                nvme_patterns = ["/System/", "/Applications/", "/Users/"]
+                return any(pattern in path for pattern in nvme_patterns)
+            elif platform.system() == "Windows":
+                # Usually C: drive on modern systems
+                return path.startswith("C:")
+            else:  # Linux
+                # Check for /dev/nvme devices
+                return "/dev/nvme" in path or "/nvme" in path
+        except:
+            return False
 
 class CppEnhancedCopyEngine:
     """C++ Enhanced Copy Engine with Python fallback"""
@@ -101,10 +157,71 @@ class CppEnhancedCopyEngine:
         if not cpp_available and not py_available:
             print("Warning: No enhanced copy engines available")
     
+    def _auto_tune_parameters(self, source_paths: List[str], destination_paths: List[str], 
+                             options: CopyOptions) -> CopyOptions:
+        """Auto-tune parameters based on source and destination paths"""
+        tuned_options = CopyOptions(
+            block_size=options.block_size,
+            thread_count=options.thread_count,
+            use_direct_io=options.use_direct_io,
+            verify_integrity=options.verify_integrity,
+            hash_algorithm=options.hash_algorithm,
+            mtu_size=options.mtu_size,
+            socket_buffer_size=options.socket_buffer_size,
+            adaptive_parameters=options.adaptive_parameters,
+            large_file_threshold=options.large_file_threshold,
+            progress_callback=options.progress_callback
+        )
+        
+        # Analyze paths to determine optimal settings
+        all_paths = source_paths + destination_paths
+        
+        # Check for USB/Thunderbolt
+        has_usb_tb = any(PathAnalyzer.is_usb_or_thunderbolt(path) for path in all_paths)
+        
+        # Check for network paths
+        has_network = any(PathAnalyzer.is_network_path(path) for path in all_paths)
+        
+        # Check for NVMe paths
+        has_nvme = any(PathAnalyzer.is_nvme_path(path) for path in all_paths)
+        
+        # Auto-tune direct I/O
+        if options.use_direct_io == "auto":
+            if has_usb_tb:
+                tuned_options.use_direct_io = False  # Buffered for USB/TB
+            elif has_network or (has_nvme and len(all_paths) >= 2 and all(PathAnalyzer.is_nvme_path(p) for p in all_paths)):
+                tuned_options.use_direct_io = True   # Direct for network/NVMe↔NVMe
+            else:
+                tuned_options.use_direct_io = False  # Default to buffered
+        
+        # Auto-tune block size
+        if options.block_size == 4 * 1024 * 1024:  # Default value
+            if has_usb_tb:
+                tuned_options.block_size = 4 * 1024 * 1024  # 4MB for USB/TB
+            elif has_network:
+                tuned_options.block_size = 1 * 1024 * 1024  # 1MB for network
+            elif has_nvme:
+                tuned_options.block_size = 4 * 1024 * 1024  # 4MB for NVMe
+            else:
+                tuned_options.block_size = 4 * 1024 * 1024  # 4MB default
+        
+        # Auto-tune thread count
+        if options.thread_count == 0:  # Auto-detect
+            if has_usb_tb:
+                tuned_options.thread_count = 1  # Single thread for USB/TB
+            elif has_network:
+                tuned_options.thread_count = 4  # Multiple threads for network
+            elif has_nvme:
+                tuned_options.thread_count = 2  # Moderate threading for NVMe
+            else:
+                tuned_options.thread_count = 2  # Default moderate threading
+        
+        return tuned_options
+    
     def copy_files(self, source_paths: List[str], destination_paths: List[str], 
                    options: Optional[CopyOptions] = None) -> CopyStats:
         """
-        Copy files using the best available engine
+        Copy files using the best available engine with auto-tuning
         
         Args:
             source_paths: List of source file/directory paths
@@ -116,6 +233,10 @@ class CppEnhancedCopyEngine:
         """
         if options is None:
             options = CopyOptions()
+        
+        # Auto-tune parameters based on paths
+        if options.adaptive_parameters:
+            options = self._auto_tune_parameters(source_paths, destination_paths, options)
         
         if self.cpp_engine:
             return self._copy_with_cpp_engine(source_paths, destination_paths, options)
@@ -137,7 +258,7 @@ class CppEnhancedCopyEngine:
             cpp_job.destination_paths = destination_paths
             cpp_job.block_size = options.block_size
             cpp_job.thread_count = options.thread_count
-            cpp_job.use_direct_io = options.use_direct_io
+            cpp_job.use_direct_io = bool(options.use_direct_io)  # Convert to bool
             cpp_job.verify_integrity = options.verify_integrity
             cpp_job.hash_algorithm = options.hash_algorithm
             cpp_job.mtu_size = options.mtu_size
@@ -182,7 +303,7 @@ class CppEnhancedCopyEngine:
             py_options = PyCopyOptions(
                 block_size=options.block_size,
                 thread_count=options.thread_count,
-                use_direct_io=options.use_direct_io,
+                use_direct_io=bool(options.use_direct_io),  # Convert to bool
                 verify_integrity=options.verify_integrity,
                 hash_algorithm=options.hash_algorithm,
                 mtu_size=options.mtu_size,
@@ -262,12 +383,12 @@ class CppEnhancedCopyEngine:
             except Exception as e:
                 print(f"Python optimal parameters failed: {e}")
         
-        # Default fallback
+        # Default fallback with safer defaults
         return {
-            "block_size": 1024 * 1024,
-            "thread_count": 4,
-            "use_direct_io": True,
-            "large_file_threshold": 100 * 1024 * 1024
+            "block_size": 4 * 1024 * 1024,  # 4MB default
+            "thread_count": 2,  # Conservative default
+            "use_direct_io": False,  # Buffered by default
+            "large_file_threshold": 256 * 1024 * 1024  # 256MB
         }
     
     def calculate_file_hash(self, file_path: str, algorithm: str = "xxhash64") -> str:
@@ -290,17 +411,17 @@ class CppEnhancedCopyEngine:
 
 # Convenience functions
 def copy_files(source_paths: List[str], destination_paths: List[str], **kwargs) -> CopyStats:
-    """Copy files using the best available engine"""
+    """Copy files using the best available engine with auto-tuning"""
     engine = CppEnhancedCopyEngine()
     options = CopyOptions(**kwargs)
     return engine.copy_files(source_paths, destination_paths, options)
 
 def copy_file(source_path: str, destination_path: str, **kwargs) -> CopyStats:
-    """Copy a single file using the best available engine"""
+    """Copy a single file using the best available engine with auto-tuning"""
     return copy_files([source_path], [destination_path], **kwargs)
 
 def copy_directory(source_dir: str, destination_dir: str, **kwargs) -> CopyStats:
-    """Copy a directory using the best available engine"""
+    """Copy a directory using the best available engine with auto-tuning"""
     return copy_files([source_dir], [destination_dir], **kwargs)
 
 def test_bandwidth() -> Dict[str, float]:
@@ -320,7 +441,7 @@ def calculate_file_hash(file_path: str, algorithm: str = "xxhash64") -> str:
 
 # Export the main engine class
 __all__ = [
-    'CppEnhancedCopyEngine', 'CopyStats', 'CopyOptions',
+    'CppEnhancedCopyEngine', 'CopyStats', 'CopyOptions', 'PathAnalyzer',
     'copy_files', 'copy_file', 'copy_directory',
     'test_bandwidth', 'get_optimal_parameters', 'calculate_file_hash',
     'CPP_ENGINE_AVAILABLE'

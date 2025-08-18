@@ -94,12 +94,77 @@ def build_ingest_tab():
     root.time_update_timer.timeout.connect(lambda: update_elapsed_time())
     root.time_update_timer.start(1000)  # Update every second
     
+    # Timer for updating stats more frequently
+    root.stats_update_timer = QTimer()
+    root.stats_update_timer.timeout.connect(lambda: update_stats())
+    root.stats_update_timer.start(500)  # Update every 500ms for more responsive stats
+    
     def update_elapsed_time():
         """Update elapsed time display every second"""
         if root.job_start_time and root.current_job:
             elapsed_seconds = time.time() - root.job_start_time
             elapsed_str = f"{int(elapsed_seconds//3600):02d}:{int((elapsed_seconds%3600)//60):02d}:{int(elapsed_seconds%60):02d}"
             root.elapsed_label.setText(f"Elapsed: {elapsed_str}")
+    
+    def update_stats():
+        """Update speed and progress stats more frequently"""
+        if root.job_start_time and root.current_job and hasattr(root, 'copied_bytes') and hasattr(root, 'total_bytes'):
+            elapsed_seconds = time.time() - root.job_start_time
+            if elapsed_seconds > 0 and root.total_bytes > 0:
+                # Calculate current speed
+                current_speed = (root.copied_bytes / (1024 * 1024)) / elapsed_seconds
+                
+                # Update progress bar
+                if hasattr(root, 'total_progress'):
+                    progress_percent = int((root.copied_bytes / root.total_bytes) * 100)
+                    root.total_progress.setValue(progress_percent)
+                    root.total_progress.setFormat(f"{progress_percent}%")  # Update the text format
+                
+                # Update speed label
+                if hasattr(root, 'speed_label'):
+                    root.speed_label.setText(f"{current_speed:.0f} MB/s Transfer")
+                
+                # Update current speed stat
+                if hasattr(root, 'current_speed_label'):
+                    root.current_speed_label.setText(f"Speed: {current_speed:.0f} MB/s")
+                
+                # Calculate average speed
+                if hasattr(root, 'avg_speed_label'):
+                    total_mb = root.total_bytes / (1024 * 1024)
+                    avg_speed = total_mb / elapsed_seconds
+                    root.avg_speed_label.setText(f"Avg: {avg_speed:.0f} MB/s")
+                
+                # Update peak speed if current speed is higher
+                if hasattr(root, 'peak_speed_label'):
+                    try:
+                        current_peak_text = root.peak_speed_label.text()
+                        if "Peak: " in current_peak_text:
+                            current_peak = float(current_peak_text.split(': ')[1].split(' ')[0])
+                            if current_speed > current_peak:
+                                root.peak_speed_label.setText(f"Peak: {current_speed:.0f} MB/s")
+                    except (ValueError, IndexError):
+                        # If we can't parse the current peak, just set it
+                        root.peak_speed_label.setText(f"Peak: {current_speed:.0f} MB/s")
+                
+                # Calculate ETA
+                if hasattr(root, 'eta_label') and current_speed > 0 and root.copied_bytes < root.total_bytes:
+                    remaining_bytes = root.total_bytes - root.copied_bytes
+                    eta_seconds = remaining_bytes / (current_speed * 1024 * 1024)
+                    if eta_seconds > 0:
+                        eta_str = f"{int(eta_seconds//3600):02d}:{int((eta_seconds%3600)//60):02d}:{int(eta_seconds%60):02d}"
+                        root.eta_label.setText(f"ETA: {eta_str}")
+                    else:
+                        root.eta_label.setText("ETA: --:--:--")
+                elif hasattr(root, 'eta_label'):
+                    root.eta_label.setText("ETA: --:--:--")
+                
+                # Force updates for all widgets
+                if hasattr(root, 'total_progress'):
+                    root.total_progress.repaint()
+                    root.total_progress.update()
+                if hasattr(root, 'speed_label'):
+                    root.speed_label.repaint()
+                    root.speed_label.update()
     
     # Header
     header_label = QLabel("Turbo Transfer")
@@ -394,7 +459,21 @@ def build_ingest_tab():
     total_progress.setValue(0)
     total_progress.setFixedHeight(60)  # 3x taller (was 20px)
     total_progress.setStyleSheet(PROGRESS_BAR_STYLE)
+    total_progress.setVisible(True)  # Ensure it's visible
+    total_progress.setEnabled(True)  # Ensure it's enabled
+    total_progress.setFormat("%p%")  # Show percentage
+    total_progress.setTextVisible(True)  # Ensure text is visible
     progress_layout.addWidget(total_progress)
+    
+    # Debug progress bar setup
+    print(f"DEBUG: Progress bar created with range 0-100, height 60px")
+    print(f"DEBUG: Progress bar is visible: {total_progress.isVisible()}")
+    print(f"DEBUG: Progress bar is enabled: {total_progress.isEnabled()}")
+    print(f"DEBUG: Progress bar size: {total_progress.size()}")
+    print(f"DEBUG: Progress bar style: {total_progress.styleSheet()[:100]}...")
+    print(f"DEBUG: Progress bar format: {total_progress.format()}")
+    print(f"DEBUG: Progress bar text visible: {total_progress.isTextVisible()}")
+    print(f"DEBUG: Progress bar initial value: {total_progress.value()}")
     
     layout.addWidget(progress_frame)
     
@@ -512,6 +591,10 @@ def build_ingest_tab():
             root.elapsed_label.setText("Elapsed: 00:00:00")
             root.eta_label.setText("ETA: --:--:--")
             
+            # Initialize progress tracking
+            root.total_bytes = total_bytes
+            root.copied_bytes = 0
+            
             # Reset speed metrics
             if hasattr(root, 'current_speed_label'):
                 root.current_speed_label.setText("Speed: 0 MB/s")
@@ -548,21 +631,34 @@ def build_ingest_tab():
     def handle_job_progress(payload):
         print(f"DEBUG: handle_job_progress called with: {payload}")
         try:
-            mbps = payload.get("mbps", 0.0)
-            total = max(1, payload.get("total", 1))
-            bytes_copied = payload.get("bytes", 0)
-            percent = int(100 * bytes_copied / total)
+            # Fix field name mismatches between engine and UI
+            mbps = payload.get("speed_mbps", payload.get("mbps", 0.0))
+            total = max(1, payload.get("total_bytes", payload.get("total", 1)))
+            bytes_copied = payload.get("bytes_copied", payload.get("bytes", 0))
+            
+            # Update progress tracking
+            root.copied_bytes = bytes_copied
+            root.total_bytes = total
+            
+            # Use progress_percent from engine if available, otherwise calculate
+            if "progress_percent" in payload:
+                percent = int(payload["progress_percent"])
+            else:
+                percent = int(100 * bytes_copied / total)
+                
             print(f"DEBUG: Setting total progress to {percent}% and speed to {mbps:.0f} MB/s")
             
             # Update the progress bar
             print(f"DEBUG: About to set progress bar to {percent}%")
             print(f"DEBUG: Progress bar before update: {root.total_progress.value()}")
             root.total_progress.setValue(percent)
+            root.total_progress.setFormat(f"{percent}%")  # Update the text format
             print(f"DEBUG: Progress bar value set to {percent}")
             print(f"DEBUG: Progress bar current value: {root.total_progress.value()}")
             print(f"DEBUG: Progress bar is visible: {root.total_progress.isVisible()}")
             print(f"DEBUG: Progress bar size: {root.total_progress.size()}")
             print(f"DEBUG: Progress bar range: {root.total_progress.minimum()} to {root.total_progress.maximum()}")
+            print(f"DEBUG: Progress bar format: {root.total_progress.format()}")
             
             # Update the speed label
             root.speed_label.setText(f"{mbps:.0f} MB/s Transfer")
@@ -612,10 +708,12 @@ def build_ingest_tab():
             print(f"DEBUG: total_progress new value: {root.total_progress.value()}")
             print(f"DEBUG: speed_label new text: {root.speed_label.text()}")
             
-            # Force a repaint
+            # Force a repaint and update
             root.total_progress.repaint()
+            root.total_progress.update()
             root.speed_label.repaint()
-            print(f"DEBUG: Progress widgets repainted")
+            root.speed_label.update()
+            print(f"DEBUG: Progress widgets repainted and updated")
             
         except Exception as e:
             print(f"DEBUG: Error in handle_job_progress: {e}")
@@ -773,13 +871,17 @@ def build_ingest_tab():
             mbps = payload.get("mbps", 0)
             print(f"DEBUG: Job completed: {bytes_copied}/{total_bytes} bytes in {elapsed_s:.1f}s at {mbps:.1f} MB/s")
             
-            # Stop the time update timer
+            # Stop the timers
             if root.time_update_timer.isActive():
                 root.time_update_timer.stop()
                 print("DEBUG: Time update timer stopped")
+            if root.stats_update_timer.isActive():
+                root.stats_update_timer.stop()
+                print("DEBUG: Stats update timer stopped")
             
             # Update progress to 100%
             total_progress.setValue(100)
+            total_progress.setFormat("100%")  # Update the text format
             print(f"DEBUG: Progress bar set to 100%")
             
             # Show final time statistics

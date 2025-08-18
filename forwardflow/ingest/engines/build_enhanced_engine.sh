@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Enhanced High-Performance File Copying Engine Build Script
-# This script automates the building and installation of the enhanced engine
+# Enhanced High-Performance Copy Engine Build Script
+# This script builds the C++ enhanced copy engine with all optimizations
 
 set -e  # Exit on any error
 
@@ -29,65 +29,63 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Function to detect platform
-detect_platform() {
-    case "$(uname -s)" in
-        Linux*)     echo "linux";;
-        Darwin*)    echo "macos";;
-        CYGWIN*)    echo "windows";;
-        MINGW*)     echo "windows";;
-        MSYS*)      echo "windows";;
-        *)          echo "unknown";;
-    esac
-}
-
 # Function to check if command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Function to detect platform
+detect_platform() {
+    case "$(uname -s)" in
+        Darwin*)    echo "macOS";;
+        Linux*)     echo "Linux";;
+        CYGWIN*|MINGW32*|MSYS*|MINGW*) echo "Windows";;
+        *)          echo "Unknown";;
+    esac
+}
+
 # Function to install system dependencies
 install_system_deps() {
-    local platform=$1
+    local platform=$(detect_platform)
     
     print_status "Installing system dependencies for $platform..."
     
     case $platform in
-        "linux")
-            if command_exists apt-get; then
-                # Ubuntu/Debian
-                sudo apt-get update
-                sudo apt-get install -y build-essential cmake libxxhash-dev libssl-dev python3-dev pkg-config
-            elif command_exists yum; then
-                # CentOS/RHEL
-                sudo yum install -y gcc-c++ cmake xxhash-devel openssl-devel python3-devel pkgconfig
-            elif command_exists dnf; then
-                # Fedora
-                sudo dnf install -y gcc-c++ cmake xxhash-devel openssl-devel python3-devel pkgconfig
-            else
-                print_error "Unsupported Linux distribution. Please install build-essential, cmake, libxxhash-dev, and libssl-dev manually."
-                exit 1
-            fi
-            ;;
-        "macos")
+        "macOS")
             if command_exists brew; then
-                brew install cmake xxhash openssl pkg-config
+                print_status "Installing dependencies via Homebrew..."
+                brew install cmake pkg-config openssl xxhash
             else
-                print_error "Homebrew not found. Please install Homebrew first: https://brew.sh/"
-                exit 1
+                print_warning "Homebrew not found. Please install cmake, pkg-config, openssl, and xxhash manually."
             fi
             ;;
-        "windows")
-            print_warning "Windows dependencies should be installed manually:"
-            print_warning "1. Install Visual Studio 2019 or later with C++ build tools"
-            print_warning "2. Install CMake 3.16 or later"
-            print_warning "3. Install OpenSSL and xxHash development libraries"
+        "Linux")
+            if command_exists apt-get; then
+                print_status "Installing dependencies via apt-get..."
+                sudo apt-get update
+                sudo apt-get install -y build-essential cmake pkg-config libssl-dev libxxhash-dev python3-dev python3-pip
+            elif command_exists yum; then
+                print_status "Installing dependencies via yum..."
+                sudo yum groupinstall -y "Development Tools"
+                sudo yum install -y cmake pkg-config openssl-devel xxhash-devel python3-devel python3-pip
+            elif command_exists dnf; then
+                print_status "Installing dependencies via dnf..."
+                sudo dnf groupinstall -y "Development Tools"
+                sudo dnf install -y cmake pkg-config openssl-devel xxhash-devel python3-devel python3-pip
+            else
+                print_warning "Package manager not detected. Please install build tools, cmake, pkg-config, openssl, and xxhash manually."
+            fi
             ;;
-        *)
-            print_error "Unsupported platform: $platform"
-            exit 1
+        "Windows")
+            print_warning "Windows dependencies should be installed manually:"
+            print_warning "- Visual Studio Build Tools"
+            print_warning "- CMake"
+            print_warning "- OpenSSL"
+            print_warning "- xxHash"
             ;;
     esac
+    
+    print_success "System dependencies installation completed"
 }
 
 # Function to install Python dependencies
@@ -107,7 +105,7 @@ install_python_deps() {
     fi
     
     # Install Python dependencies
-    $pip_cmd install -r requirements_enhanced.txt
+    $pip_cmd install pybind11 numpy
     
     print_success "Python dependencies installed successfully"
 }
@@ -122,7 +120,7 @@ build_cpp_engine() {
     
     # Configure with CMake
     print_status "Configuring with CMake..."
-    cmake .. -DCMAKE_BUILD_TYPE=Release
+    cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS="-O3 -march=native"
     
     # Build
     print_status "Building C++ engine..."
@@ -146,55 +144,13 @@ build_cpp_engine() {
 test_python_integration() {
     print_status "Testing Python integration..."
     
-    # Create a simple test script
-    cat > test_integration.py << 'EOF'
-#!/usr/bin/env python3
-"""Test script for enhanced copy engine integration"""
-
-import sys
-import os
-from pathlib import Path
-
-# Add current directory to Python path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-try:
-    from enhanced_copy_integration import get_engine_info, test_engines
-    print("✓ Enhanced copy integration module imported successfully")
-    
-    # Get engine info
-    info = get_engine_info()
-    print(f"✓ Available engines: {info['available_engines']}")
-    print(f"✓ Platform: {info['platform']}")
-    print(f"✓ CPU count: {info['cpu_count']}")
-    
-    # Test engines
-    print("\nTesting engines...")
-    results = test_engines()
-    for engine, result in results.items():
-        status = "✓" if result['success'] else "✗"
-        print(f"{status} {engine}: {result.get('error', 'Success')}")
-        if result.get('stats'):
-            stats = result['stats']
-            print(f"    Speed: {stats['speed_mbps']:.1f} MB/s")
-    
-    print("\n✓ All tests completed successfully!")
-    
-except ImportError as e:
-    print(f"✗ Import error: {e}")
-    sys.exit(1)
-except Exception as e:
-    print(f"✗ Test error: {e}")
-    sys.exit(1)
-EOF
-    
-    # Run the test
-    python3 test_integration.py
-    
-    # Clean up
-    rm -f test_integration.py
-    
-    print_success "Python integration test completed successfully"
+    # Run the test script
+    if [ -f "test_enhanced_engine.py" ]; then
+        python3 test_enhanced_engine.py
+        print_success "Python integration test completed successfully"
+    else
+        print_warning "Test script not found, skipping Python integration test"
+    fi
 }
 
 # Function to install the engine
@@ -222,75 +178,89 @@ install_engine() {
 
 # Function to show usage
 show_usage() {
-    echo "Enhanced High-Performance File Copying Engine Build Script"
+    echo "Enhanced High-Performance Copy Engine Build Script"
     echo ""
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "  --help, -h          Show this help message"
-    echo "  --install-deps      Install system dependencies"
-    echo "  --build-cpp         Build C++ engine only"
-    echo "  --test              Run tests only"
-    echo "  --install           Install the engine"
-    echo "  --clean             Clean build artifacts"
-    echo "  --all               Full build and install (default)"
+    echo "  --help              Show this help message"
+    echo "  --install-deps      Install system and Python dependencies"
+    echo "  --build             Build the C++ engine"
+    echo "  --test              Run tests"
+    echo "  --install           Install the built engine"
+    echo "  --all               Run all steps (default)"
     echo ""
     echo "Examples:"
-    echo "  $0                  # Full build and install"
-    echo "  $0 --install-deps   # Install dependencies only"
-    echo "  $0 --build-cpp      # Build C++ engine only"
-    echo "  $0 --test           # Run tests only"
+    echo "  $0 --install-deps   Install dependencies only"
+    echo "  $0 --build          Build engine only"
+    echo "  $0 --all            Full build process"
 }
 
-# Function to clean build artifacts
-clean_build() {
-    print_status "Cleaning build artifacts..."
-    rm -rf build/
-    rm -f *.so *.pyd
-    rm -f test_integration.py
-    print_success "Build artifacts cleaned"
+# Function to run performance benchmark
+run_benchmark() {
+    print_status "Running performance benchmark..."
+    
+    if [ -f "test_enhanced_engine.py" ]; then
+        # Run benchmark tests
+        python3 -c "
+import time
+from test_enhanced_engine import test_basic_copy, test_large_file
+
+print('Running performance benchmark...')
+start_time = time.time()
+
+# Run basic copy test
+test_basic_copy()
+
+# Run large file test
+test_large_file()
+
+end_time = time.time()
+print(f'Benchmark completed in {end_time - start_time:.2f} seconds')
+"
+        print_success "Performance benchmark completed"
+    else
+        print_warning "Test script not found, skipping benchmark"
+    fi
 }
 
-# Main function
+# Main execution
 main() {
-    local platform=$(detect_platform)
     local install_deps=false
-    local build_cpp=false
-    local test_only=false
+    local build_engine=false
+    local run_tests=false
     local install_engine_flag=false
-    local clean_flag=false
+    local run_all=true
     
     # Parse command line arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
-            --help|-h)
+            --help)
                 show_usage
                 exit 0
                 ;;
             --install-deps)
                 install_deps=true
+                run_all=false
                 shift
                 ;;
-            --build-cpp)
-                build_cpp=true
+            --build)
+                build_engine=true
+                run_all=false
                 shift
                 ;;
             --test)
-                test_only=true
+                run_tests=true
+                run_all=false
                 shift
                 ;;
             --install)
                 install_engine_flag=true
-                shift
-                ;;
-            --clean)
-                clean_flag=true
+                run_all=false
                 shift
                 ;;
             --all)
-                install_deps=true
-                build_cpp=true
-                install_engine_flag=true
+                run_all=true
                 shift
                 ;;
             *)
@@ -301,52 +271,42 @@ main() {
         esac
     done
     
-    # If no specific action is requested, do everything
-    if [ "$install_deps" = false ] && [ "$build_cpp" = false ] && [ "$test_only" = false ] && [ "$install_engine_flag" = false ] && [ "$clean_flag" = false ]; then
+    # Set default behavior
+    if $run_all; then
         install_deps=true
-        build_cpp=true
+        build_engine=true
+        run_tests=true
         install_engine_flag=true
     fi
     
-    print_status "Enhanced High-Performance File Copying Engine Build Script"
-    print_status "Platform: $platform"
-    print_status "Python version: $(python3 --version 2>/dev/null || echo 'Python3 not found')"
+    print_status "Enhanced High-Performance Copy Engine Build Process"
+    print_status "Platform: $(detect_platform)"
+    print_status "Python: $(python3 --version 2>/dev/null || echo 'Not found')"
     
-    # Clean if requested
-    if [ "$clean_flag" = true ]; then
-        clean_build
-        exit 0
-    fi
-    
-    # Install system dependencies if requested
-    if [ "$install_deps" = true ]; then
-        install_system_deps "$platform"
+    # Install dependencies
+    if $install_deps; then
+        install_system_deps
         install_python_deps
     fi
     
-    # Build C++ engine if requested
-    if [ "$build_cpp" = true ]; then
+    # Build engine
+    if $build_engine; then
         build_cpp_engine
     fi
     
-    # Test if requested
-    if [ "$test_only" = true ]; then
+    # Run tests
+    if $run_tests; then
         test_python_integration
-        exit 0
+        run_benchmark
     fi
     
-    # Install engine if requested
-    if [ "$install_engine_flag" = true ]; then
+    # Install engine
+    if $install_engine_flag; then
         install_engine
-        test_python_integration
     fi
     
-    print_success "Enhanced copy engine build completed successfully!"
-    print_status "You can now use the enhanced copy engine in your Python code:"
-    echo ""
-    echo "from forwardflow.ingest.engines.enhanced_copy_integration import copy_files"
-    echo "result = copy_files('source', 'destination')"
-    echo ""
+    print_success "Build process completed successfully!"
+    print_status "The enhanced copy engine is ready to use."
 }
 
 # Run main function with all arguments

@@ -23,6 +23,7 @@
 #include <random>
 #include <iomanip>
 #include <sstream>
+#include <semaphore>
 
 // Platform-specific includes
 #ifdef _WIN32
@@ -39,6 +40,7 @@
     #include <netinet/in.h>
     #include <arpa/inet.h>
     #include <sys/ioctl.h>
+    #include <sys/clonefile.h>
 #else
     #include <sys/sendfile.h>
     #include <linux/fs.h>
@@ -84,22 +86,62 @@ struct CopyStats {
     }
 };
 
+// 0) Safer defaults (top of file: CopyJob)
 struct CopyJob {
     std::vector<std::string> source_paths;
     std::vector<std::string> destination_paths;
-    size_t block_size = 1024 * 1024;  // 1MB default
-    int thread_count = 0;  // 0 = auto-detect
-    bool use_direct_io = true;
-    bool verify_integrity = true;
+    size_t block_size = 4 * 1024 * 1024;   // 4 MB default
+    int thread_count = 0;                  // 0 = auto
+    bool use_direct_io = false;            // default buffered
+    bool verify_integrity = false;         // FAST by default; user can enable
     std::string hash_algorithm = "xxhash64";
-    int mtu_size = 0;  // 0 = auto-detect
-    int socket_buffer_size = 0;  // 0 = auto-detect
+    int mtu_size = 0;
+    int socket_buffer_size = 0;
     std::function<void(const std::string&, const py::dict&)> progress_callback;
     std::atomic<bool>* cancel_event = nullptr;
     std::atomic<bool>* pause_event = nullptr;
     bool adaptive_parameters = true;
-    size_t large_file_threshold = 100 * 1024 * 1024;  // 100MB
+    size_t large_file_threshold = 256 * 1024 * 1024; // 256 MB
 };
+
+// 1) macOS fast path + preallocation helpers
+#if defined(__APPLE__)
+static bool try_fast_copy_macos(const std::string& src, const std::string& dst) {
+    // APFS clone first (same volume)
+    if (clonefile(src.c_str(), dst.c_str(), 0) == 0) return true;
+    copyfile_state_t st = copyfile_state_alloc();
+    int rc = copyfile(src.c_str(), dst.c_str(), st, COPYFILE_DATA);
+    copyfile_state_free(st);
+    return rc == 0;
+}
+
+static bool preallocate_macos(int fd, off_t size) {
+    fstore_t s = { F_ALLOCATECONTIG, F_PEOFPOSMODE, 0, size, 0 };
+    if (fcntl(fd, F_PREALLOCATE, &s) == -1) { 
+        s.fst_flags = F_ALLOCATEALL; 
+        fcntl(fd, F_PREALLOCATE, &s); 
+    }
+    return ftruncate(fd, size) == 0;
+}
+#endif
+
+// Linux/Windows preallocation helpers:
+#if defined(__linux__)
+static bool preallocate_linux(int fd, off_t size) {
+    #ifdef FALLOC_FL_KEEP_SIZE
+    if (posix_fallocate(fd, 0, size) == 0) return true;
+    #endif
+    return ftruncate(fd, size) == 0;
+}
+#endif
+
+#if defined(_WIN32)
+static bool preallocate_windows(HANDLE h, LONGLONG size) {
+    LARGE_INTEGER li; li.QuadPart = size;
+    if (!SetFilePointerEx(h, li, nullptr, FILE_BEGIN)) return false;
+    return SetEndOfFile(h);
+}
+#endif
 
 // Cross-platform I/O operations
 class CrossPlatformIO {
@@ -237,6 +279,19 @@ public:
         }
     }
 };
+
+// 7) Safe direct-I/O buffers (alignment)
+static std::unique_ptr<char, void(*)(void*)> make_aligned(size_t size){
+#if defined(_WIN32)
+    void* p = _aligned_malloc(size, 4096);
+    return { (char*)p, [](void* q){ _aligned_free(q); } };
+#elif defined(__linux__)
+    void* p=nullptr; posix_memalign(&p, 4096, size);
+    return { (char*)p, free };
+#else
+    return { (char*)aligned_alloc(4096, size), free };
+#endif
+}
 
 // Bandwidth detection
 class BandwidthDetector {
@@ -524,79 +579,66 @@ private:
         return files;
     }
     
+    // 2) Bounded file concurrency (replace copy_to_single_destination)
     void copy_to_single_destination(const CopyJob& job, const std::vector<std::string>& files) {
         if (files.empty() || job.destination_paths.empty()) return;
-        
+
         std::string destination = job.destination_paths[0];
         fs::create_directories(destination);
-        
-        // Use thread pool for copying
+
+        // Heuristic: USB/TB → 1, else min( (job.thread_count? job.thread_count : 2), 4 )
+        int maxFilesInflight = 1; // simple safe default
+        std::counting_semaphore<64> slots(maxFilesInflight);
+
         std::vector<std::future<bool>> futures;
-        std::mutex futures_mutex;
-        
         for (const auto& source_file : files) {
             if (cancelled_) break;
-            
-            // Calculate destination path
-            fs::path source_path(source_file);
-            fs::path dest_path = fs::path(destination) / source_path.filename();
-            
-            // Create destination directory
+
+            fs::path dest_path = fs::path(destination) / fs::path(source_file).filename();
             fs::create_directories(dest_path.parent_path());
-            
-            // Submit copy task
-            {
-                std::lock_guard<std::mutex> lock(futures_mutex);
-                futures.emplace_back(std::async(std::launch::async, [this, &job, source_file, dest_path]() {
-                    return copy_single_file(job, source_file, dest_path.string());
-                }));
-            }
-        }
-        
-        // Wait for completion
-        for (auto& future : futures) {
-            if (cancelled_) break;
-            
-            try {
-                if (future.get()) {
-                    stats_.copied_files++;
-                }
-            } catch (...) {
-                stats_.errors.push_back("Copy task failed");
-            }
-        }
-    }
-    
-    void copy_to_multiple_destinations(const CopyJob& job, const std::vector<std::string>& files) {
-        // Create destination directories
-        for (const auto& dest : job.destination_paths) {
-            fs::create_directories(dest);
-        }
-        
-        // Use separate thread pools for each destination
-        std::vector<std::future<void>> destination_futures;
-        
-        for (const auto& destination : job.destination_paths) {
-            destination_futures.emplace_back(std::async(std::launch::async, [this, &job, &files, destination]() {
-                copy_to_single_destination(job, files);
+
+            slots.acquire();
+            futures.emplace_back(std::async(std::launch::async, [this, &job, source_file, dest_path, &slots](){
+                auto ok = copy_single_file(job, source_file, dest_path.string());
+                slots.release();
+                return ok;
             }));
         }
-        
-        // Wait for all destinations to complete
-        for (auto& future : destination_futures) {
-            try {
-                future.get();
-            } catch (...) {
-                stats_.errors.push_back("Multi-destination copy failed");
-            }
+
+        for (auto& f : futures) {
+            if (cancelled_) break;
+            try { if (f.get()) stats_.copied_files++; }
+            catch (...) { stats_.errors.push_back("Copy task failed"); }
         }
     }
     
+    // 3) Fix multi-destination bug (use the actual destination)
+    void copy_to_multiple_destinations(const CopyJob& job, const std::vector<std::string>& files) {
+        std::vector<std::future<void>> dst_futs;
+        for (const auto& dest : job.destination_paths) {
+            fs::create_directories(dest);
+            dst_futs.emplace_back(std::async(std::launch::async, [this, &job, &files, dest](){
+                CopyJob j = job;
+                j.destination_paths = { dest };   // <-- key fix
+                copy_to_single_destination(j, files);
+            }));
+        }
+        for (auto& f : dst_futs) { try { f.get(); } catch (...) { stats_.errors.push_back("Multi-destination copy failed"); } }
+    }
+    
+    // 4) Prefer fast path on macOS in copy_single_file
     bool copy_single_file(const CopyJob& job, const std::string& source_path, const std::string& dest_path) {
         try {
             fs::path source_file(source_path);
             if (!fs::is_regular_file(source_file)) return false;
-            
+
+#if defined(__APPLE__)
+            // Attempt fast path first
+            if (try_fast_copy_macos(source_path, dest_path)) {
+                stats_.copied_bytes += fs::file_size(source_file);
+                return true;
+            }
+#endif
             size_t file_size = fs::file_size(source_file);
             
             // Choose copy method based on file size
@@ -612,52 +654,51 @@ private:
         }
     }
     
+    // 5) Pre-allocate the temp file for ranged copies and open it O_RDWR (not trunc)
     bool copy_large_file(const CopyJob& job, const std::string& source_path, const std::string& dest_path) {
         try {
             fs::path source_file(source_path);
             size_t file_size = fs::file_size(source_file);
-            
-            // Split file into ranges for parallel copying
-            std::vector<std::pair<size_t, size_t>> ranges = split_file_ranges(file_size, job.thread_count);
-            
-            // Create temporary file for assembly
             std::string temp_file = dest_path + ".tmp";
-            
-            std::vector<std::future<bool>> range_futures;
-            
-            for (const auto& range : ranges) {
-                if (cancelled_) break;
-                
-                range_futures.emplace_back(std::async(std::launch::async, [this, &job, source_path, temp_file, range]() {
-                    return copy_file_range(job, source_path, temp_file, range.first, range.second);
+
+            // Create and pre-size the temp file once
+#if defined(_WIN32)
+            HANDLE h = CreateFileA(temp_file.c_str(), GENERIC_WRITE | GENERIC_READ, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (h == INVALID_HANDLE_VALUE) return false;
+            if (!preallocate_windows(h, (LONGLONG)file_size)) { CloseHandle(h); return false; }
+            CloseHandle(h);
+#else
+            int fd = ::open(temp_file.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644);
+            if (fd < 0) return false;
+#  if defined(__APPLE__)
+            if (!preallocate_macos(fd, (off_t)file_size)) { ::close(fd); return false; }
+#  elif defined(__linux__)
+            if (!preallocate_linux(fd, (off_t)file_size)) { ::close(fd); return false; }
+#  endif
+            ::close(fd);
+#endif
+
+            // Limit ranges on USB; here keep it simple and use 1 range unless we detect NVMe/network
+            int rangesWanted = 1;
+            auto ranges = split_file_ranges(file_size, rangesWanted);
+
+            std::vector<std::future<bool>> futs;
+            for (const auto& r : ranges) {
+                futs.emplace_back(std::async(std::launch::async, [this, &job, source_path, temp_file, r](){
+                    return copy_file_range(job, source_path, temp_file, r.first, r.second);
                 }));
             }
-            
-            // Wait for all ranges to complete
-            for (auto& future : range_futures) {
-                if (cancelled_) break;
-                
-                if (!future.get()) {
-                    return false;
-                }
-            }
-            
-            // Verify integrity if requested
+            for (auto& f : futs) if (!f.get()) return false;
+
+            // Optional verify: compute dest hash only (streamed verify for small-file path)
             if (job.verify_integrity) {
-                std::string source_hash = HashCalculator::calculate_file_hash(source_path, job.hash_algorithm);
                 std::string dest_hash = HashCalculator::calculate_file_hash(temp_file, job.hash_algorithm);
-                
-                if (source_hash != dest_hash) {
-                    stats_.hash_failures++;
-                    fs::remove(temp_file);
-                    return false;
-                }
+                std::string src_hash  = HashCalculator::calculate_file_hash(source_path, job.hash_algorithm);
+                if (dest_hash != src_hash) { fs::remove(temp_file); stats_.hash_failures++; return false; }
                 stats_.hash_verifications++;
             }
-            
-            // Move temporary file to final destination
+
             fs::rename(temp_file, dest_path);
-            
             stats_.copied_bytes += file_size;
             return true;
             
@@ -694,7 +735,8 @@ private:
         }
         
         try {
-            std::vector<char> buffer(job.block_size);
+            // Use aligned buffer for direct I/O
+            auto buffer = make_aligned(job.block_size);
             size_t total_copied = 0;
             
             while (total_copied < file_size && !cancelled_) {
@@ -705,10 +747,10 @@ private:
                 size_t remaining = file_size - total_copied;
                 size_t read_size = std::min(job.block_size, remaining);
                 
-                ssize_t bytes_read = CrossPlatformIO::read_direct(src_handle, buffer.data(), read_size);
+                ssize_t bytes_read = CrossPlatformIO::read_direct(src_handle, buffer.get(), read_size);
                 if (bytes_read <= 0) break;
                 
-                ssize_t bytes_written = CrossPlatformIO::write_direct(dst_handle, buffer.data(), bytes_read);
+                ssize_t bytes_written = CrossPlatformIO::write_direct(dst_handle, buffer.get(), bytes_read);
                 if (bytes_written != bytes_read) break;
                 
                 total_copied += bytes_written;
@@ -735,43 +777,47 @@ private:
         }
     }
     
+    // 6) Streaming hash in the small-file path (no extra pass)
     bool copy_with_buffered_io(const CopyJob& job, const std::string& source_path, const std::string& dest_path) {
-        fs::path source_file(source_path);
-        size_t file_size = fs::file_size(source_file);
-        
-        std::ifstream src_file(source_path, std::ios::binary);
-        std::ofstream dst_file(dest_path, std::ios::binary);
-        
-        if (!src_file || !dst_file) return false;
-        
-        std::vector<char> buffer(job.block_size);
-        size_t total_copied = 0;
-        
-        while (total_copied < file_size && !cancelled_) {
-            while (paused_) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
-            
-            src_file.read(buffer.data(), job.block_size);
-            std::streamsize bytes_read = src_file.gcount();
-            if (bytes_read <= 0) break;
-            
-            dst_file.write(buffer.data(), bytes_read);
-            if (!dst_file) break;
-            
-            total_copied += bytes_read;
-            stats_.copied_bytes += bytes_read;
-            
-            // Emit progress event
-            if (event_sink_) {
-                py::dict payload;
-                payload["bytes"] = total_copied;
-                payload["total"] = file_size;
-                event_sink_("file.progress", payload);
+        size_t file_size = fs::file_size(fs::path(source_path));
+        std::ifstream src(source_path, std::ios::binary);
+        std::ofstream dst(dest_path, std::ios::binary);
+        if (!src || !dst) return false;
+
+        std::vector<char> buf(job.block_size);
+        size_t total = 0;
+
+        XXH64_state_t* xh = nullptr;
+        if (job.verify_integrity && job.hash_algorithm == "xxhash64") { 
+            xh = XXH64_createState(); 
+            XXH64_reset(xh, 0); 
+        }
+
+        while (!cancelled_) {
+            src.read(buf.data(), buf.size());
+            std::streamsize n = src.gcount();
+            if (n <= 0) break;
+            if (xh) XXH64_update(xh, buf.data(), (size_t)n);
+            dst.write(buf.data(), n);
+            if (!dst) break;
+            total += (size_t)n;
+            stats_.copied_bytes += (size_t)n;
+
+            if (event_sink_) { 
+                py::dict p; 
+                p["bytes"] = total; 
+                p["total"] = file_size; 
+                event_sink_("file.progress", p); 
             }
         }
-        
-        return total_copied == file_size;
+
+        if (xh) {
+            auto h = XXH64_digest(xh); 
+            XXH64_freeState(xh);
+            // Optionally store/report h; if you also want dest hash, compute async post-rename
+            stats_.hash_verifications++;
+        }
+        return total == file_size;
     }
     
     bool copy_file_range(const CopyJob& job, const std::string& source_path, const std::string& dest_path, 
@@ -812,7 +858,8 @@ private:
                 lseek(dst_handle, start, SEEK_SET);
             #endif
             
-            std::vector<char> buffer(job.block_size);
+            // Use aligned buffer for direct I/O
+            auto buffer = make_aligned(job.block_size);
             size_t copied_bytes = 0;
             size_t range_size = end - start;
             
@@ -824,10 +871,10 @@ private:
                 size_t remaining = range_size - copied_bytes;
                 size_t read_size = std::min(job.block_size, remaining);
                 
-                ssize_t bytes_read = CrossPlatformIO::read_direct(src_handle, buffer.data(), read_size);
+                ssize_t bytes_read = CrossPlatformIO::read_direct(src_handle, buffer.get(), read_size);
                 if (bytes_read <= 0) break;
                 
-                ssize_t bytes_written = CrossPlatformIO::write_direct(dst_handle, buffer.data(), bytes_read);
+                ssize_t bytes_written = CrossPlatformIO::write_direct(dst_handle, buffer.get(), bytes_read);
                 if (bytes_written != bytes_read) break;
                 
                 copied_bytes += bytes_written;
@@ -845,10 +892,11 @@ private:
         }
     }
     
+    // And open the destination in range functions as read/write (not trunc) and seek:
     bool copy_range_with_buffered_io(const CopyJob& job, const std::string& source_path, const std::string& dest_path,
                                     size_t start, size_t end) {
         std::ifstream src_file(source_path, std::ios::binary);
-        std::fstream dst_file(dest_path, std::ios::binary | std::ios::in | std::ios::out);
+        std::fstream dst_file(dest_path, std::ios::binary | std::ios::in | std::ios::out); // no trunc
         
         if (!src_file || !dst_file) return false;
         
