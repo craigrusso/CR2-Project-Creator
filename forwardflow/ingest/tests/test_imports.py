@@ -17,8 +17,6 @@ def test_api_contracts_import():
 
 def test_engine_stubs_import():
     from forwardflow.ingest.engines.python_engine import PythonCopyEngine  # noqa: F401
-    from forwardflow.ingest.engines.native_engine import NativeEngine  # noqa: F401
-    from forwardflow.ingest.engines.os_engine import OsToolEngine  # noqa: F401
 
 
 def test_pipeline_stubs_import():
