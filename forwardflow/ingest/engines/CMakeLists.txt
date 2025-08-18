@@ -151,16 +151,6 @@ install(TARGETS enhanced_high_perf_engine
     RUNTIME DESTINATION bin
 )
 
-# Create a simple test executable
-add_executable(test_enhanced_engine test_enhanced_engine.cpp)
-target_link_libraries(test_enhanced_engine 
-    PRIVATE 
-    ${PLATFORM_LIBS}
-    OpenSSL::SSL 
-    OpenSSL::Crypto
-    ${XXHASH_LIBRARIES}
-)
-
 # Build configuration summary
 message(STATUS "Enhanced High-Performance Engine Configuration:")
 message(STATUS "  Python version: ${Python3_VERSION}")
@@ -179,13 +169,6 @@ endif()
 add_custom_target(enhanced_engine_optimized
     COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target enhanced_high_perf_engine
     COMMENT "Building enhanced high-performance engine with optimizations"
-)
-
-# Custom target for running tests
-add_custom_target(test_engine
-    COMMAND ${CMAKE_BINARY_DIR}/bin/test_enhanced_engine
-    DEPENDS test_enhanced_engine
-    COMMENT "Running enhanced engine tests"
 )
 
 # Documentation target

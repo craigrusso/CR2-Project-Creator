@@ -71,6 +71,9 @@ class CopyOptions:
     adaptive_parameters: bool = True
     large_file_threshold: int = 256 * 1024 * 1024  # 256MB (safer)
     progress_callback: Optional[Callable] = None
+    # NEW: Separate concurrency knobs
+    files_in_flight: int = 1  # files copying at once (1 for USB/TB, 2+ for networks/NVMe)
+    ranges_per_file: int = 1  # parallel ranges inside one file (1 for USB/TB, 2+ for fast media)
 
 class PathAnalyzer:
     """Analyze paths to determine optimal copy parameters"""

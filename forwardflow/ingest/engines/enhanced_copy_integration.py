@@ -43,6 +43,53 @@ class CopyStats:
     def success_rate(self):
         return (self.copied_files * 100.0) / self.total_files if self.total_files > 0 else 0.0
 
+def get_copy_engine_status() -> Dict[str, Any]:
+    """
+    Get the status of the copy engines.
+    
+    Returns:
+        Dict with engine availability information
+    """
+    return {
+        "enhanced_engine_available": ENHANCED_ENGINE_AVAILABLE,
+        "cpp_engine_available": ENHANCED_ENGINE_AVAILABLE and is_enhanced_copy_available(),
+        "fallback_available": True,  # Standard library is always available
+        "recommended_engine": "enhanced" if ENHANCED_ENGINE_AVAILABLE else "standard"
+    }
+
+def set_optimal_parameters(kwargs: Dict[str, Any], destination_path: str = "") -> Dict[str, Any]:
+    """
+    Set optimal parameters based on the destination and bandwidth.
+    
+    Args:
+        kwargs: Current copy parameters
+        destination_path: Destination path for adaptive tuning
+    
+    Returns:
+        Updated parameters with optimal defaults
+    """
+    # Ensure minimum block size of 4 MB
+    if 'block_size' not in kwargs or kwargs['block_size'] < 4 * 1024 * 1024:
+        kwargs['block_size'] = max(kwargs.get('block_size', 4 * 1024 * 1024), 4 * 1024 * 1024)
+    
+    # Set files_in_flight default (1 for USB/TB, 2+ for networks/NVMe)
+    if 'files_in_flight' not in kwargs or kwargs['files_in_flight'] <= 0:
+        kwargs['files_in_flight'] = 1  # Safe default for USB/TB
+    
+    # Set ranges_per_file default (1 for USB/TB, can scale for fast media)
+    if 'ranges_per_file' not in kwargs or kwargs['ranges_per_file'] <= 0:
+        kwargs['ranges_per_file'] = 1  # Safe default
+    
+    # macOS: never auto-enable direct I/O for local volumes
+    if 'use_direct_io' not in kwargs:
+        kwargs['use_direct_io'] = False  # Buffered by default
+    
+    # Set large file threshold
+    if 'large_file_threshold' not in kwargs:
+        kwargs['large_file_threshold'] = 256 * 1024 * 1024  # 256 MB
+    
+    return kwargs
+
 def copy_file(source_path: str, destination_path: str, **kwargs) -> CopyStats:
     """
     Copy a single file using the enhanced copy engine if available, otherwise fallback to standard library.
@@ -55,6 +102,9 @@ def copy_file(source_path: str, destination_path: str, **kwargs) -> CopyStats:
     Returns:
         CopyStats: Statistics from the copy operation
     """
+    # Set optimal parameters
+    kwargs = set_optimal_parameters(kwargs, destination_path)
+    
     if ENHANCED_ENGINE_AVAILABLE:
         return cpp_copy_file(source_path, destination_path, **kwargs)
     else:
@@ -95,6 +145,10 @@ def copy_files(source_paths: List[str], destination_paths: List[str], **kwargs) 
     Returns:
         CopyStats: Statistics from the copy operation
     """
+    # Set optimal parameters based on first destination
+    first_dest = destination_paths[0] if destination_paths else ""
+    kwargs = set_optimal_parameters(kwargs, first_dest)
+    
     if ENHANCED_ENGINE_AVAILABLE:
         return cpp_copy_files(source_paths, destination_paths, **kwargs)
     else:
@@ -186,20 +240,6 @@ def copy_directory(source_dir: str, destination_dir: str, **kwargs) -> CopyStats
             stats.errors.append(str(e))
         
         return stats
-
-def get_copy_engine_status() -> Dict[str, Any]:
-    """
-    Get the status of the copy engines.
-    
-    Returns:
-        Dict with engine availability information
-    """
-    return {
-        "enhanced_engine_available": ENHANCED_ENGINE_AVAILABLE,
-        "cpp_engine_available": ENHANCED_ENGINE_AVAILABLE and is_enhanced_copy_available(),
-        "fallback_available": True,  # Standard library is always available
-        "recommended_engine": "enhanced" if ENHANCED_ENGINE_AVAILABLE else "standard"
-    }
 
 # Export the main functions
 __all__ = [

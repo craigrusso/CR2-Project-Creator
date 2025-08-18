@@ -12,6 +12,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
+import collections # Added for rolling speed calculation
 
 from PyQt6.QtCore import (
     QTimer,
@@ -75,6 +76,11 @@ def build_ingest_tab():
     root.job_start_time = None
     root.total_bytes = 0
     root.copied_bytes = 0
+    
+    # Speed tracking for rolling calculations
+    root._speed_samples = collections.deque(maxlen=8)  # 8×100ms ≈ 0.8 s
+    root._last_speed_update = None
+    root._last_bytes = 0
     
     # Main layout
     layout = QVBoxLayout(root)
@@ -165,6 +171,20 @@ def build_ingest_tab():
                 if hasattr(root, 'speed_label'):
                     root.speed_label.repaint()
                     root.speed_label.update()
+    
+    def _rolling_speed_human(self):
+        """Calculate rolling speed and return human-readable string."""
+        t = time.monotonic()
+        if self._last_speed_update is not None:
+            dt = t - self._last_speed_update
+            db = self.copied_bytes - self._last_bytes
+            if dt > 0:
+                self._speed_samples.append(db/dt)  # bytes/sec
+                mbps = (sum(self._speed_samples)/len(self._speed_samples))/(1024*1024) if self._speed_samples else 0.0
+                return f"{mbps:.1f} MB/s Transfer"
+        self._last_speed_update = t
+        self._last_bytes = self.copied_bytes
+        return "0.0 MB/s Transfer"
     
     # Header
     header_label = QLabel("Turbo Transfer")
@@ -632,37 +652,36 @@ def build_ingest_tab():
         print(f"DEBUG: handle_job_progress called with: {payload}")
         try:
             # Fix field name mismatches between engine and UI
-            mbps = payload.get("speed_mbps", payload.get("mbps", 0.0))
-            total = max(1, payload.get("total_bytes", payload.get("total", 1)))
-            bytes_copied = payload.get("bytes_copied", payload.get("bytes", 0))
+            total = int(payload.get("total_bytes", payload.get("total", 0)))
+            done  = int(payload.get("bytes_copied", payload.get("bytes", 0)))
+            pct   = 0 if total == 0 else int((done / total) * 100)
             
             # Update progress tracking
-            root.copied_bytes = bytes_copied
+            root.copied_bytes = done
             root.total_bytes = total
             
-            # Use progress_percent from engine if available, otherwise calculate
-            if "progress_percent" in payload:
-                percent = int(payload["progress_percent"])
-            else:
-                percent = int(100 * bytes_copied / total)
-                
-            print(f"DEBUG: Setting total progress to {percent}% and speed to {mbps:.0f} MB/s")
+            print(f"DEBUG: Setting total progress to {pct}%")
             
-            # Update the progress bar
-            print(f"DEBUG: About to set progress bar to {percent}%")
+            # Update the progress bar - DO NOT reset to 0%
+            print(f"DEBUG: About to set progress bar to {pct}%")
             print(f"DEBUG: Progress bar before update: {root.total_progress.value()}")
-            root.total_progress.setValue(percent)
-            root.total_progress.setFormat(f"{percent}%")  # Update the text format
-            print(f"DEBUG: Progress bar value set to {percent}")
+            root.total_progress.setValue(pct)
+            root.total_progress.setFormat(f"{pct}%")  # Update the text format
+            print(f"DEBUG: Progress bar value set to {pct}")
             print(f"DEBUG: Progress bar current value: {root.total_progress.value()}")
             print(f"DEBUG: Progress bar is visible: {root.total_progress.isVisible()}")
             print(f"DEBUG: Progress bar size: {root.total_progress.size()}")
             print(f"DEBUG: Progress bar range: {root.total_progress.minimum()} to {root.total_progress.maximum()}")
             print(f"DEBUG: Progress bar format: {root.total_progress.format()}")
             
-            # Update the speed label
-            root.speed_label.setText(f"{mbps:.0f} MB/s Transfer")
-            print(f"DEBUG: Speed label text set to {mbps:.0f} MB/s Transfer")
+            # Update speed label with rolling speed if available
+            if "speed_mbps" in payload:
+                mbps = payload["speed_mbps"]
+                root.speed_label.setText(f"{mbps:.1f} MB/s Transfer")
+                print(f"DEBUG: Speed label text set to {mbps:.1f} MB/s Transfer")
+            else:
+                # Use rolling speed calculation
+                root.speed_label.setText(root._rolling_speed_human())
             
             # Update time displays and speed metrics
             if root.job_start_time:
@@ -671,9 +690,10 @@ def build_ingest_tab():
                 root.elapsed_label.setText(f"Elapsed: {elapsed_str}")
                 
                 # Calculate ETA - only if we have speed and remaining bytes
-                if mbps > 0 and bytes_copied < total:
-                    remaining_bytes = total - bytes_copied
-                    eta_seconds = remaining_bytes / (mbps * 1024 * 1024)
+                current_speed = (done / (1024 * 1024)) / elapsed_seconds if elapsed_seconds > 0 else 0
+                if current_speed > 0 and done < total:
+                    remaining_bytes = total - done
+                    eta_seconds = remaining_bytes / (current_speed * 1024 * 1024)
                     if eta_seconds > 0:
                         eta_str = f"{int(eta_seconds//3600):02d}:{int((eta_seconds%3600)//60):02d}:{int(eta_seconds%60):02d}"
                         root.eta_label.setText(f"ETA: {eta_str}")
@@ -684,7 +704,7 @@ def build_ingest_tab():
                 
                 # Update speed metrics
                 if hasattr(root, 'current_speed_label'):
-                    root.current_speed_label.setText(f"Speed: {mbps:.0f} MB/s")
+                    root.current_speed_label.setText(f"Speed: {current_speed:.0f} MB/s")
                 
                 # Calculate average speed (simple average for now)
                 if hasattr(root, 'avg_speed_label'):
@@ -698,11 +718,11 @@ def build_ingest_tab():
                         current_peak_text = root.peak_speed_label.text()
                         if "Peak: " in current_peak_text:
                             current_peak = float(current_peak_text.split(': ')[1].split(' ')[0])
-                            if mbps > current_peak:
-                                root.peak_speed_label.setText(f"Peak: {mbps:.0f} MB/s")
+                            if current_speed > current_peak:
+                                root.peak_speed_label.setText(f"Peak: {current_speed:.0f} MB/s")
                     except (ValueError, IndexError):
                         # If we can't parse the current peak, just set it
-                        root.peak_speed_label.setText(f"Peak: {mbps:.0f} MB/s")
+                        root.peak_speed_label.setText(f"Peak: {current_speed:.0f} MB/s")
             
             print(f"DEBUG: Progress and speed updated successfully")
             print(f"DEBUG: total_progress new value: {root.total_progress.value()}")

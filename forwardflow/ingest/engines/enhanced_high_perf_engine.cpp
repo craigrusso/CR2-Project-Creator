@@ -24,6 +24,7 @@
 #include <iomanip>
 #include <sstream>
 #include <semaphore>
+#include <unordered_map>
 
 // Platform-specific includes
 #ifdef _WIN32
@@ -86,31 +87,56 @@ struct CopyStats {
     }
 };
 
-// 0) Safer defaults (top of file: CopyJob)
+// Enhanced CopyJob with separate concurrency knobs
 struct CopyJob {
     std::vector<std::string> source_paths;
     std::vector<std::string> destination_paths;
-    size_t block_size = 4 * 1024 * 1024;   // 4 MB default
-    int thread_count = 0;                  // 0 = auto
-    bool use_direct_io = false;            // default buffered
-    bool verify_integrity = false;         // FAST by default; user can enable
+    size_t block_size = 4 * 1024 * 1024;    // ≥ 4 MB default
+    int    thread_count = 0;                // legacy, keep for compat
+    bool   use_direct_io = false;           // default buffered
+    bool   verify_integrity = false;
     std::string hash_algorithm = "xxhash64";
-    int mtu_size = 0;
-    int socket_buffer_size = 0;
+    int    mtu_size = 0;
+    int    socket_buffer_size = 0;
     std::function<void(const std::string&, const py::dict&)> progress_callback;
     std::atomic<bool>* cancel_event = nullptr;
     std::atomic<bool>* pause_event = nullptr;
-    bool adaptive_parameters = true;
-    size_t large_file_threshold = 256 * 1024 * 1024; // 256 MB
+    bool   adaptive_parameters = true;
+    size_t large_file_threshold = 256 * 1024 * 1024;
+    // NEW: Separate concurrency knobs
+    int    files_in_flight  = 1;            // files copying at once
+    int    ranges_per_file  = 1;            // parallel ranges inside one file
 };
 
-// 1) macOS fast path + preallocation helpers
+// Per-file progress throttle (≤10 Hz)
+struct ProgressGate {
+    std::mutex mu;
+    std::unordered_map<std::string, int64_t> last_ns;
+    static int64_t now_ns() {
+        using namespace std::chrono;
+        return duration_cast<nanoseconds>(high_resolution_clock::now().time_since_epoch()).count();
+    }
+    bool should_emit(const std::string& key, int64_t interval_ns = 100'000'000) {
+        std::lock_guard<std::mutex> lk(mu);
+        int64_t t = now_ns();
+        auto it = last_ns.find(key);
+        if (it == last_ns.end() || (t - it->second) >= interval_ns) { 
+            last_ns[key] = t; 
+            return true; 
+        }
+        return false;
+    }
+};
+static ProgressGate g_progress;
+
+// macOS fast path + preallocation helpers
 #if defined(__APPLE__)
 static bool try_fast_copy_macos(const std::string& src, const std::string& dst) {
     // APFS clone first (same volume)
     if (clonefile(src.c_str(), dst.c_str(), 0) == 0) return true;
     copyfile_state_t st = copyfile_state_alloc();
     int rc = copyfile(src.c_str(), dst.c_str(), st, COPYFILE_DATA);
+    // int saved = errno; // optional diagnostic
     copyfile_state_free(st);
     return rc == 0;
 }
@@ -123,14 +149,17 @@ static bool preallocate_macos(int fd, off_t size) {
     }
     return ftruncate(fd, size) == 0;
 }
+
+static bool is_network_path_macos(const std::string& path) {
+    struct statfs s{};
+    return (statfs(path.c_str(), &s) == 0) ? ((s.f_flags & MNT_LOCAL) == 0) : false;
+}
 #endif
 
 // Linux/Windows preallocation helpers:
 #if defined(__linux__)
 static bool preallocate_linux(int fd, off_t size) {
-    #ifdef FALLOC_FL_KEEP_SIZE
-    if (posix_fallocate(fd, 0, size) == 0) return true;
-    #endif
+    if (posix_fallocate(fd, 0, size) == 0) return (ftruncate(fd, size) == 0 || errno == 0);
     return ftruncate(fd, size) == 0;
 }
 #endif
@@ -582,34 +611,57 @@ private:
     // 2) Bounded file concurrency (replace copy_to_single_destination)
     void copy_to_single_destination(const CopyJob& job, const std::vector<std::string>& files) {
         if (files.empty() || job.destination_paths.empty()) return;
-
-        std::string destination = job.destination_paths[0];
+        const std::string destination = job.destination_paths[0];
         fs::create_directories(destination);
 
-        // Heuristic: USB/TB → 1, else min( (job.thread_count? job.thread_count : 2), 4 )
-        int maxFilesInflight = 1; // simple safe default
-        std::counting_semaphore<64> slots(maxFilesInflight);
+        int fif = job.files_in_flight;
+#if defined(__APPLE__)
+        if (job.adaptive_parameters) {
+            bool is_net = is_network_path_macos(destination);
+            fif = is_net ? std::max(1, std::min(2, fif<=0?2:fif)) : 1; // network up to 2; local = 1
+        }
+#else
+        if (job.adaptive_parameters) fif = std::max(1, std::min(4, fif<=0?2:fif));
+#endif
+        if (fif < 1) fif = 1;
 
-        std::vector<std::future<bool>> futures;
+        // Use mutex-based concurrency control instead of semaphore
+        std::mutex slots_mutex;
+        std::condition_variable slots_cv;
+        int available_slots = fif;
+        
+        std::vector<std::future<bool>> futs;
+
         for (const auto& source_file : files) {
             if (cancelled_) break;
+            fs::path dst = fs::path(destination) / fs::path(source_file).filename();
+            fs::create_directories(dst.parent_path());
 
-            fs::path dest_path = fs::path(destination) / fs::path(source_file).filename();
-            fs::create_directories(dest_path.parent_path());
-
-            slots.acquire();
-            futures.emplace_back(std::async(std::launch::async, [this, &job, source_file, dest_path, &slots](){
-                auto ok = copy_single_file(job, source_file, dest_path.string());
-                slots.release();
+            // Wait for available slot
+            {
+                std::unique_lock<std::mutex> lock(slots_mutex);
+                slots_cv.wait(lock, [&] { return available_slots > 0; });
+                available_slots--;
+            }
+            
+            futs.emplace_back(std::async(std::launch::async, [this, &job, source_file, dst, &slots_mutex, &slots_cv, &available_slots]() {
+                CopyJob local = job;
+                if (local.adaptive_parameters) {
+                    local.ranges_per_file = std::max(1, local.ranges_per_file); // keep 1 on USB/TB
+                }
+                bool ok = copy_single_file(local, source_file, dst.string());
+                
+                // Release slot
+                {
+                    std::lock_guard<std::mutex> lock(slots_mutex);
+                    available_slots++;
+                    slots_cv.notify_one();
+                }
+                
                 return ok;
             }));
         }
-
-        for (auto& f : futures) {
-            if (cancelled_) break;
-            try { if (f.get()) stats_.copied_files++; }
-            catch (...) { stats_.errors.push_back("Copy task failed"); }
-        }
+        for (auto& f : futs) { try { if (f.get()) stats_.copied_files++; } catch (...) { stats_.errors.push_back("Copy task failed"); } }
     }
     
     // 3) Fix multi-destination bug (use the actual destination)
@@ -643,9 +695,9 @@ private:
             
             // Choose copy method based on file size
             if (file_size > job.large_file_threshold) {
-                return copy_large_file(job, source_path, dest_path);
+                return copy_large_file_enhanced(job, source_path, dest_path);
             } else {
-                return copy_small_file(job, source_path, dest_path);
+                return copy_with_buffered_io(job, source_path, dest_path);
             }
             
         } catch (const std::exception& e) {
@@ -819,7 +871,112 @@ private:
         }
         return total == file_size;
     }
-    
+
+    // Range splitting uses ranges_per_file (not thread_count)
+    std::vector<std::pair<size_t,size_t>> split_file_ranges(size_t file_size, int ranges_per_file) {
+        if (ranges_per_file < 1) ranges_per_file = 1;
+        std::vector<std::pair<size_t,size_t>> ranges;
+        size_t chunk = file_size / ranges_per_file;
+        for (int i=0; i<ranges_per_file; ++i) {
+            size_t start = i * chunk;
+            size_t end   = (i == ranges_per_file - 1) ? file_size : (i + 1) * chunk;
+            ranges.emplace_back(start, end);
+        }
+        return ranges;
+    }
+
+    // Large-file copy: pre-alloc once, open temp O_RDWR (NO TRUNC), seek per range
+    bool copy_large_file_enhanced(const CopyJob& job, const std::string& src, const std::string& dst) {
+        const size_t file_size = fs::file_size(fs::path(src));
+        const std::string tmp = dst + ".tmp";
+
+#if defined(_WIN32)
+        HANDLE h = CreateFileA(tmp.c_str(), GENERIC_READ|GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h == INVALID_HANDLE_VALUE) return false;
+        if (!preallocate_windows(h, (LONGLONG)file_size)) { CloseHandle(h); return false; }
+        CloseHandle(h);
+#else
+        int fd = ::open(tmp.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644);
+        if (fd < 0) return false;
+  #if defined(__APPLE__)
+        if (!preallocate_macos(fd, (off_t)file_size)) { ::close(fd); return false; }
+  #elif defined(__linux__)
+        if (!preallocate_linux(fd, (off_t)file_size)) { ::close(fd); return false; }
+  #endif
+        ::close(fd);
+#endif
+
+        const int rangesWanted = std::max(1, job.ranges_per_file);
+        auto ranges = split_file_ranges(file_size, rangesWanted);
+
+        std::vector<std::future<bool>> futs;
+        for (auto& r : ranges) {
+            futs.emplace_back(std::async(std::launch::async, [this, &job, src, tmp, r, file_size]() {
+#if defined(_WIN32)
+                HANDLE s = CreateFileA(src.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+                HANDLE d = CreateFileA(tmp.c_str(), GENERIC_READ|GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+                if (s==INVALID_HANDLE_VALUE || d==INVALID_HANDLE_VALUE) { if(s!=INVALID_HANDLE_VALUE)CloseHandle(s); if(d!=INVALID_HANDLE_VALUE)CloseHandle(d); return false; }
+                LARGE_INTEGER pos; pos.QuadPart = (LONGLONG)r.first;
+                SetFilePointerEx(s, pos, nullptr, FILE_BEGIN);
+                SetFilePointerEx(d, pos, nullptr, FILE_BEGIN);
+                std::vector<char> buf(job.block_size);
+                size_t remain = r.second - r.first;
+                while (remain && !cancelled_) {
+                    DWORD toRead = (DWORD)std::min(remain, (size_t)buf.size());
+                    DWORD rd=0, wr=0;
+                    if (!ReadFile(s, buf.data(), toRead, &rd, nullptr) || rd==0) break;
+                    if (!WriteFile(d, buf.data(), rd, &wr, nullptr) || wr!=rd) { CloseHandle(s); CloseHandle(d); return false; }
+                    remain -= rd; stats_.copied_bytes += rd;
+                    if (event_sink_ && g_progress.should_emit(src)) { 
+                        py::dict p; 
+                        p["bytes"]=(py::int_)0; 
+                        p["total"]=(py::int_)file_size; 
+                        event_sink_("file.progress", p); 
+                    }
+                }
+                CloseHandle(s); CloseHandle(d);
+                return true;
+#else
+                int sfd = ::open(src.c_str(), O_RDONLY);
+                int dfd = ::open(tmp.c_str(), O_RDWR); // NO TRUNC; file is pre-sized
+                if (sfd<0 || dfd<0) { if(sfd>=0) ::close(sfd); if(dfd>=0) ::close(dfd); return false; }
+                if (lseek(sfd, (off_t)r.first, SEEK_SET) < 0 || lseek(dfd, (off_t)r.first, SEEK_SET) < 0) { ::close(sfd); ::close(dfd); return false; }
+  #if defined(__APPLE__)
+                fcntl(sfd, F_RDAHEAD, 1);
+  #endif
+                std::vector<char> buf(job.block_size);
+                size_t remain = r.second - r.first;
+                while (remain && !cancelled_) {
+                    size_t toRead = std::min(remain, buf.size());
+                    ssize_t n = ::read(sfd, buf.data(), toRead);
+                    if (n <= 0) break;
+                    ssize_t w = ::write(dfd, buf.data(), n);
+                    if (w != n) { ::close(sfd); ::close(dfd); return false; }
+                    remain -= size_t(n); stats_.copied_bytes += size_t(n);
+                    if (event_sink_ && g_progress.should_emit(src)) { 
+                        py::dict p; 
+                        p["bytes"]=(py::int_)0; 
+                        p["total"]=(py::int_)file_size; 
+                        event_sink_("file.progress", p); 
+                    }
+                }
+                ::close(sfd); ::close(dfd);
+                return true;
+#endif
+            }));
+        }
+        for (auto& f : futs) if (!f.get()) return false;
+
+        if (job.verify_integrity) {
+            auto sh = HashCalculator::calculate_file_hash(src, job.hash_algorithm);
+            auto dh = HashCalculator::calculate_file_hash(tmp, job.hash_algorithm);
+            if (sh != dh) { fs::remove(tmp); stats_.hash_failures++; return false; }
+            stats_.hash_verifications++;
+        }
+        fs::rename(tmp, dst);
+        return true;
+    }
+
     bool copy_file_range(const CopyJob& job, const std::string& source_path, const std::string& dest_path, 
                         size_t start, size_t end) {
         try {
@@ -928,19 +1085,6 @@ private:
         return copied_bytes == range_size;
     }
     
-    std::vector<std::pair<size_t, size_t>> split_file_ranges(size_t file_size, int thread_count) {
-        std::vector<std::pair<size_t, size_t>> ranges;
-        size_t chunk_size = file_size / thread_count;
-        
-        for (int i = 0; i < thread_count; ++i) {
-            size_t start = i * chunk_size;
-            size_t end = (i == thread_count - 1) ? file_size : (i + 1) * chunk_size;
-            ranges.emplace_back(start, end);
-        }
-        
-        return ranges;
-    }
-    
     void emit_event(const std::string& event_type, const py::dict& payload) {
         if (event_sink_) {
             event_sink_(event_type, payload);
@@ -984,7 +1128,9 @@ PYBIND11_MODULE(enhanced_high_perf_engine, m) {
         .def_readwrite("cancel_event", &CopyJob::cancel_event)
         .def_readwrite("pause_event", &CopyJob::pause_event)
         .def_readwrite("adaptive_parameters", &CopyJob::adaptive_parameters)
-        .def_readwrite("large_file_threshold", &CopyJob::large_file_threshold);
+        .def_readwrite("large_file_threshold", &CopyJob::large_file_threshold)
+        .def_readwrite("files_in_flight", &CopyJob::files_in_flight)
+        .def_readwrite("ranges_per_file", &CopyJob::ranges_per_file);
     
     py::class_<EnhancedHighPerfTransferEngine>(m, "EnhancedHighPerfTransferEngine")
         .def(py::init<>())

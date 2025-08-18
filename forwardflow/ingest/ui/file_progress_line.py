@@ -8,6 +8,9 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
 )
 import os
+import time
+import collections
+from PyQt6.QtGui import QColor
 
 # Import app colors for consistent styling
 try:
@@ -31,6 +34,11 @@ class FileProgressLine(QWidget):
         self.total_bytes = total_bytes
         self.copied_bytes = 0
         self.start_time = None
+        
+        # Rolling speed calculation
+        self._samples = collections.deque(maxlen=8)  # 8×100ms ≈ 0.8 s
+        self._last = None
+        self._last_paint = 0.0
         
         self.setup_ui()
         
@@ -106,7 +114,7 @@ class FileProgressLine(QWidget):
         self.setStyleSheet(FILE_PROGRESS_LINE_STYLE)
         
     def update_progress(self, copied_bytes: int, speed_mbps: float = None):
-        """Update the progress display."""
+        """Update the progress display with rolling speed calculation."""
         self.copied_bytes = copied_bytes
         
         # Calculate percentage
@@ -114,12 +122,15 @@ class FileProgressLine(QWidget):
             percent = int((copied_bytes / self.total_bytes) * 100)
             self.progress_bar.setValue(percent)
         
-        # Update speed if provided
-        if speed_mbps is not None:
-            if speed_mbps >= 1000:
-                self.speed_label.setText(f"{speed_mbps/1000:.1f} GB/s")
-            else:
-                self.speed_label.setText(f"{speed_mbps:.1f} MB/s")
+        # Update rolling speed if not provided externally
+        if speed_mbps is None:
+            speed_mbps = self._calculate_rolling_speed(copied_bytes)
+        
+        # Update speed display
+        if speed_mbps >= 1000:
+            self.speed_label.setText(f"{speed_mbps/1000:.1f} GB/s")
+        else:
+            self.speed_label.setText(f"{speed_mbps:.1f} MB/s")
         
         # Update status
         if copied_bytes >= self.total_bytes:
@@ -127,7 +138,28 @@ class FileProgressLine(QWidget):
         else:
             self.status_label.setText("Transferring...")
             
-        # Force a repaint
+        # Throttle UI repaint to ≤10 Hz
+        self._maybe_repaint()
+        
+    def _calculate_rolling_speed(self, bytes_now: int) -> float:
+        """Calculate rolling speed using samples over time."""
+        t = time.monotonic()
+        if self._last is not None:
+            dt = t - self._last[0]
+            db = bytes_now - self._last[1]
+            if dt > 0:
+                self._samples.append(db/dt)  # bytes/sec
+                mbps = (sum(self._samples)/len(self._samples))/(1024*1024) if self._samples else 0.0
+                return mbps
+        self._last = (t, bytes_now)
+        return 0.0
+        
+    def _maybe_repaint(self):
+        """Throttle UI repaint to ≤10 Hz."""
+        t = time.monotonic()
+        if t - self._last_paint < 0.10:  # 100ms = 10 Hz
+            return
+        self._last_paint = t
         self.repaint()
         
     def mark_completed(self):
@@ -136,10 +168,12 @@ class FileProgressLine(QWidget):
         self.status_label.setText("Complete")
         self.speed_label.setText("Done")
         
-        # Change styling to indicate completion with centralized styles
-        self.setStyleSheet(FILE_PROGRESS_LINE_COMPLETED_STYLE)
+        # DON'T apply the overall widget style - it causes the brown background
+        # self.setStyleSheet(FILE_PROGRESS_LINE_COMPLETED_STYLE)
         
-        # Explicitly style the progress bar to ensure green gradient
+        # Instead, style each component individually to ensure proper green colors
+        
+        # Style the progress bar with green gradient
         self.progress_bar.setStyleSheet(f"""
             QProgressBar {{
                 border: 1px solid {colors['success']};
@@ -152,54 +186,134 @@ class FileProgressLine(QWidget):
             }}
             QProgressBar::chunk {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                                           stop:0 #2d5a2d, 
-                                           stop:0.5 #4a7c4a, 
-                                           stop:1 #6ba06b);
+                                           stop:0 {colors['success']}, 
+                                           stop:0.5 {QColor(colors['success']).lighter(120).name()}, 
+                                           stop:1 {QColor(colors['success']).lighter(150).name()});
                 border-radius: 1px;
             }}
         """)
         
-        # Fix the filename label color - change from brown to a nice blue
+        # Style the filename label with green color (not blue) for completed files
         self.filename_label.setStyleSheet(f"""
             QLabel {{
-                color: {colors['accent']};
+                color: {colors['success']};
                 font-size: 12px;
                 font-weight: 600;
             }}
         """)
         
-        # Also update individual label styles to ensure proper green colors
+        # Style the status label with proper green background and text (no brown!)
         self.status_label.setStyleSheet(f"""
             QLabel {{
-                color: {colors['success']};
+                color: white;
                 font-size: 11px;
                 font-weight: 600;
-                background-color: {colors['success']}20;
+                background-color: {colors['success']};
                 padding: 2px 6px;
                 border-radius: 3px;
                 border: 1px solid {colors['success']};
             }}
         """)
         
+        # Style the speed label with green text
         self.speed_label.setStyleSheet(f"""
             QLabel {{
                 color: {colors['success']};
                 font-size: 11px;
                 font-weight: 600;
-                background-color: {colors['success']}20;
-                padding: 2px 6px;
-                border-radius: 3px;
-                border: 1px solid {colors['success']};
             }}
         """)
         
-    def mark_failed(self, error: str):
+        # Force a repaint
+        self.repaint()
+        
+    def mark_failed(self, error_message: str = "Failed"):
         """Mark the file transfer as failed."""
+        self.progress_bar.setValue(0)
         self.status_label.setText("Failed")
         self.speed_label.setText("Error")
         
-        # Change styling to indicate failure with centralized styles
-        self.setStyleSheet(FILE_PROGRESS_LINE_FAILED_STYLE)
+        # DON'T apply the overall widget style - it causes unwanted background colors
+        # self.setStyleSheet(FILE_PROGRESS_LINE_FAILED_STYLE)
         
-        # Show error in tooltip
-        self.setToolTip(f"Error: {error}")
+        # Instead, style each component individually with proper red colors
+        
+        # Style the progress bar with red border
+        self.progress_bar.setStyleSheet(f"""
+            QProgressBar {{
+                border: 2px solid {colors['error']};
+                border-radius: 2px;
+                text-align: center;
+                background-color: {colors['bg']};
+                color: {colors['text']};
+                font-size: 10px;
+                font-weight: 600;
+            }}
+            QProgressBar::chunk {{
+                background-color: {colors['error']}40;
+                border-radius: 1px;
+            }}
+        """)
+        
+        # Style the filename label with red color for failed files
+        self.filename_label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['error']};
+                font-size: 12px;
+                font-weight: 600;
+            }}
+        """)
+        
+        # Style the status label with proper red background and white text (no brown!)
+        self.status_label.setStyleSheet(f"""
+            QLabel {{
+                color: white;
+                font-size: 11px;
+                font-weight: 600;
+                background-color: {colors['error']};
+                padding: 2px 6px;
+                border-radius: 3px;
+                border: 1px solid {colors['error']};
+            }}
+        """)
+        
+        # Style the speed label with red text
+        self.speed_label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['error']};
+                font-size: 11px;
+                font-weight: 600;
+            }}
+        """)
+        
+        # Add error message if provided
+        if error_message and error_message != "Failed":
+            # Create error message label with red background and white text
+            error_style = f"""
+                QLabel {{
+                    color: white;
+                    font-size: 10px;
+                    font-weight: 500;
+                    background-color: {colors['error']};
+                    padding: 2px 4px;
+                    border-radius: 2px;
+                    border: 1px solid {colors['error']};
+                    margin-left: 8px;
+                }}
+            """
+            # If there's already an error label, update it
+            for child in self.findChildren(QLabel):
+                if child.objectName() == "error_message":
+                    child.setText(error_message)
+                    child.setStyleSheet(error_style)
+                    child.show()
+                    break
+            else:
+                # Create new error label
+                error_label = QLabel(error_message)
+                error_label.setObjectName("error_message")
+                error_label.setStyleSheet(error_style)
+                self.layout().addWidget(error_label)
+        
+        # Force a repaint
+        self.repaint()
