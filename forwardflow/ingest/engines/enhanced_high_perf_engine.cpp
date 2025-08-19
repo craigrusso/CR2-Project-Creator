@@ -8,6 +8,8 @@
 #include <future>
 #include <atomic>
 #include <chrono>
+#include <mutex>
+#include <cstdlib>   // std::aligned_alloc (C++17) / free
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -18,13 +20,13 @@
 #include <algorithm>
 #include <memory>
 #include <queue>
-#include <mutex>
 #include <condition_variable>
 #include <random>
 #include <iomanip>
 #include <sstream>
 #include <semaphore>
 #include <unordered_map>
+#include <deque>
 
 // Platform-specific includes
 #ifdef _WIN32
@@ -32,6 +34,7 @@
     #include <winioctl.h>
     #include <io.h>
     #include <direct.h>
+    #include <shlwapi.h>
 #elif defined(__APPLE__)
     #include <copyfile.h>
     #include <sys/param.h>
@@ -42,6 +45,7 @@
     #include <arpa/inet.h>
     #include <sys/ioctl.h>
     #include <sys/clonefile.h>
+    #include <sys/mount.h>  // statfs is in mount.h on macOS
 #else
     #include <sys/sendfile.h>
     #include <linux/fs.h>
@@ -52,6 +56,7 @@
     #include <arpa/inet.h>
     #include <sys/ioctl.h>
     #include <linux/sockios.h>
+    #include <sys/vfs.h>
 #endif
 
 // Hash libraries
@@ -61,6 +66,333 @@
 
 namespace py = pybind11;
 namespace fs = std::filesystem;
+
+// ============================================================================
+// PLATFORM HELPERS (detect local vs network, prealloc, clone-only on macOS)
+// ============================================================================
+
+#if defined(__APPLE__)
+static bool is_network_path_macos(const std::string& path) {
+    struct statfs s{};
+    if (statfs(path.c_str(), &s) != 0) return false; // default local if unknown
+    return (s.f_flags & MNT_LOCAL) == 0;
+}
+
+static bool try_clone_only_macos(const std::string& src, const std::string& dst) {
+    return clonefile(src.c_str(), dst.c_str(), 0) == 0;
+}
+
+static bool preallocate_macos(int fd, off_t size) {
+    fstore_t s = {F_ALLOCATECONTIG, F_PEOFPOSMODE, 0, size, 0};
+    if (fcntl(fd, F_PREALLOCATE, &s) == -1) { 
+        s.fst_flags = F_ALLOCATEALL; 
+        fcntl(fd, F_PREALLOCATE, &s); 
+    }
+    return ftruncate(fd, size) == 0;
+}
+#endif
+
+// Windows: local vs network
+#if defined(_WIN32)
+static bool is_network_path_win(const std::wstring& path) {
+    // PathIsNetworkPathW is simplest; fallback to GetDriveTypeW check.
+    typedef BOOL (WINAPI *PPathIsNetworkPathW)(LPCWSTR);
+    static HMODULE h = LoadLibraryW(L"Shlwapi.dll");
+    static auto PathIsNetworkPathW = (PPathIsNetworkPathW)(h ? GetProcAddress(h, "PathIsNetworkPathW") : nullptr);
+    if (PathIsNetworkPathW) return PathIsNetworkPathW(path.c_str());
+    UINT t = GetDriveTypeW(path.substr(0,3).c_str()); // e.g. "Z:\"
+    return t == DRIVE_REMOTE;
+}
+#endif
+
+// Linux: statfs f_type check for cifs/nfs
+#if defined(__linux__)
+#ifndef CIFS_MAGIC_NUMBER
+#define CIFS_MAGIC_NUMBER 0xFF534D42
+#endif
+#ifndef NFS_SUPER_MAGIC
+#define NFS_SUPER_MAGIC 0x6969
+#endif
+
+static bool is_network_path_linux(const std::string& path) {
+    struct statfs s{};
+    if (statfs(path.c_str(), &s) != 0) return false;
+    return (s.f_type == (long)CIFS_MAGIC_NUMBER) || (s.f_type == (long)NFS_SUPER_MAGIC);
+}
+#endif
+
+// ============================================================================
+// AUTO PARAMS PER DESTINATION
+// ============================================================================
+
+struct TunedParams {
+    int block_size;        // bytes
+    int files_in_flight;   // parallel files per dest
+    int ranges_per_file;   // segments per file
+    bool use_direct_io;
+    
+    TunedParams() : block_size(4 * 1024 * 1024), files_in_flight(1), 
+                   ranges_per_file(1), use_direct_io(false) {}
+};
+
+static TunedParams pick_params_for_destination(const std::string& dest, double link_hint_mbps = 0.0) {
+    TunedParams p{};
+    // Defaults
+    p.block_size      = 4 * 1024 * 1024;
+    p.files_in_flight = 1;
+    p.ranges_per_file = 1;
+    p.use_direct_io   = false;
+
+#if defined(__APPLE__)
+    const bool is_net = is_network_path_macos(dest);
+#elif defined(_WIN32)
+    std::wstring wdest(dest.begin(), dest.end());
+    const bool is_net = is_network_path_win(wdest);
+#elif defined(__linux__)
+    const bool is_net = is_network_path_linux(dest);
+#else
+    const bool is_net = false;
+#endif
+
+    if (!is_net) {
+        // USB/TB/NVMe local
+        p.block_size      = 8 * 1024 * 1024;
+        p.files_in_flight = 1;
+        p.ranges_per_file = 1;
+        p.use_direct_io   = false;
+    } else {
+        // Network (tune conservatively; UI may raise)
+        p.block_size      = 2 * 1024 * 1024;
+        p.files_in_flight = 2;
+        p.ranges_per_file = 1;
+        p.use_direct_io   = false;
+    }
+    return p;
+}
+
+// ============================================================================
+// MULTI-DESTINATION FAN-OUT (read once → write to N destinations)
+// ============================================================================
+
+struct Chunk {
+    std::unique_ptr<uint8_t[]> buf;
+    size_t size = 0;
+    size_t used = 0;
+    std::atomic<int> pending{0};
+    uint64_t seq = 0;
+};
+
+class ChunkPool {
+public:
+    ChunkPool(size_t chunks, size_t chunk_size)
+    : chunk_size_(chunk_size) {
+        for (size_t i=0;i<chunks;i++) {
+            auto c = std::make_unique<Chunk>();
+            c->buf.reset(new uint8_t[chunk_size_]);
+            c->size = chunk_size_;
+            free_.push_back(std::move(c));
+        }
+    }
+    
+    Chunk* acquire() {
+        std::unique_lock<std::mutex> lk(mu_);
+        cv_.wait(lk, [&]{ return !free_.empty(); });
+        auto p = free_.back().release();
+        free_.pop_back();
+        return p;
+    }
+    
+    void release(Chunk* c) {
+        std::unique_lock<std::mutex> lk(mu_);
+        free_.emplace_back(c);
+        lk.unlock(); 
+        cv_.notify_one();
+    }
+    
+    size_t chunk_size() const { return chunk_size_; }
+    
+private:
+    size_t chunk_size_;
+    std::vector<std::unique_ptr<Chunk>> free_;
+    std::mutex mu_;
+    std::condition_variable cv_;
+};
+
+struct Broadcaster {
+    std::deque<Chunk*> q;
+    std::mutex mu;
+    std::condition_variable cv;
+    bool closed = false;
+
+    void push(Chunk* c) {
+        std::lock_guard<std::mutex> lk(mu);
+        q.push_back(c);
+        cv.notify_all();
+    }
+    
+    bool pop(Chunk*& out) {
+        std::unique_lock<std::mutex> lk(mu);
+        cv.wait(lk, [&]{ return closed || !q.empty(); });
+        if (q.empty()) return false;
+        out = q.front(); 
+        q.pop_front();
+        return true;
+    }
+    
+    void close() {
+        std::lock_guard<std::mutex> lk(mu);
+        closed = true;
+        cv.notify_all();
+    }
+    
+    void reopen() {
+        std::lock_guard<std::mutex> lk(mu);
+        closed = false;
+    }
+};
+
+// Data timing
+std::atomic<long long> data_first_ns{0};
+std::atomic<long long> data_last_ns{0};
+
+static inline long long now_ns() {
+    using namespace std::chrono;
+    return duration_cast<nanoseconds>(high_resolution_clock::now().time_since_epoch()).count();
+}
+
+// Writer thread (per destination)
+static void writer_loop(const std::string& dst_path, int fd, Broadcaster* b, ChunkPool* pool,
+                        std::atomic<bool>* ok, std::atomic<uint64_t>* bytes_out,
+                        std::function<void(uint64_t)> on_progress) {
+    try {
+        for (;;) {
+            Chunk* c=nullptr;
+            if (!b->pop(c)) break; // closed & drained
+            if (!c) continue;
+            size_t off = 0;
+            while (off < c->used) {
+                ssize_t w = ::write(fd, c->buf.get() + off, c->used - off);
+                if (w <= 0) throw std::runtime_error("write failed");
+                off += (size_t)w;
+                bytes_out->fetch_add((uint64_t)w);
+                if (data_first_ns.load() == 0) data_first_ns.store(now_ns());
+                data_last_ns.store(now_ns());
+            }
+            // drop our ref
+            if (c->pending.fetch_sub(1) == 1) {
+                pool->release(c);
+            }
+            if (on_progress) on_progress(bytes_out->load());
+        }
+        fsync(fd);
+    } catch (...) {
+        ok->store(false);
+        // drain remaining refs so pool doesn't leak
+        for(;;) {
+            Chunk* c=nullptr;
+            if (!b->pop(c)) break;
+            if (c && c->pending.fetch_sub(1) == 1) pool->release(c);
+        }
+    }
+}
+
+// Main fan-out copy for one file
+bool copy_file_to_many(const std::string& src_path,
+                       const std::vector<std::string>& dest_paths,
+                       const std::vector<TunedParams>& tuned,
+                       std::function<void(const std::string&, const py::dict&)> event_sink,
+                       std::atomic<bool>* cancel_event = nullptr) {
+    if (dest_paths.empty()) return true;
+
+#if defined(__APPLE__)
+    // If same volume and APFS, try clone only (very fast)
+    // NOTE: skip data pipeline; this rarely applies for camera cards.
+    // (You can keep fstatfs check here if needed.)
+#endif
+
+    int sfd = ::open(src_path.c_str(), O_RDONLY);
+    if (sfd < 0) return false;
+    const uint64_t total = (uint64_t)std::filesystem::file_size(src_path);
+
+    // Build destination fds and preallocate
+    const size_t N = dest_paths.size();
+    std::vector<int> dfds(N, -1);
+    for (size_t i=0; i<N; ++i) {
+        std::filesystem::create_directories(std::filesystem::path(dest_paths[i]).parent_path());
+        dfds[i] = ::open(dest_paths[i].c_str(), O_CREAT|O_TRUNC|O_WRONLY, 0666);
+        if (dfds[i] < 0) { ::close(sfd); return false; }
+#if defined(__APPLE__)
+        preallocate_macos(dfds[i], (off_t)total);
+#endif
+    }
+
+    // Choose chunk size per-destination; for simplicity pick the max so we read once.
+    size_t chunk_sz = 0;
+    for (auto& t : tuned) chunk_sz = std::max(chunk_sz, (size_t)t.block_size);
+    if (chunk_sz == 0) chunk_sz = 4*1024*1024;
+
+    // Pool of, say, 16 chunks max in-flight (memory bound: 16 * chunk_sz)
+    ChunkPool pool(16, chunk_sz);
+    std::vector<Broadcaster> queues(N);
+    std::vector<std::thread> writers;
+    std::atomic<bool> ok{true};
+    std::vector<std::atomic<uint64_t>> out_bytes(N);
+    for (auto& b : out_bytes) b.store(0);
+
+    // Optional BLAKE3 stream hash (source and per-destination)
+    // (Integrate your existing hasher or add BLAKE3 C implementation)
+    // Hasher src_hasher, dst_hashers[N]; // pseudocode
+
+    for (size_t i=0; i<N; ++i) {
+        queues[i].reopen();
+        writers.emplace_back([&, i]{
+            auto onp = [&](uint64_t){ /* emit per-dest file.progress if you want */ };
+            writer_loop(dest_paths[i], dfds[i], &queues[i], &pool, &ok, &out_bytes[i], onp);
+        });
+    }
+
+    // Reader → broadcast
+    uint64_t total_read = 0;
+    while (ok.load()) {
+        if (cancel_event && cancel_event->load()) break;
+        
+        Chunk* c = pool.acquire();
+        ssize_t r = ::read(sfd, c->buf.get(), pool.chunk_size());
+        if (r < 0) { ok.store(false); pool.release(c); break; }
+        if (r == 0) { pool.release(c); break; }
+        c->used = (size_t)r;
+        c->pending.store((int)N);
+        total_read += (uint64_t)r;
+        // stream source hash
+        // if (hash_mode != HashMode::FAST) src_hasher.update(c->buf.get(), (size_t)r);
+        // queue to all writers
+        for (size_t i=0; i<N; ++i) queues[i].push(c);
+
+        // emit job.file progress (overall = min(out_bytes[i]) across i)
+        uint64_t min_out = total_read;
+        for (size_t i=0;i<N;++i) min_out = std::min<uint64_t>(min_out, out_bytes[i].load());
+        // send file.progress with min_out/total
+    }
+
+    // Close queues so writers drain
+    for (auto& q : queues) q.close();
+    for (auto& t : writers) t.join();
+
+    // finalize hashes
+    // if (hash_mode == HashMode::STREAM_VERIFY) {
+    //     auto src_digest = src_hasher.finalize();
+    //     for (size_t i=0;i<N;++i) {
+    //         // Because we hashed on what we wrote, this verifies the pipeline (not media re-read).
+    //         // If you want full media verification, do READBACK_VERIFY below.
+    //     }
+    // } else if (hash_mode == HashMode::READBACK_VERIFY) {
+    //     // Re-open each dest and compute BLAKE3; compare to source digest.
+    // }
+
+    for (auto fd : dfds) if (fd>=0) ::close(fd);
+    ::close(sfd);
+    return ok.load();
+}
 
 // Data structures
 struct BandwidthTest {
@@ -77,6 +409,8 @@ struct CopyStats {
     double start_time = 0.0;
     double end_time = 0.0;
     double speed_mbps = 0.0;
+    double data_mbps = 0.0;  // NEW: data speed vs wall time
+    double data_elapsed_s = 0.0;  // NEW: data transfer time
     std::vector<std::string> errors;
     int hash_verifications = 0;
     int hash_failures = 0;
@@ -87,10 +421,10 @@ struct CopyStats {
     }
 };
 
-// Enhanced CopyJob with separate concurrency knobs
+// Enhanced CopyJob with multi-destination support
 struct CopyJob {
     std::vector<std::string> source_paths;
-    std::vector<std::string> destination_paths;
+    std::vector<std::string> destination_paths;  // Now supports multiple destinations
     size_t block_size = 4 * 1024 * 1024;    // ≥ 4 MB default
     int    thread_count = 0;                // legacy, keep for compat
     bool   use_direct_io = false;           // default buffered
@@ -106,6 +440,10 @@ struct CopyJob {
     // NEW: Separate concurrency knobs
     int    files_in_flight  = 1;            // files copying at once
     int    ranges_per_file  = 1;            // parallel ranges inside one file
+    // NEW: Multi-destination settings
+    std::string preset = "auto";            // auto, usb, network, custom
+    std::string verify_mode = "FAST";       // FAST, STREAM_VERIFY, READBACK_VERIFY
+    std::vector<TunedParams> per_dest_params;  // Auto-computed per destination
 };
 
 // Per-file progress throttle (≤10 Hz)
@@ -141,19 +479,7 @@ static bool try_fast_copy_macos(const std::string& src, const std::string& dst) 
     return rc == 0;
 }
 
-static bool preallocate_macos(int fd, off_t size) {
-    fstore_t s = { F_ALLOCATECONTIG, F_PEOFPOSMODE, 0, size, 0 };
-    if (fcntl(fd, F_PREALLOCATE, &s) == -1) { 
-        s.fst_flags = F_ALLOCATEALL; 
-        fcntl(fd, F_PREALLOCATE, &s); 
-    }
-    return ftruncate(fd, size) == 0;
-}
 
-static bool is_network_path_macos(const std::string& path) {
-    struct statfs s{};
-    return (statfs(path.c_str(), &s) == 0) ? ((s.f_flags & MNT_LOCAL) == 0) : false;
-}
 #endif
 
 // Linux/Windows preallocation helpers:
@@ -311,14 +637,20 @@ public:
 
 // 7) Safe direct-I/O buffers (alignment)
 static std::unique_ptr<char, void(*)(void*)> make_aligned(size_t size){
+    constexpr size_t align = 4096;
+    // round size up to a multiple of align (required by std::aligned_alloc and many direct I/O paths)
+    size_t sz = (size + (align - 1)) & ~(align - 1);
 #if defined(_WIN32)
-    void* p = _aligned_malloc(size, 4096);
-    return { (char*)p, [](void* q){ _aligned_free(q); } };
+    void* p = _aligned_malloc(sz, align);
+    return { (char*)p, [](void* q){ if (q) _aligned_free(q); } };
 #elif defined(__linux__)
-    void* p=nullptr; posix_memalign(&p, 4096, size);
+    void* p = nullptr;
+    if (posix_memalign(&p, align, sz) != 0) p = nullptr;
     return { (char*)p, free };
 #else
-    return { (char*)aligned_alloc(4096, size), free };
+    // C++17 guarantees std::aligned_alloc; returns nullptr if sz not multiple of align (we already rounded)
+    void* p = std::aligned_alloc(align, sz);
+    return { (char*)p, free };
 #endif
 }
 
@@ -506,6 +838,11 @@ private:
     std::atomic<bool> paused_{false};
     std::function<void(const std::string&, const py::dict&)> event_sink_;
     CopyStats stats_;
+    // minimal stats protection (expand as needed)
+    std::mutex stats_mu_;
+    void add_bytes(size_t n) { std::lock_guard<std::mutex> lk(stats_mu_); stats_.copied_bytes += n; }
+    void inc_files()         { std::lock_guard<std::mutex> lk(stats_mu_); stats_.copied_files++; }
+    void add_error(const std::string& e) { std::lock_guard<std::mutex> lk(stats_mu_); stats_.errors.push_back(e); }
 
 public:
     EnhancedHighPerfTransferEngine() = default;
@@ -526,6 +863,10 @@ public:
         
         cancelled_ = false;
         paused_ = false;
+        
+        // Reset data timing
+        data_first_ns.store(0);
+        data_last_ns.store(0);
         
         try {
             // Apply adaptive parameters if enabled
@@ -550,6 +891,13 @@ public:
                 optimized_job.block_size = CrossPlatformIO::get_optimal_block_size();
             }
             
+            // Auto-compute per-destination parameters if not provided
+            if (optimized_job.per_dest_params.empty()) {
+                for (const auto& dest : optimized_job.destination_paths) {
+                    optimized_job.per_dest_params.push_back(pick_params_for_destination(dest));
+                }
+            }
+            
             // Collect all files to copy
             std::vector<std::string> all_files = collect_files(optimized_job.source_paths);
             stats_.total_files = all_files.size();
@@ -564,9 +912,15 @@ public:
                 } catch (...) {}
             }
             
-            // Handle multiple destinations
+            // Emit job started event
+            emit_event_make("job.started", [&](py::dict& payload){
+                payload["total_files"] = stats_.total_files;
+                payload["total_bytes"] = stats_.total_bytes;
+            });
+            
+            // Handle multiple destinations with fan-out
             if (optimized_job.destination_paths.size() > 1) {
-                copy_to_multiple_destinations(optimized_job, all_files);
+                copy_to_multiple_destinations_fanout(optimized_job, all_files);
             } else {
                 copy_to_single_destination(optimized_job, all_files);
             }
@@ -579,9 +933,27 @@ public:
             std::chrono::high_resolution_clock::now().time_since_epoch()
         ).count();
         
+        // Calculate data speed vs wall time
+        auto first = data_first_ns.load(), last = data_last_ns.load();
+        if (first > 0 && last > first) {
+            stats_.data_elapsed_s = double(last - first) / 1e9;
+            stats_.data_mbps = (stats_.data_elapsed_s > 0.0) ? 
+                (double(stats_.copied_bytes) / (1024.0 * 1024.0)) / stats_.data_elapsed_s : 0.0;
+        }
+        
         if (stats_.duration() > 0) {
             stats_.speed_mbps = (stats_.copied_bytes / (1024.0 * 1024.0)) / stats_.duration();
         }
+        
+        // Emit job completed event with data speed (GIL-safe)
+        emit_event_make("job.completed", [&](py::dict& payload){
+            payload["bytes"] = stats_.copied_bytes;
+            payload["total"] = stats_.total_bytes;
+            payload["elapsed_s"] = stats_.duration();
+            payload["mbps"] = stats_.speed_mbps;
+            payload["data_elapsed_s"] = stats_.data_elapsed_s;
+            payload["data_mbps"] = stats_.data_mbps;
+        });
         
         return stats_;
     }
@@ -625,6 +997,10 @@ private:
 #endif
         if (fif < 1) fif = 1;
 
+        // Track last job progress emission time using atomic for thread safety
+        std::atomic<std::chrono::high_resolution_clock::time_point> last_progress_time(std::chrono::high_resolution_clock::now());
+        const auto progress_interval = std::chrono::milliseconds(50); // Emit progress every 50ms for more frequent updates
+
         // Use mutex-based concurrency control instead of semaphore
         std::mutex slots_mutex;
         std::condition_variable slots_cv;
@@ -644,7 +1020,7 @@ private:
                 available_slots--;
             }
             
-            futs.emplace_back(std::async(std::launch::async, [this, &job, source_file, dst, &slots_mutex, &slots_cv, &available_slots]() {
+            futs.emplace_back(std::async(std::launch::async, [this, &job, source_file, dst, &slots_mutex, &slots_cv, &available_slots, &last_progress_time, progress_interval]() {
                 CopyJob local = job;
                 if (local.adaptive_parameters) {
                     local.ranges_per_file = std::max(1, local.ranges_per_file); // keep 1 on USB/TB
@@ -658,10 +1034,22 @@ private:
                     slots_cv.notify_one();
                 }
                 
+                // Emit job progress periodically
+                auto now = std::chrono::high_resolution_clock::now();
+                auto expected = last_progress_time.load();
+                if (now - expected >= progress_interval) {
+                    if (last_progress_time.compare_exchange_strong(expected, now)) {
+                        emit_event_make("job.progress", [&](py::dict& payload){
+                            payload["copied_bytes"] = stats_.copied_bytes;
+                            payload["total_bytes"] = stats_.total_bytes;
+                        });
+                    }
+                }
+                
                 return ok;
             }));
         }
-        for (auto& f : futs) { try { if (f.get()) stats_.copied_files++; } catch (...) { stats_.errors.push_back("Copy task failed"); } }
+        for (auto& f : futs) { try { if (f.get()) inc_files(); } catch (...) { add_error("Copy task failed"); } }
     }
     
     // 3) Fix multi-destination bug (use the actual destination)
@@ -675,7 +1063,95 @@ private:
                 copy_to_single_destination(j, files);
             }));
         }
-        for (auto& f : dst_futs) { try { f.get(); } catch (...) { stats_.errors.push_back("Multi-destination copy failed"); } }
+        for (auto& f : dst_futs) { try { f.get(); } catch (...) { add_error("Multi-destination copy failed"); } }
+    }
+    
+    // NEW: Multi-destination fan-out (read once → write to N destinations)
+    void copy_to_multiple_destinations_fanout(const CopyJob& job, const std::vector<std::string>& files) {
+        if (files.empty() || job.destination_paths.empty()) return;
+        
+        // Determine global concurrency policy
+        bool all_local = true;
+        for (const auto& dest : job.destination_paths) {
+#if defined(__APPLE__)
+            if (is_network_path_macos(dest)) all_local = false;
+#elif defined(_WIN32)
+            std::wstring wdest(dest.begin(), dest.end());
+            if (is_network_path_win(wdest)) all_local = false;
+#elif defined(__linux__)
+            if (is_network_path_linux(dest)) all_local = false;
+#endif
+        }
+        
+        // Global policy: if all dests are local, process 1 file at a time; if any network dest, allow up to 2 files at a time
+        int global_files_in_flight = all_local ? 1 : 2;
+        
+        // Use mutex-based concurrency control
+        std::mutex slots_mutex;
+        std::condition_variable slots_cv;
+        int available_slots = global_files_in_flight;
+        
+        std::vector<std::future<bool>> futs;
+
+        for (const auto& source_file : files) {
+            if (cancelled_) break;
+            
+            // Wait for available slot
+            {
+                std::unique_lock<std::mutex> lock(slots_mutex);
+                slots_cv.wait(lock, [&] { return available_slots > 0; });
+                available_slots--;
+            }
+            
+            futs.emplace_back(std::async(std::launch::async, [this, &job, source_file, &slots_mutex, &slots_cv, &available_slots]() {
+                // Build destination paths for this file
+                std::vector<std::string> dest_paths;
+                for (const auto& dest : job.destination_paths) {
+                    fs::path dst = fs::path(dest) / fs::path(source_file).filename();
+                    fs::create_directories(dst.parent_path());
+                    dest_paths.push_back(dst.string());
+                }
+                
+                // Use the fan-out copy function
+                bool ok = copy_file_to_many(source_file, dest_paths, job.per_dest_params, event_sink_, &cancelled_);
+                
+                if (ok) {
+                    inc_files();
+                    try {
+                        add_bytes(fs::file_size(source_file));
+                    } catch (...) {}
+                }
+                
+                // Release slot
+                {
+                    std::lock_guard<std::mutex> lock(slots_mutex);
+                    available_slots++;
+                    slots_cv.notify_one();
+                }
+                
+                // Emit job progress periodically
+                auto now = std::chrono::high_resolution_clock::now();
+                static auto last_progress_time = now;
+                const auto progress_interval = std::chrono::milliseconds(100);
+                if (now - last_progress_time >= progress_interval) {
+                    emit_event_make("job.progress", [&](py::dict& payload){
+                        payload["copied_bytes"] = stats_.copied_bytes;
+                        payload["total_bytes"] = stats_.total_bytes;
+                    });
+                    last_progress_time = now;
+                }
+                
+                return ok;
+            }));
+        }
+        
+        for (auto& f : futs) { 
+            try { 
+                f.get(); 
+            } catch (...) { 
+                add_error("Multi-destination fan-out copy failed"); 
+            } 
+        }
     }
     
     // 4) Prefer fast path on macOS in copy_single_file
@@ -687,7 +1163,7 @@ private:
 #if defined(__APPLE__)
             // Attempt fast path first
             if (try_fast_copy_macos(source_path, dest_path)) {
-                stats_.copied_bytes += fs::file_size(source_file);
+                add_bytes(fs::file_size(source_file));
                 return true;
             }
 #endif
@@ -701,7 +1177,7 @@ private:
             }
             
         } catch (const std::exception& e) {
-            stats_.errors.push_back(std::string("Copy exception: ") + e.what());
+            add_error(std::string("Copy exception: ") + e.what());
             return false;
         }
     }
@@ -751,11 +1227,11 @@ private:
             }
 
             fs::rename(temp_file, dest_path);
-            stats_.copied_bytes += file_size;
+            add_bytes(file_size);
             return true;
             
         } catch (const std::exception& e) {
-            stats_.errors.push_back(std::string("Large file copy exception: ") + e.what());
+            add_error(std::string("Large file copy exception: ") + e.what());
             return false;
         }
     }
@@ -768,7 +1244,7 @@ private:
                 return copy_with_buffered_io(job, source_path, dest_path);
             }
         } catch (const std::exception& e) {
-            stats_.errors.push_back(std::string("Small file copy exception: ") + e.what());
+            add_error(std::string("Small file copy exception: ") + e.what());
             return false;
         }
     }
@@ -806,15 +1282,13 @@ private:
                 if (bytes_written != bytes_read) break;
                 
                 total_copied += bytes_written;
-                stats_.copied_bytes += bytes_written;
+                add_bytes(bytes_written);
                 
                 // Emit progress event
-                if (event_sink_) {
-                    py::dict payload;
+                emit_event_make("file.progress", [&](py::dict& payload){
                     payload["bytes"] = total_copied;
                     payload["total"] = file_size;
-                    event_sink_("file.progress", payload);
-                }
+                });
             }
             
             CrossPlatformIO::close_handle(src_handle);
@@ -853,13 +1327,13 @@ private:
             dst.write(buf.data(), n);
             if (!dst) break;
             total += (size_t)n;
-            stats_.copied_bytes += (size_t)n;
+            add_bytes(size_t(n));
 
             if (event_sink_) { 
-                py::dict p; 
-                p["bytes"] = total; 
-                p["total"] = file_size; 
-                event_sink_("file.progress", p); 
+                emit_event_make("file.progress", [&](py::dict& p){ 
+                    p["bytes"] = total; 
+                    p["total"] = file_size; 
+                }); 
             }
         }
 
@@ -926,12 +1400,12 @@ private:
                     DWORD rd=0, wr=0;
                     if (!ReadFile(s, buf.data(), toRead, &rd, nullptr) || rd==0) break;
                     if (!WriteFile(d, buf.data(), rd, &wr, nullptr) || wr!=rd) { CloseHandle(s); CloseHandle(d); return false; }
-                    remain -= rd; stats_.copied_bytes += rd;
+                    remain -= rd; add_bytes(size_t(rd));
                     if (event_sink_ && g_progress.should_emit(src)) { 
-                        py::dict p; 
-                        p["bytes"]=(py::int_)0; 
-                        p["total"]=(py::int_)file_size; 
-                        event_sink_("file.progress", p); 
+                        emit_event_make("file.progress", [&](py::dict& p){ 
+                            p["bytes"]=(py::int_)0; 
+                            p["total"]=(py::int_)file_size; 
+                        }); 
                     }
                 }
                 CloseHandle(s); CloseHandle(d);
@@ -952,12 +1426,12 @@ private:
                     if (n <= 0) break;
                     ssize_t w = ::write(dfd, buf.data(), n);
                     if (w != n) { ::close(sfd); ::close(dfd); return false; }
-                    remain -= size_t(n); stats_.copied_bytes += size_t(n);
+                    remain -= size_t(n); add_bytes(size_t(n));
                     if (event_sink_ && g_progress.should_emit(src)) { 
-                        py::dict p; 
-                        p["bytes"]=(py::int_)0; 
-                        p["total"]=(py::int_)file_size; 
-                        event_sink_("file.progress", p); 
+                        emit_event_make("file.progress", [&](py::dict& p){ 
+                            p["bytes"]=(py::int_)0; 
+                            p["total"]=(py::int_)file_size; 
+                        }); 
                     }
                 }
                 ::close(sfd); ::close(dfd);
@@ -986,7 +1460,7 @@ private:
                 return copy_range_with_buffered_io(job, source_path, dest_path, start, end);
             }
         } catch (const std::exception& e) {
-            stats_.errors.push_back(std::string("Range copy exception: ") + e.what());
+            add_error(std::string("Range copy exception: ") + e.what());
             return false;
         }
     }
@@ -1085,19 +1559,47 @@ private:
         return copied_bytes == range_size;
     }
     
+    // Always call Python under the GIL, from any thread.
     void emit_event(const std::string& event_type, const py::dict& payload) {
-        if (event_sink_) {
+        if (!event_sink_) return;
+        py::gil_scoped_acquire gil;
+        try {
             event_sink_(event_type, payload);
+        } catch (const py::error_already_set& e) {
+            // Optional: log e.what() to your logging system
+        }
+    }
+
+    // Convenience: build the payload while holding the GIL (safe for py::dict construction too)
+    template <class F>
+    void emit_event_make(const std::string& event_type, F&& fill_payload) {
+        if (!event_sink_) return;
+        py::gil_scoped_acquire gil;
+        try {
+            py::dict p;
+            fill_payload(p);
+            event_sink_(event_type, p);
+        } catch (const py::error_already_set& e) {
+            // Optional: log e.what()
         }
     }
 };
 
 // PyBind11 module
 PYBIND11_MODULE(enhanced_high_perf_engine, m) {
-    py::class_<BandwidthTest>(m, "BandwidthTest")
+    // Use try-catch to handle re-registration gracefully
+    try {
+        py::class_<BandwidthTest>(m, "BandwidthTest")
         .def_readwrite("write_speed", &BandwidthTest::write_speed)
         .def_readwrite("read_speed", &BandwidthTest::read_speed)
         .def_readwrite("avg_speed", &BandwidthTest::avg_speed);
+    
+    py::class_<TunedParams>(m, "TunedParams")
+        .def(py::init<>())
+        .def_readwrite("block_size", &TunedParams::block_size)
+        .def_readwrite("files_in_flight", &TunedParams::files_in_flight)
+        .def_readwrite("ranges_per_file", &TunedParams::ranges_per_file)
+        .def_readwrite("use_direct_io", &TunedParams::use_direct_io);
     
     py::class_<CopyStats>(m, "CopyStats")
         .def_readwrite("total_files", &CopyStats::total_files)
@@ -1107,6 +1609,8 @@ PYBIND11_MODULE(enhanced_high_perf_engine, m) {
         .def_readwrite("start_time", &CopyStats::start_time)
         .def_readwrite("end_time", &CopyStats::end_time)
         .def_readwrite("speed_mbps", &CopyStats::speed_mbps)
+        .def_readwrite("data_mbps", &CopyStats::data_mbps)
+        .def_readwrite("data_elapsed_s", &CopyStats::data_elapsed_s)
         .def_readwrite("errors", &CopyStats::errors)
         .def_readwrite("hash_verifications", &CopyStats::hash_verifications)
         .def_readwrite("hash_failures", &CopyStats::hash_failures)
@@ -1130,7 +1634,10 @@ PYBIND11_MODULE(enhanced_high_perf_engine, m) {
         .def_readwrite("adaptive_parameters", &CopyJob::adaptive_parameters)
         .def_readwrite("large_file_threshold", &CopyJob::large_file_threshold)
         .def_readwrite("files_in_flight", &CopyJob::files_in_flight)
-        .def_readwrite("ranges_per_file", &CopyJob::ranges_per_file);
+        .def_readwrite("ranges_per_file", &CopyJob::ranges_per_file)
+        .def_readwrite("preset", &CopyJob::preset)
+        .def_readwrite("verify_mode", &CopyJob::verify_mode)
+        .def_readwrite("per_dest_params", &CopyJob::per_dest_params);
     
     py::class_<EnhancedHighPerfTransferEngine>(m, "EnhancedHighPerfTransferEngine")
         .def(py::init<>())
@@ -1147,4 +1654,12 @@ PYBIND11_MODULE(enhanced_high_perf_engine, m) {
     m.def("set_mtu", &NetworkOptimizer::set_mtu);
     m.def("set_socket_buffer_size", &NetworkOptimizer::set_socket_buffer_size);
     m.def("enable_jumbo_frames", &NetworkOptimizer::enable_jumbo_frames);
+    m.def("copy_file_to_many", &copy_file_to_many, py::arg("src_path"), py::arg("dest_paths"), py::arg("tuned_params"), py::arg("event_sink"), py::arg("cancel_event") = nullptr);
+    } catch (const py::error_already_set& e) {
+        // Module already registered, ignore the error
+        if (std::string(e.what()).find("already registered") != std::string::npos) {
+            return;
+        }
+        throw;
+    }
 }

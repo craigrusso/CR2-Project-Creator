@@ -64,75 +64,202 @@ class PythonCopyEngine(Engine):
         self._file_stats: dict[str, _FileStats] = {}
 
     def start(self, job: JobSpec) -> None:  # pragma: no cover - used via CLI/UI later
-        policy = SimplePolicy()
-        files: list[FileSpec] = list(policy.plan(job))
-        # Initialize job stats
-        total_bytes = sum(f.size_bytes for f in files)
-        self._job_stats[job.job_id] = _JobStats(
-            total_bytes=total_bytes,
-            copied_bytes=0,
-            start_time=time.time(),
-            last_emit=0.0,
-            lock=threading.Lock(),
-        )
-        self._emit(job.job_id, "job.started", {"total_bytes": total_bytes, "total_files": len(files)})
-        results = self._copy_files(job, files)
-        # Write MHL only for BALANCED mode
-        if (job.options.mode or "BALANCED").upper() == "BALANCED":
-            mhl_path = Path(job.destination_root) / f"{job.job_id}.mhl"
-            write_basic_mhl(job.job_id, mhl_path, (
-                (f.destination, f.size_bytes, o.hexdigest or "")
-                for f, o in zip(files, self._outcomes) if o.ok
-            ), base_root=Path(job.destination_root))
-            self._logger.info(f"BALANCED mode: MHL verification report written to {mhl_path}")
-        elif (job.options.mode or "BALANCED").upper() == "FAST":
-            # FAST mode: size check only; warn about missing hashes
-            self._logger.warning("FAST mode selected: hashes not computed; integrity not verified")
-            # Write a FAST mode report
-            fast_report_path = Path(job.destination_root) / f"{job.job_id}_fast_report.txt"
-            with fast_report_path.open("w") as f:
-                f.write(f"FAST MODE TRANSFER REPORT - {job.job_id}\n")
-                f.write(f"Transfer completed: {datetime.now().isoformat()}\n")
-                f.write(f"Mode: FAST (no hash verification)\n")
-                f.write(f"Files transferred: {sum(1 for o in self._outcomes if o.ok)}\n")
-                f.write(f"Total bytes: {sum(o.size for o in self._outcomes if o.ok)}\n")
-                f.write(f"Verification: Size checks only (no hash verification)\n")
-                f.write(f"Note: Use BALANCED mode for full xxHash64 verification\n")
-            self._logger.info(f"FAST mode: Transfer report written to {fast_report_path}")
-        elif (job.options.mode or "BALANCED").upper() == "NONE":
-            # NONE mode: absolutely no verification, fastest possible
-            self._logger.warning("NONE mode selected: no verification, fastest possible copy")
-            # Write a NONE mode report
-            none_report_path = Path(job.destination_root) / f"{job.job_id}_none_report.txt"
-            with none_report_path.open("w") as f:
-                f.write(f"NONE MODE TRANSFER REPORT - {job.job_id}\n")
-                f.write(f"Transfer completed: {datetime.now().isoformat()}\n")
-                f.write(f"Mode: NONE (no verification)\n")
-                f.write(f"Files transferred: {sum(1 for o in self._outcomes if o.ok)}\n")
-                f.write(f"Total bytes: {sum(o.size for o in self._outcomes if o.ok)}\n")
-                f.write(f"Verification: NONE (no verification)\n")
-                f.write(f"Note: Use BALANCED or FAST modes for verification\n")
-            self._logger.info(f"NONE mode: Transfer report written to {none_report_path}")
-        stats = self._job_stats.get(job.job_id)
-        if stats:
-            elapsed = max(1e-3, time.time() - stats.start_time)
-            mbps = (stats.copied_bytes / elapsed) / (1024 * 1024)
+        print(f"DEBUG: PythonCopyEngine.start called with job: {job.job_id}")
+        try:
+            # Handle multiple destinations
+            if hasattr(job, 'destination_roots') and job.destination_roots:
+                print(f"DEBUG: Job has destination_roots: {job.destination_roots}")
+                # Multi-destination fan-out (even for single destination in destination_roots)
+                self._start_multi_destination(job)
+            else:
+                print(f"DEBUG: Job has single destination: {job.destination_root}")
+                # Single destination (legacy)
+                self._start_single_destination(job)
+        except Exception as e:
+            print(f"DEBUG: Error in PythonCopyEngine.start: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+    
+    def _start_single_destination(self, job: JobSpec) -> None:
+        """Start a single-destination copy job"""
+        print(f"DEBUG: _start_single_destination called with job: {job.job_id}")
+        try:
+            print(f"DEBUG: Getting policy...")
+            policy = SimplePolicy()
+            print(f"DEBUG: Policy created: {policy}")
             
-            # Ensure final progress is 100%
-            self._emit(job.job_id, "job.progress", {
-                "bytes_copied": stats.copied_bytes,
-                "total_bytes": stats.total_bytes,
-                "progress_percent": 100.0,
-                "speed_mbps": mbps,
-                "elapsed_time": elapsed
-            })
+            print(f"DEBUG: Planning job...")
+            files: list[FileSpec] = list(policy.plan(job))
+            print(f"DEBUG: Plan created with {len(files)} files")
             
+            print(f"DEBUG: Starting copy files...")
+            self._copy_files(job, files)
+            print(f"DEBUG: Copy files completed")
+            
+        except Exception as e:
+            print(f"DEBUG: Error in _start_single_destination: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+    
+    def _start_multi_destination(self, job: JobSpec) -> None:
+        """Start a multi-destination fan-out copy job"""
+        print(f"DEBUG: _start_multi_destination called with job: {job.job_id}")
+        try:
+            # Try C++ engine first for maximum performance
+            try:
+                print(f"DEBUG: Attempting to use C++ engine for maximum performance...")
+                import enhanced_high_perf_engine as cpp_engine
+                print(f"DEBUG: C++ engine imported successfully")
+                self._start_multi_destination_cpp(job, cpp_engine)
+                return
+            except ImportError as e:
+                print(f"DEBUG: C++ engine not available: {e}")
+            except Exception as e:
+                print(f"DEBUG: C++ engine failed, falling back to Python: {e}")
+                import traceback
+                traceback.print_exc()
+            
+            # Fallback to Python engine
+            print(f"DEBUG: Using Python fallback engine")
+            self._start_multi_destination_fallback(job)
+        except Exception as e:
+            print(f"DEBUG: Error in _start_multi_destination: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+    
+    def _start_multi_destination_cpp(self, job: JobSpec, cpp_engine) -> None:
+        """Use C++ engine for multi-destination fan-out"""
+        print(f"DEBUG: _start_multi_destination_cpp called with job: {job.job_id}")
+        try:
+            print(f"DEBUG: Creating C++ CopyJob...")
+            # Create C++ CopyJob
+            cpp_job = cpp_engine.CopyJob()
+            cpp_job.source_paths = [str(job.source_root)]
+            cpp_job.destination_paths = [str(dest) for dest in job.destination_roots]
+            cpp_job.preset = job.options.preset
+            cpp_job.verify_mode = job.options.verify_mode
+            cpp_job.adaptive_parameters = True
+            print(f"DEBUG: C++ CopyJob created successfully")
+            
+            print(f"DEBUG: Setting up event sink...")
+            # Set up event sink
+            def event_sink(event_type: str, payload: dict):
+                self._emit(job.job_id, event_type, payload)
+            
+            cpp_job.progress_callback = event_sink
+            print(f"DEBUG: Event sink set up successfully")
+            
+            print(f"DEBUG: Creating C++ engine...")
+            # Create engine and run
+            engine = cpp_engine.EnhancedHighPerfTransferEngine()
+            engine.set_event_sink(event_sink)
+            print(f"DEBUG: C++ engine created successfully")
+            
+            print(f"DEBUG: Initializing job stats...")
+            # Initialize job stats - use policy to get file list instead of recursive scan
+            policy = SimplePolicy()
+            files: list[FileSpec] = list(policy.plan(job))
+            total_bytes = sum(f.size_bytes for f in files)
+            self._job_stats[job.job_id] = _JobStats(
+                total_bytes=total_bytes,
+                copied_bytes=0,
+                start_time=time.time(),
+                last_emit=0.0,
+                lock=threading.Lock(),
+            )
+            print(f"DEBUG: Job stats initialized: total_bytes={total_bytes}, total_files={len(files)}")
+            
+            print(f"DEBUG: Emitting job.started event...")
+            self._emit(job.job_id, "job.started", {"total_bytes": total_bytes, "total_files": len(files)})
+            print(f"DEBUG: job.started event emitted successfully")
+            
+            print(f"DEBUG: About to call engine.copy_files...")
+            # Run the copy
+            stats = engine.copy_files(cpp_job)
+            print(f"DEBUG: engine.copy_files completed successfully")
+            
+            print(f"DEBUG: Emitting job.completed event...")
+            # Emit completion
+            elapsed = max(1e-3, time.time() - self._job_stats[job.job_id].start_time)
             self._emit(job.job_id, "job.completed", {
                 "bytes": stats.copied_bytes,
                 "total": stats.total_bytes,
-                "elapsed_s": elapsed,
-                "mbps": mbps,
+                "elapsed": elapsed,
+                "speed": stats.copied_bytes / elapsed if elapsed > 0 else 0,
             })
+            print(f"DEBUG: job.completed event emitted successfully")
+            print(f"DEBUG: _start_multi_destination_cpp completed successfully")
+            
+        except Exception as e:
+            print(f"DEBUG: Error in _start_multi_destination_cpp: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+    
+    def _start_multi_destination_fallback(self, job: JobSpec) -> None:
+        """Fallback: copy to each destination in parallel"""
+        print(f"DEBUG: _start_multi_destination_fallback called with job: {job.job_id}")
+        try:
+            # If there is only one destination, treat it as a true single-destination job
+            if len(job.destination_roots) == 1:
+                dest_root = job.destination_roots[0]
+                print(f"DEBUG: Single destination fallback -> {dest_root}")
+                single_job = JobSpec(
+                    job_id=job.job_id,  # keep same job id for consistent UI events
+                    source_root=job.source_root,
+                    destination_root=dest_root,
+                    options=job.options
+                )
+                self._start_single_destination(single_job)
+                return
+            
+            # Multi-destination (N>1): parallel fan-out using threads
+            print(f"DEBUG: Starting parallel copy to {len(job.destination_roots)} destinations")
+            
+            def copy_to_destination(dest_root, dest_index):
+                """Copy to a single destination in a separate thread"""
+                try:
+                    print(f"DEBUG: Starting parallel copy to destination {dest_index+1}: {dest_root}")
+                    self._logger.info(f"Copying to destination {dest_index+1}/{len(job.destination_roots)}: {dest_root}")
+                    
+                    fan_job = JobSpec(
+                        job_id=f"{job.job_id}_dest_{dest_index+1}",
+                        source_root=job.source_root,
+                        destination_root=dest_root,
+                        options=job.options
+                    )
+                    self._start_single_destination(fan_job)
+                    print(f"DEBUG: Completed parallel copy to destination {dest_index+1}: {dest_root}")
+                except Exception as e:
+                    print(f"DEBUG: Error in parallel copy to destination {dest_index+1}: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            # Start parallel threads for each destination
+            threads = []
+            for i, dest_root in enumerate(job.destination_roots):
+                thread = threading.Thread(
+                    target=copy_to_destination,
+                    args=(dest_root, i),
+                    daemon=True
+                )
+                threads.append(thread)
+                thread.start()
+                print(f"DEBUG: Started thread for destination {i+1}: {dest_root}")
+            
+            # Wait for all threads to complete
+            for i, thread in enumerate(threads):
+                thread.join()
+                print(f"DEBUG: Thread for destination {i+1} completed")
+            
+        except Exception as e:
+            print(f"DEBUG: Error in _start_multi_destination_fallback: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
     def pause(self, job_id: str) -> None:  # pragma: no cover - simple flag
         self._pauses.setdefault(job_id, threading.Event()).set()
@@ -148,7 +275,46 @@ class PythonCopyEngine(Engine):
     def cancel(self, job_id: str) -> None:  # pragma: no cover - simple flag
         self._cancels.setdefault(job_id, threading.Event()).set()
 
-    def _copy_files(self, job: JobSpec, files: Iterable[FileSpec]) -> Results:
+    def cancel_destination(self, dest_path: str) -> None:
+        """Cancel a specific destination by path"""
+        print(f"DEBUG: cancel_destination called for: {dest_path}")
+        # Find all job IDs that contain this destination path
+        for job_id in list(self._job_stats.keys()):
+            if dest_path in job_id:
+                print(f"DEBUG: Canceling job {job_id} for destination {dest_path}")
+                self._cancels.setdefault(job_id, threading.Event()).set()
+
+    def _copy_files(self, job: JobSpec, files: list[FileSpec]) -> None:
+        """Copy files according to the plan"""
+        print(f"DEBUG: _copy_files called with {len(files)} files")
+        try:
+            print(f"DEBUG: Initializing job stats...")
+            # Initialize job stats
+            total_bytes = sum(f.size_bytes for f in files)
+            self._job_stats[job.job_id] = _JobStats(
+                total_bytes=total_bytes,
+                copied_bytes=0,
+                start_time=time.time(),
+                last_emit=0.0,
+                lock=threading.Lock(),
+            )
+            print(f"DEBUG: Job stats initialized: total_bytes={total_bytes}")
+            
+            print(f"DEBUG: Emitting job.started event...")
+            self._emit(job.job_id, "job.started", {"total_bytes": total_bytes, "total_files": len(files)})
+            print(f"DEBUG: job.started event emitted")
+            
+            print(f"DEBUG: Starting file copying...")
+            results = self._copy_files_impl(job, files)
+            print(f"DEBUG: File copying completed")
+            
+        except Exception as e:
+            print(f"DEBUG: Error in _copy_files: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+    def _copy_files_impl(self, job: JobSpec, files: list[FileSpec]) -> Results:
         per_file = max(1, job.options.per_file_concurrency or DEFAULTS.per_file_concurrency)
         self._outcomes: list[_CopyOutcome] = []
         results = Results()
@@ -168,7 +334,13 @@ class PythonCopyEngine(Engine):
         src = spec.source
         dst = spec.destination
         dst_tmp = dst.with_suffix(dst.suffix + ".part")
-        dst.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Add safety checks
+        try:
+            dst.parent.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            self._logger.error(f"Failed to create destination directory: {e}")
+            return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error=f"Failed to create directory: {e}")
 
         # Create file ID for tracking
         file_id = f"{job.job_id}_{src.name}"
@@ -194,6 +366,17 @@ class PythonCopyEngine(Engine):
 
         # Single-threaded baseline with optional multi-stream
         try:
+            # Add safety check for source file
+            if not src.exists():
+                error_msg = f"Source file does not exist: {src}"
+                self._logger.error(error_msg)
+                self._emit(job.job_id, "file.failed", {
+                    "file_id": file_id,
+                    "filename": filename,
+                    "error": error_msg,
+                })
+                return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error=error_msg)
+            
             # Resume: if final file exists and matches size+hash from existing MHL, skip
             mhl_path = Path(job.destination_root) / f"{job.job_id}.mhl"
             existing = parse_mhl(mhl_path)
@@ -226,60 +409,103 @@ class PythonCopyEngine(Engine):
                 # Resume simple: if .part exists, append from current size
                 start_offset = dst_tmp.stat().st_size if dst_tmp.exists() else 0
                 mode = "r+b" if dst_tmp.exists() else "wb"
-                with src.open("rb") as rf, dst_tmp.open(mode) as wf:
-                    if start_offset:
-                        rf.seek(start_offset)
-                        wf.seek(start_offset)
-                    # Use larger chunks for single-stream copy
-                    chunk_size = max(DEFAULTS.io_chunk_size_bytes, 512 * 1024 * 1024)  # At least 512MB chunks for maximum performance
-                    while True:
-                        if self._cancels.get(job.job_id, threading.Event()).is_set():
-                            # Leave .part file intact
-                            self._emit(job.job_id, "file.failed", {
-                                "file_id": file_id,
-                                "filename": filename,
-                                "error": "canceled",
-                            })
-                            return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error="canceled")
-                        if self._pauses.get(job.job_id, threading.Event()).is_set():
-                            threading.Event().wait(0.05)
-                            continue
-                        buf = rf.read(chunk_size)
-                        if not buf:
-                            break
-                        wf.write(buf)
-                        self._progress(job.job_id, len(buf), file_id)
+                
+                # Add safety check for file opening
+                try:
+                    with src.open("rb") as rf, dst_tmp.open(mode) as wf:
+                        if start_offset:
+                            rf.seek(start_offset)
+                            wf.seek(start_offset)
+                        # Use larger chunks for single-stream copy
+                        chunk_size = max(DEFAULTS.io_chunk_size_bytes, 512 * 1024 * 1024)  # At least 512MB chunks for maximum performance
+                        while True:
+                            if self._cancels.get(job.job_id, threading.Event()).is_set():
+                                # Leave .part file intact
+                                self._emit(job.job_id, "file.failed", {
+                                    "file_id": file_id,
+                                    "filename": filename,
+                                    "error": "canceled",
+                                })
+                                return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error="canceled")
+                            if self._pauses.get(job.job_id, threading.Event()).is_set():
+                                threading.Event().wait(0.05)
+                                continue
+                            buf = rf.read(chunk_size)
+                            if not buf:
+                                break
+                            wf.write(buf)
+                            self._progress(job.job_id, len(buf), file_id)
+                except Exception as e:
+                    error_msg = f"File I/O error: {e}"
+                    self._logger.error(error_msg)
+                    self._emit(job.job_id, "file.failed", {
+                        "file_id": file_id,
+                        "filename": filename,
+                        "error": error_msg,
+                    })
+                    return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error=error_msg)
             
             # Only verify in BALANCED mode, not in FAST mode
             if (job.options.mode or "BALANCED").upper() == "BALANCED":
                 # Verify (BALANCED): xxHash64 source vs dest
-                src_hash = hash_file_xxh(src)
-                dst_hash = hash_file_xxh(dst_tmp)
-                if src_hash.hexdigest != dst_hash.hexdigest:
+                try:
+                    src_hash = hash_file_xxh(src)
+                    dst_hash = hash_file_xxh(dst_tmp)
+                    if src_hash.hexdigest != dst_hash.hexdigest:
+                        self._emit(job.job_id, "file.failed", {
+                            "file_id": file_id,
+                            "filename": filename,
+                            "error": "hash_mismatch",
+                        })
+                        return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error="hash_mismatch")
+                    hexdigest = src_hash.hexdigest
+                except Exception as e:
+                    error_msg = f"Hash verification error: {e}"
+                    self._logger.error(error_msg)
                     self._emit(job.job_id, "file.failed", {
                         "file_id": file_id,
                         "filename": filename,
-                        "error": "hash_mismatch",
+                        "error": error_msg,
                     })
-                    return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error="hash_mismatch")
-                hexdigest = src_hash.hexdigest
+                    return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error=error_msg)
             elif (job.options.mode or "BALANCED").upper() == "FAST":
                 # FAST mode: size check only, no hashing
                 hexdigest = None
                 # Quick size verification only
-                if dst_tmp.stat().st_size != spec.size_bytes:
+                try:
+                    if dst_tmp.stat().st_size != spec.size_bytes:
+                        self._emit(job.job_id, "file.failed", {
+                            "file_id": file_id,
+                            "filename": filename,
+                            "error": "size_mismatch",
+                        })
+                        return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error="size_mismatch")
+                except Exception as e:
+                    error_msg = f"Size verification error: {e}"
+                    self._logger.error(error_msg)
                     self._emit(job.job_id, "file.failed", {
                         "file_id": file_id,
                         "filename": filename,
-                        "error": "size_mismatch",
+                        "error": error_msg,
                     })
-                    return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error="size_mismatch")
+                    return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error=error_msg)
             else:
                 # NONE mode: absolutely no verification, fastest possible
                 hexdigest = None
                 # Skip all verification - trust the copy operation
             
-            dst_tmp.replace(dst)
+            # Safe file replacement
+            try:
+                dst_tmp.replace(dst)
+            except Exception as e:
+                error_msg = f"Failed to replace file: {e}"
+                self._logger.error(error_msg)
+                self._emit(job.job_id, "file.failed", {
+                    "file_id": file_id,
+                    "filename": filename,
+                    "error": error_msg,
+                })
+                return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error=error_msg)
             
             # Emit file completed event
             self._emit(job.job_id, "file.completed", {
@@ -292,6 +518,8 @@ class PythonCopyEngine(Engine):
             
             return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=True, hexdigest=hexdigest)
         except Exception as exc:  # noqa: BLE001
+            error_msg = f"Unexpected error during file copy: {exc}"
+            self._logger.error(error_msg)
             self._emit(job.job_id, "file.failed", {
                 "file_id": file_id,
                 "filename": filename,
@@ -395,10 +623,37 @@ class PythonCopyEngine(Engine):
     def _emit(self, job_id: str, event_type: str, payload: dict) -> None:
         if self._sink:
             try:
-                self._sink.emit(event_type, {"job_id": job_id, **payload})
+                # Add job_id to payload if not already present
+                if 'job_id' not in payload:
+                    payload = {"job_id": job_id, **payload}
+                self._sink.emit(event_type, payload)
             except Exception as e:
-                # Log the error for debugging
+                # Log the error for debugging but don't crash
                 self._logger.error(f"Failed to emit {event_type}: {e}")
+                # Don't re-raise the exception - just log it and continue
                 pass
+
+    def cancel_destination(self, dest_path: str) -> None:
+        """Cancel transfers to a specific destination"""
+        print(f"DEBUG: PythonCopyEngine.cancel_destination called for: {dest_path}")
+        try:
+            # Find all job IDs that are copying to this destination
+            for job_id in list(self._cancels.keys()):
+                print(f"DEBUG: Setting cancel event for job_id: {job_id}")
+                cancel_event = self._cancels.get(job_id)
+                if cancel_event:
+                    cancel_event.set()
+                    print(f"DEBUG: Cancel event set for job_id: {job_id}")
+        except Exception as e:
+            print(f"DEBUG: Error in cancel_destination: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def get_current_job_id(self) -> Optional[str]:
+        """Get the current job ID for UI operations"""
+        # Return the most recent job ID or None
+        if self._cancels:
+            return list(self._cancels.keys())[-1]
+        return None
 
 

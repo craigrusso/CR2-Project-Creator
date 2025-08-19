@@ -42,13 +42,26 @@ class JobOptions:
     stream_concurrency: int = 8
     verify_algorithm: str = "xxh64"
     dest_plan: Optional[Mapping[str, str]] = None
+    # NEW: Multi-destination support
+    verify_mode: str = "FAST"  # FAST, STREAM_VERIFY, READBACK_VERIFY
+    preset: str = "auto"  # auto, usb, network, custom
 
 
 @dataclass
 class JobSpec:
     job_id: str
     source_root: Path
-    destination_root: Path
+    destination_root: Optional[Path] = None  # Legacy single destination
+    # NEW: Multiple destinations support
+    destination_roots: Optional[List[Path]] = None
     options: JobOptions = field(default_factory=JobOptions)
+    
+    def __post_init__(self):
+        # Ensure we have at least one destination
+        if self.destination_roots is None:
+            if self.destination_root is not None:
+                self.destination_roots = [self.destination_root]
+            else:
+                raise ValueError("Either destination_root or destination_roots must be provided")
 
 

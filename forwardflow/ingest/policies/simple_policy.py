@@ -15,7 +15,17 @@ from ..api.models import FileSpec, JobSpec
 class SimplePolicy(Policy):
     def plan(self, job: JobSpec) -> Iterable[FileSpec]:
         src_root = Path(job.source_root)
-        dst_root = Path(job.destination_root)
+        
+        # Handle both single and multi-destination cases
+        if job.destination_roots and len(job.destination_roots) > 0:
+            # Use the first destination for planning (multi-destination will be handled by engine)
+            dst_root = Path(job.destination_roots[0])
+        elif job.destination_root:
+            # Legacy single destination
+            dst_root = Path(job.destination_root)
+        else:
+            raise ValueError("No destination root provided in job specification")
+        
         for path in src_root.rglob("*"):
             if path.is_file():
                 rel = path.relative_to(src_root)

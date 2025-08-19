@@ -3,7 +3,7 @@
 
 import os
 import platform
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QApplication, QTabWidget
+from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter, QApplication, QTabWidget, QLabel
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSettings
 from PyQt6.QtGui import QIcon
 
@@ -136,21 +136,56 @@ class ForwardFlowApp(QMainWindow):
         self.right_layout.addWidget(self.tab_widget)
         
         # Create Templates tab
-        self.template_gallery = TemplateGallery(app=self)
+        # Create the template gallery
+        try:
+            print("DEBUG: Creating TemplateGallery...")
+            self.template_gallery = TemplateGallery(self.template_manager, self)
+            print("DEBUG: TemplateGallery created successfully")
+        except Exception as e:
+            print(f"DEBUG: Error creating TemplateGallery: {e}")
+            import traceback
+            traceback.print_exc()
+            # Create a simple placeholder instead
+            from PyQt6.QtWidgets import QLabel
+            self.template_gallery = QLabel("Template Gallery temporarily disabled")
+            self.template_gallery.setStyleSheet("color: red; padding: 20px;")
         self.tab_widget.addTab(self.template_gallery, "Templates")
         apply_dark_theme_to_template_gallery(self.template_gallery)
         
         # Create Transfer tab
         try:
-            from forwardflow.ingest.ui.ingest_tab import build_ingest_tab
-            self.transfer_tab = build_ingest_tab()
-            self.tab_widget.addTab(self.transfer_tab, "Transfer")
+            # Check if ingest module is enabled
+            from forwardflow.ingest.config import FF_INGEST_ENABLED
+            if not FF_INGEST_ENABLED:
+                print("Ingest module disabled by configuration")
+                # Create a placeholder tab
+                self.transfer_tab = QWidget()
+                placeholder_layout = QVBoxLayout(self.transfer_tab)
+                placeholder_label = QLabel("Transfer module disabled")
+                placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                placeholder_layout.addWidget(placeholder_label)
+                self.tab_widget.addTab(self.transfer_tab, "Transfer")
+            else:
+                from forwardflow.ingest.ui.ingest_tab import build_ingest_tab
+                self.transfer_tab = build_ingest_tab()
+                self.tab_widget.addTab(self.transfer_tab, "Transfer")
         except ImportError as e:
             print(f"Warning: Could not import ingest module: {e}")
             # Create a placeholder tab
             self.transfer_tab = QWidget()
             placeholder_layout = QVBoxLayout(self.transfer_tab)
             placeholder_label = QLabel("Transfer module not available")
+            placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            placeholder_layout.addWidget(placeholder_label)
+            self.tab_widget.addTab(self.transfer_tab, "Transfer")
+        except Exception as e:
+            print(f"Error creating ingest tab: {e}")
+            import traceback
+            traceback.print_exc()
+            # Create a placeholder tab
+            self.transfer_tab = QWidget()
+            placeholder_layout = QVBoxLayout(self.transfer_tab)
+            placeholder_label = QLabel("Transfer module error occurred")
             placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
             placeholder_layout.addWidget(placeholder_label)
             self.tab_widget.addTab(self.transfer_tab, "Transfer")

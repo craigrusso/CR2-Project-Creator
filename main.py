@@ -2,6 +2,8 @@
 # Copyright (c) 2023-present Craig P. Russo and CR2 Creative
 
 import platform
+from forwardflow.ingest.runtime.crash_first_aid import enable as _crash_enable  # early crash diagnostics
+_crash_enable()
 import sys
 import os
 import shutil # Ensure shutil is imported
@@ -312,6 +314,27 @@ def main():
     """Main entry point for the ForwardFlow application"""
     import faulthandler # Add import here
     
+    # Add global exception handler
+    def global_exception_handler(exc_type, exc_value, exc_traceback):
+        """Global exception handler to catch unhandled exceptions"""
+        if issubclass(exc_type, KeyboardInterrupt):
+            # Allow keyboard interrupts to pass through
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+        
+        # Log the unhandled exception
+        try:
+            error(f"Unhandled exception: {exc_type.__name__}: {exc_value}")
+            exception("Unhandled exception details:")
+        except Exception:
+            # If logging fails, print to stderr
+            import traceback
+            print(f"CRITICAL: Unhandled exception: {exc_type.__name__}: {exc_value}", file=sys.stderr)
+            traceback.print_exception(exc_type, exc_value, exc_traceback, file=sys.stderr)
+    
+    # Set the global exception handler
+    sys.excepthook = global_exception_handler
+    
     # Safely enable faulthandler with try/except for packaged apps
     try:
         # For packaged apps, try to use stderr if available, otherwise skip
@@ -520,6 +543,13 @@ def main():
         except Exception as e:
             error(f"Failed to create or show main window: {e}")
             exception("Main window creation failure details:")
+            # Try to show a simple error dialog if possible
+            try:
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.critical(None, "Startup Error", 
+                                   f"Failed to start ForwardFlow:\n{str(e)}\n\nPlease check the log files for more details.")
+            except Exception:
+                pass  # If we can't show a dialog, just continue
             return 1
         
         styled_count = apply_styling_to_all_tree_widgets(main_window)

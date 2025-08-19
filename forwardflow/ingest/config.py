@@ -7,12 +7,14 @@ surfaces beyond internal testing.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Optional
 
 
 # Primary feature flag for exposing ingest functionality publicly
-FF_INGEST_ENABLED: bool = True
+# Check environment variable first, then default to True
+FF_INGEST_ENABLED: bool = os.environ.get('FF_INGEST_ENABLED', 'True').lower() == 'true'
 
 
 @dataclass(frozen=True)
