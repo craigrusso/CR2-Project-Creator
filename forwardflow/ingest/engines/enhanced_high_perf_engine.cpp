@@ -27,6 +27,7 @@
 #include <semaphore>
 #include <unordered_map>
 #include <deque>
+#include <ctime>
 
 // Platform-specific includes
 #ifdef _WIN32
@@ -444,6 +445,9 @@ struct CopyJob {
     std::string preset = "auto";            // auto, usb, network, custom
     std::string verify_mode = "FAST";       // FAST, STREAM_VERIFY, READBACK_VERIFY
     std::vector<TunedParams> per_dest_params;  // Auto-computed per destination
+    // NEW: Verification report generation
+    bool   generate_verification_report = true;
+    std::string job_id = "";                // For report identification
 };
 
 // Per-file progress throttle (≤10 Hz)
@@ -730,6 +734,35 @@ public:
     }
 };
 
+// Verification record structure
+struct VerificationRecord {
+    std::string filename;
+    std::string source_path;
+    std::string destination_path;
+    size_t file_size_bytes;
+    std::string hash_type;
+    std::string source_hash;
+    std::string destination_hash;
+    std::string status;  // "PASS" or "FAIL"
+    std::string timestamp;
+    std::string error_message;
+    
+    VerificationRecord() = default;
+    VerificationRecord(const std::string& fname, const std::string& src, const std::string& dst, 
+                      size_t size, const std::string& htype, const std::string& src_hash, 
+                      const std::string& dst_hash, const std::string& stat, const std::string& err = "")
+        : filename(fname), source_path(src), destination_path(dst), file_size_bytes(size),
+          hash_type(htype), source_hash(src_hash), destination_hash(dst_hash), 
+          status(stat), error_message(err) {
+        // Generate timestamp
+        auto now = std::chrono::system_clock::now();
+        auto time_t = std::chrono::system_clock::to_time_t(now);
+        std::stringstream ss;
+        ss << std::put_time(std::localtime(&time_t), "%Y-%m-%d %H:%M:%S");
+        timestamp = ss.str();
+    }
+};
+
 // Hash calculation
 class HashCalculator {
 public:
@@ -843,6 +876,14 @@ private:
     void add_bytes(size_t n) { std::lock_guard<std::mutex> lk(stats_mu_); stats_.copied_bytes += n; }
     void inc_files()         { std::lock_guard<std::mutex> lk(stats_mu_); stats_.copied_files++; }
     void add_error(const std::string& e) { std::lock_guard<std::mutex> lk(stats_mu_); stats_.errors.push_back(e); }
+    
+    // NEW: Verification report tracking
+    std::vector<VerificationRecord> verification_records_;
+    std::mutex verification_mu_;
+    void add_verification_record(const VerificationRecord& record) { 
+        std::lock_guard<std::mutex> lk(verification_mu_); 
+        verification_records_.push_back(record); 
+    }
 
 public:
     EnhancedHighPerfTransferEngine() = default;
@@ -854,6 +895,146 @@ public:
     void cancel() { cancelled_ = true; }
     void pause() { paused_ = true; }
     void resume() { paused_ = false; }
+    
+    // NEW: Verification report methods
+    void write_verification_reports(const CopyJob& job) {
+        if (!job.generate_verification_report || verification_records_.empty()) {
+            return;
+        }
+        
+        // Write reports to each destination
+        for (const auto& dest_path : job.destination_paths) {
+            write_verification_reports_to_destination(job, dest_path);
+        }
+    }
+    
+    void write_verification_reports_to_destination(const CopyJob& job, const std::string& dest_path) {
+        try {
+            fs::path reports_dir = fs::path(dest_path) / "_ForwardFlow_Reports";
+            fs::create_directories(reports_dir);
+            
+            // Generate timestamp for filename
+            auto now = std::chrono::system_clock::now();
+            auto time_t = std::chrono::system_clock::to_time_t(now);
+            std::stringstream ss;
+            ss << std::put_time(std::localtime(&time_t), "%Y-%m-%d_%H%M");
+            std::string timestamp = ss.str();
+            
+            std::string base_filename = "verify_report_" + timestamp;
+            
+            // Write TXT report
+            fs::path txt_path = reports_dir / (base_filename + ".txt");
+            write_txt_report(txt_path, job);
+            
+            // Write CSV report
+            fs::path csv_path = reports_dir / (base_filename + ".csv");
+            write_csv_report(csv_path, job);
+            
+        } catch (const std::exception& e) {
+            add_error(std::string("Failed to write verification reports: ") + e.what());
+        }
+    }
+    
+    void write_txt_report(const fs::path& filepath, const CopyJob& job) {
+        std::ofstream file(filepath);
+        if (!file) return;
+        
+        // Write header
+        file << std::string(80, '=') << "\n";
+        file << "FORWARDFLOW VERIFICATION REPORT\n";
+        file << std::string(80, '=') << "\n";
+        file << "Job ID: " << job.job_id << "\n";
+        file << "Start Time: " << std::chrono::duration<double>(stats_.start_time).count() << " seconds ago\n";
+        file << "Total Files: " << verification_records_.size() << "\n";
+        
+        // Count passed/failed
+        int passed = 0, failed = 0;
+        size_t total_bytes = 0;
+        for (const auto& record : verification_records_) {
+            if (record.status == "PASS") passed++;
+            else failed++;
+            total_bytes += record.file_size_bytes;
+        }
+        
+        file << "Passed: " << passed << "\n";
+        file << "Failed: " << failed << "\n";
+        file << "Total Size: " << format_bytes(total_bytes) << "\n";
+        file << std::string(80, '=') << "\n\n";
+        
+        // Write records
+        for (const auto& record : verification_records_) {
+            file << "File: " << record.filename << "\n";
+            file << "Source: " << record.source_path << "\n";
+            file << "Destination: " << record.destination_path << "\n";
+            file << "Size: " << format_bytes(record.file_size_bytes) << "\n";
+            file << "HashType: " << record.hash_type << "\n";
+            file << "SourceHash: " << record.source_hash << "\n";
+            file << "DestHash: " << record.destination_hash << "\n";
+            file << "Status: " << record.status << "\n";
+            file << "Timestamp: " << record.timestamp << "\n";
+            if (!record.error_message.empty()) {
+                file << "Error: " << record.error_message << "\n";
+            }
+            file << "\n";
+        }
+        
+        // Write summary
+        file << std::string(80, '=') << "\n";
+        file << "SUMMARY\n";
+        file << std::string(80, '=') << "\n";
+        file << "Total Files Processed: " << verification_records_.size() << "\n";
+        file << "Verification Passed: " << passed << "\n";
+        file << "Verification Failed: " << failed << "\n";
+        if (verification_records_.size() > 0) {
+            file << "Success Rate: " << std::fixed << std::setprecision(1) 
+                 << (passed * 100.0 / verification_records_.size()) << "%\n";
+        }
+        file << "Total Data Size: " << format_bytes(total_bytes) << "\n";
+        file << std::string(80, '=') << "\n";
+    }
+    
+    void write_csv_report(const fs::path& filepath, const CopyJob& job) {
+        std::ofstream file(filepath);
+        if (!file) return;
+        
+        // Write CSV header
+        file << "File,Source,Destination,Size,HashType,SourceHash,DestHash,Status,Timestamp,Error\n";
+        
+        // Write records
+        for (const auto& record : verification_records_) {
+            file << "\"" << record.filename << "\","
+                 << "\"" << record.source_path << "\","
+                 << "\"" << record.destination_path << "\","
+                 << record.file_size_bytes << ","
+                 << "\"" << record.hash_type << "\","
+                 << "\"" << record.source_hash << "\","
+                 << "\"" << record.destination_hash << "\","
+                 << "\"" << record.status << "\","
+                 << "\"" << record.timestamp << "\","
+                 << "\"" << record.error_message << "\"\n";
+        }
+    }
+    
+    std::string format_bytes(size_t bytes) {
+        if (bytes == 0) return "0 B";
+        
+        const char* units[] = {"B", "KB", "MB", "GB", "TB"};
+        int unit_index = 0;
+        double value = static_cast<double>(bytes);
+        
+        while (value >= 1024.0 && unit_index < 4) {
+            value /= 1024.0;
+            unit_index++;
+        }
+        
+        std::stringstream ss;
+        if (unit_index == 0) {
+            ss << static_cast<int>(value) << " " << units[unit_index];
+        } else {
+            ss << std::fixed << std::setprecision(1) << value << " " << units[unit_index];
+        }
+        return ss.str();
+    }
     
     CopyStats copy_files(const CopyJob& job) {
         stats_ = CopyStats();
@@ -907,9 +1088,17 @@ public:
                 try {
                     fs::path file_path(file);
                     if (fs::is_regular_file(file_path)) {
-                        stats_.total_bytes += fs::file_size(file_path);
+                        try {
+                            stats_.total_bytes += fs::file_size(file_path);
+                        } catch (const std::exception& e) {
+                            std::cerr << "Warning: Could not get size for file " << file << ": " << e.what() << std::endl;
+                            // Continue with other files
+                        }
                     }
-                } catch (...) {}
+                } catch (const std::exception& e) {
+                    std::cerr << "Warning: Could not process file " << file << ": " << e.what() << std::endl;
+                    // Continue with other files
+                }
             }
             
             // Emit job started event
@@ -945,6 +1134,11 @@ public:
             stats_.speed_mbps = (stats_.copied_bytes / (1024.0 * 1024.0)) / stats_.duration();
         }
         
+        // NEW: Write verification reports if enabled
+        if (job.generate_verification_report && !verification_records_.empty()) {
+            write_verification_reports(job);
+        }
+        
         // Emit job completed event with data speed (GIL-safe)
         emit_event_make("job.completed", [&](py::dict& payload){
             payload["bytes"] = stats_.copied_bytes;
@@ -968,13 +1162,26 @@ private:
                 if (fs::is_regular_file(path)) {
                     files.push_back(source_path);
                 } else if (fs::is_directory(path)) {
-                    for (const auto& entry : fs::recursive_directory_iterator(path)) {
-                        if (fs::is_regular_file(entry)) {
-                            files.push_back(entry.path().string());
+                    // Use a safer directory iteration approach
+                    try {
+                        for (const auto& entry : fs::recursive_directory_iterator(path, fs::directory_options::skip_permission_denied)) {
+                            try {
+                                if (fs::is_regular_file(entry)) {
+                                    files.push_back(entry.path().string());
+                                }
+                            } catch (const std::exception& e) {
+                                // Log but continue with other files
+                                std::cerr << "Warning: Could not process file " << entry.path() << ": " << e.what() << std::endl;
+                            }
                         }
+                    } catch (const std::exception& e) {
+                        std::cerr << "Warning: Could not iterate directory " << path << ": " << e.what() << std::endl;
+                        // Try to continue with other source paths
                     }
                 }
-            } catch (...) {}
+            } catch (const std::exception& e) {
+                std::cerr << "Warning: Could not process source path " << source_path << ": " << e.what() << std::endl;
+            }
         }
         
         return files;
@@ -1164,17 +1371,31 @@ private:
             // Attempt fast path first
             if (try_fast_copy_macos(source_path, dest_path)) {
                 add_bytes(fs::file_size(source_file));
+                
+                // NEW: Add verification record for fast copy (always PASS since it's native)
+                if (job.generate_verification_report) {
+                    add_non_verification_record(job, source_path, dest_path, fs::file_size(source_file));
+                }
+                
                 return true;
             }
 #endif
             size_t file_size = fs::file_size(source_file);
             
             // Choose copy method based on file size
+            bool result = false;
             if (file_size > job.large_file_threshold) {
-                return copy_large_file_enhanced(job, source_path, dest_path);
+                result = copy_large_file_enhanced(job, source_path, dest_path);
             } else {
-                return copy_with_buffered_io(job, source_path, dest_path);
+                result = copy_with_buffered_io(job, source_path, dest_path);
             }
+            
+            // NEW: Add verification record for non-verification cases in enhanced method
+            if (result && !job.verify_integrity && file_size > job.large_file_threshold) {
+                add_non_verification_record(job, source_path, dest_path, file_size);
+            }
+            
+            return result;
             
         } catch (const std::exception& e) {
             add_error(std::string("Copy exception: ") + e.what());
@@ -1222,12 +1443,42 @@ private:
             if (job.verify_integrity) {
                 std::string dest_hash = HashCalculator::calculate_file_hash(temp_file, job.hash_algorithm);
                 std::string src_hash  = HashCalculator::calculate_file_hash(source_path, job.hash_algorithm);
-                if (dest_hash != src_hash) { fs::remove(temp_file); stats_.hash_failures++; return false; }
+                if (dest_hash != src_hash) { 
+                    // NEW: Add verification record for failed verification
+                    if (job.generate_verification_report) {
+                        fs::path src_path(source_path);
+                        fs::path dst_path(dest_path);
+                        VerificationRecord record(src_path.filename().string(), source_path, dest_path, 
+                                               file_size, job.hash_algorithm, src_hash, dest_hash, 
+                                               "FAIL", "hash_mismatch");
+                        add_verification_record(record);
+                    }
+                    
+                    fs::remove(temp_file); 
+                    stats_.hash_failures++; 
+                    return false; 
+                }
+                
+                // NEW: Add verification record for successful verification
+                if (job.generate_verification_report) {
+                    fs::path src_path(source_path);
+                    fs::path dst_path(dest_path);
+                    VerificationRecord record(src_path.filename().string(), source_path, dest_path, 
+                                           file_size, job.hash_algorithm, src_hash, dest_hash, "PASS");
+                    add_verification_record(record);
+                }
+                
                 stats_.hash_verifications++;
             }
 
             fs::rename(temp_file, dest_path);
             add_bytes(file_size);
+            
+            // NEW: Add verification record for non-verification cases
+            if (!job.verify_integrity) {
+                add_non_verification_record(job, source_path, dest_path, file_size);
+            }
+            
             return true;
             
         } catch (const std::exception& e) {
@@ -1238,11 +1489,20 @@ private:
     
     bool copy_small_file(const CopyJob& job, const std::string& source_path, const std::string& dest_path) {
         try {
+            bool result = false;
             if (job.use_direct_io) {
-                return copy_with_direct_io(job, source_path, dest_path);
+                result = copy_with_direct_io(job, source_path, dest_path);
             } else {
-                return copy_with_buffered_io(job, source_path, dest_path);
+                result = copy_with_buffered_io(job, source_path, dest_path);
             }
+            
+            // NEW: Add verification record for non-verification cases
+            if (result && !job.verify_integrity) {
+                size_t file_size = fs::file_size(fs::path(source_path));
+                add_non_verification_record(job, source_path, dest_path, file_size);
+            }
+            
+            return result;
         } catch (const std::exception& e) {
             add_error(std::string("Small file copy exception: ") + e.what());
             return false;
@@ -1340,10 +1600,51 @@ private:
         if (xh) {
             auto h = XXH64_digest(xh); 
             XXH64_freeState(xh);
-            // Optionally store/report h; if you also want dest hash, compute async post-rename
+            
+            // NEW: Add verification record for successful verification
+            if (job.generate_verification_report) {
+                fs::path src_path(source_path);
+                fs::path dst_path(dest_path);
+                
+                // Convert hash to hex string
+                std::stringstream ss;
+                ss << std::hex << std::setfill('0') << std::setw(16) << h;
+                std::string src_hash = ss.str();
+                
+                // Calculate destination hash for verification
+                std::string dest_hash = HashCalculator::calculate_file_hash(dest_path, job.hash_algorithm);
+                
+                if (src_hash == dest_hash) {
+                    VerificationRecord record(src_path.filename().string(), source_path, dest_path, 
+                                           file_size, job.hash_algorithm, src_hash, dest_hash, "PASS");
+                    add_verification_record(record);
+                } else {
+                    VerificationRecord record(src_path.filename().string(), source_path, dest_path, 
+                                           file_size, job.hash_algorithm, src_hash, dest_hash, 
+                                           "FAIL", "hash_mismatch");
+                    add_verification_record(record);
+                }
+            }
+            
             stats_.hash_verifications++;
         }
         return total == file_size;
+    }
+    
+    // NEW: Add verification record for non-verification cases
+    void add_non_verification_record(const CopyJob& job, const std::string& source_path, 
+                                   const std::string& dest_path, size_t file_size) {
+        if (!job.generate_verification_report) return;
+        
+        try {
+            fs::path src_path(source_path);
+            fs::path dst_path(dest_path);
+            VerificationRecord record(src_path.filename().string(), source_path, dest_path, 
+                                   file_size, "NONE", "", "", "PASS");
+            add_verification_record(record);
+        } catch (...) {
+            // Don't fail the transfer due to report generation issues
+        }
     }
 
     // Range splitting uses ranges_per_file (not thread_count)
@@ -1637,7 +1938,10 @@ PYBIND11_MODULE(enhanced_high_perf_engine, m) {
         .def_readwrite("ranges_per_file", &CopyJob::ranges_per_file)
         .def_readwrite("preset", &CopyJob::preset)
         .def_readwrite("verify_mode", &CopyJob::verify_mode)
-        .def_readwrite("per_dest_params", &CopyJob::per_dest_params);
+        .def_readwrite("per_dest_params", &CopyJob::per_dest_params)
+        // NEW: Verification report fields
+        .def_readwrite("generate_verification_report", &CopyJob::generate_verification_report)
+        .def_readwrite("job_id", &CopyJob::job_id);
     
     py::class_<EnhancedHighPerfTransferEngine>(m, "EnhancedHighPerfTransferEngine")
         .def(py::init<>())

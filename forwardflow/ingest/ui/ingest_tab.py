@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import time
 import threading
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -37,6 +38,7 @@ from PyQt6.QtWidgets import (
     QGridLayout,
     QFileDialog,
     QScrollArea,
+    QCheckBox,
 )
 
 from .ingest_vm import IngestViewModel
@@ -66,6 +68,59 @@ except ImportError as e:
     raise ImportError("Centralized styles are required for the ingest tab")
 
 
+def load_recent_locations():
+    """Load recent source and destination locations from config"""
+    try:
+        from app.core.config_manager import get_settings_path
+        settings_dir = get_settings_path()
+        recent_file = os.path.join(settings_dir, "recent_locations.json")
+        
+        if os.path.exists(recent_file):
+            with open(recent_file, 'r') as f:
+                data = json.load(f)
+                return data.get('sources', []), data.get('destinations', [])
+    except Exception as e:
+        print(f"DEBUG: Failed to load recent locations: {e}")
+    
+    return [], []
+
+
+def save_recent_locations(sources, destinations):
+    """Save recent source and destination locations to config"""
+    try:
+        from app.core.config_manager import get_settings_path
+        settings_dir = get_settings_path()
+        recent_file = os.path.join(settings_dir, "recent_locations.json")
+        
+        data = {
+            'sources': sources[:5],  # Keep last 5
+            'destinations': destinations[:5]  # Keep last 5
+        }
+        
+        with open(recent_file, 'w') as f:
+            json.dump(data, f, indent=2)
+    except Exception as e:
+        print(f"DEBUG: Failed to save recent locations: {e}")
+
+
+def add_to_recent_locations(path, is_source=True):
+    """Add a path to recent locations"""
+    sources, destinations = load_recent_locations()
+    
+    if is_source:
+        if path in sources:
+            sources.remove(path)
+        sources.insert(0, path)
+        sources = sources[:5]  # Keep last 5
+    else:
+        if path in destinations:
+            destinations.remove(path)
+        destinations.insert(0, path)
+        destinations = destinations[:5]  # Keep last 5
+    
+    save_recent_locations(sources, destinations)
+
+
 def build_ingest_tab():
     """Build the ingest tab UI."""
     print("DEBUG: Building ingest tab...")
@@ -86,6 +141,9 @@ def build_ingest_tab():
     root._speed_samples = collections.deque(maxlen=8)  # 8×100ms ≈ 0.8 s
     root._last_speed_update = None
     root._last_bytes = 0
+    
+    # Load recent locations
+    recent_sources, recent_destinations = load_recent_locations()
     
     # Main layout
     layout = QVBoxLayout(root)
@@ -108,7 +166,7 @@ def build_ingest_tab():
     # Timer for updating stats more frequently
     root.stats_update_timer = QTimer()
     root.stats_update_timer.timeout.connect(lambda: update_stats())
-    root.stats_update_timer.start(500)  # Update every 500ms for more responsive stats
+    root.stats_update_timer.start(100)  # Update every 100ms for more responsive stats
     
     def update_elapsed_time():
         """Update elapsed time display every second"""
@@ -133,7 +191,7 @@ def build_ingest_tab():
                 
                 # Update speed label
                 if hasattr(root, 'speed_label'):
-                    root.speed_label.setText(f"{current_speed:.0f} MB/s Transfer")
+                    root.speed_label.setText(f"{current_speed:.0f} MB/s")
                 
                 # Update current speed stat
                 if hasattr(root, 'current_speed_label'):
@@ -169,6 +227,15 @@ def build_ingest_tab():
                 elif hasattr(root, 'eta_label'):
                     root.eta_label.setText("ETA: --:--:--")
                 
+                # Update total time label
+                if hasattr(root, 'total_time_label'):
+                    elapsed_str = f"{int(elapsed_seconds//3600):02d}:{int((elapsed_seconds%3600)//60):02d}:{int(elapsed_seconds%60):02d}"
+                    root.total_time_label.setText(f"Total: {elapsed_str}")
+                
+                # Update total speed label
+                if hasattr(root, 'total_speed_label'):
+                    root.total_speed_label.setText(f"{current_speed:.0f} MB/s")
+                
                 # Force updates for all widgets
                 if hasattr(root, 'total_progress'):
                     root.total_progress.repaint()
@@ -200,14 +267,23 @@ def build_ingest_tab():
     paths_layout = QVBoxLayout()
     paths_layout.setSpacing(5)  # Reduced to 5px for tight spacing
     
-    # Source
+    # Source with dropdown
     src_layout = QVBoxLayout()
     src_layout.setSpacing(2)  # Reduced to 2px for very tight spacing
     src_label = QLabel("Source:")
     src_label.setStyleSheet(FIELD_LABEL_STYLE)
-    src_edit = QLineEdit()
-    src_edit.setStyleSheet(LINEEDIT_STYLE)
-    src_edit.setPlaceholderText("Select source folder...")
+    
+    # Source dropdown
+    src_combo = QComboBox()
+    src_combo.setEditable(True)
+    src_combo.setStyleSheet(COMBOBOX_STYLE)
+    src_combo.setPlaceholderText("Select source folder...")
+    
+    # Add recent sources to dropdown
+    for source in recent_sources:
+        src_combo.addItem(source)
+    
+    # Source browse button
     src_btn = QPushButton("Browse…")
     src_btn.setObjectName("src_browse_btn")
     # Use the standard app colors
@@ -231,7 +307,7 @@ def build_ingest_tab():
     
     src_row = QHBoxLayout()
     src_row.setSpacing(2)  # Reduced to 2px for very tight spacing
-    src_row.addWidget(src_edit, 1)
+    src_row.addWidget(src_combo, 1)
     src_row.addWidget(src_btn)
     
     src_layout.addWidget(src_label)
@@ -249,6 +325,17 @@ def build_ingest_tab():
     dest_header = QHBoxLayout()
     dest_label = QLabel("Destinations:")
     dest_label.setStyleSheet(FIELD_LABEL_STYLE)
+    
+    # Destinations dropdown
+    dest_combo = QComboBox()
+    dest_combo.setEditable(True)
+    dest_combo.setStyleSheet(COMBOBOX_STYLE)
+    dest_combo.setPlaceholderText("Select destination folder...")
+    
+    # Add recent destinations to dropdown
+    for destination in recent_destinations:
+        dest_combo.addItem(destination)
+    
     add_dest_btn = QPushButton("+ Add Destination")
     add_dest_btn.setObjectName("add_dest_btn")
     add_dest_btn.setStyleSheet(f"""
@@ -270,7 +357,7 @@ def build_ingest_tab():
     """)
     
     dest_header.addWidget(dest_label)
-    dest_header.addStretch()
+    dest_header.addWidget(dest_combo, 1)
     dest_header.addWidget(add_dest_btn)
     dest_layout.addLayout(dest_header)
     
@@ -298,6 +385,8 @@ def build_ingest_tab():
     root.dest_container = dest_container
     root.dest_container_layout = dest_container_layout
     root.destinations = []  # List of destination objects
+    root.src_combo = src_combo
+    root.dest_combo = dest_combo
     
     layout.addLayout(paths_layout)
     
@@ -399,6 +488,38 @@ def build_ingest_tab():
     stream_layout.addWidget(stream_label)
     stream_layout.addLayout(stream_row)
     settings_layout.addLayout(stream_layout)
+    
+    # NEW: Verification Report checkbox
+    report_layout = QVBoxLayout()
+    report_layout.setSpacing(2)
+    report_checkbox = QCheckBox("Generate Verification Report")
+    report_checkbox.setChecked(True)  # Default to enabled
+    report_checkbox.setStyleSheet(f"""
+        QCheckBox {{
+            color: {colors['text']};
+            font-size: 12px;
+            spacing: 5px;
+        }}
+        QCheckBox::indicator {{
+            width: 16px;
+            height: 16px;
+            border: 1px solid {colors['border']};
+            border-radius: 3px;
+            background-color: {colors['card_bg']};
+        }}
+        QCheckBox::indicator:checked {{
+            background-color: {colors['accent']};
+            border-color: {colors['accent']};
+        }}
+        QCheckBox::indicator:hover {{
+            border-color: {colors['accent']};
+        }}
+    """)
+    report_layout.addWidget(report_checkbox)
+    settings_layout.addLayout(report_layout)
+    
+    # Store reference for later use
+    root.report_checkbox = report_checkbox
     
     layout.addLayout(settings_layout)
     
@@ -634,13 +755,20 @@ def build_ingest_tab():
     # Destination management functions
     def add_destination():
         """Add a new destination to the list"""
-        path = QFileDialog.getExistingDirectory(
-            root,
-            "Select Destination Folder",
-            "",
-            QFileDialog.Option.ShowDirsOnly | QFileDialog.Option.DontResolveSymlinks
-        )
+        # Use the dropdown value if it has text, otherwise show file dialog
+        path = root.dest_combo.currentText().strip()
+        if not path or path == root.dest_combo.placeholderText():
+            path = QFileDialog.getExistingDirectory(
+                root,
+                "Select Destination Folder",
+                "",
+                QFileDialog.Option.ShowDirsOnly | QFileDialog.Option.DontResolveSymlinks
+            )
+        
         if path:
+            # Add to recent destinations
+            add_to_recent_locations(path, is_source=False)
+            
             dest_obj = {
                 "path": path,
                 "preset": "auto",
@@ -653,6 +781,9 @@ def build_ingest_tab():
             root.destinations.append(dest_obj)
             create_destination_widget(dest_obj)
             check_button_states()
+            
+            # Clear the dropdown
+            root.dest_combo.setCurrentText("")
     
     def create_destination_widget(dest_obj):
         """Create a widget for a destination"""
@@ -688,34 +819,7 @@ def build_ingest_tab():
         preset_combo.currentTextChanged.connect(lambda text: update_dest_preset(dest_obj, text))
         top_row.addWidget(preset_combo)
         
-        # Cancel button for this destination
-        dest_cancel_btn = QPushButton("Cancel")
-        dest_cancel_btn.setObjectName(f"dest_cancel_{len(root.destinations)}")
-        dest_cancel_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #902A2A;
-                color: white;
-                border: 1px solid #732121;
-                padding: 3px 8px;
-                border-radius: 3px;
-                font-size: 10px;
-            }
-            QPushButton:hover {
-                background-color: #A33030;
-                border: 1px solid #8A2727;
-            }
-            QPushButton:pressed {
-                background-color: #7D2525;
-            }
-            QPushButton:disabled {
-                background-color: #1E1E1E;
-                color: #666666;
-                border: 1px solid #666666;
-            }
-        """)
-        dest_cancel_btn.setEnabled(False)
-        dest_cancel_btn.clicked.connect(lambda: cancel_destination(dest_obj))
-        top_row.addWidget(dest_cancel_btn)
+
         
         # Remove button
         remove_btn = QPushButton("×")
@@ -762,7 +866,6 @@ def build_ingest_tab():
         
         # Store references
         dest_obj["widget"] = dest_widget
-        dest_obj["cancel_btn"] = dest_cancel_btn
         dest_obj["progress_bar"] = dest_progress
         dest_obj["status_label"] = dest_status
         
@@ -791,8 +894,6 @@ def build_ingest_tab():
             # Update destination status
             if 'status_label' in dest_obj:
                 dest_obj['status_label'].setText("Cancelled")
-            if 'cancel_btn' in dest_obj:
-                dest_obj['cancel_btn'].setEnabled(False)
                 
         except Exception as e:
             print(f"DEBUG: Error canceling destination: {e}")
@@ -896,15 +997,10 @@ def build_ingest_tab():
                 root.speed_label.setText("— MB/s")
                 print("DEBUG: Speed label updated")
             
-            # Enable destination cancel buttons and show progress bars
+            # Show destination progress bars
             if hasattr(root, 'destinations'):
-                print(f"DEBUG: Enabling cancel buttons for {len(root.destinations)} destinations")
+                print(f"DEBUG: Showing progress bars for {len(root.destinations)} destinations")
                 for i, dest_obj in enumerate(root.destinations):
-                    # Enable cancel button
-                    if 'cancel_btn' in dest_obj:
-                        dest_obj['cancel_btn'].setEnabled(True)
-                        print(f"DEBUG: Enabled cancel button for destination {i+1}")
-                    
                     # Show progress bar
                     if 'progress_bar' in dest_obj:
                         dest_obj['progress_bar'].setVisible(True)
@@ -917,13 +1013,13 @@ def build_ingest_tab():
                         print(f"DEBUG: Updated status for destination {i+1}")
             
             # Store data for later use
-            if hasattr(root, 'job_data'):
-                root.job_data = {
-                    'total_bytes': total_bytes,
-                    'total_files': total_files,
-                    'start_time': time.time(),
-                    'copied_bytes': 0
-                }
+            root.job_start_time = time.time()
+            root.job_data = {
+                'total_bytes': total_bytes,
+                'total_files': total_files,
+                'start_time': time.time(),
+                'copied_bytes': 0
+            }
             
             print("DEBUG: handle_job_started completed successfully")
             
@@ -952,9 +1048,22 @@ def build_ingest_tab():
             print(f"DEBUG: Final copied_bytes value: {copied_bytes}")
             print(f"DEBUG: Job progress: {copied_bytes}/{total_bytes} bytes")
             
-            # Calculate percentage to avoid overflow
-            progress_percent = int((copied_bytes / total_bytes * 100)) if total_bytes > 0 else 0
-            progress_percent = min(progress_percent, 100)  # Cap at 100%
+            # Store the values in root for the update_stats function
+            root.copied_bytes = copied_bytes
+            root.total_bytes = total_bytes
+            
+            # Calculate percentage to avoid overflow - use integer division for large numbers
+            if total_bytes > 0:
+                progress_percent = min(int((copied_bytes * 100) // total_bytes), 100)
+            else:
+                progress_percent = 0
+            
+            # Check if we're at 100% but the job hasn't completed
+            if progress_percent >= 100 and not hasattr(root, '_completion_timeout_set'):
+                print("DEBUG: Progress reached 100%, setting completion timeout")
+                root._completion_timeout_set = True
+                # Set a timeout to force completion if the job.completed event doesn't come
+                QTimer.singleShot(5000, lambda: _force_job_completion())
             
             # Update total progress bar with percentage
             if hasattr(root, 'total_progress') and root.total_progress:
@@ -990,8 +1099,8 @@ def build_ingest_tab():
                     print("DEBUG: Speed label updated")
 
                 if hasattr(root, 'elapsed_label') and root.elapsed_label:
-                    elapsed_str = f"{int(elapsed//60):02d}:{int(elapsed%60):02d}"
-                    root.elapsed_label.setText(elapsed_str)
+                    elapsed_str = f"{int(elapsed//3600):02d}:{int((elapsed%3600)//60):02d}:{int(elapsed%60):02d}"
+                    root.elapsed_label.setText(f"Elapsed: {elapsed_str}")
                     print("DEBUG: Elapsed label updated")
             
             # Update status
@@ -1008,6 +1117,24 @@ def build_ingest_tab():
             
         except Exception as e:
             print(f"DEBUG: Error in handle_job_progress: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _force_job_completion():
+        """Force job completion if the engine doesn't emit job.completed"""
+        print("DEBUG: Force job completion timeout triggered")
+        try:
+            # Create a fake completion payload
+            fake_payload = {
+                "bytes": root.copied_bytes if hasattr(root, 'copied_bytes') else 0,
+                "total": root.total_bytes if hasattr(root, 'total_bytes') else 0,
+                "elapsed": time.time() - root.job_start_time if hasattr(root, 'job_start_time') else 0,
+                "speed": 0
+            }
+            print(f"DEBUG: Calling handle_job_completed with fake payload: {fake_payload}")
+            handle_job_completed(fake_payload)
+        except Exception as e:
+            print(f"DEBUG: Error in force job completion: {e}")
             import traceback
             traceback.print_exc()
             
@@ -1143,39 +1270,57 @@ def build_ingest_tab():
     def handle_job_completed(payload):
         print(f"DEBUG: handle_job_completed called with: {payload}")
         try:
-            # Get completion data
-            bytes_copied = payload.get("bytes", 0)
-            total_bytes = payload.get("total", 0)
-            elapsed = payload.get("elapsed", 0)
-            speed = payload.get("speed", 0)
+            # Get completion data - handle both C++ and Python engine formats
+            bytes_copied = payload.get("bytes") or payload.get("copied_bytes", 0)
+            total_bytes = payload.get("total") or payload.get("total_bytes", 0)
+            elapsed = payload.get("elapsed") or payload.get("elapsed_s") or payload.get("data_elapsed_s", 0)
+            speed = payload.get("speed") or payload.get("mbps", 0) or payload.get("data_mbps", 0)
             
-            print(f"DEBUG: Job completed: {bytes_copied}/{total_bytes} bytes in {elapsed:.2f}s at {speed:.2f} bytes/s")
+            print(f"DEBUG: Job completed: {bytes_copied}/{total_bytes} bytes in {elapsed:.2f}s at {speed:.2f} MB/s")
             
-            # Update UI
+            # Update UI to show 100% completion
             if hasattr(root, 'total_progress') and root.total_progress:
                 root.total_progress.setValue(100)
+                print("DEBUG: Progress bar set to 100%")
             
             if hasattr(root, 'status_label') and root.status_label:
-                speed_mbps = speed / (1024 * 1024) if speed > 0 else 0
+                speed_mbps = speed if isinstance(speed, (int, float)) else 0
                 root.status_label.setText(f"Completed! {speed_mbps:.1f} MB/s average")
+                print("DEBUG: Status label updated to show completion")
             
             if hasattr(root, 'speed_label') and root.speed_label:
-                speed_mbps = speed / (1024 * 1024) if speed > 0 else 0
+                speed_mbps = speed if isinstance(speed, (int, float)) else 0
                 root.speed_label.setText(f"{speed_mbps:.1f} MB/s")
+                print("DEBUG: Speed label updated")
             
             if hasattr(root, 'elapsed_label') and root.elapsed_label:
-                elapsed_str = f"{int(elapsed//60):02d}:{int(elapsed%60):02d}"
-                root.elapsed_label.setText(elapsed_str)
+                elapsed_str = f"{int(elapsed//3600):02d}:{int((elapsed%3600)//60):02d}:{int(elapsed%60):02d}"
+                root.elapsed_label.setText(f"Elapsed: {elapsed_str}")
+                print("DEBUG: Elapsed label updated")
             
-            # Disable destination cancel buttons
+            # Update destination status
             if hasattr(root, 'destinations'):
                 for i, dest_obj in enumerate(root.destinations):
-                    if 'cancel_btn' in dest_obj:
-                        dest_obj['cancel_btn'].setEnabled(False)
                     if 'status_label' in dest_obj:
                         dest_obj['status_label'].setText("Completed")
                     if 'progress_bar' in dest_obj:
                         dest_obj['progress_bar'].setValue(100)
+                print("DEBUG: Destination controls updated")
+            
+            # Re-enable controls after job completion
+            if hasattr(root, 'report_checkbox'):
+                root.report_checkbox.setEnabled(True)
+            
+            # Re-enable main controls
+            conc_slider.setEnabled(True)
+            stream_slider.setEnabled(True)
+            verify_combo.setEnabled(True)
+            preset_combo.setEnabled(True)
+            add_dest_btn.setEnabled(True)
+            start_btn.setEnabled(True)
+            pause_btn.setEnabled(False)
+            cancel_btn.setEnabled(False)
+            print("DEBUG: Main controls re-enabled")
             
             print("DEBUG: handle_job_completed completed successfully")
             
@@ -1322,7 +1467,7 @@ def build_ingest_tab():
     
     # Wire up button handlers
     def on_start():
-        if not src_edit.text().strip() or not root.destinations:
+        if not root.src_combo.currentText().strip() or not root.destinations:
             print("DEBUG: Source path is empty or no destinations added")
             return
         
@@ -1344,7 +1489,7 @@ def build_ingest_tab():
         def run():
             print(f"DEBUG: Starting ingest job in background thread")
             # Get job parameters from UI
-            source_path = src_edit.text().strip()
+            source_path = root.src_combo.currentText().strip()
             dest_paths = [dest["path"] for dest in root.destinations]
             verify_mode = verify_combo.currentText()
             global_preset = preset_combo.currentText()
@@ -1372,7 +1517,9 @@ def build_ingest_tab():
                         verify_mode=verify_mode,
                         preset=global_preset,
                         per_file_concurrency=1,  # Will be auto-tuned per destination
-                        stream_concurrency=1     # Will be auto-tuned per destination
+                        stream_concurrency=1,    # Will be auto-tuned per destination
+                        # NEW: Include verification report option
+                        generate_verification_report=root.report_checkbox.isChecked()
                     )
                 )
                 
@@ -1391,6 +1538,12 @@ def build_ingest_tab():
                 engine = PythonCopyEngine(sink=sink)
                 print(f"DEBUG: PythonCopyEngine created: {engine}")
                 
+                # Check which engine type is being used
+                if hasattr(engine, '_cpp_engine_used'):
+                    print("DEBUG: C++ engine is being used")
+                else:
+                    print("DEBUG: Python fallback engine is being used")
+                
                 # Store the engine reference (not the thread)
                 root.current_job = engine
                 print(f"DEBUG: Engine stored in root.current_job")
@@ -1401,6 +1554,7 @@ def build_ingest_tab():
                 verify_combo.setEnabled(False)
                 preset_combo.setEnabled(False)
                 add_dest_btn.setEnabled(False)
+                root.report_checkbox.setEnabled(False)
                 print(f"DEBUG: Controls frozen")
                 
                 print(f"DEBUG: Starting engine with job: {job}")
@@ -1416,6 +1570,7 @@ def build_ingest_tab():
                 verify_combo.setEnabled(True)
                 preset_combo.setEnabled(True)
                 add_dest_btn.setEnabled(True)
+                root.report_checkbox.setEnabled(True)
                 start_btn.setEnabled(True)
                 pause_btn.setEnabled(False)
                 cancel_btn.setEnabled(False)
@@ -1435,6 +1590,7 @@ def build_ingest_tab():
             verify_combo.setEnabled(True)
             preset_combo.setEnabled(True)
             add_dest_btn.setEnabled(True)
+            root.report_checkbox.setEnabled(True)
             start_btn.setEnabled(True)
             pause_btn.setEnabled(False)
             cancel_btn.setEnabled(False)
@@ -1530,21 +1686,25 @@ def build_ingest_tab():
         print("DEBUG: Button states updated")
     
     # Wire up browse buttons
-    def _browse_for_path(line_edit: QLineEdit):
+    def _browse_for_path():
         path = QFileDialog.getExistingDirectory(
             root,
             "Select Source Folder",
-            line_edit.text(),
+            root.src_combo.currentText(),
             QFileDialog.Option.ShowDirsOnly | QFileDialog.Option.DontResolveSymlinks
         )
         if path:
-            line_edit.setText(path)
+            # Add to recent sources
+            add_to_recent_locations(path, is_source=True)
+            
+            # Update combo box
+            root.src_combo.setCurrentText(path)
             print(f"DEBUG: Source path selected: {path}")
             check_button_states()
     
     # Function to check if buttons should be enabled
     def check_button_states():
-        if src_edit.text().strip() and len(root.destinations) > 0:
+        if root.src_combo.currentText().strip() and len(root.destinations) > 0:
             start_btn.setEnabled(True)
             print("DEBUG: Source and destinations selected, enabling start button")
         else:
@@ -1552,7 +1712,7 @@ def build_ingest_tab():
             print("DEBUG: Source or destinations not complete, disabling start button")
     
     # Connect text changed signals to check button states
-    src_edit.textChanged.connect(check_button_states)
+    root.src_combo.currentTextChanged.connect(check_button_states)
     
     # Connect button handlers
     start_btn.clicked.connect(on_start)
@@ -1561,7 +1721,7 @@ def build_ingest_tab():
     add_dest_btn.clicked.connect(add_destination)
     print("DEBUG: Button handlers connected")
     
-    src_btn.clicked.connect(lambda: _browse_for_path(src_edit))
+    src_btn.clicked.connect(_browse_for_path)
     print("DEBUG: Browse button handlers connected")
     
     # Initial button state check

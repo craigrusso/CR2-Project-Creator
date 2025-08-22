@@ -18,6 +18,7 @@ from datetime import datetime
 from ..api.interfaces import Engine, EventSink
 from ..api.models import JobSpec, FileSpec, Results
 from ..pipeline.verify import hash_file_xxh, write_basic_mhl, parse_mhl
+from ..pipeline.verification_report import VerificationReportManager, VerificationRecord
 from ..policies.simple_policy import SimplePolicy
 from ..logging import get_logger
 from ..config import DEFAULTS
@@ -62,6 +63,9 @@ class PythonCopyEngine(Engine):
         self._sink = sink
         self._job_stats: dict[str, _JobStats] = {}
         self._file_stats: dict[str, _FileStats] = {}
+        # NEW: Verification report managers for each destination
+        self._report_managers: dict[str, VerificationReportManager] = {}
+        self._cpp_engine_used = False # Flag to track if C++ engine was used
 
     def start(self, job: JobSpec) -> None:  # pragma: no cover - used via CLI/UI later
         print(f"DEBUG: PythonCopyEngine.start called with job: {job.job_id}")
@@ -110,10 +114,38 @@ class PythonCopyEngine(Engine):
             # Try C++ engine first for maximum performance
             try:
                 print(f"DEBUG: Attempting to use C++ engine for maximum performance...")
-                import enhanced_high_perf_engine as cpp_engine
-                print(f"DEBUG: C++ engine imported successfully")
-                self._start_multi_destination_cpp(job, cpp_engine)
-                return
+                # Try multiple import paths for the C++ engine
+                cpp_engine = None
+                try:
+                    # Try the build/lib directory first
+                    import sys
+                    import os
+                    current_dir = os.path.dirname(os.path.abspath(__file__))
+                    build_lib_path = os.path.join(current_dir, "build", "lib")
+                    print(f"DEBUG: Trying to import from build/lib path: {build_lib_path}")
+                    if build_lib_path not in sys.path:
+                        sys.path.insert(0, build_lib_path)
+                        print(f"DEBUG: Added {build_lib_path} to sys.path")
+                    
+                    import enhanced_high_perf_engine as cpp_engine
+                    print(f"DEBUG: C++ engine imported successfully from build/lib")
+                except ImportError as e1:
+                    print(f"DEBUG: Failed to import from build/lib: {e1}")
+                    try:
+                        # Try the current directory
+                        print(f"DEBUG: Trying to import from current directory: {current_dir}")
+                        import enhanced_high_perf_engine as cpp_engine
+                        print(f"DEBUG: C++ engine imported successfully from current directory")
+                    except ImportError as e2:
+                        print(f"DEBUG: Failed to import from current directory: {e2}")
+                        print(f"DEBUG: C++ engine not found in any location")
+                        raise
+                
+                if cpp_engine:
+                    print("DEBUG: C++ engine found, using it for maximum performance")
+                    self._cpp_engine_used = True
+                    self._start_multi_destination_cpp(job, cpp_engine)
+                    return
             except ImportError as e:
                 print(f"DEBUG: C++ engine not available: {e}")
             except Exception as e:
@@ -142,6 +174,9 @@ class PythonCopyEngine(Engine):
             cpp_job.preset = job.options.preset
             cpp_job.verify_mode = job.options.verify_mode
             cpp_job.adaptive_parameters = True
+            # NEW: Set verification report options
+            cpp_job.generate_verification_report = job.options.generate_verification_report
+            cpp_job.job_id = job.job_id
             print(f"DEBUG: C++ CopyJob created successfully")
             
             print(f"DEBUG: Setting up event sink...")
@@ -271,6 +306,96 @@ class PythonCopyEngine(Engine):
     def get_current_job_id(self) -> Optional[str]:
         """Get the current job ID if any job is running"""
         return next(iter(self._job_stats.keys()), None) if self._job_stats else None
+    
+    def _ensure_report_manager(self, job: JobSpec) -> None:
+        """Ensure verification report manager exists for the job destination."""
+        if not job.options.generate_verification_report:
+            return
+            
+        # For single destination jobs
+        if hasattr(job, 'destination_root') and job.destination_root:
+            dest_key = str(job.destination_root)
+            if dest_key not in self._report_managers:
+                self._report_managers[dest_key] = VerificationReportManager(job.destination_root)
+                # Start the job report
+                self._report_managers[dest_key].start_job_report(
+                    job.job_id, 
+                    datetime.fromtimestamp(self._job_stats[job.job_id].start_time)
+                )
+        
+        # For multi-destination jobs
+        elif hasattr(job, 'destination_roots') and job.destination_roots:
+            for dest_root in job.destination_roots:
+                dest_key = str(dest_root)
+                if dest_key not in self._report_managers:
+                    self._report_managers[dest_key] = VerificationReportManager(dest_root)
+                    # Start the job report
+                    self._report_managers[dest_key].start_job_report(
+                        job.job_id, 
+                        datetime.fromtimestamp(self._job_stats[job.job_id].start_time)
+                    )
+    
+    def _finalize_verification_reports(self, job: JobSpec) -> None:
+        """Finalize verification reports for all destinations."""
+        if not job.options.generate_verification_report:
+            return
+            
+        try:
+            # For single destination jobs
+            if hasattr(job, 'destination_root') and job.destination_root:
+                dest_key = str(job.destination_root)
+                if dest_key in self._report_managers:
+                    self._report_managers[dest_key].finalize_job_report(job.job_id)
+                    print(f"DEBUG: Finalized verification report for destination: {dest_key}")
+            
+            # For multi-destination jobs
+            elif hasattr(job, 'destination_roots') and job.destination_roots:
+                for dest_root in job.destination_roots:
+                    dest_key = str(dest_root)
+                    if dest_key in self._report_managers:
+                        self._report_managers[dest_key].finalize_job_report(job.job_id)
+                        print(f"DEBUG: Finalized verification report for destination: {dest_key}")
+                        
+        except Exception as e:
+            self._logger.error(f"Failed to finalize verification reports: {e}")
+            # Don't fail the transfer job due to report generation issues
+
+    def _add_verification_record(self, job: JobSpec, spec: FileSpec, 
+                                src_hash, dst_hash, status: str, error_message: Optional[str] = None) -> None:
+        """Add a verification record to the appropriate report manager."""
+        if not job.options.generate_verification_report:
+            return
+            
+        try:
+            # Determine destination key for report manager
+            dest_key = None
+            if hasattr(job, 'destination_root') and job.destination_root:
+                dest_key = str(job.destination_root)
+            elif hasattr(job, 'destination_roots') and job.destination_roots:
+                # For multi-destination, use the first one (or we could track which one this file went to)
+                dest_key = str(job.destination_roots[0])
+            
+            if dest_key and dest_key in self._report_managers:
+                # Create verification record
+                record = VerificationRecord(
+                    filename=spec.source.name,
+                    source_path=str(spec.source),
+                    destination_path=str(spec.destination),
+                    file_size_bytes=spec.size_bytes,
+                    hash_type=job.options.verify_algorithm if src_hash else "NONE",
+                    source_hash=src_hash.hexdigest if src_hash else None,
+                    destination_hash=dst_hash.hexdigest if dst_hash else None,
+                    status=status,
+                    timestamp=datetime.now(),
+                    error_message=error_message
+                )
+                
+                # Add to report manager
+                self._report_managers[dest_key].add_verification_record(job.job_id, record)
+                
+        except Exception as e:
+            self._logger.error(f"Failed to add verification record: {e}")
+            # Don't fail the transfer job due to report generation issues
 
     def cancel(self, job_id: str) -> None:  # pragma: no cover - simple flag
         self._cancels.setdefault(job_id, threading.Event()).set()
@@ -307,6 +432,20 @@ class PythonCopyEngine(Engine):
             print(f"DEBUG: Starting file copying...")
             results = self._copy_files_impl(job, files)
             print(f"DEBUG: File copying completed")
+            
+            # Emit job completion event
+            elapsed = max(1e-3, time.time() - self._job_stats[job.job_id].start_time)
+            self._emit(job.job_id, "job.completed", {
+                "bytes": results.bytes_copied,
+                "total": self._job_stats[job.job_id].total_bytes,
+                "elapsed": elapsed,
+                "speed": results.bytes_copied / elapsed if elapsed > 0 else 0,
+            })
+            print(f"DEBUG: job.completed event emitted")
+            
+            # Finalize verification reports if enabled
+            if job.options.generate_verification_report:
+                self._finalize_verification_reports(job)
             
         except Exception as e:
             print(f"DEBUG: Error in _copy_files: {e}")
@@ -356,6 +495,10 @@ class PythonCopyEngine(Engine):
             last_emit=0.0,
             lock=threading.Lock(),
         )
+        
+        # NEW: Initialize verification report manager if enabled
+        if job.options.generate_verification_report:
+            self._ensure_report_manager(job)
         
         # Emit file started event
         self._emit(job.job_id, "file.started", {
@@ -452,6 +595,10 @@ class PythonCopyEngine(Engine):
                     src_hash = hash_file_xxh(src)
                     dst_hash = hash_file_xxh(dst_tmp)
                     if src_hash.hexdigest != dst_hash.hexdigest:
+                        # NEW: Add verification record for failed verification
+                        if job.options.generate_verification_report:
+                            self._add_verification_record(job, spec, src_hash, dst_hash, "FAIL", "hash_mismatch")
+                        
                         self._emit(job.job_id, "file.failed", {
                             "file_id": file_id,
                             "filename": filename,
@@ -459,9 +606,19 @@ class PythonCopyEngine(Engine):
                         })
                         return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error="hash_mismatch")
                     hexdigest = src_hash.hexdigest
+                    
+                    # NEW: Add verification record for successful verification
+                    if job.options.generate_verification_report:
+                        self._add_verification_record(job, spec, src_hash, dst_hash, "PASS")
+                        
                 except Exception as e:
                     error_msg = f"Hash verification error: {e}"
                     self._logger.error(error_msg)
+                    
+                    # NEW: Add verification record for verification error
+                    if job.options.generate_verification_report:
+                        self._add_verification_record(job, spec, None, None, "FAIL", error_msg)
+                    
                     self._emit(job.job_id, "file.failed", {
                         "file_id": file_id,
                         "filename": filename,
@@ -474,15 +631,29 @@ class PythonCopyEngine(Engine):
                 # Quick size verification only
                 try:
                     if dst_tmp.stat().st_size != spec.size_bytes:
+                        # NEW: Add verification record for failed size verification
+                        if job.options.generate_verification_report:
+                            self._add_verification_record(job, spec, None, None, "FAIL", "size_mismatch")
+                        
                         self._emit(job.job_id, "file.failed", {
                             "file_id": file_id,
                             "filename": filename,
                             "error": "size_mismatch",
                         })
                         return _CopyOutcome(src=src, dst=dst, size=spec.size_bytes, ok=False, error="size_mismatch")
+                    
+                    # NEW: Add verification record for successful size verification
+                    if job.options.generate_verification_report:
+                        self._add_verification_record(job, spec, None, None, "PASS")
+                        
                 except Exception as e:
                     error_msg = f"Size verification error: {e}"
                     self._logger.error(error_msg)
+                    
+                    # NEW: Add verification record for verification error
+                    if job.options.generate_verification_report:
+                        self._add_verification_record(job, spec, None, None, "FAIL", error_msg)
+                    
                     self._emit(job.job_id, "file.failed", {
                         "file_id": file_id,
                         "filename": filename,
@@ -493,6 +664,10 @@ class PythonCopyEngine(Engine):
                 # NONE mode: absolutely no verification, fastest possible
                 hexdigest = None
                 # Skip all verification - trust the copy operation
+                
+                # NEW: Add verification record for NONE mode (always PASS since no verification)
+                if job.options.generate_verification_report:
+                    self._add_verification_record(job, spec, None, None, "PASS")
             
             # Safe file replacement
             try:

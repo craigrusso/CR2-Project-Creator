@@ -17,10 +17,26 @@ if app_dir.exists():
 
 # Try to import the C++ engine
 try:
+    # Try the build/lib directory first
+    import sys
+    import os
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    build_lib_path = os.path.join(current_dir, "build", "lib")
+    if build_lib_path not in sys.path:
+        sys.path.insert(0, build_lib_path)
+    
     import enhanced_high_perf_engine as cpp_engine
     CPP_ENGINE_AVAILABLE = True
+    print("DEBUG: C++ engine imported successfully from build/lib")
 except ImportError:
-    CPP_ENGINE_AVAILABLE = False
+    try:
+        # Try the current directory
+        import enhanced_high_perf_engine as cpp_engine
+        CPP_ENGINE_AVAILABLE = True
+        print("DEBUG: C++ engine imported successfully from current directory")
+    except ImportError:
+        CPP_ENGINE_AVAILABLE = False
+        print("DEBUG: C++ engine not available")
 
 # Import the Python wrapper
 try:
@@ -65,6 +81,9 @@ if not PY_WRAPPER_AVAILABLE:
             self.adaptive_parameters = kwargs.get('adaptive_parameters', True)
             self.large_file_threshold = kwargs.get('large_file_threshold', 256 * 1024 * 1024)
             self.progress_callback = kwargs.get('progress_callback', None)
+            # NEW: Verification report options
+            self.generate_verification_report = kwargs.get('generate_verification_report', True)
+            self.job_id = kwargs.get('job_id', "")
 
     class CppEnhancedCopyEngine:
         def __init__(self):

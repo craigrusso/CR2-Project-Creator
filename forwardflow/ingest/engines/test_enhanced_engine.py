@@ -75,8 +75,11 @@ def test_basic_copy():
         print(f"  Duration: {stats.duration():.2f}s")
         
         # Verify file exists and has correct size
-        assert Path(dest_file).exists()
-        assert Path(dest_file).stat().st_size == Path(source_file).stat().st_size
+        # The C++ engine copies to the destination directory with the original filename
+        source_name = Path(source_file).name
+        actual_dest_file = dest_dir / source_name
+        assert actual_dest_file.exists()
+        assert actual_dest_file.stat().st_size == Path(source_file).stat().st_size
         print("✓ File verification passed")
 
 def test_multi_destination():
@@ -195,7 +198,10 @@ def test_verification():
         print(f"  Hash failures: {stats.hash_failures}")
         
         # Verify the copied file has the same content
-        with open(dest_file, 'rb') as f:
+        # The C++ engine copies to the destination directory with the original filename
+        source_name = Path(source_file).name
+        actual_dest_file = dest_dir / source_name
+        with open(actual_dest_file, 'rb') as f:
             copied_data = f.read()
         
         assert copied_data == test_data
@@ -238,7 +244,10 @@ def test_large_file():
         print(f"  Files: {stats.copied_files}/{stats.total_files}")
         
         # Verify file size
-        assert Path(dest_file).stat().st_size == file_size
+        # The C++ engine copies to the destination directory with the original filename
+        source_name = Path(large_file).name
+        actual_dest_file = dest_dir / source_name
+        assert actual_dest_file.stat().st_size == file_size
         print("✓ Large file verification passed")
 
 def main():

@@ -45,6 +45,8 @@ class JobOptions:
     # NEW: Multi-destination support
     verify_mode: str = "FAST"  # FAST, STREAM_VERIFY, READBACK_VERIFY
     preset: str = "auto"  # auto, usb, network, custom
+    # NEW: Verification report generation
+    generate_verification_report: bool = True
 
 
 @dataclass

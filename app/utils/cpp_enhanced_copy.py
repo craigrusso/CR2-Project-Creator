@@ -16,11 +16,25 @@ from pathlib import Path
 
 # Try to import the C++ engine
 try:
-    from forwardflow.ingest.engines.build.lib import enhanced_high_perf_engine as cpp_engine
+    import sys
+    import os
+    # Get the absolute path to the project root
+    current_file = os.path.abspath(__file__)
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_file))))
+    # The project root should be FF_V1_1, not the parent directory
+    if os.path.basename(project_root) != 'FF_V1_1':
+        project_root = os.path.join(project_root, 'FF_V1_1')
+    forwardflow_path = os.path.join(project_root, 'forwardflow', 'ingest', 'engines')
+    
+    if forwardflow_path not in sys.path:
+        sys.path.insert(0, forwardflow_path)
+    
+    from build.lib import enhanced_high_perf_engine as cpp_engine
     CPP_ENGINE_AVAILABLE = True
-except ImportError:
+    print("DEBUG: C++ engine imported successfully from build/lib")
+except ImportError as e:
     CPP_ENGINE_AVAILABLE = False
-    print("Warning: C++ enhanced copy engine not available, falling back to Python implementation")
+    print(f"Warning: C++ enhanced copy engine not available, falling back to Python implementation: {e}")
 
 # Import the Python fallback
 try:
@@ -163,18 +177,26 @@ class CppEnhancedCopyEngine:
     def _auto_tune_parameters(self, source_paths: List[str], destination_paths: List[str], 
                              options: CopyOptions) -> CopyOptions:
         """Auto-tune parameters based on source and destination paths"""
-        tuned_options = CopyOptions(
-            block_size=options.block_size,
-            thread_count=options.thread_count,
-            use_direct_io=options.use_direct_io,
-            verify_integrity=options.verify_integrity,
-            hash_algorithm=options.hash_algorithm,
-            mtu_size=options.mtu_size,
-            socket_buffer_size=options.socket_buffer_size,
-            adaptive_parameters=options.adaptive_parameters,
-            large_file_threshold=options.large_file_threshold,
-            progress_callback=options.progress_callback
-        )
+        # Only copy attributes that exist in the target CopyOptions class
+        tuned_options = CopyOptions()
+        
+        # Copy basic attributes
+        if hasattr(options, 'block_size'):
+            tuned_options.block_size = options.block_size
+        if hasattr(options, 'thread_count'):
+            tuned_options.thread_count = options.thread_count
+        if hasattr(options, 'use_direct_io'):
+            tuned_options.use_direct_io = options.use_direct_io
+        if hasattr(options, 'verify_integrity'):
+            tuned_options.verify_integrity = options.verify_integrity
+        if hasattr(options, 'hash_algorithm'):
+            tuned_options.hash_algorithm = options.hash_algorithm
+        if hasattr(options, 'adaptive_parameters'):
+            tuned_options.adaptive_parameters = options.adaptive_parameters
+        if hasattr(options, 'large_file_threshold'):
+            tuned_options.large_file_threshold = options.large_file_threshold
+        if hasattr(options, 'progress_callback'):
+            tuned_options.progress_callback = options.progress_callback
         
         # Analyze paths to determine optimal settings
         all_paths = source_paths + destination_paths
@@ -259,15 +281,26 @@ class CppEnhancedCopyEngine:
             cpp_job = cpp_engine.CopyJob()
             cpp_job.source_paths = source_paths
             cpp_job.destination_paths = destination_paths
-            cpp_job.block_size = options.block_size
-            cpp_job.thread_count = options.thread_count
-            cpp_job.use_direct_io = bool(options.use_direct_io)  # Convert to bool
-            cpp_job.verify_integrity = options.verify_integrity
-            cpp_job.hash_algorithm = options.hash_algorithm
-            cpp_job.mtu_size = options.mtu_size
-            cpp_job.socket_buffer_size = options.socket_buffer_size
-            cpp_job.adaptive_parameters = options.adaptive_parameters
-            cpp_job.large_file_threshold = options.large_file_threshold
+            
+            # Only set attributes that exist in the options
+            if hasattr(options, 'block_size'):
+                cpp_job.block_size = options.block_size
+            if hasattr(options, 'thread_count'):
+                cpp_job.thread_count = options.thread_count
+            if hasattr(options, 'use_direct_io'):
+                cpp_job.use_direct_io = bool(options.use_direct_io)  # Convert to bool
+            if hasattr(options, 'verify_integrity'):
+                cpp_job.verify_integrity = options.verify_integrity
+            if hasattr(options, 'hash_algorithm'):
+                cpp_job.hash_algorithm = options.hash_algorithm
+            if hasattr(options, 'mtu_size'):
+                cpp_job.mtu_size = options.mtu_size
+            if hasattr(options, 'socket_buffer_size'):
+                cpp_job.socket_buffer_size = options.socket_buffer_size
+            if hasattr(options, 'adaptive_parameters'):
+                cpp_job.adaptive_parameters = options.adaptive_parameters
+            if hasattr(options, 'large_file_threshold'):
+                cpp_job.large_file_threshold = options.large_file_threshold
             
             # Set up progress callback if provided
             if options.progress_callback:
@@ -416,12 +449,28 @@ class CppEnhancedCopyEngine:
 def copy_files(source_paths: List[str], destination_paths: List[str], **kwargs) -> CopyStats:
     """Copy files using the best available engine with auto-tuning"""
     engine = CppEnhancedCopyEngine()
-    options = CopyOptions(**kwargs)
+    
+    # Filter out unsupported parameters for Python fallback
+    supported_kwargs = {k: v for k, v in kwargs.items() 
+                       if k in ['block_size', 'thread_count', 'use_direct_io', 
+                               'verify_integrity', 'hash_algorithm', 'progress_callback',
+                               'adaptive_parameters', 'large_file_threshold', 'files_in_flight', 'ranges_per_file']}
+    
+    options = CopyOptions(**supported_kwargs)
     return engine.copy_files(source_paths, destination_paths, options)
 
 def copy_file(source_path: str, destination_path: str, **kwargs) -> CopyStats:
     """Copy a single file using the best available engine with auto-tuning"""
-    return copy_files([source_path], [destination_path], **kwargs)
+    # For single file copy, the destination should be a file path, not a directory
+    # The C++ engine expects destination_paths to be directories, so we need to extract the directory
+    if os.path.isfile(source_path):
+        # Single file copy - destination should be the directory containing the file
+        dest_dir = os.path.dirname(destination_path)
+        # The C++ engine will copy the file to the destination directory with the same name
+        return copy_files([source_path], [dest_dir], **kwargs)
+    else:
+        # Directory copy
+        return copy_files([source_path], [destination_path], **kwargs)
 
 def copy_directory(source_dir: str, destination_dir: str, **kwargs) -> CopyStats:
     """Copy a directory using the best available engine with auto-tuning"""
