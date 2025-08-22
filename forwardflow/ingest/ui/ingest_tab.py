@@ -1466,7 +1466,6 @@ def build_ingest_tab():
     bridge.sigFileProgress.connect(handle_file_progress, QtCore.Qt.ConnectionType.QueuedConnection)
     bridge.sigFileCompleted.connect(handle_file_completed, QtCore.Qt.ConnectionType.QueuedConnection)
     bridge.sigDestProgress.connect(handle_dest_progress, QtCore.Qt.ConnectionType.QueuedConnection)
-    bridge.sigJobCancelled.connect(handle_job_cancelled, QtCore.Qt.ConnectionType.QueuedConnection)
     
     # Wire up button handlers
     def on_start():
@@ -1735,6 +1734,9 @@ def build_ingest_tab():
             print(f"DEBUG: Error in handle_job_cancelled: {e}")
             import traceback
             traceback.print_exc()
+    
+    # Connect the job cancelled signal after the function is defined
+    bridge.sigJobCancelled.connect(handle_job_cancelled, QtCore.Qt.ConnectionType.QueuedConnection)
     
     # Wire up browse buttons
     def _browse_for_path():

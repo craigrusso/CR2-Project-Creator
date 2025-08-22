@@ -6,6 +6,7 @@ class QtEventBridge(QtCore.QObject):
     sigJobProgress    = QtCore.pyqtSignal(dict)
     sigJobCompleted   = QtCore.pyqtSignal(dict)
     sigJobError       = QtCore.pyqtSignal(dict)
+    sigJobCancelled   = QtCore.pyqtSignal(dict)
     sigFileStarted    = QtCore.pyqtSignal(dict)
     sigFileProgress   = QtCore.pyqtSignal(dict)
     sigFileCompleted  = QtCore.pyqtSignal(dict)
@@ -51,6 +52,8 @@ def emit_event(kind: str, payload: dict):
             b.sigJobCompleted.emit(payload)
         elif kind == "job.error":
             b.sigJobError.emit(payload)
+        elif kind == "job.cancelled":
+            b.sigJobCancelled.emit(payload)
         elif kind == "file.started":
             b.sigFileStarted.emit(payload)
         elif kind == "file.progress":
