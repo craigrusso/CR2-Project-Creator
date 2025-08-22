@@ -89,17 +89,12 @@ class PythonCopyEngine(Engine):
         """Start a single-destination copy job"""
         print(f"DEBUG: _start_single_destination called with job: {job.job_id}")
         try:
-            print(f"DEBUG: Getting policy...")
-            policy = SimplePolicy()
-            print(f"DEBUG: Policy created: {policy}")
+            # Convert single destination to multi-destination format for C++ engine
+            if not hasattr(job, 'destination_roots'):
+                job.destination_roots = [job.destination_root]
             
-            print(f"DEBUG: Planning job...")
-            files: list[FileSpec] = list(policy.plan(job))
-            print(f"DEBUG: Plan created with {len(files)} files")
-            
-            print(f"DEBUG: Starting copy files...")
-            self._copy_files(job, files)
-            print(f"DEBUG: Copy files completed")
+            # Use the multi-destination C++ engine
+            self._start_multi_destination(job)
             
         except Exception as e:
             print(f"DEBUG: Error in _start_single_destination: {e}")
@@ -111,33 +106,31 @@ class PythonCopyEngine(Engine):
         """Start a multi-destination fan-out copy job"""
         print(f"DEBUG: _start_multi_destination called with job: {job.job_id}")
         try:
-            # Try C++ engine first for maximum performance
             try:
-                print(f"DEBUG: Attempting to use C++ engine for maximum performance...")
-                # Try multiple import paths for the C++ engine
-                cpp_engine = None
+                # Try to import the C++ engine for maximum performance
+                print(f"DEBUG: Attempting to import C++ engine...")
+                
                 try:
-                    # Try the build/lib directory first
-                    import sys
-                    import os
-                    current_dir = os.path.dirname(os.path.abspath(__file__))
-                    build_lib_path = os.path.join(current_dir, "build", "lib")
-                    print(f"DEBUG: Trying to import from build/lib path: {build_lib_path}")
-                    if build_lib_path not in sys.path:
-                        sys.path.insert(0, build_lib_path)
-                        print(f"DEBUG: Added {build_lib_path} to sys.path")
-                    
+                    # Try the current directory first (where the .so file is)
                     import enhanced_high_perf_engine as cpp_engine
-                    print(f"DEBUG: C++ engine imported successfully from build/lib")
+                    print(f"DEBUG: C++ engine imported successfully from current directory")
                 except ImportError as e1:
-                    print(f"DEBUG: Failed to import from build/lib: {e1}")
+                    print(f"DEBUG: Failed to import from current directory: {e1}")
                     try:
-                        # Try the current directory
-                        print(f"DEBUG: Trying to import from current directory: {current_dir}")
+                        # Try the build/lib directory
+                        import sys
+                        import os
+                        current_dir = os.path.dirname(os.path.abspath(__file__))
+                        build_lib_path = os.path.join(current_dir, "build", "lib")
+                        print(f"DEBUG: Trying to import from build/lib path: {build_lib_path}")
+                        if build_lib_path not in sys.path:
+                            sys.path.insert(0, build_lib_path)
+                            print(f"DEBUG: Added {build_lib_path} to sys.path")
+                        
                         import enhanced_high_perf_engine as cpp_engine
-                        print(f"DEBUG: C++ engine imported successfully from current directory")
+                        print(f"DEBUG: C++ engine imported successfully from build/lib")
                     except ImportError as e2:
-                        print(f"DEBUG: Failed to import from current directory: {e2}")
+                        print(f"DEBUG: Failed to import from build/lib: {e2}")
                         print(f"DEBUG: C++ engine not found in any location")
                         raise
                 
@@ -148,14 +141,17 @@ class PythonCopyEngine(Engine):
                     return
             except ImportError as e:
                 print(f"DEBUG: C++ engine not available: {e}")
+                # Don't fall back to Python - fail fast if C++ engine isn't available
+                raise RuntimeError(f"C++ engine is required but not available: {e}")
             except Exception as e:
-                print(f"DEBUG: C++ engine failed, falling back to Python: {e}")
+                print(f"DEBUG: C++ engine failed: {e}")
                 import traceback
                 traceback.print_exc()
+                # Don't fall back to Python - fail fast if C++ engine fails
+                raise RuntimeError(f"C++ engine failed: {e}")
             
-            # Fallback to Python engine
-            print(f"DEBUG: Using Python fallback engine")
-            self._start_multi_destination_fallback(job)
+            # This should never be reached since we either succeed or raise an exception
+            raise RuntimeError("C++ engine initialization failed")
         except Exception as e:
             print(f"DEBUG: Error in _start_multi_destination: {e}")
             import traceback
@@ -398,7 +394,21 @@ class PythonCopyEngine(Engine):
             # Don't fail the transfer job due to report generation issues
 
     def cancel(self, job_id: str) -> None:  # pragma: no cover - simple flag
+        """Cancel a job immediately and forcefully."""
+        print(f"DEBUG: Canceling job {job_id}")
+        # Set the cancel event
         self._cancels.setdefault(job_id, threading.Event()).set()
+        
+        # Force stop any running copy operations
+        if hasattr(self, '_current_executor') and self._current_executor:
+            try:
+                print(f"DEBUG: Shutting down executor for job {job_id}")
+                self._current_executor.shutdown(wait=False, cancel_futures=True)
+                print(f"DEBUG: Executor shutdown for job {job_id}")
+            except Exception as e:
+                print(f"DEBUG: Error shutting down executor: {e}")
+        
+        print(f"DEBUG: Job {job_id} cancellation complete")
 
     def cancel_destination(self, dest_path: str) -> None:
         """Cancel a specific destination by path"""
@@ -407,7 +417,7 @@ class PythonCopyEngine(Engine):
         for job_id in list(self._job_stats.keys()):
             if dest_path in job_id:
                 print(f"DEBUG: Canceling job {job_id} for destination {dest_path}")
-                self._cancels.setdefault(job_id, threading.Event()).set()
+                self.cancel(job_id)
 
     def _copy_files(self, job: JobSpec, files: list[FileSpec]) -> None:
         """Copy files according to the plan"""

@@ -1423,6 +1423,8 @@ def build_ingest_tab():
                             print(f"DEBUG: File failed event received - {payload.get('filename', 'unknown')} - Error: {payload.get('error', 'unknown')}")
                         elif event_type == "job.completed":
                             handle_job_completed(payload)
+                        elif event_type == "job.cancelled":
+                            handle_job_cancelled(payload)
                         else:
                             print(f"DEBUG: Unknown event type: {event_type}")
                     except Exception as e:
@@ -1464,6 +1466,7 @@ def build_ingest_tab():
     bridge.sigFileProgress.connect(handle_file_progress, QtCore.Qt.ConnectionType.QueuedConnection)
     bridge.sigFileCompleted.connect(handle_file_completed, QtCore.Qt.ConnectionType.QueuedConnection)
     bridge.sigDestProgress.connect(handle_dest_progress, QtCore.Qt.ConnectionType.QueuedConnection)
+    bridge.sigJobCancelled.connect(handle_job_cancelled, QtCore.Qt.ConnectionType.QueuedConnection)
     
     # Wire up button handlers
     def on_start():
@@ -1664,11 +1667,9 @@ def build_ingest_tab():
                 root.current_job.cancel(job_id)
                 print("DEBUG: Cancel command sent to engine")
                 
-                # Update button states
-                start_btn.setEnabled(True)
-                pause_btn.setEnabled(False)
-                cancel_btn.setEnabled(False)
-                print("DEBUG: Button states updated for cancel")
+                # Don't re-enable start button yet - wait for job.cancelled event
+                # The button states will be updated when the job actually stops
+                print("DEBUG: Waiting for job to actually cancel...")
             else:
                 print("DEBUG: No current job or job doesn't have cancel method")
                 print(f"DEBUG: root.current_job: {root.current_job}")
@@ -1680,10 +1681,60 @@ def build_ingest_tab():
             import traceback
             traceback.print_exc()
         
-        start_btn.setEnabled(True)
-        pause_btn.setEnabled(False)
-        cancel_btn.setEnabled(False)
-        print("DEBUG: Button states updated")
+        # Don't update button states here - wait for job.cancelled event
+        print("DEBUG: Cancel command sent, waiting for job to stop...")
+    
+    def handle_job_cancelled(payload):
+        """Handle job cancellation completion"""
+        print(f"DEBUG: handle_job_cancelled called with: {payload}")
+        try:
+            # Job has been cancelled, update UI
+            if hasattr(root, 'total_progress') and root.total_progress:
+                root.total_progress.setValue(0)
+                print("DEBUG: Progress bar reset to 0%")
+            
+            if hasattr(root, 'status_label') and root.status_label:
+                root.status_label.setText("Cancelled")
+                print("DEBUG: Status label updated to show cancellation")
+            
+            # Update destination status
+            if hasattr(root, 'destinations'):
+                for i, dest_obj in enumerate(root.destinations):
+                    if 'status_label' in dest_obj:
+                        dest_obj['status_label'].setText("Cancelled")
+                    if 'progress_bar' in dest_obj:
+                        dest_obj['progress_bar'].setValue(0)
+                print("DEBUG: Destination controls updated for cancellation")
+            
+            # Clear file widgets
+            if hasattr(root, 'file_widgets'):
+                for file_id in list(root.file_widgets.keys()):
+                    _remove_file_widget(file_id)
+                root.active_files = 0
+                files_count.setText("0 files")
+                print("DEBUG: File widgets cleared")
+            
+            # Re-enable controls after job cancellation
+            if hasattr(root, 'report_checkbox'):
+                root.report_checkbox.setEnabled(True)
+            
+            # Re-enable main controls
+            conc_slider.setEnabled(True)
+            stream_slider.setEnabled(True)
+            verify_combo.setEnabled(True)
+            preset_combo.setEnabled(True)
+            add_dest_btn.setEnabled(True)
+            start_btn.setEnabled(True)
+            pause_btn.setEnabled(False)
+            cancel_btn.setEnabled(False)
+            print("DEBUG: Main controls re-enabled after cancellation")
+            
+            print("DEBUG: handle_job_cancelled completed successfully")
+            
+        except Exception as e:
+            print(f"DEBUG: Error in handle_job_cancelled: {e}")
+            import traceback
+            traceback.print_exc()
     
     # Wire up browse buttons
     def _browse_for_path():

@@ -892,7 +892,12 @@ public:
         event_sink_ = sink;
     }
     
-    void cancel() { cancelled_ = true; }
+    void cancel() { 
+        cancelled_ = true; 
+        // Force immediate shutdown of any running operations
+        std::cout << "DEBUG: C++ Engine cancellation requested - forcing immediate shutdown" << std::endl;
+    }
+    
     void pause() { paused_ = true; }
     void resume() { paused_ = false; }
     
@@ -1134,9 +1139,19 @@ public:
             stats_.speed_mbps = (stats_.copied_bytes / (1024.0 * 1024.0)) / stats_.duration();
         }
         
-        // NEW: Write verification reports if enabled
-        if (job.generate_verification_report && !verification_records_.empty()) {
-            write_verification_reports(job);
+        // Check if job was cancelled and emit appropriate event
+        if (cancelled_) {
+            std::cout << "DEBUG: C++ Engine job cancelled - emitting job.cancelled event" << std::endl;
+            emit_event_make("job.cancelled", [&](py::dict& payload){
+                payload["bytes_copied"] = stats_.copied_bytes;
+                payload["total_bytes"] = stats_.total_bytes;
+                payload["elapsed_time"] = stats_.duration();
+            });
+        } else {
+            // NEW: Write verification reports if enabled
+            if (job.generate_verification_report && !verification_records_.empty()) {
+                write_verification_reports(job);
+            }
         }
         
         // Emit job completed event with data speed (GIL-safe)
@@ -1216,18 +1231,40 @@ private:
         std::vector<std::future<bool>> futs;
 
         for (const auto& source_file : files) {
-            if (cancelled_) break;
+            if (cancelled_) {
+                std::cout << "DEBUG: C++ Engine cancelled during file iteration - exiting immediately" << std::endl;
+                break;
+            }
             fs::path dst = fs::path(destination) / fs::path(source_file).filename();
             fs::create_directories(dst.parent_path());
 
             // Wait for available slot
             {
                 std::unique_lock<std::mutex> lock(slots_mutex);
-                slots_cv.wait(lock, [&] { return available_slots > 0; });
-                available_slots--;
+                // Check cancellation while waiting for slot
+                if (slots_cv.wait_for(lock, std::chrono::milliseconds(100), [&] { return available_slots > 0 || cancelled_; })) {
+                    if (cancelled_) {
+                        std::cout << "DEBUG: C++ Engine cancelled while waiting for slot - exiting immediately" << std::endl;
+                        break;
+                    }
+                    available_slots--;
+                } else {
+                    // Timeout or cancelled
+                    if (cancelled_) {
+                        std::cout << "DEBUG: C++ Engine cancelled during slot wait timeout - exiting immediately" << std::endl;
+                        break;
+                    }
+                    continue;
+                }
             }
             
             futs.emplace_back(std::async(std::launch::async, [this, &job, source_file, dst, &slots_mutex, &slots_cv, &available_slots, &last_progress_time, progress_interval]() {
+                // Check cancellation at start of each async task
+                if (cancelled_) {
+                    std::cout << "DEBUG: C++ Engine async task cancelled before start - exiting immediately" << std::endl;
+                    return false;
+                }
+                
                 CopyJob local = job;
                 if (local.adaptive_parameters) {
                     local.ranges_per_file = std::max(1, local.ranges_per_file); // keep 1 on USB/TB
@@ -1256,21 +1293,74 @@ private:
                 return ok;
             }));
         }
-        for (auto& f : futs) { try { if (f.get()) inc_files(); } catch (...) { add_error("Copy task failed"); } }
+        
+        // Check cancellation before waiting for futures
+        if (cancelled_) {
+            std::cout << "DEBUG: C++ Engine cancelled before waiting for futures - cancelling all tasks" << std::endl;
+            // Cancel all pending futures
+            for (auto& f : futs) {
+                f.wait_for(std::chrono::milliseconds(1)); // Don't wait long
+            }
+            return;
+        }
+        
+        for (auto& f : futs) { 
+            if (cancelled_) {
+                std::cout << "DEBUG: C++ Engine cancelled while processing futures - exiting immediately" << std::endl;
+                break;
+            }
+            try { 
+                if (f.get()) inc_files(); 
+            } catch (...) { 
+                if (!cancelled_) { // Only add error if not cancelled
+                    add_error("Copy task failed"); 
+                }
+            } 
+        }
     }
     
     // 3) Fix multi-destination bug (use the actual destination)
     void copy_to_multiple_destinations(const CopyJob& job, const std::vector<std::string>& files) {
         std::vector<std::future<void>> dst_futs;
         for (const auto& dest : job.destination_paths) {
+            if (cancelled_) {
+                std::cout << "DEBUG: C++ Engine cancelled during multi-destination setup - exiting immediately" << std::endl;
+                return;
+            }
             fs::create_directories(dest);
             dst_futs.emplace_back(std::async(std::launch::async, [this, &job, &files, dest](){
+                if (cancelled_) {
+                    std::cout << "DEBUG: C++ Engine async destination task cancelled - exiting immediately" << std::endl;
+                    return;
+                }
                 CopyJob j = job;
                 j.destination_paths = { dest };   // <-- key fix
                 copy_to_single_destination(j, files);
             }));
         }
-        for (auto& f : dst_futs) { try { f.get(); } catch (...) { add_error("Multi-destination copy failed"); } }
+        
+        // Check cancellation before waiting for futures
+        if (cancelled_) {
+            std::cout << "DEBUG: C++ Engine cancelled before waiting for destination futures - cancelling all tasks" << std::endl;
+            for (auto& f : dst_futs) {
+                f.wait_for(std::chrono::milliseconds(1)); // Don't wait long
+            }
+            return;
+        }
+        
+        for (auto& f : dst_futs) { 
+            if (cancelled_) {
+                std::cout << "DEBUG: C++ Engine cancelled while processing destination futures - exiting immediately" << std::endl;
+                break;
+            }
+            try { 
+                f.get(); 
+            } catch (...) { 
+                if (!cancelled_) { // Only add error if not cancelled
+                    add_error("Multi-destination copy failed"); 
+                }
+            } 
+        }
     }
     
     // NEW: Multi-destination fan-out (read once → write to N destinations)
@@ -1301,19 +1391,45 @@ private:
         std::vector<std::future<bool>> futs;
 
         for (const auto& source_file : files) {
-            if (cancelled_) break;
+            if (cancelled_) {
+                std::cout << "DEBUG: C++ Engine cancelled during fan-out file iteration - exiting immediately" << std::endl;
+                break;
+            }
             
             // Wait for available slot
             {
                 std::unique_lock<std::mutex> lock(slots_mutex);
-                slots_cv.wait(lock, [&] { return available_slots > 0; });
-                available_slots--;
+                // Check cancellation while waiting for slot
+                if (slots_cv.wait_for(lock, std::chrono::milliseconds(100), [&] { return available_slots > 0 || cancelled_; })) {
+                    if (cancelled_) {
+                        std::cout << "DEBUG: C++ Engine cancelled while waiting for fan-out slot - exiting immediately" << std::endl;
+                        break;
+                    }
+                    available_slots--;
+                } else {
+                    // Timeout or cancelled
+                    if (cancelled_) {
+                        std::cout << "DEBUG: C++ Engine cancelled during fan-out slot wait timeout - exiting immediately" << std::endl;
+                        break;
+                    }
+                    continue;
+                }
             }
             
             futs.emplace_back(std::async(std::launch::async, [this, &job, source_file, &slots_mutex, &slots_cv, &available_slots]() {
+                // Check cancellation at start of each async task
+                if (cancelled_) {
+                    std::cout << "DEBUG: C++ Engine fan-out async task cancelled before start - exiting immediately" << std::endl;
+                    return false;
+                }
+                
                 // Build destination paths for this file
                 std::vector<std::string> dest_paths;
                 for (const auto& dest : job.destination_paths) {
+                    if (cancelled_) {
+                        std::cout << "DEBUG: C++ Engine cancelled during destination path building - exiting immediately" << std::endl;
+                        return false;
+                    }
                     fs::path dst = fs::path(dest) / fs::path(source_file).filename();
                     fs::create_directories(dst.parent_path());
                     dest_paths.push_back(dst.string());
@@ -1337,26 +1453,35 @@ private:
                 }
                 
                 // Emit job progress periodically
-                auto now = std::chrono::high_resolution_clock::now();
-                static auto last_progress_time = now;
-                const auto progress_interval = std::chrono::milliseconds(100);
-                if (now - last_progress_time >= progress_interval) {
-                    emit_event_make("job.progress", [&](py::dict& payload){
-                        payload["copied_bytes"] = stats_.copied_bytes;
-                        payload["total_bytes"] = stats_.total_bytes;
-                    });
-                    last_progress_time = now;
-                }
+                emit_event_make("job.progress", [&](py::dict& payload){
+                    payload["copied_bytes"] = stats_.copied_bytes;
+                    payload["total_bytes"] = stats_.total_bytes;
+                });
                 
                 return ok;
             }));
         }
         
+        // Check cancellation before waiting for futures
+        if (cancelled_) {
+            std::cout << "DEBUG: C++ Engine cancelled before waiting for fan-out futures - cancelling all tasks" << std::endl;
+            for (auto& f : futs) {
+                f.wait_for(std::chrono::milliseconds(1)); // Don't wait long
+            }
+            return;
+        }
+        
         for (auto& f : futs) { 
+            if (cancelled_) {
+                std::cout << "DEBUG: C++ Engine cancelled while processing fan-out futures - exiting immediately" << std::endl;
+                break;
+            }
             try { 
-                f.get(); 
+                if (f.get()) inc_files(); 
             } catch (...) { 
-                add_error("Multi-destination fan-out copy failed"); 
+                if (!cancelled_) { // Only add error if not cancelled
+                    add_error("Fan-out copy failed"); 
+                }
             } 
         }
     }
@@ -1528,7 +1653,16 @@ private:
             size_t total_copied = 0;
             
             while (total_copied < file_size && !cancelled_) {
+                if (cancelled_) {
+                    std::cout << "DEBUG: C++ Engine cancelled during direct I/O copy - exiting immediately" << std::endl;
+                    break;
+                }
+                
                 while (paused_) {
+                    if (cancelled_) {
+                        std::cout << "DEBUG: C++ Engine cancelled during pause - exiting immediately" << std::endl;
+                        goto copy_cancelled;
+                    }
                     std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 }
                 
@@ -1549,6 +1683,14 @@ private:
                     payload["bytes"] = total_copied;
                     payload["total"] = file_size;
                 });
+            }
+            
+            if (cancelled_) {
+                std::cout << "DEBUG: C++ Engine copy cancelled - cleaning up" << std::endl;
+                copy_cancelled:
+                CrossPlatformIO::close_handle(src_handle);
+                CrossPlatformIO::close_handle(dst_handle);
+                return false;
             }
             
             CrossPlatformIO::close_handle(src_handle);
