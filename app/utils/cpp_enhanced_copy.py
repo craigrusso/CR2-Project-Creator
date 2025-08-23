@@ -14,14 +14,20 @@ from typing import List, Optional, Dict, Any, Callable, Union
 from dataclasses import dataclass
 from pathlib import Path
 
-# Try to import the C++ engine
+# Try to import the C++ enhanced copy engine
+CPP_ENGINE_AVAILABLE = False
+cpp_engine = None
+
 try:
+    # Add the forwardflow engines path to sys.path
     import sys
     import os
-    # Get the absolute path to the project root
-    current_file = os.path.abspath(__file__)
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(current_file))))
-    # The project root should be FF_V1_1, not the parent directory
+    
+    # Get the project root (assuming this file is in app/utils/)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+    
+    # Ensure we're in the right project directory
     if os.path.basename(project_root) != 'FF_V1_1':
         project_root = os.path.join(project_root, 'FF_V1_1')
     forwardflow_path = os.path.join(project_root, 'forwardflow', 'ingest', 'engines')
@@ -29,11 +35,23 @@ try:
     if forwardflow_path not in sys.path:
         sys.path.insert(0, forwardflow_path)
     
-    from build.lib import enhanced_high_perf_engine as cpp_engine
-    CPP_ENGINE_AVAILABLE = True
-    print("DEBUG: C++ engine imported successfully from build/lib")
-except ImportError as e:
+    try:
+        # Use the working C++ engine from High_perf directory
+        high_perf_path = os.path.join(forwardflow_path, "ingest", "engines", "High_perf")
+        if high_perf_path not in sys.path:
+            sys.path.insert(0, high_perf_path)
+        
+        import enhanced_high_perf_engine as cpp_engine
+        CPP_ENGINE_AVAILABLE = True
+        print("DEBUG: C++ engine imported successfully from High_perf directory")
+    except ImportError as e:
+        print(f"DEBUG: C++ engine import failed: {e}")
+        CPP_ENGINE_AVAILABLE = False
+        cpp_engine = None
+        
+except Exception as e:
     CPP_ENGINE_AVAILABLE = False
+    cpp_engine = None
     print(f"Warning: C++ enhanced copy engine not available, falling back to Python implementation: {e}")
 
 # Import the Python fallback

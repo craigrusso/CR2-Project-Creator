@@ -47,6 +47,8 @@ class JobOptions:
     preset: str = "auto"  # auto, usb, network, custom
     # NEW: Verification report generation
     generate_verification_report: bool = True
+    # NEW: Cloud source detection
+    cloud_source: bool = False
 
 
 @dataclass

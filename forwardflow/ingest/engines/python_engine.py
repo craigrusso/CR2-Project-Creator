@@ -110,48 +110,42 @@ class PythonCopyEngine(Engine):
                 # Try to import the C++ engine for maximum performance
                 print(f"DEBUG: Attempting to import C++ engine...")
                 
+                # Use the working setuptools-built engine from High_perf directory
+                import sys
+                import os
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                
+                # Add the High_perf directory to the path
+                high_perf_path = os.path.join(current_dir, "High_perf")
+                if high_perf_path not in sys.path:
+                    sys.path.insert(0, high_perf_path)
+                    print(f"DEBUG: Added High_perf path: {high_perf_path}")
+                
                 try:
-                    # Try the current directory first (where the .so file is)
-                    import enhanced_high_perf_engine as cpp_engine
-                    print(f"DEBUG: C++ engine imported successfully from current directory")
-                except ImportError as e1:
-                    print(f"DEBUG: Failed to import from current directory: {e1}")
-                    try:
-                        # Try the build/lib directory
-                        import sys
-                        import os
-                        current_dir = os.path.dirname(os.path.abspath(__file__))
-                        build_lib_path = os.path.join(current_dir, "build", "lib")
-                        print(f"DEBUG: Trying to import from build/lib path: {build_lib_path}")
-                        if build_lib_path not in sys.path:
-                            sys.path.insert(0, build_lib_path)
-                            print(f"DEBUG: Added {build_lib_path} to sys.path")
-                        
-                        import enhanced_high_perf_engine as cpp_engine
-                        print(f"DEBUG: C++ engine imported successfully from build/lib")
-                    except ImportError as e2:
-                        print(f"DEBUG: Failed to import from build/lib: {e2}")
-                        print(f"DEBUG: C++ engine not found in any location")
-                        raise
+                    import enhanced_high_perf_engine
+                    cpp_engine = enhanced_high_perf_engine
+                    print(f"DEBUG: C++ engine imported successfully from High_perf directory")
+                except Exception as e:
+                    print(f"DEBUG: Failed to import C++ engine: {e}")
+                    print(f"DEBUG: C++ engine not available, falling back to Python implementation")
+                    cpp_engine = None
                 
                 if cpp_engine:
                     print("DEBUG: C++ engine found, using it for maximum performance")
                     self._cpp_engine_used = True
                     self._start_multi_destination_cpp(job, cpp_engine)
                     return
-            except ImportError as e:
-                print(f"DEBUG: C++ engine not available: {e}")
-                # Don't fall back to Python - fail fast if C++ engine isn't available
-                raise RuntimeError(f"C++ engine is required but not available: {e}")
+                else:
+                    print("DEBUG: C++ engine not available, using Python fallback")
+                    self._start_multi_destination_fallback(job)
+                    return
+                    
             except Exception as e:
                 print(f"DEBUG: C++ engine failed: {e}")
-                import traceback
-                traceback.print_exc()
-                # Don't fall back to Python - fail fast if C++ engine fails
-                raise RuntimeError(f"C++ engine failed: {e}")
+                print("DEBUG: Falling back to Python implementation")
+                self._start_multi_destination_fallback(job)
+                return
             
-            # This should never be reached since we either succeed or raise an exception
-            raise RuntimeError("C++ engine initialization failed")
         except Exception as e:
             print(f"DEBUG: Error in _start_multi_destination: {e}")
             import traceback
@@ -176,11 +170,13 @@ class PythonCopyEngine(Engine):
             print(f"DEBUG: C++ CopyJob created successfully")
             
             print(f"DEBUG: Setting up event sink...")
-            # Set up event sink
+            # Set up event sink - use ONLY set_event_sink, not progress_callback
             def event_sink(event_type: str, payload: dict):
                 self._emit(job.job_id, event_type, payload)
             
-            cpp_job.progress_callback = event_sink
+            # DO NOT set progress_callback - it conflicts with set_event_sink
+            # cpp_job.progress_callback = event_sink  # REMOVED
+            
             print(f"DEBUG: Event sink set up successfully")
             
             print(f"DEBUG: Creating C++ engine...")

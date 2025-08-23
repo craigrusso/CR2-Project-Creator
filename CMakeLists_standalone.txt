@@ -1,0 +1,13 @@
+cmake_minimum_required(VERSION 3.16)
+project(StandaloneTest)
+
+# Set C++ standard
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Find required packages
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+find_package(pybind11 REQUIRED)
+
+# Create the Python module
+pybind11_add_module(standalone_test test_standalone.cpp)

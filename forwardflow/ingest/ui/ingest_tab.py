@@ -10,6 +10,7 @@ import os
 import time
 import threading
 import json
+import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -518,7 +519,9 @@ def build_ingest_tab():
     report_layout.addWidget(report_checkbox)
     settings_layout.addLayout(report_layout)
     
-    # Store reference for later use
+    # Store widget references in root for access from button handlers
+    root.verify_combo = verify_combo
+    root.preset_combo = preset_combo
     root.report_checkbox = report_checkbox
     
     layout.addLayout(settings_layout)
@@ -1469,133 +1472,104 @@ def build_ingest_tab():
     
     # Wire up button handlers
     def on_start():
-        if not root.src_combo.currentText().strip() or not root.destinations:
-            print("DEBUG: Source path is empty or no destinations added")
-            return
+        print("DEBUG: ===== START BUTTON CLICKED =====")
+        print(f"DEBUG: Current job state: {getattr(root, 'current_job', 'None')}")
+        print(f"DEBUG: Start button enabled: {start_btn.isEnabled()}")
+        print(f"DEBUG: Start button text: {start_btn.text()}")
         
-        # Check if we're resuming a paused job
-        if root.current_job and hasattr(root.current_job, 'resume'):
-            print("DEBUG: Resuming paused job")
-            on_resume()
-            return
-        
-        # Create a unique job ID
-        job_id = f"ingest_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        print(f"DEBUG: Starting ingest job: {job_id}")
-        
-        # Update UI state
-        start_btn.setEnabled(False)
-        pause_btn.setEnabled(True)
-        cancel_btn.setEnabled(True)
-        
-        def run():
-            print(f"DEBUG: Starting ingest job in background thread")
-            # Get job parameters from UI
+        try:
+            if not root.src_combo.currentText().strip() or not root.destinations:
+                print("DEBUG: Source path is empty or no destinations added")
+                return
+
+            print("DEBUG: Starting ingest job...")
+            
+            # Generate unique job ID
+            job_id = f"ingest_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            print(f"DEBUG: Generated job ID: {job_id}")
+            
+            # Get source and destinations
             source_path = root.src_combo.currentText().strip()
             dest_paths = [dest["path"] for dest in root.destinations]
-            verify_mode = verify_combo.currentText()
-            global_preset = preset_combo.currentText()
-            
             print(f"DEBUG: Source: {source_path}")
             print(f"DEBUG: Destinations: {dest_paths}")
+            
+            # Get verification mode
+            verify_mode = root.verify_combo.currentText()
             print(f"DEBUG: Verify Mode: {verify_mode}")
+            
+            # Get global preset
+            global_preset = root.preset_combo.currentText()
             print(f"DEBUG: Global Preset: {global_preset}")
             
+            # Import JobSpec and JobOptions
+            print("DEBUG: Importing JobSpec and JobOptions...")
             try:
-                # Import the necessary classes for creating a proper job
-                print(f"DEBUG: Importing JobSpec and JobOptions...")
-                # JobSpec and JobOptions are already imported at the top
-                from pathlib import Path
-                print(f"DEBUG: JobSpec and JobOptions imported successfully")
-                
-                # Create a JobSpec with the source and multiple destinations
-                print(f"DEBUG: Creating JobSpec...")
+                from forwardflow.ingest.api.models import JobSpec, JobOptions
+                print("DEBUG: JobSpec and JobOptions imported successfully")
+            except ImportError as e:
+                print(f"DEBUG: Failed to import JobSpec/JobOptions: {e}")
+                return
+            
+            # Create JobSpec
+            print("DEBUG: Creating JobSpec...")
+            try:
                 job = JobSpec(
                     job_id=job_id,
                     source_root=source_path,
-                    destination_roots=dest_paths,  # Multiple destinations
+                    destination_roots=dest_paths,
                     options=JobOptions(
-                        mode="FAST" if verify_mode == "FAST" else "BALANCED",
+                        mode='FAST' if verify_mode == 'FAST' else 'BALANCED',
+                        per_file_concurrency=1,
+                        stream_concurrency=1,
+                        verify_algorithm='xxh64',
                         verify_mode=verify_mode,
                         preset=global_preset,
-                        per_file_concurrency=1,  # Will be auto-tuned per destination
-                        stream_concurrency=1,    # Will be auto-tuned per destination
-                        # NEW: Include verification report option
-                        generate_verification_report=root.report_checkbox.isChecked()
+                        generate_verification_report=True
                     )
                 )
-                
                 print(f"DEBUG: Created JobSpec: {job}")
-                
-                # Use bridge emitter via engine wrapper
-                sink = type("BridgeSink", (), {"emit": lambda _self, kind, payload: emit_event(kind, payload)})()
-                print(f"DEBUG: Using BridgeSink")
-                
-                # Create and start the engine
-                print(f"DEBUG: Importing PythonCopyEngine...")
-                # PythonCopyEngine is already imported at the top
-                print(f"DEBUG: PythonCopyEngine imported successfully")
-                
-                print(f"DEBUG: Creating PythonCopyEngine instance...")
-                engine = PythonCopyEngine(sink=sink)
-                print(f"DEBUG: PythonCopyEngine created: {engine}")
-                
-                # Check which engine type is being used
-                if hasattr(engine, '_cpp_engine_used'):
-                    print("DEBUG: C++ engine is being used")
-                else:
-                    print("DEBUG: Python fallback engine is being used")
-                
-                # Store the engine reference (not the thread)
-                root.current_job = engine
-                print(f"DEBUG: Engine stored in root.current_job")
-                
-                # Freeze controls during copy
-                conc_slider.setEnabled(False)
-                stream_slider.setEnabled(False)
-                verify_combo.setEnabled(False)
-                preset_combo.setEnabled(False)
-                add_dest_btn.setEnabled(False)
-                root.report_checkbox.setEnabled(False)
-                print(f"DEBUG: Controls frozen")
-                
-                print(f"DEBUG: Starting engine with job: {job}")
-                engine.start(job)
-                print(f"DEBUG: Engine completed")
-                
             except Exception as e:
-                print(f"DEBUG: Error starting engine: {e}")
+                print(f"DEBUG: Failed to create JobSpec: {e}")
+                import traceback
                 traceback.print_exc()
-                # Re-enable controls on error
-                conc_slider.setEnabled(True)
-                stream_slider.setEnabled(True)
-                verify_combo.setEnabled(True)
-                preset_combo.setEnabled(True)
-                add_dest_btn.setEnabled(True)
-                root.report_checkbox.setEnabled(True)
-                start_btn.setEnabled(True)
-                pause_btn.setEnabled(False)
-                cancel_btn.setEnabled(False)
-                print(f"DEBUG: Controls re-enabled after error")
-
-        # Start in background thread with better error handling
-        try:
-            job_thread = threading.Thread(target=run, daemon=True)
+                return
+            
+            # Store job reference
+            root.current_job = job
+            print(f"DEBUG: Job stored in root.current_job: {root.current_job}")
+            
+            # Freeze controls
+            print("DEBUG: Freezing controls...")
+            start_btn.setEnabled(False)
+            src_combo.setEnabled(False)
+            src_btn.setEnabled(False)
+            dest_combo.setEnabled(False) # Changed from dest_btn to dest_combo
+            verify_combo.setEnabled(False)
+            preset_combo.setEnabled(False)
+            print("DEBUG: Controls frozen")
+            
+            # Start the job in a background thread
+            print("DEBUG: Starting job in background thread...")
+            job_thread = threading.Thread(
+                target=run_job,
+                args=(job, root),
+                daemon=True
+            )
             job_thread.start()
-            # Don't store the thread in current_job - store the engine instead
+            print("DEBUG: Job thread started")
+            
         except Exception as e:
-            print(f"DEBUG: Error creating job thread: {e}")
+            print(f"DEBUG: Error in on_start: {e}")
+            import traceback
             traceback.print_exc()
-            # Re-enable controls on thread creation error
-            conc_slider.setEnabled(True)
-            stream_slider.setEnabled(True)
+            # Re-enable controls on error
+            start_btn.setEnabled(True)
+            src_combo.setEnabled(True)
+            src_btn.setEnabled(True)
+            dest_combo.setEnabled(True) # Changed from dest_btn to dest_combo
             verify_combo.setEnabled(True)
             preset_combo.setEnabled(True)
-            add_dest_btn.setEnabled(True)
-            root.report_checkbox.setEnabled(True)
-            start_btn.setEnabled(True)
-            pause_btn.setEnabled(False)
-            cancel_btn.setEnabled(False)
     
     def on_pause():
         print("DEBUG: Pause button clicked")
@@ -1781,5 +1755,77 @@ def build_ingest_tab():
     check_button_states()
     
     return root
+
+
+def run_job(job, root):
+    """Run the job in a background thread with comprehensive debugging"""
+    print(f"DEBUG: ===== RUN_JOB STARTED =====")
+    print(f"DEBUG: Job ID: {job.job_id}")
+    print(f"DEBUG: Thread ID: {threading.current_thread().ident}")
+    
+    try:
+        # Use bridge emitter via engine wrapper
+        print("DEBUG: Creating BridgeSink...")
+        sink = type("BridgeSink", (), {"emit": lambda _self, kind, payload: emit_event(kind, payload)})()
+        print("DEBUG: BridgeSink created")
+        
+        # Create and start the engine
+        print("DEBUG: Importing PythonCopyEngine...")
+        try:
+            from forwardflow.ingest.engines.python_engine import PythonCopyEngine
+            print("DEBUG: PythonCopyEngine imported successfully")
+        except ImportError as e:
+            print(f"DEBUG: Failed to import PythonCopyEngine: {e}")
+            raise
+        
+        print("DEBUG: Creating PythonCopyEngine instance...")
+        try:
+            engine = PythonCopyEngine(sink=sink)
+            print(f"DEBUG: PythonCopyEngine created: {engine}")
+        except Exception as e:
+            print(f"DEBUG: Failed to create PythonCopyEngine: {e}")
+            raise
+        
+        # Check which engine type is being used
+        if hasattr(engine, '_cpp_engine_used'):
+            print("DEBUG: C++ engine is being used")
+        else:
+            print("DEBUG: Python fallback engine is being used")
+        
+        # Store the engine reference
+        root.current_job = engine
+        print("DEBUG: Engine stored in root.current_job")
+        
+        print("DEBUG: Starting engine with job...")
+        try:
+            engine.start(job)
+            print("DEBUG: Engine completed successfully")
+        except Exception as e:
+            print(f"DEBUG: Engine failed: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+            
+    except Exception as e:
+        print(f"DEBUG: Error in run_job: {e}")
+        import traceback
+        traceback.print_exc()
+        
+        # Re-enable controls on error
+        def reenable_controls():
+            start_btn.setEnabled(True)
+            src_combo.setEnabled(True)
+            src_btn.setEnabled(True)
+            dest_combo.setEnabled(True)
+            verify_combo.setEnabled(True)
+            preset_combo.setEnabled(True)
+            print("DEBUG: Controls re-enabled after error")
+        
+        # Use QTimer to ensure this runs on the main thread
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(0, reenable_controls)
+        
+    finally:
+        print("DEBUG: ===== RUN_JOB COMPLETED =====")
 
 
