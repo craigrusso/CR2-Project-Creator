@@ -1,3 +1,16 @@
+# 🚨 CRITICAL: DO NOT MODIFY THIS FILE WITHOUT READING C++_ENGINE_TROUBLESHOOTING.md
+# 
+# This setup.py file is CRITICAL for the C++ engine to work. The C++ engine
+# requires ALL source files to be compiled and linked together. Removing any
+# source file from the list below will break the engine and cause:
+# - Symbol linking errors
+# - Import failures  
+# - File copying to stop working
+# - Real-time progress to fail
+#
+# If you need to modify this file, READ THE TROUBLESHOOTING GUIDE FIRST!
+# The C++ engine is the PRIMARY engine and must work for all ingest operations.
+
 from setuptools import setup, Extension
 from pybind11.setup_helpers import Pybind11Extension, build_ext
 
