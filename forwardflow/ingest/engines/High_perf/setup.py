@@ -4,7 +4,17 @@ from pybind11.setup_helpers import Pybind11Extension, build_ext
 ext_modules = [
     Pybind11Extension(
         "enhanced_high_perf_engine",
-        ["enhanced_engine_main.cpp"],
+        [
+            "enhanced_engine_main.cpp",
+            "core/engine_core.cpp",
+            "core/data_structures.cpp",
+            "io/cross_platform_io.cpp",
+            "platform/platform_helpers.cpp",
+            "stall/stall_watchdog.cpp",
+            "verification/verification_record.cpp",
+            "cloud/cloud_detection.cpp",
+            "cloud/cloud_materialization.cpp"
+        ],
         cxx_std=17,
         extra_compile_args=["-O3", "-Wall", "-Wextra"],
     ),
