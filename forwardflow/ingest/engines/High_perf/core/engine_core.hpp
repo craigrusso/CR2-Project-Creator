@@ -45,6 +45,9 @@ private:
     DataStructures::CopyStats stats_;
     std::mutex stats_mu_;
     
+    // File tracking
+    size_t files_processed_{0};
+    
     // Verification tracking
     std::vector<Verification::VerificationRecord> verification_records_;
     std::mutex verification_mu_;

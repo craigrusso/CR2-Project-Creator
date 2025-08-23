@@ -66,6 +66,7 @@ class PythonCopyEngine(Engine):
         # NEW: Verification report managers for each destination
         self._report_managers: dict[str, VerificationReportManager] = {}
         self._cpp_engine_used = False # Flag to track if C++ engine was used
+        self._cpp_engine: Optional[any] = None # Reference to the C++ engine for cancellation
 
     def start(self, job: JobSpec) -> None:  # pragma: no cover - used via CLI/UI later
         print(f"DEBUG: PythonCopyEngine.start called with job: {job.job_id}")
@@ -106,51 +107,33 @@ class PythonCopyEngine(Engine):
         """Start a multi-destination fan-out copy job"""
         print(f"DEBUG: _start_multi_destination called with job: {job.job_id}")
         try:
-            try:
-                # Try to import the C++ engine for maximum performance
-                print(f"DEBUG: Attempting to import C++ engine...")
-                
-                # Use the working setuptools-built engine from High_perf directory
-                import sys
-                import os
-                current_dir = os.path.dirname(os.path.abspath(__file__))
-                
-                # Add the High_perf directory to the path
-                high_perf_path = os.path.join(current_dir, "High_perf")
-                if high_perf_path not in sys.path:
-                    sys.path.insert(0, high_perf_path)
-                    print(f"DEBUG: Added High_perf path: {high_perf_path}")
-                
-                try:
-                    import enhanced_high_perf_engine
-                    cpp_engine = enhanced_high_perf_engine
-                    print(f"DEBUG: C++ engine imported successfully from High_perf directory")
-                except Exception as e:
-                    print(f"DEBUG: Failed to import C++ engine: {e}")
-                    print(f"DEBUG: C++ engine not available, falling back to Python implementation")
-                    cpp_engine = None
-                
-                if cpp_engine:
-                    print("DEBUG: C++ engine found, using it for maximum performance")
-                    self._cpp_engine_used = True
-                    self._start_multi_destination_cpp(job, cpp_engine)
-                    return
-                else:
-                    print("DEBUG: C++ engine not available, using Python fallback")
-                    self._start_multi_destination_fallback(job)
-                    return
-                    
-            except Exception as e:
-                print(f"DEBUG: C++ engine failed: {e}")
-                print("DEBUG: Falling back to Python implementation")
-                self._start_multi_destination_fallback(job)
-                return
+            # Import and use ONLY the C++ engine - no fallbacks
+            print(f"DEBUG: Attempting to import C++ engine...")
+            
+            # Use the working setuptools-built engine from High_perf directory
+            import sys
+            import os
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            # Add the High_perf directory to the path
+            high_perf_path = os.path.join(current_dir, "High_perf")
+            if high_perf_path not in sys.path:
+                sys.path.insert(0, high_perf_path)
+                print(f"DEBUG: Added High_perf path: {high_perf_path}")
+            
+            # Import C++ engine - this MUST succeed
+            import enhanced_high_perf_engine
+            cpp_engine = enhanced_high_perf_engine
+            print(f"DEBUG: C++ engine imported successfully from High_perf directory")
+            
+            print("DEBUG: C++ engine found, using it for maximum performance")
+            self._cpp_engine_used = True
+            self._start_multi_destination_cpp(job, cpp_engine)
             
         except Exception as e:
-            print(f"DEBUG: Error in _start_multi_destination: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
+            print(f"DEBUG: C++ engine failed: {e}")
+            print("ERROR: C++ engine is required and failed to import. Cannot proceed with file copy operation.")
+            raise RuntimeError(f"C++ engine import failed: {e}")
     
     def _start_multi_destination_cpp(self, job: JobSpec, cpp_engine) -> None:
         """Use C++ engine for multi-destination fan-out"""
@@ -172,7 +155,97 @@ class PythonCopyEngine(Engine):
             print(f"DEBUG: Setting up event sink...")
             # Set up event sink - use ONLY set_event_sink, not progress_callback
             def event_sink(event_type: str, payload: dict):
-                self._emit(job.job_id, event_type, payload)
+                try:
+                    print(f"DEBUG: C++ engine emitted event: {event_type}")
+                    
+                    # Handle events without payloads from C++ engine
+                    if event_type == "file.started":
+                        # Track file progress - increment copied files count
+                        if job.job_id in self._job_stats:
+                            with self._job_stats[job.job_id].lock:
+                                # Update progress based on files completed
+                                files_completed = getattr(self._job_stats[job.job_id], 'files_completed', 0)
+                                files_completed += 1
+                                self._job_stats[job.job_id].files_completed = files_completed
+                                
+                                # Calculate progress percentage
+                                total_files = len(files)
+                                progress_percent = (files_completed / total_files) * 100 if total_files > 0 else 0
+                                
+                                # Emit progress update immediately
+                                self._emit(job.job_id, "job.progress", {
+                                    "bytes_copied": self._job_stats[job.job_id].copied_bytes,
+                                    "total_bytes": total_bytes,
+                                    "progress_percent": progress_percent,
+                                    "files_completed": files_completed,
+                                    "total_files": total_files,
+                                    "speed_mbps": 0,
+                                    "elapsed_time": time.time() - self._job_stats[job.job_id].start_time
+                                })
+                                
+                                # Emit file started event with actual filename
+                                filename = f"File {files_completed}" if files_completed <= len(files) else "Copying..."
+                                self._emit(job.job_id, "file.started", {
+                                    "file_id": f"file_{files_completed}",
+                                    "filename": filename,
+                                    "total_bytes": 0,
+                                })
+                                
+                    elif event_type == "file.completed":
+                        # Track file completion
+                        if job.job_id in self._job_stats:
+                            with self._job_stats[job.job_id].lock:
+                                # Update copied bytes (estimate based on average file size)
+                                files_completed = getattr(self._job_stats[job.job_id], 'files_completed', 0)
+                                avg_file_size = total_bytes / len(files) if len(files) > 0 else 0
+                                self._job_stats[job.job_id].copied_bytes = int(files_completed * avg_file_size)
+                                
+                                # Emit file completed event
+                                filename = f"File {files_completed}" if files_completed <= len(files) else "Completed"
+                                self._emit(job.job_id, "file.completed", {
+                                    "file_id": f"file_{files_completed}",
+                                    "filename": filename,
+                                    "bytes": int(avg_file_size),
+                                    "total": int(avg_file_size),
+                                    "skipped": False,
+                                })
+                                
+                    elif event_type == "job.progress":
+                        # Update job progress based on files completed
+                        if job.job_id in self._job_stats:
+                            with self._job_stats[job.job_id].lock:
+                                files_completed = getattr(self._job_stats[job.job_id], 'files_completed', 0)
+                                total_files = len(files)
+                                progress_percent = (files_completed / total_files) * 100 if total_files > 0 else 0
+                                
+                                # Estimate copied bytes
+                                avg_file_size = total_bytes / total_files if total_files > 0 else 0
+                                copied_bytes = int(files_completed * avg_file_size)
+                                self._job_stats[job.job_id].copied_bytes = copied_bytes
+                                
+                                # Calculate speed
+                                elapsed = time.time() - self._job_stats[job.job_id].start_time
+                                speed_mbps = (copied_bytes / (1024 * 1024)) / elapsed if elapsed > 0 else 0
+                                
+                                # Emit progress update
+                                self._emit(job.job_id, "job.progress", {
+                                    "bytes_copied": copied_bytes,
+                                    "total_bytes": total_bytes,
+                                    "progress_percent": progress_percent,
+                                    "files_completed": files_completed,
+                                    "total_files": total_files,
+                                    "speed_mbps": speed_mbps,
+                                    "elapsed_time": elapsed
+                                })
+                                
+                    else:
+                        # For other events, just log them
+                        print(f"DEBUG: Unhandled C++ event: {event_type}")
+                        
+                except Exception as e:
+                    print(f"ERROR: Exception in event sink: {e}")
+                    import traceback
+                    traceback.print_exc()
             
             # DO NOT set progress_callback - it conflicts with set_event_sink
             # cpp_job.progress_callback = event_sink  # REMOVED
@@ -183,6 +256,8 @@ class PythonCopyEngine(Engine):
             # Create engine and run
             engine = cpp_engine.EnhancedHighPerfTransferEngine()
             engine.set_event_sink(event_sink)
+            # Store reference to C++ engine for cancellation
+            self._cpp_engine = engine
             print(f"DEBUG: C++ engine created successfully")
             
             print(f"DEBUG: Initializing job stats...")
@@ -197,6 +272,8 @@ class PythonCopyEngine(Engine):
                 last_emit=0.0,
                 lock=threading.Lock(),
             )
+            # Initialize files completed counter
+            self._job_stats[job.job_id].files_completed = 0
             print(f"DEBUG: Job stats initialized: total_bytes={total_bytes}, total_files={len(files)}")
             
             print(f"DEBUG: Emitting job.started event...")
@@ -222,68 +299,6 @@ class PythonCopyEngine(Engine):
             
         except Exception as e:
             print(f"DEBUG: Error in _start_multi_destination_cpp: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
-    
-    def _start_multi_destination_fallback(self, job: JobSpec) -> None:
-        """Fallback: copy to each destination in parallel"""
-        print(f"DEBUG: _start_multi_destination_fallback called with job: {job.job_id}")
-        try:
-            # If there is only one destination, treat it as a true single-destination job
-            if len(job.destination_roots) == 1:
-                dest_root = job.destination_roots[0]
-                print(f"DEBUG: Single destination fallback -> {dest_root}")
-                single_job = JobSpec(
-                    job_id=job.job_id,  # keep same job id for consistent UI events
-                    source_root=job.source_root,
-                    destination_root=dest_root,
-                    options=job.options
-                )
-                self._start_single_destination(single_job)
-                return
-            
-            # Multi-destination (N>1): parallel fan-out using threads
-            print(f"DEBUG: Starting parallel copy to {len(job.destination_roots)} destinations")
-            
-            def copy_to_destination(dest_root, dest_index):
-                """Copy to a single destination in a separate thread"""
-                try:
-                    print(f"DEBUG: Starting parallel copy to destination {dest_index+1}: {dest_root}")
-                    self._logger.info(f"Copying to destination {dest_index+1}/{len(job.destination_roots)}: {dest_root}")
-                    
-                    fan_job = JobSpec(
-                        job_id=f"{job.job_id}_dest_{dest_index+1}",
-                        source_root=job.source_root,
-                        destination_root=dest_root,
-                        options=job.options
-                    )
-                    self._start_single_destination(fan_job)
-                    print(f"DEBUG: Completed parallel copy to destination {dest_index+1}: {dest_root}")
-                except Exception as e:
-                    print(f"DEBUG: Error in parallel copy to destination {dest_index+1}: {e}")
-                    import traceback
-                    traceback.print_exc()
-            
-            # Start parallel threads for each destination
-            threads = []
-            for i, dest_root in enumerate(job.destination_roots):
-                thread = threading.Thread(
-                    target=copy_to_destination,
-                    args=(dest_root, i),
-                    daemon=True
-                )
-                threads.append(thread)
-                thread.start()
-                print(f"DEBUG: Started thread for destination {i+1}: {dest_root}")
-            
-            # Wait for all threads to complete
-            for i, thread in enumerate(threads):
-                thread.join()
-                print(f"DEBUG: Thread for destination {i+1} completed")
-            
-        except Exception as e:
-            print(f"DEBUG: Error in _start_multi_destination_fallback: {e}")
             import traceback
             traceback.print_exc()
             raise
@@ -396,13 +411,13 @@ class PythonCopyEngine(Engine):
         self._cancels.setdefault(job_id, threading.Event()).set()
         
         # Force stop any running copy operations
-        if hasattr(self, '_current_executor') and self._current_executor:
+        if self._cpp_engine:
             try:
-                print(f"DEBUG: Shutting down executor for job {job_id}")
-                self._current_executor.shutdown(wait=False, cancel_futures=True)
-                print(f"DEBUG: Executor shutdown for job {job_id}")
+                print(f"DEBUG: Shutting down C++ engine for job {job_id}")
+                self._cpp_engine.cancel()
+                print(f"DEBUG: C++ engine shutdown for job {job_id}")
             except Exception as e:
-                print(f"DEBUG: Error shutting down executor: {e}")
+                print(f"DEBUG: Error shutting down C++ engine: {e}")
         
         print(f"DEBUG: Job {job_id} cancellation complete")
 

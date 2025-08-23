@@ -615,6 +615,10 @@ def build_ingest_tab():
     buttons_layout.addWidget(pause_btn)
     buttons_layout.addWidget(cancel_btn)
     
+    # Store button references in root for access by event handlers
+    root.pause_btn = pause_btn
+    root.cancel_btn = cancel_btn
+    
     layout.addLayout(buttons_layout)
     
     # Main progress display (clean, compact)
@@ -1023,6 +1027,14 @@ def build_ingest_tab():
                 'start_time': time.time(),
                 'copied_bytes': 0
             }
+            
+            # Enable pause and cancel buttons when job starts
+            if hasattr(root, 'pause_btn') and root.pause_btn:
+                root.pause_btn.setEnabled(True)
+                print("DEBUG: Pause button enabled")
+            if hasattr(root, 'cancel_btn') and root.cancel_btn:
+                root.cancel_btn.setEnabled(True)
+                print("DEBUG: Cancel button enabled")
             
             print("DEBUG: handle_job_started completed successfully")
             

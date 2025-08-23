@@ -26,6 +26,14 @@ include_directories(${PYBIND11_INCLUDE_DIR})
 # Use the enhanced engine source file
 set(MAIN_SOURCES
     enhanced_engine_main.cpp
+    core/engine_core.cpp
+    core/data_structures.cpp
+    verification/verification_record.cpp
+    io/cross_platform_io.cpp
+    platform/platform_helpers.cpp
+    stall/stall_watchdog.cpp
+    cloud/cloud_detection.cpp
+    cloud/cloud_materialization.cpp
 )
 
 # Create the Python module - pybind11 will handle Python linking automatically
