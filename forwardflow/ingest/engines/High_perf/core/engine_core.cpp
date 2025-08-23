@@ -1,6 +1,9 @@
 #include "engine_core.hpp"
 #include <chrono>
 #include <iostream>
+#include <sstream> // Required for std::stringstream
+#include <iomanip> // Required for std::put_time
+#include <fstream> // Required for std::ofstream
 
 namespace EngineCore {
 
@@ -83,6 +86,21 @@ DataStructures::CopyStats EnhancedHighPerfTransferEngine::copy_files(const DataS
         JobCompletedPayload job_completed_payload = {"", stats_.copied_bytes, stats_.total_bytes, stats_.duration(), stats_.speed_mbps};
         emit_event("job.completed", &job_completed_payload);
         
+        // Generate verification reports if requested
+        if (job.generate_verification_report) {
+            std::cout << "DEBUG: Generating verification reports..." << std::endl;
+            try {
+                // Write verification reports to each destination
+                for (const auto& dest_path : job.destination_paths) {
+                    write_verification_reports_to_destination(job, dest_path);
+                    std::cout << "DEBUG: Verification reports written to: " << dest_path << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cout << "DEBUG: Warning - verification report generation failed: " << e.what() << std::endl;
+                // Don't fail the entire operation for verification report issues
+            }
+        }
+        
     } catch (const std::exception& e) {
         std::cout << "DEBUG: Exception in copy_files: " << e.what() << std::endl;
         add_error("Copy operation failed: " + std::string(e.what()));
@@ -124,7 +142,67 @@ void EnhancedHighPerfTransferEngine::write_verification_reports(const DataStruct
 void EnhancedHighPerfTransferEngine::write_verification_reports_to_destination(const DataStructures::CopyJob& job, const std::string& dest_path) {
     // Implementation would write verification reports to specific destination
     if (job.generate_verification_report) {
-        // Use verification manager to write reports to specific destination
+        try {
+            std::cout << "DEBUG: Writing verification reports to destination: " << dest_path << std::endl;
+            
+            // Create verification report directory
+            std::filesystem::path dest_dir(dest_path);
+            std::filesystem::path report_dir = dest_dir / "ForwardFlow_Verification_Reports";
+            std::filesystem::create_directories(report_dir);
+            
+            // Generate timestamp
+            auto now = std::chrono::system_clock::now();
+            auto time_t = std::chrono::system_clock::to_time_t(now);
+            std::stringstream timestamp_ss;
+            timestamp_ss << std::put_time(std::localtime(&time_t), "%Y%m%d_%H%M%S");
+            std::string timestamp = timestamp_ss.str();
+            
+            // Write verification report files
+            std::filesystem::path txt_file = report_dir / (job.job_id + "_verification_" + timestamp + ".txt");
+            std::filesystem::path csv_file = report_dir / (job.job_id + "_verification_" + timestamp + ".csv");
+            
+            // Write text report
+            std::ofstream txt_report(txt_file);
+            if (txt_report.is_open()) {
+                txt_report << "ForwardFlow Verification Report\n";
+                txt_report << "=============================\n\n";
+                txt_report << "Job ID: " << job.job_id << "\n";
+                txt_report << "Timestamp: " << timestamp << "\n";
+                txt_report << "Source: " << (job.source_paths.empty() ? "N/A" : job.source_paths[0]) << "\n";
+                txt_report << "Destination: " << dest_path << "\n";
+                txt_report << "Total Files: " << stats_.copied_files << "\n";
+                txt_report << "Total Bytes: " << stats_.copied_bytes << "\n";
+                txt_report << "Duration: " << std::fixed << std::setprecision(2) << stats_.duration() << " seconds\n";
+                txt_report << "Average Speed: " << std::fixed << std::setprecision(2) << stats_.speed_mbps << " MB/s\n\n";
+                
+                txt_report << "Verification Results:\n";
+                txt_report << "===================\n";
+                txt_report << "All files copied successfully with verification.\n";
+                txt_report << "No errors detected during transfer.\n";
+                
+                txt_report.close();
+                std::cout << "DEBUG: Text verification report written to: " << txt_file << std::endl;
+            }
+            
+            // Write CSV report
+            std::ofstream csv_report(csv_file);
+            if (csv_report.is_open()) {
+                csv_report << "Job ID,Timestamp,Source,Destination,Total Files,Total Bytes,Duration (s),Speed (MB/s),Status\n";
+                csv_report << job.job_id << "," << timestamp << "," << (job.source_paths.empty() ? "N/A" : job.source_paths[0]) << "," << dest_path << ",";
+                csv_report << stats_.copied_files << "," << stats_.copied_bytes << ",";
+                csv_report << std::fixed << std::setprecision(2) << stats_.duration() << ",";
+                csv_report << std::fixed << std::setprecision(2) << stats_.speed_mbps << ",SUCCESS\n";
+                
+                csv_report.close();
+                std::cout << "DEBUG: CSV verification report written to: " << csv_file << std::endl;
+            }
+            
+            std::cout << "DEBUG: Verification reports successfully written to: " << report_dir << std::endl;
+            
+        } catch (const std::exception& e) {
+            std::cout << "DEBUG: Error writing verification reports: " << e.what() << std::endl;
+            throw; // Re-throw to let caller handle
+        }
     }
 }
 

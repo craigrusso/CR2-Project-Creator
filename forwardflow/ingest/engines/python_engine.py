@@ -154,62 +154,70 @@ class PythonCopyEngine(Engine):
             
             print(f"DEBUG: Setting up event sink...")
             # Set up event sink - use ONLY set_event_sink, not progress_callback
-            def event_sink(event_type: str, payload: dict):
+            def event_sink(event_type: str, payload: any):
+                """Event sink for C++ engine events - emit immediately for responsive UI"""
                 try:
                     print(f"DEBUG: C++ engine emitted event: {event_type}")
                     
-                    # Handle events without payloads from C++ engine
+                    # Emit events immediately for responsive UI
                     if event_type == "file.started":
-                        # Track file progress - increment copied files count
-                        if job.job_id in self._job_stats:
+                        # Extract file info from payload or generate placeholder
+                        if payload and hasattr(payload, 'filename'):
+                            filename = payload.filename
+                            total_bytes = getattr(payload, 'total_bytes', 0)
+                        else:
+                            # Generate placeholder data for UI responsiveness
                             with self._job_stats[job.job_id].lock:
-                                # Update progress based on files completed
                                 files_completed = getattr(self._job_stats[job.job_id], 'files_completed', 0)
-                                files_completed += 1
-                                self._job_stats[job.job_id].files_completed = files_completed
-                                
-                                # Calculate progress percentage
-                                total_files = len(files)
-                                progress_percent = (files_completed / total_files) * 100 if total_files > 0 else 0
-                                
-                                # Emit progress update immediately
-                                self._emit(job.job_id, "job.progress", {
-                                    "bytes_copied": self._job_stats[job.job_id].copied_bytes,
-                                    "total_bytes": total_bytes,
-                                    "progress_percent": progress_percent,
-                                    "files_completed": files_completed,
-                                    "total_files": total_files,
-                                    "speed_mbps": 0,
-                                    "elapsed_time": time.time() - self._job_stats[job.job_id].start_time
-                                })
-                                
-                                # Emit file started event with actual filename
-                                filename = f"File {files_completed}" if files_completed <= len(files) else "Copying..."
-                                self._emit(job.job_id, "file.started", {
-                                    "file_id": f"file_{files_completed}",
-                                    "filename": filename,
-                                    "total_bytes": 0,
-                                })
-                                
+                                filename = f"File {files_completed + 1}"
+                                total_bytes = 0  # Will be updated when file completes
+                        
+                        # Emit file started immediately
+                        self._emit(job.job_id, "file.started", {
+                            "file_id": f"file_{files_completed + 1}",
+                            "filename": filename,
+                            "total_bytes": total_bytes
+                        })
+                        
                     elif event_type == "file.completed":
-                        # Track file completion
-                        if job.job_id in self._job_stats:
+                        # Extract file info from payload or generate placeholder
+                        if payload and hasattr(payload, 'filename'):
+                            filename = payload.filename
+                            bytes_copied = getattr(payload, 'bytes', 0)
+                            total_bytes = getattr(payload, 'total', bytes_copied)
+                        else:
+                            # Generate placeholder data for UI responsiveness
                             with self._job_stats[job.job_id].lock:
-                                # Update copied bytes (estimate based on average file size)
                                 files_completed = getattr(self._job_stats[job.job_id], 'files_completed', 0)
-                                avg_file_size = total_bytes / len(files) if len(files) > 0 else 0
-                                self._job_stats[job.job_id].copied_bytes = int(files_completed * avg_file_size)
-                                
-                                # Emit file completed event
-                                filename = f"File {files_completed}" if files_completed <= len(files) else "Completed"
-                                self._emit(job.job_id, "file.completed", {
-                                    "file_id": f"file_{files_completed}",
-                                    "filename": filename,
-                                    "bytes": int(avg_file_size),
-                                    "total": int(avg_file_size),
-                                    "skipped": False,
-                                })
-                                
+                                filename = f"File {files_completed + 1}"
+                                # Estimate bytes based on average file size
+                                total_files = len(files)
+                                avg_file_size = total_bytes / total_files if total_files > 0 else 0
+                                bytes_copied = int(avg_file_size)
+                                total_bytes = bytes_copied
+                        
+                        # Update job stats
+                        with self._job_stats[job.job_id].lock:
+                            self._job_stats[job.job_id].files_completed += 1
+                            files_completed = self._job_stats[job.job_id].files_completed
+                            # Update copied bytes based on actual file sizes
+                            if files_completed <= len(files):
+                                # Use actual file size from policy
+                                file_spec = files[files_completed - 1]
+                                actual_bytes = file_spec.size_bytes
+                                self._job_stats[job.job_id].copied_bytes += actual_bytes
+                                bytes_copied = actual_bytes
+                                total_bytes = actual_bytes
+                        
+                        # Emit file completed immediately
+                        self._emit(job.job_id, "file.completed", {
+                            "file_id": f"file_{files_completed}",
+                            "filename": filename,
+                            "bytes": bytes_copied,
+                            "total": total_bytes,
+                            "skipped": False,
+                        })
+                        
                     elif event_type == "job.progress":
                         # Update job progress based on files completed
                         if job.job_id in self._job_stats:
@@ -218,16 +226,14 @@ class PythonCopyEngine(Engine):
                                 total_files = len(files)
                                 progress_percent = (files_completed / total_files) * 100 if total_files > 0 else 0
                                 
-                                # Estimate copied bytes
-                                avg_file_size = total_bytes / total_files if total_files > 0 else 0
-                                copied_bytes = int(files_completed * avg_file_size)
-                                self._job_stats[job.job_id].copied_bytes = copied_bytes
+                                # Use actual copied bytes from file completions
+                                copied_bytes = getattr(self._job_stats[job.job_id], 'copied_bytes', 0)
                                 
                                 # Calculate speed
                                 elapsed = time.time() - self._job_stats[job.job_id].start_time
                                 speed_mbps = (copied_bytes / (1024 * 1024)) / elapsed if elapsed > 0 else 0
                                 
-                                # Emit progress update
+                                # Emit progress update immediately
                                 self._emit(job.job_id, "job.progress", {
                                     "bytes_copied": copied_bytes,
                                     "total_bytes": total_bytes,

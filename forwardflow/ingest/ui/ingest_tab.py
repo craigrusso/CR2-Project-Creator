@@ -985,6 +985,14 @@ def build_ingest_tab():
             total_files = payload.get("total_files", 0)
             print(f"DEBUG: Job started with {total_files} files, {total_bytes} total bytes")
             
+            # IMMEDIATELY enable cancel and pause buttons for responsive UI
+            if hasattr(root, 'pause_btn') and root.pause_btn:
+                root.pause_btn.setEnabled(True)
+                print("DEBUG: Pause button enabled IMMEDIATELY")
+            if hasattr(root, 'cancel_btn') and root.cancel_btn:
+                root.cancel_btn.setEnabled(True)
+                print("DEBUG: Cancel button enabled IMMEDIATELY")
+            
             # Update UI widgets safely
             if hasattr(root, 'total_progress') and root.total_progress:
                 # Keep the progress bar at 0-100 range for percentage
@@ -1004,7 +1012,7 @@ def build_ingest_tab():
                 root.speed_label.setText("— MB/s")
                 print("DEBUG: Speed label updated")
             
-            # Show destination progress bars
+            # Show destination progress bars IMMEDIATELY
             if hasattr(root, 'destinations'):
                 print(f"DEBUG: Showing progress bars for {len(root.destinations)} destinations")
                 for i, dest_obj in enumerate(root.destinations):
@@ -1027,14 +1035,6 @@ def build_ingest_tab():
                 'start_time': time.time(),
                 'copied_bytes': 0
             }
-            
-            # Enable pause and cancel buttons when job starts
-            if hasattr(root, 'pause_btn') and root.pause_btn:
-                root.pause_btn.setEnabled(True)
-                print("DEBUG: Pause button enabled")
-            if hasattr(root, 'cancel_btn') and root.cancel_btn:
-                root.cancel_btn.setEnabled(True)
-                print("DEBUG: Cancel button enabled")
             
             print("DEBUG: handle_job_started completed successfully")
             
