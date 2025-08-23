@@ -10,9 +10,11 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import threading
+import os
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Optional, Tuple
+from typing import Iterable, Optional, Tuple, List, Dict, Any
 from datetime import datetime
 
 from ..api.interfaces import Engine, EventSink
@@ -153,108 +155,168 @@ class PythonCopyEngine(Engine):
             print(f"DEBUG: C++ CopyJob created successfully")
             
             print(f"DEBUG: Setting up event sink...")
-            # Set up event sink - use ONLY set_event_sink, not progress_callback
+            # Single, consolidated event sink for C++ engine events
             def event_sink(event_type: str, payload: any):
-                """Event sink for C++ engine events - emit immediately for responsive UI"""
+                """Event sink for C++ engine events - async processing to prevent UI blocking"""
                 try:
                     print(f"DEBUG: C++ engine emitted event: {event_type}")
                     
-                    # Emit events immediately for responsive UI
-                    if event_type == "file.started":
-                        # Extract file info from payload or generate placeholder
-                        if payload and hasattr(payload, 'filename'):
-                            filename = payload.filename
-                            total_bytes = getattr(payload, 'total_bytes', 0)
-                        else:
-                            # Generate placeholder data for UI responsiveness
-                            with self._job_stats[job.job_id].lock:
-                                files_completed = getattr(self._job_stats[job.job_id], 'files_completed', 0)
-                                filename = f"File {files_completed + 1}"
-                                total_bytes = 0  # Will be updated when file completes
-                        
-                        # Emit file started immediately
-                        self._emit(job.job_id, "file.started", {
-                            "file_id": f"file_{files_completed + 1}",
-                            "filename": filename,
-                            "total_bytes": total_bytes
-                        })
-                        
-                    elif event_type == "file.completed":
-                        # Extract file info from payload or generate placeholder
-                        if payload and hasattr(payload, 'filename'):
-                            filename = payload.filename
-                            bytes_copied = getattr(payload, 'bytes', 0)
-                            total_bytes = getattr(payload, 'total', bytes_copied)
-                        else:
-                            # Generate placeholder data for UI responsiveness
-                            with self._job_stats[job.job_id].lock:
-                                files_completed = getattr(self._job_stats[job.job_id], 'files_completed', 0)
-                                filename = f"File {files_completed + 1}"
-                                # Estimate bytes based on average file size
-                                total_files = len(files)
-                                avg_file_size = total_bytes / total_files if total_files > 0 else 0
-                                bytes_copied = int(avg_file_size)
-                                total_bytes = bytes_copied
-                        
-                        # Update job stats
-                        with self._job_stats[job.job_id].lock:
-                            self._job_stats[job.job_id].files_completed += 1
-                            files_completed = self._job_stats[job.job_id].files_completed
-                            # Update copied bytes based on actual file sizes
-                            if files_completed <= len(files):
-                                # Use actual file size from policy
-                                file_spec = files[files_completed - 1]
-                                actual_bytes = file_spec.size_bytes
-                                self._job_stats[job.job_id].copied_bytes += actual_bytes
-                                bytes_copied = actual_bytes
-                                total_bytes = actual_bytes
-                        
-                        # Emit file completed immediately
-                        self._emit(job.job_id, "file.completed", {
-                            "file_id": f"file_{files_completed}",
-                            "filename": filename,
-                            "bytes": bytes_copied,
-                            "total": total_bytes,
-                            "skipped": False,
-                        })
-                        
-                    elif event_type == "job.progress":
-                        # Update job progress based on files completed
-                        if job.job_id in self._job_stats:
-                            with self._job_stats[job.job_id].lock:
-                                files_completed = getattr(self._job_stats[job.job_id], 'files_completed', 0)
-                                total_files = len(files)
-                                progress_percent = (files_completed / total_files) * 100 if total_files > 0 else 0
+                    # Process events in background thread to prevent UI blocking
+                    def process_event():
+                        try:
+                            if event_type == "file.started":
+                                # Extract filename from C++ FileStartedPayload struct
+                                if payload and hasattr(payload, 'filename'):
+                                    # C++ sends const char*, convert to Python string
+                                    actual_filename = payload.filename.decode('utf-8') if hasattr(payload.filename, 'decode') else str(payload.filename)
+                                    file_id = payload.file_id.decode('utf-8') if hasattr(payload.file_id, 'decode') else str(payload.file_id)
+                                    total_bytes = getattr(payload, 'total_bytes', 0)
+                                else:
+                                    # Fallback if no payload
+                                    actual_filename = "Copying..."
+                                    file_id = "file_current"
+                                    total_bytes = 0
                                 
-                                # Use actual copied bytes from file completions
-                                copied_bytes = getattr(self._job_stats[job.job_id], 'copied_bytes', 0)
+                                print(f"DEBUG: File started: {actual_filename} - {total_bytes} bytes")
                                 
-                                # Calculate speed
-                                elapsed = time.time() - self._job_stats[job.job_id].start_time
-                                speed_mbps = (copied_bytes / (1024 * 1024)) / elapsed if elapsed > 0 else 0
-                                
-                                # Emit progress update immediately
-                                self._emit(job.job_id, "job.progress", {
-                                    "bytes_copied": copied_bytes,
-                                    "total_bytes": total_bytes,
-                                    "progress_percent": progress_percent,
-                                    "files_completed": files_completed,
-                                    "total_files": total_files,
-                                    "speed_mbps": speed_mbps,
-                                    "elapsed_time": elapsed
+                                # Emit file started with real filename
+                                self._emit(job.job_id, "file.started", {
+                                    "file_id": file_id,
+                                    "filename": actual_filename,
+                                    "total_bytes": total_bytes
                                 })
                                 
-                    else:
-                        # For other events, just log them
-                        print(f"DEBUG: Unhandled C++ event: {event_type}")
-                        
+                            elif event_type == "file.completed":
+                                # Extract completion data from C++ FileCompletedPayload struct
+                                if payload and hasattr(payload, 'file_id'):
+                                    file_id = payload.file_id.decode('utf-8') if hasattr(payload.file_id, 'decode') else str(payload.file_id)
+                                    filename = payload.filename.decode('utf-8') if hasattr(payload.filename, 'decode') else str(payload.filename)
+                                    copied_bytes = getattr(payload, 'bytes_copied', 0)
+                                    total_bytes = getattr(payload, 'total_bytes', 0)
+                                else:
+                                    file_id = "file_current"
+                                    filename = "Completed"
+                                    copied_bytes = 0
+                                    total_bytes = 0
+                                
+                                print(f"DEBUG: File completed: {filename} - {copied_bytes}/{total_bytes} bytes")
+                                
+                                # Update job stats when file completes
+                                if job.job_id in self._job_stats:
+                                    with self._job_stats[job.job_id].lock:
+                                        self._job_stats[job.job_id].files_completed += 1
+                                        files_completed = self._job_stats[job.job_id].files_completed
+                                        # Estimate copied bytes based on files completed
+                                        total_files = len(files) if 'files' in locals() else 1
+                                        if total_files > 0:
+                                            avg_file_size = self._job_stats[job.job_id].total_bytes / total_files
+                                            copied_bytes = int(files_completed * avg_file_size)
+                                            self._job_stats[job.job_id].copied_bytes = copied_bytes
+                                
+                                # Emit file completed with real data
+                                self._emit(job.job_id, "file.completed", {
+                                    "file_id": file_id,
+                                    "filename": filename,
+                                    "bytes": copied_bytes,
+                                    "total": total_bytes,
+                                    "skipped": False
+                                })
+                                
+                            elif event_type == "job.progress":
+                                # Extract progress data from C++ JobProgressPayload struct
+                                if payload and hasattr(payload, 'bytes_copied'):
+                                    bytes_copied = payload.bytes_copied
+                                    total_bytes = payload.total_bytes
+                                    files_completed = getattr(payload, 'files_completed', 0)
+                                    total_files = getattr(payload, 'total_files', 0)
+                                    elapsed = getattr(payload, 'elapsed', 0)
+                                    speed_mbps = getattr(payload, 'speed_mbps', 0)
+                                else:
+                                    # Fallback if no payload - use job stats
+                                    if job.job_id in self._job_stats:
+                                        with self._job_stats[job.job_id].lock:
+                                            bytes_copied = self._job_stats[job.job_id].copied_bytes
+                                            total_bytes = self._job_stats[job.job_id].total_bytes
+                                            files_completed = getattr(self._job_stats[job.job_id], 'files_completed', 0)
+                                            total_files = len(files) if 'files' in locals() else 1
+                                            elapsed = time.time() - self._job_stats[job.job_id].start_time
+                                            speed_mbps = (bytes_copied / (1024 * 1024)) / elapsed if elapsed > 0 else 0
+                                    else:
+                                        bytes_copied = 0
+                                        total_bytes = 0
+                                        files_completed = 0
+                                        total_files = 0
+                                        elapsed = 0
+                                        speed_mbps = 0
+                                
+                                print(f"DEBUG: Progress - bytes_copied: {bytes_copied}, total_bytes: {total_bytes}, speed: {speed_mbps}")
+                                
+                                # Emit job progress with real data
+                                self._emit(job.job_id, "job.progress", {
+                                    "bytes_copied": bytes_copied,
+                                    "total_bytes": total_bytes,
+                                    "files_completed": files_completed,
+                                    "total_files": total_files,
+                                    "elapsed": elapsed,
+                                    "speed_mbps": speed_mbps
+                                })
+                                
+                            elif event_type == "job.started":
+                                # Extract job start data from C++ JobStartedPayload struct
+                                if payload and hasattr(payload, 'total_bytes'):
+                                    total_bytes = payload.total_bytes
+                                    total_files = payload.total_files
+                                else:
+                                    total_bytes = 0
+                                    total_files = 0
+                                
+                                print(f"DEBUG: Job started - total_bytes: {total_bytes}, total_files: {total_files}")
+                                
+                                # Emit job started with real data
+                                self._emit(job.job_id, "job.started", {
+                                    "total_bytes": total_bytes,
+                                    "total_files": total_files
+                                })
+                                
+                            elif event_type == "job.completed":
+                                # Extract job completion data from C++ JobCompletedPayload struct
+                                if payload and hasattr(payload, 'bytes_copied'):
+                                    bytes_copied = payload.bytes_copied
+                                    total_bytes = payload.total_bytes
+                                    elapsed = payload.elapsed
+                                    speed_mbps = payload.speed_mbps
+                                else:
+                                    bytes_copied = 0
+                                    total_bytes = 0
+                                    elapsed = 0
+                                    speed_mbps = 0
+                                
+                                print(f"DEBUG: Job completed - bytes_copied: {bytes_copied}, total_bytes: {total_bytes}")
+                                
+                                # Emit job completed with real data
+                                self._emit(job.job_id, "job.completed", {
+                                    "bytes_copied": bytes_copied,
+                                    "total_bytes": total_bytes,
+                                    "elapsed": elapsed,
+                                    "speed_mbps": speed_mbps
+                                })
+                                
+                            else:
+                                # For other events, just log them
+                                print(f"DEBUG: Unhandled C++ event: {event_type}")
+                                
+                        except Exception as e:
+                            print(f"ERROR: Exception in event processing: {e}")
+                            import traceback
+                            traceback.print_exc()
+                    
+                    # Process event in background thread to keep UI responsive
+                    threading.Thread(target=process_event, daemon=True).start()
+                    
                 except Exception as e:
-                    print(f"ERROR: Exception in event sink: {e}")
+                    print(f"ERROR in event_sink: {e}")
                     import traceback
                     traceback.print_exc()
-            
-            # DO NOT set progress_callback - it conflicts with set_event_sink
-            # cpp_job.progress_callback = event_sink  # REMOVED
             
             print(f"DEBUG: Event sink set up successfully")
             
@@ -287,19 +349,50 @@ class PythonCopyEngine(Engine):
             print(f"DEBUG: job.started event emitted successfully")
             
             print(f"DEBUG: About to call engine.copy_files...")
-            # Run the copy
+            
+            # Let the C++ engine handle all file events - no fake Python events
+            print(f"DEBUG: C++ engine will handle all file events and copying")
+            
+            # Run the copy (this will block until complete)
             stats = engine.copy_files(cpp_job)
             print(f"DEBUG: engine.copy_files completed successfully")
             
-            print(f"DEBUG: Emitting job.completed event...")
-            # Emit completion
-            elapsed = max(1e-3, time.time() - self._job_stats[job.job_id].start_time)
-            self._emit(job.job_id, "job.completed", {
-                "bytes": stats.copied_bytes,
-                "total": stats.total_bytes,
-                "elapsed": elapsed,
-                "speed": stats.copied_bytes / elapsed if elapsed > 0 else 0,
-            })
+            # Generate verification reports with individual file details
+            print(f"DEBUG: Generating verification reports...")
+            try:
+                if job.options.generate_verification_report:
+                    # Call C++ engine to write verification reports to each destination
+                    for dest_path in job.destination_roots:
+                        print(f"DEBUG: Writing verification report to: {dest_path}")
+                        engine.write_verification_reports_to_destination(cpp_job, str(dest_path))
+                    print(f"DEBUG: Verification reports generated successfully")
+            except Exception as e:
+                print(f"ERROR: Failed to generate verification reports: {e}")
+                import traceback
+                traceback.print_exc()
+            
+            # Check if there were any errors during the copy
+            if hasattr(stats, 'errors') and stats.errors:
+                print(f"ERROR: Copy completed with {len(stats.errors)} errors:")
+                for error in stats.errors:
+                    print(f"ERROR: {error}")
+                
+                # Emit job error event
+                self._emit(job.job_id, "job.error", {
+                    "errors": stats.errors,
+                    "bytes_copied": stats.copied_bytes,
+                    "total_bytes": stats.total_bytes
+                })
+            else:
+                # Emit completion only if no errors
+                print(f"DEBUG: Emitting job.completed event...")
+                elapsed = max(1e-3, time.time() - self._job_stats[job.job_id].start_time)
+                self._emit(job.job_id, "job.completed", {
+                    "bytes": stats.copied_bytes,
+                    "total": stats.total_bytes,
+                    "elapsed": elapsed,
+                    "speed": stats.copied_bytes / elapsed if elapsed > 0 else 0,
+                })
             print(f"DEBUG: job.completed event emitted successfully")
             print(f"DEBUG: _start_multi_destination_cpp completed successfully")
             

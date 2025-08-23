@@ -167,7 +167,7 @@ def build_ingest_tab():
     # Timer for updating stats more frequently
     root.stats_update_timer = QTimer()
     root.stats_update_timer.timeout.connect(lambda: update_stats())
-    root.stats_update_timer.start(100)  # Update every 100ms for more responsive stats
+    root.stats_update_timer.start(100)  # Update every 100ms for real-time responsiveness
     
     def update_elapsed_time():
         """Update elapsed time display every second"""
@@ -177,35 +177,38 @@ def build_ingest_tab():
             root.elapsed_label.setText(f"Elapsed: {elapsed_str}")
     
     def update_stats():
-        """Update speed and progress stats more frequently"""
+        """Update speed and progress stats less frequently to prevent UI blocking"""
         if root.job_start_time and root.current_job and hasattr(root, 'copied_bytes') and hasattr(root, 'total_bytes'):
             elapsed_seconds = time.time() - root.job_start_time
             if elapsed_seconds > 0 and root.total_bytes > 0:
                 # Calculate current speed
                 current_speed = (root.copied_bytes / (1024 * 1024)) / elapsed_seconds
                 
-                # Update progress bar
-                if hasattr(root, 'total_progress'):
+                # Update progress bar (only if it exists and hasn't been updated recently)
+                if hasattr(root, 'total_progress') and root.total_progress:
                     progress_percent = int((root.copied_bytes / root.total_bytes) * 100)
-                    root.total_progress.setValue(progress_percent)
-                    root.total_progress.setFormat(f"{progress_percent}%")  # Update the text format
+                    # Only update if the value has changed significantly
+                    if not hasattr(root, '_last_progress_percent') or abs(progress_percent - root._last_progress_percent) >= 1:
+                        root.total_progress.setValue(progress_percent)
+                        root.total_progress.setFormat(f"{progress_percent}%")
+                        root._last_progress_percent = progress_percent
                 
-                # Update speed label
-                if hasattr(root, 'speed_label'):
+                # Update speed label (only if it exists)
+                if hasattr(root, 'speed_label') and root.speed_label:
                     root.speed_label.setText(f"{current_speed:.0f} MB/s")
                 
-                # Update current speed stat
-                if hasattr(root, 'current_speed_label'):
+                # Update current speed stat (only if it exists)
+                if hasattr(root, 'current_speed_label') and root.current_speed_label:
                     root.current_speed_label.setText(f"Speed: {current_speed:.0f} MB/s")
                 
-                # Calculate average speed
-                if hasattr(root, 'avg_speed_label'):
+                # Calculate average speed (only if it exists)
+                if hasattr(root, 'avg_speed_label') and root.avg_speed_label:
                     total_mb = root.total_bytes / (1024 * 1024)
                     avg_speed = total_mb / elapsed_seconds
                     root.avg_speed_label.setText(f"Avg: {avg_speed:.0f} MB/s")
                 
-                # Update peak speed if current speed is higher
-                if hasattr(root, 'peak_speed_label'):
+                # Update peak speed if current speed is higher (only if it exists)
+                if hasattr(root, 'peak_speed_label') and root.peak_speed_label:
                     try:
                         current_peak_text = root.peak_speed_label.text()
                         if "Peak: " in current_peak_text:
@@ -216,8 +219,8 @@ def build_ingest_tab():
                         # If we can't parse the current peak, just set it
                         root.peak_speed_label.setText(f"Peak: {current_speed:.0f} MB/s")
                 
-                # Calculate ETA
-                if hasattr(root, 'eta_label') and current_speed > 0 and root.copied_bytes < root.total_bytes:
+                # Calculate ETA (only if it exists)
+                if hasattr(root, 'eta_label') and root.eta_label and current_speed > 0 and root.copied_bytes < root.total_bytes:
                     remaining_bytes = root.total_bytes - root.copied_bytes
                     eta_seconds = remaining_bytes / (current_speed * 1024 * 1024)
                     if eta_seconds > 0:
@@ -225,25 +228,20 @@ def build_ingest_tab():
                         root.eta_label.setText(f"ETA: {eta_str}")
                     else:
                         root.eta_label.setText("ETA: --:--:--")
-                elif hasattr(root, 'eta_label'):
+                elif hasattr(root, 'eta_label') and root.eta_label:
                     root.eta_label.setText("ETA: --:--:--")
                 
-                # Update total time label
-                if hasattr(root, 'total_time_label'):
+                # Update total time label (only if it exists)
+                if hasattr(root, 'total_time_label') and root.total_time_label:
                     elapsed_str = f"{int(elapsed_seconds//3600):02d}:{int((elapsed_seconds%3600)//60):02d}:{int(elapsed_seconds%60):02d}"
                     root.total_time_label.setText(f"Total: {elapsed_str}")
                 
-                # Update total speed label
-                if hasattr(root, 'total_speed_label'):
+                # Update total speed label (only if it exists)
+                if hasattr(root, 'total_speed_label') and root.total_speed_label:
                     root.total_speed_label.setText(f"{current_speed:.0f} MB/s")
                 
-                # Force updates for all widgets
-                if hasattr(root, 'total_progress'):
-                    root.total_progress.repaint()
-                    root.total_progress.update()
-                if hasattr(root, 'speed_label'):
-                    root.speed_label.repaint()
-                    root.speed_label.update()
+                # Remove forced repaints - let Qt handle updates naturally
+                # This prevents beachballing caused by excessive UI updates
     
     def _rolling_speed_human(self):
         """Calculate rolling speed and return human-readable string."""
@@ -1080,51 +1078,56 @@ def build_ingest_tab():
                 # Set a timeout to force completion if the job.completed event doesn't come
                 QTimer.singleShot(5000, lambda: _force_job_completion())
             
-            # Update total progress bar with percentage
-            if hasattr(root, 'total_progress') and root.total_progress:
-                root.total_progress.setValue(progress_percent)
-                print(f"DEBUG: Total progress bar updated to {progress_percent}%")
-            
-            # Update destination progress bars (for multi-destination) with percentage
-            if hasattr(root, 'destinations'):
-                for i, dest_obj in enumerate(root.destinations):
-                    if 'progress_bar' in dest_obj and dest_obj['progress_bar']:
-                        dest_obj['progress_bar'].setValue(progress_percent)
-                        print(f"DEBUG: Destination {i+1} progress bar updated to {progress_percent}%")
-                        
-                        # Update destination status
-                        if 'status_label' in dest_obj:
-                            dest_obj['status_label'].setText(f"{progress_percent}%")
-            
-            # Update speed and elapsed time
-            if hasattr(root, 'job_data') and root.job_data:
-                elapsed_from_engine = payload.get("elapsed_time")
-                if elapsed_from_engine is not None:
-                    elapsed = float(elapsed_from_engine)
-                else:
-                    elapsed = time.time() - root.job_data['start_time']
+            # Batch UI updates to prevent beachballing - only update every 100ms
+            current_time = time.time()
+            if not hasattr(root, '_last_progress_update') or (current_time - root._last_progress_update) >= 0.1:
+                root._last_progress_update = current_time
+                
+                # Update total progress bar with percentage
+                if hasattr(root, 'total_progress') and root.total_progress:
+                    root.total_progress.setValue(progress_percent)
+                    print(f"DEBUG: Total progress bar updated to {progress_percent}%")
+                
+                # Update destination progress bars (for multi-destination) with percentage
+                if hasattr(root, 'destinations'):
+                    for i, dest_obj in enumerate(root.destinations):
+                        if 'progress_bar' in dest_obj and dest_obj['progress_bar']:
+                            dest_obj['progress_bar'].setValue(progress_percent)
+                            print(f"DEBUG: Destination {i+1} progress bar updated to {progress_percent}%")
+                            
+                            # Update destination status
+                            if 'status_label' in dest_obj:
+                                dest_obj['status_label'].setText(f"{progress_percent}%")
+                
+                # Update speed and elapsed time (less frequently to avoid UI blocking)
+                if hasattr(root, 'job_data') and root.job_data:
+                    elapsed_from_engine = payload.get("elapsed_time")
+                    if elapsed_from_engine is not None:
+                        elapsed = float(elapsed_from_engine)
+                    else:
+                        elapsed = time.time() - root.job_data['start_time']
 
-                # Prefer engine-reported speed if present
-                speed_mbps = payload.get("speed_mbps")
-                if speed_mbps is None and elapsed > 0:
-                    speed_mbps = (copied_bytes / elapsed) / (1024 * 1024)
+                    # Prefer engine-reported speed if present
+                    speed_mbps = payload.get("speed_mbps")
+                    if speed_mbps is None and elapsed > 0:
+                        speed_mbps = (copied_bytes / elapsed) / (1024 * 1024)
 
-                if hasattr(root, 'speed_label') and root.speed_label and speed_mbps is not None:
-                    root.speed_label.setText(f"{float(speed_mbps):.1f} MB/s")
-                    print("DEBUG: Speed label updated")
+                    if hasattr(root, 'speed_label') and root.speed_label and speed_mbps is not None:
+                        root.speed_label.setText(f"{float(speed_mbps):.1f} MB/s")
+                        print("DEBUG: Speed label updated")
 
-                if hasattr(root, 'elapsed_label') and root.elapsed_label:
-                    elapsed_str = f"{int(elapsed//3600):02d}:{int((elapsed%3600)//60):02d}:{int(elapsed%60):02d}"
-                    root.elapsed_label.setText(f"Elapsed: {elapsed_str}")
-                    print("DEBUG: Elapsed label updated")
+                    if hasattr(root, 'elapsed_label') and root.elapsed_label:
+                        elapsed_str = f"{int(elapsed//3600):02d}:{int((elapsed%3600)//60):02d}:{int(elapsed%60):02d}"
+                        root.elapsed_label.setText(f"Elapsed: {elapsed_str}")
+                        print("DEBUG: Elapsed label updated")
+                
+                # Update status (less frequently)
+                if hasattr(root, 'status_label') and root.status_label:
+                    percent = (copied_bytes / total_bytes * 100) if total_bytes > 0 else 0
+                    root.status_label.setText(f"Copying... {percent:.1f}% ({copied_bytes:,}/{total_bytes:,} bytes)")
+                    print("DEBUG: Status label updated")
             
-            # Update status
-            if hasattr(root, 'status_label') and root.status_label:
-                percent = (copied_bytes / total_bytes * 100) if total_bytes > 0 else 0
-                root.status_label.setText(f"Copying... {percent:.1f}% ({copied_bytes:,}/{total_bytes:,} bytes)")
-                print("DEBUG: Status label updated")
-            
-            # Update stored data
+            # Update stored data (always update this)
             if hasattr(root, 'job_data'):
                 root.job_data['copied_bytes'] = copied_bytes
             
@@ -1373,8 +1376,8 @@ def build_ingest_tab():
             self.pending_events = []
             self._timer = QTimer()
             self._timer.timeout.connect(self._process_pending_events)
-            self._timer.start(200)  # Process events every 200ms (even slower for stability)
-            print(f"DEBUG: QtSink timer started with interval 200ms")
+            self._timer.start(50)  # Process events every 50ms for real-time responsiveness
+            print(f"DEBUG: QtSink timer started with interval 100ms")
             self._lock = threading.Lock()  # Add thread safety
             self._widgets_valid = True  # Track if widgets are still valid
             self._processing = False  # Prevent re-entrant processing
@@ -1471,16 +1474,19 @@ def build_ingest_tab():
             self.cleanup()
             super().closeEvent(event)
     
-    # Connect bridge signals to handlers (queued to GUI thread)
+    # Create and use the QtSink instance for event processing
+    qt_sink = QtSink()
+    
+    # Connect bridge signals to QtSink for async processing
     bridge = get_bridge()
-    bridge.sigJobStarted.connect(handle_job_started, QtCore.Qt.ConnectionType.QueuedConnection)
-    bridge.sigJobProgress.connect(handle_job_progress, QtCore.Qt.ConnectionType.QueuedConnection)
-    bridge.sigJobCompleted.connect(handle_job_completed, QtCore.Qt.ConnectionType.QueuedConnection)
-    bridge.sigJobError.connect(lambda p: print("job.error", p), QtCore.Qt.ConnectionType.QueuedConnection)
-    bridge.sigFileStarted.connect(handle_file_started, QtCore.Qt.ConnectionType.QueuedConnection)
-    bridge.sigFileProgress.connect(handle_file_progress, QtCore.Qt.ConnectionType.QueuedConnection)
-    bridge.sigFileCompleted.connect(handle_file_completed, QtCore.Qt.ConnectionType.QueuedConnection)
-    bridge.sigDestProgress.connect(handle_dest_progress, QtCore.Qt.ConnectionType.QueuedConnection)
+    bridge.sigJobStarted.connect(lambda p: qt_sink.emit("job.started", p), QtCore.Qt.ConnectionType.QueuedConnection)
+    bridge.sigJobProgress.connect(lambda p: qt_sink.emit("job.progress", p), QtCore.Qt.ConnectionType.QueuedConnection)
+    bridge.sigJobCompleted.connect(lambda p: qt_sink.emit("job.completed", p), QtCore.Qt.ConnectionType.QueuedConnection)
+    bridge.sigJobError.connect(lambda p: qt_sink.emit("job.error", p), QtCore.Qt.ConnectionType.QueuedConnection)
+    bridge.sigFileStarted.connect(lambda p: qt_sink.emit("file.started", p), QtCore.Qt.ConnectionType.QueuedConnection)
+    bridge.sigFileProgress.connect(lambda p: qt_sink.emit("file.progress", p), QtCore.Qt.ConnectionType.QueuedConnection)
+    bridge.sigFileCompleted.connect(lambda p: qt_sink.emit("file.completed", p), QtCore.Qt.ConnectionType.QueuedConnection)
+    bridge.sigDestProgress.connect(lambda p: qt_sink.emit("dest.progress", p), QtCore.Qt.ConnectionType.QueuedConnection)
     
     # Wire up button handlers
     def on_start():

@@ -65,6 +65,10 @@ private:
     void copy_to_multiple_destinations_fanout(const DataStructures::CopyJob& job, const std::vector<std::string>& files);
     bool copy_single_file(const DataStructures::CopyJob& job, const std::string& source_path, const std::string& dest_path);
     
+    // Disk space validation
+    bool check_disk_space(const std::string& destination_path, size_t required_bytes);
+    size_t get_available_disk_space(const std::string& path);
+    
     // Event emission
     void emit_event(const std::string& event_type, const void* payload);
     template <class F>
