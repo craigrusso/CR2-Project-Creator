@@ -212,10 +212,14 @@ def build_ingest_tab():
                 if hasattr(root, 'peak_speed_label') and root.peak_speed_label:
                     try:
                         current_peak_text = root.peak_speed_label.text()
-                        if "Peak: " in current_peak_text:
-                            current_peak = float(current_peak_text.split(': ')[1].split(' ')[0])
+                        # Parse current peak value (format: "XXX MB/s" or "0 MB/s")
+                        if " MB/s" in current_peak_text:
+                            current_peak = float(current_peak_text.split(' ')[0])
                             if current_speed > current_peak:
                                 root.peak_speed_label.setText(f"{current_speed:.0f} MB/s")
+                        else:
+                            # If we can't parse, initialize with current speed
+                            root.peak_speed_label.setText(f"{current_speed:.0f} MB/s")
                     except (ValueError, IndexError):
                         # If we can't parse the current peak, just set it
                         root.peak_speed_label.setText(f"{current_speed:.0f} MB/s")
@@ -349,13 +353,13 @@ def build_ingest_tab():
     dest_header.addWidget(dest_label)
     dest_header.addWidget(dest_combo, 1)
     dest_header.addWidget(add_dest_btn)
-    dest_layout.addLayout(dest_header)
+    dest_layout.addLayout(dest_header, 0)  # Header stays fixed - no stretch
     
     # Destinations list (scrollable with expandable height)
     dest_scroll = QScrollArea()
     dest_scroll.setWidgetResizable(True)
     dest_scroll.setMinimumHeight(150)  # Increased minimum height to show bottom clearly
-    dest_scroll.setMaximumHeight(400)  # Increased max height for more destinations
+    dest_scroll.setMaximumHeight(800)  # Increased max height for more destinations when expanded
     dest_scroll.setStyleSheet(SCROLL_AREA_STYLE)
     dest_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
     dest_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -367,7 +371,7 @@ def build_ingest_tab():
     dest_container_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
     
     dest_scroll.setWidget(dest_container)
-    dest_layout.addWidget(dest_scroll)
+    dest_layout.addWidget(dest_scroll, 1)  # Scroll area gets stretch factor - this expands
     
     paths_layout.addWidget(dest_frame, 1)  # Add stretch - allow expansion
     
@@ -1244,7 +1248,7 @@ def build_ingest_tab():
                 'total_files': total_files,
                 'start_time': time.time(),
                 'copied_bytes': 0,
-                'completed_files': 0
+                'completed_files': 0  # Initialize completed files counter
             }
             
             print("DEBUG: handle_job_started completed successfully")
@@ -1273,6 +1277,20 @@ def build_ingest_tab():
             print(f"DEBUG: bytes_copied from payload: {payload.get('bytes_copied')}")
             print(f"DEBUG: Final copied_bytes value: {copied_bytes}")
             print(f"DEBUG: Job progress: {copied_bytes}/{total_bytes} bytes")
+            
+            # Check for file completion information in progress payload (C++ engine emits "files_completed")
+            completed_files_from_payload = payload.get("files_completed")
+            if completed_files_from_payload is not None:
+                print(f"DEBUG: Found files_completed in engine payload: {completed_files_from_payload}")
+                # Update using engine data
+                if hasattr(root, 'job_data') and root.job_data:
+                    root.job_data['completed_files'] = completed_files_from_payload
+                    total_files = root.job_data.get('total_files', 0)
+                    if hasattr(root, 'files_count') and root.files_count:
+                        root.files_count.setText(f"{completed_files_from_payload} of {total_files} files")
+                        print(f"DEBUG: Updated file count from engine: {completed_files_from_payload} of {total_files}")
+            else:
+                print(f"DEBUG: No files_completed found in engine payload - checking payload keys: {list(payload.keys())}")
             
             # Store the values in root for the update_stats function
             root.copied_bytes = copied_bytes
@@ -1439,6 +1457,34 @@ def build_ingest_tab():
             import traceback
             traceback.print_exc()
             
+    def handle_file_completed(payload):
+        """Handle file completion events to update transfer status"""
+        print(f"DEBUG: ===== FILE COMPLETED EVENT RECEIVED =====")
+        print(f"DEBUG: handle_file_completed called with: {payload}")
+        try:
+            filename = payload.get("filename", "Unknown file")
+            print(f"DEBUG: File completed: {filename}")
+            
+            # Update completed files count
+            if hasattr(root, 'job_data') and root.job_data:
+                root.job_data['completed_files'] = root.job_data.get('completed_files', 0) + 1
+                completed_files = root.job_data['completed_files']
+                total_files = root.job_data.get('total_files', 0)
+                
+                print(f"DEBUG: Updated completed files: {completed_files} of {total_files}")
+                
+                # Update file count display
+                if hasattr(root, 'files_count') and root.files_count:
+                    root.files_count.setText(f"{completed_files} of {total_files} files")
+                    print(f"DEBUG: File count display updated to show {completed_files} of {total_files} files")
+                else:
+                    print(f"DEBUG: files_count widget not found or not available")
+                
+        except Exception as e:
+            print(f"DEBUG: Error in handle_file_completed: {e}")
+            import traceback
+            traceback.print_exc()
+
     def handle_file_failed(payload):
         print(f"DEBUG: handle_file_failed called with: {payload}")
         try:
@@ -1631,7 +1677,9 @@ def build_ingest_tab():
                 
                 for event_type, payload in events_to_process:
                     try:
-                        print(f"DEBUG: Processing event: {event_type}")
+                        print(f"DEBUG: ===== Processing event: {event_type} =====")
+                        if event_type == "file.completed":
+                            print(f"DEBUG: FILE COMPLETED EVENT DETECTED - calling handler")
                         
                         # Check if widgets are still valid before processing
                         if not self._widgets_valid:
@@ -1645,6 +1693,8 @@ def build_ingest_tab():
                             handle_job_progress(payload)
                         elif event_type == "current.file":
                             handle_current_file(payload)
+                        elif event_type == "file.completed":
+                            handle_file_completed(payload)
                         elif event_type == "file.failed":
                             handle_file_failed(payload)  # Still handle failures for alerts
                         elif event_type == "job.completed":
