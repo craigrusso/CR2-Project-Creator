@@ -381,7 +381,7 @@ def build_ingest_tab():
     dest_scroll.setWidget(dest_container)
     dest_layout.addWidget(dest_scroll)
     
-    paths_layout.addWidget(dest_frame)
+    paths_layout.addWidget(dest_frame, 1)  # Add stretch - allow expansion
     
     # Store references for later use
     root.dest_container = dest_container
@@ -390,7 +390,7 @@ def build_ingest_tab():
     root.src_combo = src_combo
     root.dest_combo = dest_combo
     
-    layout.addLayout(paths_layout)
+    layout.addLayout(paths_layout, 0)  # No stretch - keep fixed size
     
     # Settings section
     settings_container = QWidget()
@@ -508,6 +508,21 @@ def build_ingest_tab():
     except Exception as e:
         print(f"DEBUG: Failed to apply hover delegate to verify_combo: {e}")
     
+    # Auto-update verification report checkbox based on verify mode
+    def on_verify_mode_changed():
+        current_mode = verify_combo.currentText()
+        # Auto-enable verification report for verification modes other than FAST
+        if current_mode in ["STREAM_VERIFY", "READBACK_VERIFY"]:
+            report_checkbox.setChecked(True)
+            report_checkbox.setToolTip("Verification report automatically enabled for verification modes")
+        else:
+            # For FAST mode, leave user's choice but show helpful tooltip
+            report_checkbox.setToolTip("Optional verification report (recommended for audit trails)")
+        print(f"DEBUG: Verify mode changed to {current_mode}, report checkbox: {report_checkbox.isChecked()}")
+    
+    # Connect the signal after the function is defined
+    verify_combo.currentTextChanged.connect(on_verify_mode_changed)
+    
     verify_layout.addWidget(verify_label)
     verify_layout.addWidget(verify_combo)
     controls_row.addLayout(verify_layout, 1)  # Add stretch factor
@@ -597,12 +612,12 @@ def build_ingest_tab():
     root.add_dest_btn = add_dest_btn
     
     # Add settings container to main layout
-    layout.addWidget(settings_container)
+    layout.addWidget(settings_container, 0)  # No stretch - keep fixed size
     
-    # Control buttons
+    # Control buttons - moved closer to transfer settings for better layout
     buttons_layout = QHBoxLayout()
     buttons_layout.setSpacing(10)  # Reduced spacing
-    buttons_layout.setContentsMargins(0, 0, 0, 0)
+    buttons_layout.setContentsMargins(0, 10, 0, 15)  # Add some margin around buttons
     
     # Start button
     start_btn = QPushButton("Start Transfer")
@@ -628,13 +643,14 @@ def build_ingest_tab():
     buttons_layout.addWidget(start_btn)
     buttons_layout.addWidget(pause_btn)
     buttons_layout.addWidget(cancel_btn)
+    buttons_layout.addStretch()  # Add stretch to push buttons to the left
     
     # Store button references in root for access by event handlers
     root.start_btn = start_btn  # Store start button reference
     root.pause_btn = pause_btn
     root.cancel_btn = cancel_btn
     
-    layout.addLayout(buttons_layout)
+    layout.addLayout(buttons_layout, 0)  # No stretch - keep fixed size
     
     # Main progress display (clean, compact)
     progress_frame = QFrame()
@@ -672,7 +688,7 @@ def build_ingest_tab():
     print(f"DEBUG: Progress bar text visible: {total_progress.isTextVisible()}")
     print(f"DEBUG: Progress bar initial value: {total_progress.value()}")
     
-    layout.addWidget(progress_frame)
+    layout.addWidget(progress_frame, 0)  # No stretch - keep fixed size
 
     # Add total time and total speed labels (footer row)
     root.total_time_label = QtWidgets.QLabel("Total: 00:00")
@@ -682,7 +698,7 @@ def build_ingest_tab():
     stats_row.addWidget(root.total_time_label)
     stats_row.addStretch(1)
     stats_row.addWidget(root.total_speed_label)
-    layout.addLayout(stats_row)
+    layout.addLayout(stats_row, 0)  # No stretch - keep fixed size
     
     # Files frame - store for later use and ensure proper display
     files_frame = QFrame()
@@ -775,7 +791,7 @@ def build_ingest_tab():
     root.files_container_layout = files_container_layout
     root.files_count = files_count
     
-    layout.addWidget(files_frame)
+    layout.addWidget(files_frame, 1)  # Add stretch - allow expansion
     
     # Destination management functions
     def add_destination_from_path(path):
@@ -1078,7 +1094,7 @@ def build_ingest_tab():
                 print("DEBUG: Total progress bar updated")
             
             if hasattr(root, 'status_label') and root.status_label:
-                root.status_label.setText(f"Copying {total_files} files ({total_bytes:,} bytes)")
+                root.status_label.setText(f"Starting transfer of {total_files} files...")
                 print("DEBUG: Status label updated")
             
             if hasattr(root, 'elapsed_label') and root.elapsed_label:
@@ -1101,8 +1117,17 @@ def build_ingest_tab():
                     
                     # Update status
                     if 'status_label' in dest_obj:
-                        dest_obj['status_label'].setText("Copying...")
+                        dest_obj['status_label'].setText("Starting...")
                         print(f"DEBUG: Updated status for destination {i+1}")
+            
+            # Clear any existing file widgets - C++ engine will create them as files are started
+            _clear_all_file_widgets()
+            print(f"DEBUG: Cleared existing file widgets - C++ engine will create them as files start")
+            
+            # Update file count display
+            if hasattr(root, 'files_count') and root.files_count:
+                root.files_count.setText(f"0 / {total_files} files")
+                print(f"DEBUG: File count display updated to show 0 / {total_files} files")
             
             # Store data for later use
             root.job_start_time = time.time()
@@ -1110,7 +1135,8 @@ def build_ingest_tab():
                 'total_bytes': total_bytes,
                 'total_files': total_files,
                 'start_time': time.time(),
-                'copied_bytes': 0
+                'copied_bytes': 0,
+                'completed_files': 0
             }
             
             print("DEBUG: handle_job_started completed successfully")
@@ -1244,19 +1270,40 @@ def build_ingest_tab():
             file_id = payload.get("file_id", "unknown")
             print(f"DEBUG: File started: {filename} - {total_bytes} bytes")
             
-            # Create file progress widget
-            if file_id not in root.file_widgets:
-                file_widget = FileProgressLine(filename, total_bytes)
+            # Extract just the filename from the full path for display
+            if filename != "unknown" and filename != "Copying...":
+                display_filename = os.path.basename(filename) if '/' in filename or '\\' in filename else filename
+            else:
+                display_filename = "Copying..."
+            
+            # Create or update file widget
+            if file_id in root.file_widgets:
+                # Update existing widget
+                widget = root.file_widgets[file_id]
+                if hasattr(widget, 'filename_label'):
+                    widget.filename_label.setText(display_filename)
+                widget.status_label.setText("Copying")
+                print(f"DEBUG: Updated existing file widget for {display_filename}")
+            elif display_filename != "Copying...":
+                # Create new file widget with real filename
+                file_widget = FileProgressLine(display_filename, total_bytes)
+                file_widget.status_label.setText("Copying")
                 root.file_widgets[file_id] = file_widget
                 root.files_container_layout.addWidget(file_widget)
                 root.active_files += 1
-                root.files_count.setText(f"{root.active_files} files")
-                print(f"DEBUG: Created file widget for {filename}, active files: {root.active_files}")
+                print(f"DEBUG: Created new file widget for {display_filename}")
+            else:
+                # Update the first pending widget if we have placeholder filename
+                for fid, widget in root.file_widgets.items():
+                    if widget.status_label.text() == "Pending":
+                        widget.status_label.setText("Copying")
+                        filename = widget.filename_label.text()
+                        print(f"DEBUG: Started copying file: {filename}")
+                        break
             
-            # Update status label to show current file
-            if hasattr(root, 'status_label') and root.status_label and filename != "unknown":
-                root.status_label.setText(f"Copying: {filename}")
-                print(f"DEBUG: Status updated to show file: {filename}")
+            # Update global status
+            if hasattr(root, 'status_label') and root.status_label and display_filename != "Copying...":
+                root.status_label.setText(f"Copying: {display_filename}")
             
         except Exception as e:
             print(f"DEBUG: Error in handle_file_started: {e}")
@@ -1277,15 +1324,24 @@ def build_ingest_tab():
             file_id = payload.get("file_id", "unknown")
             print(f"DEBUG: File progress: {file_label} - {file_copied}/{file_total}")
             
-            # Update file progress widget
+            # Update file progress widget and status
             if file_id in root.file_widgets:
-                root.file_widgets[file_id].update_progress(file_copied)
+                widget = root.file_widgets[file_id]
+                widget.update_progress(file_copied)
+                # Update status to "Copying" when progress is being made
+                if file_copied > 0 and file_copied < file_total:
+                    widget.status_label.setText("Copying")
+                elif file_copied >= file_total:
+                    widget.status_label.setText("Complete")
                 print(f"DEBUG: Updated file widget progress for {file_label}")
             
-            # Do not modify global job counters here; job.progress drives overall bar.
-            # Optionally surface active filename in status for user feedback
+            # Update global status label with current file being copied
             if hasattr(root, 'status_label') and root.status_label and file_label != "unknown":
-                root.status_label.setText(f"Copying: {file_label}")
+                display_filename = os.path.basename(file_label) if file_label != "unknown" else "Unknown file"
+                if file_copied < file_total:
+                    root.status_label.setText(f"Copying: {display_filename}")
+                else:
+                    root.status_label.setText(f"Completed: {display_filename}")
             
         except Exception as e:
             print(f"DEBUG: Error in handle_file_progress: {e}")
@@ -1302,19 +1358,48 @@ def build_ingest_tab():
             file_id = payload.get("file_id", "unknown")
             print(f"DEBUG: File completed: {filename} - {bytes_copied}/{total_bytes} bytes")
             
-            # Mark file as completed and schedule removal
+            # Extract just the filename from the full path for display
+            if filename != "unknown":
+                display_filename = os.path.basename(filename) if '/' in filename or '\\' in filename else filename
+            else:
+                display_filename = "Completed"
+            
+            # Mark file as completed
             if file_id in root.file_widgets:
                 root.file_widgets[file_id].mark_completed()
-                # Schedule removal after a delay
-                QTimer.singleShot(2000, lambda: _remove_file_widget(file_id))
-                root.active_files -= 1
-                root.files_count.setText(f"{root.active_files} files")
-                print(f"DEBUG: File marked as completed, active files: {root.active_files}")
+                root.file_widgets[file_id].status_label.setText("Complete")
+                print(f"DEBUG: Marked file widget {file_id} as completed: {display_filename}")
+                # Schedule removal after showing completion
+                QTimer.singleShot(2000, lambda fid=file_id: _remove_file_widget(fid))
+            else:
+                # Fallback: find the first copying widget and mark it completed
+                for fid, widget in root.file_widgets.items():
+                    if widget.status_label.text() == "Copying":
+                        widget.status_label.setText("Complete")
+                        widget.mark_completed()
+                        print(f"DEBUG: Completed first copying file widget")
+                        QTimer.singleShot(2000, lambda ffid=fid: _remove_file_widget(ffid))
+                        break
             
-            # Update file count if available
+            # Update completed file count
             if hasattr(root, 'job_data') and root.job_data:
                 root.job_data['completed_files'] = root.job_data.get('completed_files', 0) + 1
-                print(f"DEBUG: Completed files: {root.job_data['completed_files']}")
+                completed = root.job_data['completed_files']
+                total = root.job_data.get('total_files', 0)
+                
+                # Update file count display
+                if hasattr(root, 'files_count') and root.files_count:
+                    root.files_count.setText(f"{completed} / {total} files")
+                    print(f"DEBUG: Updated file count: {completed} / {total} files")
+                
+                # Update global status
+                if hasattr(root, 'status_label') and root.status_label:
+                    if completed < total:
+                        root.status_label.setText(f"Completed {completed} of {total} files")
+                    else:
+                        root.status_label.setText(f"All {total} files completed")
+                
+                print(f"DEBUG: Completed files: {completed} / {total}")
             
         except Exception as e:
             print(f"DEBUG: Error in handle_file_completed: {e}")
@@ -1336,25 +1421,42 @@ def build_ingest_tab():
                 dest_obj = root.destinations[dest_index]
                 if 'progress_bar' in dest_obj and dest_obj['progress_bar']:
                     progress_bar = dest_obj['progress_bar']
-                    # Make progress bar visible when transfer starts
+                    
+                    # Ensure progress bar is visible and initialized
                     if not progress_bar.isVisible():
                         progress_bar.setVisible(True)
+                        progress_bar.setValue(0)
+                        progress_bar.setFormat(f"Dest {dest_index + 1}: 0%")
                     
                     # Calculate and update progress
                     if total_bytes > 0:
-                        progress_percent = int((bytes_copied / total_bytes) * 100)
+                        progress_percent = min(100, int((bytes_copied / total_bytes) * 100))
                         progress_bar.setValue(progress_percent)
                         progress_bar.setFormat(f"Dest {dest_index + 1}: {progress_percent}%")
                         print(f"DEBUG: Destination {dest_index} progress bar updated to {progress_percent}%")
+                    else:
+                        # If total_bytes is 0, show indeterminate progress
+                        progress_bar.setFormat(f"Dest {dest_index + 1}: Calculating...")
                     
-                    # Update status label
+                    # Update status label with more detailed status
                     if 'status_label' in dest_obj and dest_obj['status_label']:
-                        if bytes_copied == 0:
+                        if bytes_copied == 0 and total_bytes == 0:
+                            dest_obj['status_label'].setText("Preparing...")
+                        elif bytes_copied == 0:
                             dest_obj['status_label'].setText("Starting...")
-                        elif bytes_copied < total_bytes:
-                            dest_obj['status_label'].setText("Copying...")
-                        else:
+                        elif bytes_copied >= total_bytes and total_bytes > 0:
                             dest_obj['status_label'].setText("Complete")
+                        else:
+                            # Show transfer rate if available
+                            rate_mbps = payload.get("speed_mbps", 0)
+                            if rate_mbps > 0:
+                                dest_obj['status_label'].setText(f"Copying ({rate_mbps:.1f} MB/s)")
+                            else:
+                                dest_obj['status_label'].setText("Copying...")
+                else:
+                    print(f"DEBUG: No progress bar found for destination {dest_index}")
+            else:
+                print(f"DEBUG: Invalid destination index {dest_index} or no destinations available")
             
         except Exception as e:
             print(f"DEBUG: Error in handle_dest_progress: {e}")
@@ -1413,29 +1515,62 @@ def build_ingest_tab():
                 root.elapsed_label.setText(f"Elapsed: {elapsed_str}")
                 print("DEBUG: Elapsed label updated")
             
-            # Update destination status
+            # Update destination status and reset to 100%
             if hasattr(root, 'destinations'):
                 for i, dest_obj in enumerate(root.destinations):
                     if 'status_label' in dest_obj:
-                        dest_obj['status_label'].setText("Completed")
+                        dest_obj['status_label'].setText("Complete")
                     if 'progress_bar' in dest_obj:
                         dest_obj['progress_bar'].setValue(100)
-                print("DEBUG: Destination controls updated")
+                        dest_obj['progress_bar'].setFormat(f"Dest {i + 1}: 100%")
+                print("DEBUG: Destination controls updated for completion")
             
-            # Re-enable controls after job completion
-            if hasattr(root, 'report_checkbox'):
-                root.report_checkbox.setEnabled(True)
+            # Clear file widgets after a brief delay to show completion
+            if hasattr(root, 'file_widgets'):
+                # Mark all remaining file widgets as completed
+                for file_id, widget in root.file_widgets.items():
+                    widget.mark_completed()
+                
+                # Schedule removal of all file widgets after showing completion for 3 seconds
+                QTimer.singleShot(3000, lambda: _clear_all_file_widgets())
+                print("DEBUG: File widgets marked as completed and scheduled for removal")
             
-            # Re-enable main controls
-            conc_slider.setEnabled(True)
-            stream_slider.setEnabled(True)
-            verify_combo.setEnabled(True)
-            preset_combo.setEnabled(True)
-            add_dest_btn.setEnabled(True)
-            start_btn.setEnabled(True)
-            pause_btn.setEnabled(False)
-            cancel_btn.setEnabled(False)
-            print("DEBUG: Main controls re-enabled")
+            # Reset job state and re-enable controls after brief delay
+            def reset_transfer_state():
+                # Reset job tracking
+                root.current_job = None
+                root.job_start_time = None
+                root.total_bytes = 0
+                root.copied_bytes = 0
+                root.active_files = 0
+                
+                # Re-enable main controls
+                if hasattr(root, 'report_checkbox'):
+                    root.report_checkbox.setEnabled(True)
+                conc_slider.setEnabled(True)
+                stream_slider.setEnabled(True)
+                verify_combo.setEnabled(True)
+                preset_combo.setEnabled(True)
+                add_dest_btn.setEnabled(True)
+                start_btn.setEnabled(True)
+                pause_btn.setEnabled(False)
+                cancel_btn.setEnabled(False)
+                
+                # Reset progress and status displays
+                if hasattr(root, 'total_progress') and root.total_progress:
+                    root.total_progress.setValue(0)
+                    root.total_progress.setFormat("0%")
+                if hasattr(root, 'status_label') and root.status_label:
+                    root.status_label.setText("Ready")
+                if hasattr(root, 'speed_label') and root.speed_label:
+                    root.speed_label.setText("0 MB/s")
+                if hasattr(root, 'files_count') and root.files_count:
+                    root.files_count.setText("0 files")
+                
+                print("DEBUG: Transfer state reset and controls re-enabled")
+            
+            # Schedule state reset after file widgets are cleared
+            QTimer.singleShot(4000, reset_transfer_state)
             
             print("DEBUG: handle_job_completed completed successfully")
             
@@ -1462,6 +1597,21 @@ def build_ingest_tab():
                 
         except Exception as e:
             print(f"DEBUG: Error in _remove_file_widget: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _clear_all_file_widgets():
+        """Clear all file widgets from the display"""
+        print("DEBUG: _clear_all_file_widgets called")
+        try:
+            for file_id in list(root.file_widgets.keys()):
+                _remove_file_widget(file_id)
+            root.active_files = 0
+            if hasattr(root, 'files_count') and root.files_count:
+                root.files_count.setText("0 files")
+            print("DEBUG: All file widgets cleared")
+        except Exception as e:
+            print(f"DEBUG: Error in _clear_all_file_widgets: {e}")
             import traceback
             traceback.print_exc()
 
@@ -1793,6 +1943,7 @@ def build_ingest_tab():
             # Job has been cancelled, update UI
             if hasattr(root, 'total_progress') and root.total_progress:
                 root.total_progress.setValue(0)
+                root.total_progress.setFormat("0%")
                 print("DEBUG: Progress bar reset to 0%")
             
             if hasattr(root, 'status_label') and root.status_label:
@@ -1806,30 +1957,46 @@ def build_ingest_tab():
                         dest_obj['status_label'].setText("Cancelled")
                     if 'progress_bar' in dest_obj:
                         dest_obj['progress_bar'].setValue(0)
+                        dest_obj['progress_bar'].setFormat(f"Dest {i + 1}: 0%")
                 print("DEBUG: Destination controls updated for cancellation")
             
-            # Clear file widgets
-            if hasattr(root, 'file_widgets'):
-                for file_id in list(root.file_widgets.keys()):
-                    _remove_file_widget(file_id)
+            # Clear file widgets immediately
+            _clear_all_file_widgets()
+            print("DEBUG: File widgets cleared")
+            
+            # Reset job state immediately after cancellation
+            def reset_after_cancel():
+                # Reset job tracking
+                root.current_job = None
+                root.job_start_time = None
+                root.total_bytes = 0
+                root.copied_bytes = 0
                 root.active_files = 0
-                files_count.setText("0 files")
-                print("DEBUG: File widgets cleared")
+                
+                # Re-enable controls after job cancellation
+                if hasattr(root, 'report_checkbox'):
+                    root.report_checkbox.setEnabled(True)
+                
+                # Re-enable main controls
+                conc_slider.setEnabled(True)
+                stream_slider.setEnabled(True)
+                verify_combo.setEnabled(True)
+                preset_combo.setEnabled(True)
+                add_dest_btn.setEnabled(True)
+                start_btn.setEnabled(True)
+                pause_btn.setEnabled(False)
+                cancel_btn.setEnabled(False)
+                
+                # Reset additional status displays
+                if hasattr(root, 'speed_label') and root.speed_label:
+                    root.speed_label.setText("0 MB/s")
+                if hasattr(root, 'elapsed_label') and root.elapsed_label:
+                    root.elapsed_label.setText("Elapsed: 00:00:00")
+                
+                print("DEBUG: Main controls re-enabled after cancellation")
             
-            # Re-enable controls after job cancellation
-            if hasattr(root, 'report_checkbox'):
-                root.report_checkbox.setEnabled(True)
-            
-            # Re-enable main controls
-            conc_slider.setEnabled(True)
-            stream_slider.setEnabled(True)
-            verify_combo.setEnabled(True)
-            preset_combo.setEnabled(True)
-            add_dest_btn.setEnabled(True)
-            start_btn.setEnabled(True)
-            pause_btn.setEnabled(False)
-            cancel_btn.setEnabled(False)
-            print("DEBUG: Main controls re-enabled after cancellation")
+            # Reset state after a brief delay to ensure UI updates are processed
+            QTimer.singleShot(500, reset_after_cancel)
             
             print("DEBUG: handle_job_cancelled completed successfully")
             

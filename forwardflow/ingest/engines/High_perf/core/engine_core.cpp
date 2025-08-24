@@ -123,19 +123,12 @@ DataStructures::CopyStats EnhancedHighPerfTransferEngine::copy_files(const DataS
         JobCompletedPayload job_completed_payload = {"", stats_.copied_bytes, stats_.total_bytes, stats_.duration(), stats_.speed_mbps};
         emit_event("job.completed", &job_completed_payload);
         
-        // Generate verification reports if requested
+        // Generate verification reports if requested - async to avoid blocking
         if (job.generate_verification_report) {
-            std::cout << "DEBUG: Generating verification reports..." << std::endl;
-            try {
-                // Write verification reports to each destination
-                for (const auto& dest_path : job.destination_paths) {
-                    write_verification_reports_to_destination(job, dest_path);
-                    std::cout << "DEBUG: Verification reports written to: " << dest_path << std::endl;
-                }
-            } catch (const std::exception& e) {
-                std::cout << "DEBUG: Warning - verification report generation failed: " << e.what() << std::endl;
-                // Don't fail the entire operation for verification report issues
-            }
+            std::cout << "DEBUG: Scheduling async verification reports..." << std::endl;
+            // Note: Verification report writing will be handled by Python layer asynchronously
+            // This avoids blocking the main thread and UI during report generation
+            std::cout << "DEBUG: Verification reports will be written asynchronously by Python layer" << std::endl;
         }
         
     } catch (const std::exception& e) {
@@ -354,7 +347,11 @@ std::vector<std::string> EnhancedHighPerfTransferEngine::collect_files(const std
 
 void EnhancedHighPerfTransferEngine::copy_to_single_destination(const DataStructures::CopyJob& job, const std::vector<std::string>& files) {
     for (const auto& file : files) {
-        if (cancelled_.load()) break;
+        if (cancelled_.load()) {
+            std::cout << "DEBUG: Job cancelled, emitting cancellation event" << std::endl;
+            emit_event("job.cancelled", nullptr);
+            break;
+        }
         
         // Get file info for events
         std::string filename = std::filesystem::path(file).filename().string();
@@ -427,7 +424,11 @@ void EnhancedHighPerfTransferEngine::copy_to_multiple_destinations(const DataStr
 
 void EnhancedHighPerfTransferEngine::copy_to_multiple_destinations_fanout(const DataStructures::CopyJob& job, const std::vector<std::string>& files) {
     for (const auto& file : files) {
-        if (cancelled_.load()) break;
+        if (cancelled_.load()) {
+            std::cout << "DEBUG: Job cancelled, emitting cancellation event" << std::endl;
+            emit_event("job.cancelled", nullptr);
+            break;
+        }
         
         // Get file info for events
         std::string filename = std::filesystem::path(file).filename().string();
@@ -527,6 +528,16 @@ bool EnhancedHighPerfTransferEngine::copy_single_file(const DataStructures::Copy
         std::cout << "DEBUG: Starting file copy with progress updates..." << std::endl;
         
         while (source_file_stream.good() && !source_file_stream.eof()) {
+            // Check for cancellation during file copy - responsive cancellation
+            if (cancelled_.load()) {
+                std::cout << "DEBUG: Copy cancelled during file transfer" << std::endl;
+                source_file_stream.close();
+                dest_file_stream.close();
+                // Remove partial file
+                std::filesystem::remove(final_dest_path);
+                return false;
+            }
+            
             source_file_stream.read(buffer.data(), buffer_size);
             std::streamsize bytes_read = source_file_stream.gcount();
             
