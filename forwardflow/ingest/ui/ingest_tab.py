@@ -1099,21 +1099,54 @@ def build_ingest_tab():
             dest_obj["path_type"] = preset.lower()
     
     def cancel_destination(dest_obj):
-        """Cancel a specific destination"""
+        """Cancel a specific destination with immediate UI feedback"""
         print(f"DEBUG: Canceling destination: {dest_obj['path']}")
         try:
-            if root.current_job and hasattr(root.current_job, 'cancel_destination'):
-                root.current_job.cancel_destination(dest_obj['path'])
-                print(f"DEBUG: Cancel command sent for destination: {dest_obj['path']}")
-            else:
-                print(f"DEBUG: No current job or job doesn't have cancel_destination method")
+            # IMMEDIATE UI FEEDBACK - don't wait for engine response
+            print(f"DEBUG: Providing immediate cancel feedback for destination: {dest_obj['path']}")
             
-
-                
+            # Immediately update destination progress bar to show canceling status
+            if 'progress_bar' in dest_obj and dest_obj['progress_bar']:
+                current_value = dest_obj['progress_bar'].value()
+                dest_obj['progress_bar'].setFormat("Creating transfer log...")
+                # Stop progress animation by setting to current value
+                dest_obj['progress_bar'].setValue(current_value)
+                print(f"DEBUG: Destination progress bar updated to show canceling status")
+            
+            # Send cancel command to engine in background thread to prevent UI blocking
+            def cancel_destination_async():
+                """Cancel destination in background thread to prevent UI freezing"""
+                try:
+                    if root.current_job and hasattr(root.current_job, 'cancel_destination'):
+                        root.current_job.cancel_destination(dest_obj['path'])
+                        print(f"DEBUG: Cancel command completed for destination: {dest_obj['path']}")
+                    else:
+                        print(f"DEBUG: No current job or job doesn't have cancel_destination method")
+                        # If no engine method, reset destination progress immediately
+                        if 'progress_bar' in dest_obj and dest_obj['progress_bar']:
+                            dest_obj['progress_bar'].setValue(0)
+                            dest_obj['progress_bar'].setFormat("Canceled")
+                except Exception as e:
+                    print(f"DEBUG: Error in background destination cancel: {e}")
+                    # Reset destination progress on error
+                    if 'progress_bar' in dest_obj and dest_obj['progress_bar']:
+                        dest_obj['progress_bar'].setValue(0)
+                        dest_obj['progress_bar'].setFormat("Error")
+            
+            # Start destination cancel operation in background thread
+            import threading
+            cancel_thread = threading.Thread(target=cancel_destination_async, daemon=True)
+            cancel_thread.start()
+            print(f"DEBUG: Destination cancel started in background thread for: {dest_obj['path']}")
+                    
         except Exception as e:
             print(f"DEBUG: Error canceling destination: {e}")
             import traceback
             traceback.print_exc()
+            # Reset destination progress on error
+            if 'progress_bar' in dest_obj and dest_obj['progress_bar']:
+                dest_obj['progress_bar'].setValue(0)
+                dest_obj['progress_bar'].setFormat("Error")
     
     def remove_destination(dest_obj, widget):
         """Remove a destination"""
@@ -1919,33 +1952,101 @@ def build_ingest_tab():
     def on_cancel():
         print("DEBUG: Cancel button clicked")
         try:
-            if root.current_job and hasattr(root.current_job, 'cancel'):
-                print("DEBUG: Canceling engine")
-                # Get the job ID from the engine
-                if hasattr(root.current_job, 'get_current_job_id'):
-                    job_id = root.current_job.get_current_job_id() or 'current'
-                else:
-                    job_id = 'current'
+            # IMMEDIATE UI FEEDBACK - don't wait for engine response
+            print("DEBUG: Providing immediate cancel feedback")
+            
+            # Immediately disable cancel button to prevent double-clicks
+            cancel_btn.setEnabled(False)
+            cancel_btn.setText("Canceling...")
+            
+            # Immediately stop all progress animations and show canceling status
+            if hasattr(root, 'total_progress') and root.total_progress:
+                root.total_progress.setFormat("Canceling - Creating transfer report...")
+                # Stop progress animation by setting to current value
+                current_value = root.total_progress.value()
+                root.total_progress.setValue(current_value)
+                print("DEBUG: Progress bar updated to show canceling status")
+            
+            # Update destination progress bars immediately
+            if hasattr(root, 'destinations'):
+                for i, dest_obj in enumerate(root.destinations):
+                    if 'progress_bar' in dest_obj and dest_obj['progress_bar']:
+                        dest_obj['progress_bar'].setFormat(f"Dest {i + 1}: Canceling...")
+                        # Stop progress animation
+                        current_value = dest_obj['progress_bar'].value()
+                        dest_obj['progress_bar'].setValue(current_value)
+                print("DEBUG: Destination progress bars updated to show canceling status")
+            
+            # Update file count status immediately
+            if hasattr(root, 'files_count') and root.files_count:
+                current_text = root.files_count.text()
+                # Keep the count but add canceling status
+                root.files_count.setText(f"{current_text} - Canceling transfer")
+                print("DEBUG: File count updated to show canceling status")
+            
+            # Send cancel command to engine in background thread to prevent UI blocking
+            def cancel_engine_async():
+                """Cancel engine in background thread to prevent UI freezing"""
+                try:
+                    if root.current_job and hasattr(root.current_job, 'cancel'):
+                        print("DEBUG: Sending cancel command to engine (background thread)")
+                        # Get the job ID from the engine
+                        if hasattr(root.current_job, 'get_current_job_id'):
+                            job_id = root.current_job.get_current_job_id() or 'current'
+                        else:
+                            job_id = 'current'
+                        
+                        # Send cancel command (this may block for report generation)
+                        root.current_job.cancel(job_id)
+                        print("DEBUG: Cancel command completed in background thread")
+                    else:
+                        print("DEBUG: No current job to cancel")
+                except Exception as e:
+                    print(f"DEBUG: Error in background cancel: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            # Start cancel operation in background thread to prevent beachball
+            import threading
+            cancel_thread = threading.Thread(target=cancel_engine_async, daemon=True)
+            cancel_thread.start()
+            print("DEBUG: Cancel command started in background thread")
                 
-                root.current_job.cancel(job_id)
-                print("DEBUG: Cancel command sent to engine")
-                
-                # Don't re-enable start button yet - wait for job.cancelled event
-                # The button states will be updated when the job actually stops
-                print("DEBUG: Waiting for job to actually cancel...")
-            else:
-                print("DEBUG: No current job or job doesn't have cancel method")
-                print(f"DEBUG: root.current_job: {root.current_job}")
-                if root.current_job:
-                    print(f"DEBUG: Job type: {type(root.current_job)}")
-                    print(f"DEBUG: Job attributes: {dir(root.current_job)}")
         except Exception as e:
             print(f"DEBUG: Error in on_cancel: {e}")
             import traceback
             traceback.print_exc()
+            # Reset UI on error
+            _reset_ui_after_cancel()
         
-        # Don't update button states here - wait for job.cancelled event
-        print("DEBUG: Cancel command sent, waiting for job to stop...")
+        print("DEBUG: Cancel initiated with immediate UI feedback")
+    
+    def _reset_ui_after_cancel():
+        """Helper function to reset UI after cancel operations"""
+        try:
+            # Reset cancel button
+            cancel_btn.setEnabled(False)
+            cancel_btn.setText("Cancel")
+            
+            # Reset progress displays
+            if hasattr(root, 'total_progress') and root.total_progress:
+                root.total_progress.setValue(0)
+                root.total_progress.setFormat("0%")
+            
+            # Reset destination progress bars
+            if hasattr(root, 'destinations'):
+                for i, dest_obj in enumerate(root.destinations):
+                    if 'progress_bar' in dest_obj and dest_obj['progress_bar']:
+                        dest_obj['progress_bar'].setValue(0)
+                        dest_obj['progress_bar'].setFormat(f"Dest {i + 1}: 0%")
+            
+            # Reset file count
+            if hasattr(root, 'files_count') and root.files_count:
+                root.files_count.setText("0 of 0 files")
+            
+            print("DEBUG: UI reset after cancel completed")
+        except Exception as e:
+            print(f"DEBUG: Error in _reset_ui_after_cancel: {e}")
     
     def handle_job_cancelled(payload):
         """Handle job cancellation completion"""
@@ -1992,10 +2093,11 @@ def build_ingest_tab():
                 add_dest_btn.setEnabled(True)
                 start_btn.setEnabled(True)
                 pause_btn.setEnabled(False)
+                # Reset cancel button text and disable it
                 cancel_btn.setEnabled(False)
+                cancel_btn.setText("Cancel")  # Reset text back to normal
                 
                 # Reset additional status displays
-
                 if hasattr(root, 'elapsed_label') and root.elapsed_label:
                     root.elapsed_label.setText("00:00:00")
                 
