@@ -172,59 +172,36 @@ class PythonCopyEngine(Engine):
                                 print(f"DEBUG: Payload dir: {dir(payload)}")
                             
                             if event_type == "file.started":
-                                # Create a simple file.started event
+                                # For professional DIT workflow: just track current file, no individual widgets
                                 print(f"DEBUG: File started event received")
                                 
-                                # Try to extract filename from payload, fallback to generic
-                                filename = "Copying..."
-                                file_id = f"file_{int(time.time() * 1000)}"  # Unique ID based on timestamp
-                                total_bytes = 0
-                                
+                                # Try to extract filename from payload for current file display
+                                filename = "Processing..."
                                 if payload and hasattr(payload, 'filename'):
                                     try:
                                         filename = payload.filename.decode('utf-8') if hasattr(payload.filename, 'decode') else str(payload.filename)
-                                        file_id = payload.file_id.decode('utf-8') if hasattr(payload.file_id, 'decode') else str(payload.file_id)
-                                        total_bytes = getattr(payload, 'total_bytes', 0)
+                                        # Extract just the filename from path
+                                        import os
+                                        filename = os.path.basename(filename)
                                     except:
                                         pass
                                 
-                                print(f"DEBUG: Emitting file.started: {filename}")
+                                print(f"DEBUG: Current file: {filename}")
                                 
-                                # Emit file started event
-                                self._emit(job.job_id, "file.started", {
-                                    "file_id": file_id,
-                                    "filename": filename,
-                                    "total_bytes": total_bytes
+                                # Emit simple current file update (no individual progress tracking)
+                                self._emit(job.job_id, "current.file", {
+                                    "filename": filename
                                 })
                                 
                             elif event_type == "file.progress":
-                                # Extract progress from C++ FileProgressPayload struct
-                                if payload and hasattr(payload, 'filename'):
-                                    filename = payload.filename.decode('utf-8') if hasattr(payload.filename, 'decode') else str(payload.filename)
-                                    file_id = payload.file_id.decode('utf-8') if hasattr(payload.file_id, 'decode') else str(payload.file_id)
-                                    bytes_copied = getattr(payload, 'bytes_copied', 0)
-                                    total_bytes = getattr(payload, 'total_bytes', 0)
-                                    progress_percent = getattr(payload, 'progress_percent', 0)
-                                else:
-                                    filename = "Copying..."
-                                    file_id = "file_current"
-                                    bytes_copied = 0
-                                    total_bytes = 0
-                                    progress_percent = 0
-                                
-                                print(f"DEBUG: File progress: {filename} - {bytes_copied}/{total_bytes} bytes ({progress_percent}%)")
-                                
-                                # Emit file progress with real data
-                                self._emit(job.job_id, "file.progress", {
-                                    "file_id": file_id,
-                                    "filename": filename,
-                                    "copied_bytes": bytes_copied,
-                                    "total_bytes": total_bytes,
-                                    "progress_percent": progress_percent
-                                })
+                                # PROFESSIONAL DIT APPROACH: Ignore individual file progress events
+                                # These were causing 70k+ UI events and killing performance
+                                # Professional tools only show job-level progress
+                                print(f"DEBUG: File progress event received (ignored for performance)")
+                                pass  # Don't emit individual file progress events
                                 
                             elif event_type == "file.completed":
-                                # For file.completed, always increment counters regardless of payload extraction
+                                # PROFESSIONAL DIT APPROACH: Just track completion stats, no individual widgets
                                 print(f"DEBUG: File completed event received")
                                 
                                 # Update job stats when file completes
@@ -242,24 +219,7 @@ class PythonCopyEngine(Engine):
                                         
                                         print(f"DEBUG: Updated stats - {files_completed}/{total_files} files completed")
                                 
-                                # Try to extract filename from payload
-                                filename = "Completed"
-                                file_id = "file_current"
-                                if payload and hasattr(payload, 'filename'):
-                                    try:
-                                        filename = payload.filename.decode('utf-8') if hasattr(payload.filename, 'decode') else str(payload.filename)
-                                        file_id = payload.file_id.decode('utf-8') if hasattr(payload.file_id, 'decode') else str(payload.file_id)
-                                    except:
-                                        pass
-                                
-                                # Emit file completed event
-                                self._emit(job.job_id, "file.completed", {
-                                    "file_id": file_id,
-                                    "filename": filename,
-                                    "bytes": 0,
-                                    "total": 0,
-                                    "skipped": False
-                                })
+                                # No individual file.completed events - job progress will show the count
                                 
                             elif event_type == "job.progress":
                                 # For job.progress, always use calculated values from job stats

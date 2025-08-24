@@ -740,11 +740,11 @@ def build_ingest_tab():
     time_speed_layout.addStretch()
     files_layout.addLayout(time_speed_layout)
     
-    # Files header - positioned below time display
+    # PROFESSIONAL DIT APPROACH: Simple file status display
     files_header = QHBoxLayout()
     files_header.setSpacing(5)
     files_header.setContentsMargins(0, 0, 0, 5)
-    files_label = QLabel("Individual Files")
+    files_label = QLabel("Transfer Status")
     files_label.setStyleSheet(SECTION_HEADER_STYLE)
     files_count = QLabel("0 files")
     files_count.setStyleSheet(SECONDARY_TEXT_STYLE)
@@ -753,10 +753,30 @@ def build_ingest_tab():
     files_header.addWidget(files_count)
     files_layout.addLayout(files_header)
     
+    # Current file display - professional DIT standard
+    current_file_layout = QHBoxLayout()
+    current_file_layout.setSpacing(10)
+    current_file_layout.setContentsMargins(10, 5, 10, 5)
+    
+    current_file_label = QLabel("Ready to transfer")
+    current_file_label.setStyleSheet("""
+        QLabel {
+            color: #E0E0E0;
+            font-size: 11px;
+            padding: 8px;
+            background-color: rgba(255, 255, 255, 0.03);
+            border-radius: 4px;
+            border-left: 3px solid #4A9EFF;
+        }
+    """)
+    current_file_layout.addWidget(current_file_label)
+    files_layout.addLayout(current_file_layout)
+    
     # Store references to labels and progress bar for event handlers
     root.elapsed_label = elapsed_label
     root.eta_label = eta_label
     root.current_speed_label = current_speed_label
+    root.current_file_label = current_file_label  # PROFESSIONAL DIT APPROACH
     root.avg_speed_label = avg_speed_label
     root.peak_speed_label = peak_speed_label
     root.total_progress = total_progress
@@ -769,26 +789,10 @@ def build_ingest_tab():
     files_layout.addWidget(status_label)
     root.status_label = status_label
     
-    # Scrollable area for file progress - more compact
-    scroll_area = QScrollArea()
-    scroll_area.setWidgetResizable(True)
-    scroll_area.setMinimumHeight(120)  # Increased minimum height for better visibility
-    scroll_area.setMaximumHeight(500)  # Increased maximum height for more files
-    scroll_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)  # Make it resizable
-    scroll_area.setStyleSheet(SCROLL_AREA_STYLE)
+    # PROFESSIONAL DIT APPROACH: No complex file widgets, just clean status
+    # Professional DIT tools focus on job-level progress, not individual file scrolling
     
-    # Files container - ensure proper layout
-    files_container = QWidget()
-    files_container_layout = QVBoxLayout(files_container)
-    files_container_layout.setSpacing(2)  # Very tight spacing between file widgets
-    files_container_layout.setContentsMargins(0, 0, 0, 0)
-    files_container_layout.setAlignment(Qt.AlignmentFlag.AlignTop)  # Align widgets to top
-    
-    scroll_area.setWidget(files_container)
-    files_layout.addWidget(scroll_area)
-    
-    # Store files container references for handlers
-    root.files_container_layout = files_container_layout
+    # Store simple file count reference
     root.files_count = files_count
     
     layout.addWidget(files_frame, 1)  # Add stretch - allow expansion
@@ -1120,9 +1124,15 @@ def build_ingest_tab():
                         dest_obj['status_label'].setText("Starting...")
                         print(f"DEBUG: Updated status for destination {i+1}")
             
-            # Clear any existing file widgets - C++ engine will create them as files are started
+            # PROFESSIONAL DIT APPROACH: No individual file widgets
+            # Clear any existing file widgets and keep the files area clean
             _clear_all_file_widgets()
-            print(f"DEBUG: Cleared existing file widgets - C++ engine will create them as files start")
+            
+            # Set up current file display
+            if hasattr(root, 'current_file_label'):
+                root.current_file_label.setText("Preparing transfer...")
+            
+            print(f"DEBUG: Using professional DIT approach - job-level progress only")
             
             # Update file count display
             if hasattr(root, 'files_count') and root.files_count:
@@ -1261,150 +1271,55 @@ def build_ingest_tab():
             import traceback
             traceback.print_exc()
             
-    def handle_file_started(payload):
-        print(f"DEBUG: handle_file_started called with: {payload}")
+    def handle_current_file(payload):
+        """Handle current file updates - PROFESSIONAL DIT APPROACH"""
+        print(f"DEBUG: handle_current_file called with: {payload}")
         try:
-            # Get filename from payload (support multiple payload shapes)
-            filename = payload.get("filename") or payload.get("file_path") or "unknown"
-            total_bytes = payload.get("total_bytes") or payload.get("total") or 0
-            file_id = payload.get("file_id", "unknown")
-            print(f"DEBUG: File started: {filename} - {total_bytes} bytes")
+            filename = payload.get("filename", "Processing...")
             
-            # Extract just the filename from the full path for display
-            if filename != "unknown" and filename != "Copying...":
-                display_filename = os.path.basename(filename) if '/' in filename or '\\' in filename else filename
-            else:
-                display_filename = "Copying..."
+            # Update current file display in the UI
+            if hasattr(root, 'current_file_label'):
+                root.current_file_label.setText(f"Current: {filename}")
             
-            # Create or update file widget
-            if file_id in root.file_widgets:
-                # Update existing widget
-                widget = root.file_widgets[file_id]
-                if hasattr(widget, 'filename_label'):
-                    widget.filename_label.setText(display_filename)
-                widget.status_label.setText("Copying")
-                print(f"DEBUG: Updated existing file widget for {display_filename}")
-            elif display_filename != "Copying...":
-                # Create new file widget with real filename
-                file_widget = FileProgressLine(display_filename, total_bytes)
-                file_widget.status_label.setText("Copying")
-                root.file_widgets[file_id] = file_widget
-                root.files_container_layout.addWidget(file_widget)
-                root.active_files += 1
-                print(f"DEBUG: Created new file widget for {display_filename}")
-            else:
-                # Update the first pending widget if we have placeholder filename
-                for fid, widget in root.file_widgets.items():
-                    if widget.status_label.text() == "Pending":
-                        widget.status_label.setText("Copying")
-                        filename = widget.filename_label.text()
-                        print(f"DEBUG: Started copying file: {filename}")
-                        break
-            
-            # Update global status
-            if hasattr(root, 'status_label') and root.status_label and display_filename != "Copying...":
-                root.status_label.setText(f"Copying: {display_filename}")
-            
-        except Exception as e:
-            print(f"DEBUG: Error in handle_file_started: {e}")
-            import traceback
-            traceback.print_exc()
-            
-    def handle_file_progress(payload):
-        print(f"DEBUG: handle_file_progress called with: {payload}")
-        try:
-            # Get file progress data (support multiple payload shapes)
-            file_label = payload.get("file_path") or payload.get("filename") or "unknown"
-            file_copied = payload.get("copied_bytes")
-            if file_copied is None:
-                file_copied = payload.get("bytes", 0)
-            file_total = payload.get("total_bytes")
-            if file_total is None:
-                file_total = payload.get("total", 0)
-            file_id = payload.get("file_id", "unknown")
-            print(f"DEBUG: File progress: {file_label} - {file_copied}/{file_total}")
-            
-            # Update file progress widget and status
-            if file_id in root.file_widgets:
-                widget = root.file_widgets[file_id]
-                widget.update_progress(file_copied)
-                # Update status to "Copying" when progress is being made
-                if file_copied > 0 and file_copied < file_total:
-                    widget.status_label.setText("Copying")
-                elif file_copied >= file_total:
-                    widget.status_label.setText("Complete")
-                print(f"DEBUG: Updated file widget progress for {file_label}")
-            
-            # Update global status label with current file being copied
-            if hasattr(root, 'status_label') and root.status_label and file_label != "unknown":
-                display_filename = os.path.basename(file_label) if file_label != "unknown" else "Unknown file"
-                if file_copied < file_total:
-                    root.status_label.setText(f"Copying: {display_filename}")
+            # Update main status to show current file
+            if hasattr(root, 'status_label') and root.status_label and filename != "Processing...":
+                # Get current progress for context
+                if hasattr(root, 'job_data') and root.job_data:
+                    completed = root.job_data.get('completed_files', 0)
+                    total = root.job_data.get('total_files', 0)
+                    root.status_label.setText(f"Processing {filename} ({completed}/{total})")
                 else:
-                    root.status_label.setText(f"Completed: {display_filename}")
+                    root.status_label.setText(f"Processing {filename}")
+            
+            print(f"DEBUG: Current file display updated: {filename}")
             
         except Exception as e:
-            print(f"DEBUG: Error in handle_file_progress: {e}")
+            print(f"DEBUG: Error in handle_current_file: {e}")
             import traceback
             traceback.print_exc()
             
-    def handle_file_completed(payload):
-        print(f"DEBUG: handle_file_completed called with: {payload}")
+    def handle_file_failed(payload):
+        """Handle file failure alerts - PROFESSIONAL DIT APPROACH"""
+        print(f"DEBUG: handle_file_failed called with: {payload}")
         try:
-            # Get file completion data
-            filename = payload.get("filename") or payload.get("file_path") or "unknown"
-            bytes_copied = payload.get("bytes") or payload.get("bytes_copied") or 0
-            total_bytes = payload.get("total") or payload.get("total_bytes") or 0
-            file_id = payload.get("file_id", "unknown")
-            print(f"DEBUG: File completed: {filename} - {bytes_copied}/{total_bytes} bytes")
+            filename = payload.get('filename', 'unknown')
+            error = payload.get('error', 'unknown error')
             
-            # Extract just the filename from the full path for display
-            if filename != "unknown":
-                display_filename = os.path.basename(filename) if '/' in filename or '\\' in filename else filename
-            else:
-                display_filename = "Completed"
+            # Professional DIT tools show immediate alerts for failures
+            print(f"ERROR: File failed: {filename} - {error}")
             
-            # Mark file as completed
-            if file_id in root.file_widgets:
-                root.file_widgets[file_id].mark_completed()
-                root.file_widgets[file_id].status_label.setText("Complete")
-                print(f"DEBUG: Marked file widget {file_id} as completed: {display_filename}")
-                # Schedule removal after showing completion
-                QTimer.singleShot(2000, lambda fid=file_id: _remove_file_widget(fid))
-            else:
-                # Fallback: find the first copying widget and mark it completed
-                for fid, widget in root.file_widgets.items():
-                    if widget.status_label.text() == "Copying":
-                        widget.status_label.setText("Complete")
-                        widget.mark_completed()
-                        print(f"DEBUG: Completed first copying file widget")
-                        QTimer.singleShot(2000, lambda ffid=fid: _remove_file_widget(ffid))
-                        break
-            
-            # Update completed file count
-            if hasattr(root, 'job_data') and root.job_data:
-                root.job_data['completed_files'] = root.job_data.get('completed_files', 0) + 1
-                completed = root.job_data['completed_files']
-                total = root.job_data.get('total_files', 0)
-                
-                # Update file count display
-                if hasattr(root, 'files_count') and root.files_count:
-                    root.files_count.setText(f"{completed} / {total} files")
-                    print(f"DEBUG: Updated file count: {completed} / {total} files")
-                
-                # Update global status
-                if hasattr(root, 'status_label') and root.status_label:
-                    if completed < total:
-                        root.status_label.setText(f"Completed {completed} of {total} files")
-                    else:
-                        root.status_label.setText(f"All {total} files completed")
-                
-                print(f"DEBUG: Completed files: {completed} / {total}")
+            # Update status to show the failure
+            if hasattr(root, 'status_label') and root.status_label:
+                root.status_label.setText(f"FAILED: {filename}")
+                # Could add visual alert here (red status, popup, etc.)
             
         except Exception as e:
-            print(f"DEBUG: Error in handle_file_completed: {e}")
+            print(f"DEBUG: Error in handle_file_failed: {e}")
             import traceback
             traceback.print_exc()
+            
+    # No individual file completion handling in professional DIT approach
+    # File completion counts are tracked in job stats and shown in job.progress
             
     def handle_dest_progress(payload):
         print(f"DEBUG: handle_dest_progress called with: {payload}")
@@ -1673,19 +1588,15 @@ def build_ingest_tab():
                             print(f"DEBUG: Skipping event {event_type} - widgets no longer valid")
                             continue
                         
-                        # Call the actual UI handlers
+                        # Call the actual UI handlers - PROFESSIONAL DIT APPROACH
                         if event_type == "job.started":
                             handle_job_started(payload)
                         elif event_type == "job.progress":
                             handle_job_progress(payload)
-                        elif event_type == "file.started":
-                            handle_file_started(payload)
-                        elif event_type == "file.progress":
-                            handle_file_progress(payload)
-                        elif event_type == "file.completed":
-                            handle_file_completed(payload)
+                        elif event_type == "current.file":
+                            handle_current_file(payload)
                         elif event_type == "file.failed":
-                            print(f"DEBUG: File failed event received - {payload.get('filename', 'unknown')} - Error: {payload.get('error', 'unknown')}")
+                            handle_file_failed(payload)  # Still handle failures for alerts
                         elif event_type == "job.completed":
                             handle_job_completed(payload)
                         elif event_type == "job.cancelled":
