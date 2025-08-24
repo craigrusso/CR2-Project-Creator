@@ -57,9 +57,10 @@ try:
         colors, BUTTON_STYLE, ACCENT_BUTTON_STYLE, DANGER_BUTTON_STYLE,
         LINEEDIT_STYLE, LABEL_STYLE, COMBOBOX_STYLE,
         GROUPBOX_STYLE, PROGRESS_BAR_STYLE, SCROLL_AREA_STYLE,
-        SLIDER_STYLE, SPEED_LABEL_STYLE, SECTION_HEADER_STYLE,
+        SLIDER_STYLE, SECTION_HEADER_STYLE,
         SECONDARY_TEXT_STYLE, HEADER_LABEL_STYLE, FIELD_LABEL_STYLE,
-        TIME_LABEL_STYLE, ACCENT_VALUE_STYLE, CARD_FRAME_STYLE
+        TIME_LABEL_STYLE, ACCENT_VALUE_STYLE, CARD_FRAME_STYLE,
+        SUMMARY_METRIC_STYLE
     )
     from app.ui.custom_delegates import apply_hover_delegate
     print("DEBUG: Successfully imported centralized styles and hover delegate from app.ui.color_scheme_pyqt")
@@ -178,7 +179,7 @@ def build_ingest_tab():
         if root.job_start_time and root.current_job:
             elapsed_seconds = time.time() - root.job_start_time
             elapsed_str = f"{int(elapsed_seconds//3600):02d}:{int((elapsed_seconds%3600)//60):02d}:{int(elapsed_seconds%60):02d}"
-            root.elapsed_label.setText(f"Elapsed: {elapsed_str}")
+            root.elapsed_label.setText(elapsed_str)
     
     def update_stats():
         """Update speed and progress stats less frequently to prevent UI blocking"""
@@ -197,19 +198,15 @@ def build_ingest_tab():
                         root.total_progress.setFormat(f"{progress_percent}%")
                         root._last_progress_percent = progress_percent
                 
-                # Update speed label (only if it exists)
-                if hasattr(root, 'speed_label') and root.speed_label:
-                    root.speed_label.setText(f"{current_speed:.0f} MB/s")
-                
                 # Update current speed stat (only if it exists)
                 if hasattr(root, 'current_speed_label') and root.current_speed_label:
-                    root.current_speed_label.setText(f"Speed: {current_speed:.0f} MB/s")
+                    root.current_speed_label.setText(f"{current_speed:.0f} MB/s")
                 
                 # Calculate average speed (only if it exists)
                 if hasattr(root, 'avg_speed_label') and root.avg_speed_label:
                     total_mb = root.total_bytes / (1024 * 1024)
                     avg_speed = total_mb / elapsed_seconds
-                    root.avg_speed_label.setText(f"Avg: {avg_speed:.0f} MB/s")
+                    root.avg_speed_label.setText(f"{avg_speed:.0f} MB/s")
                 
                 # Update peak speed if current speed is higher (only if it exists)
                 if hasattr(root, 'peak_speed_label') and root.peak_speed_label:
@@ -218,10 +215,10 @@ def build_ingest_tab():
                         if "Peak: " in current_peak_text:
                             current_peak = float(current_peak_text.split(': ')[1].split(' ')[0])
                             if current_speed > current_peak:
-                                root.peak_speed_label.setText(f"Peak: {current_speed:.0f} MB/s")
+                                root.peak_speed_label.setText(f"{current_speed:.0f} MB/s")
                     except (ValueError, IndexError):
                         # If we can't parse the current peak, just set it
-                        root.peak_speed_label.setText(f"Peak: {current_speed:.0f} MB/s")
+                        root.peak_speed_label.setText(f"{current_speed:.0f} MB/s")
                 
                 # Calculate ETA (only if it exists)
                 if hasattr(root, 'eta_label') and root.eta_label and current_speed > 0 and root.copied_bytes < root.total_bytes:
@@ -229,20 +226,11 @@ def build_ingest_tab():
                     eta_seconds = remaining_bytes / (current_speed * 1024 * 1024)
                     if eta_seconds > 0:
                         eta_str = f"{int(eta_seconds//3600):02d}:{int((eta_seconds%3600)//60):02d}:{int(eta_seconds%60):02d}"
-                        root.eta_label.setText(f"ETA: {eta_str}")
+                        root.eta_label.setText(eta_str)
                     else:
-                        root.eta_label.setText("ETA: --:--:--")
+                        root.eta_label.setText("--:--:--")
                 elif hasattr(root, 'eta_label') and root.eta_label:
-                    root.eta_label.setText("ETA: --:--:--")
-                
-                # Update total time label (only if it exists)
-                if hasattr(root, 'total_time_label') and root.total_time_label:
-                    elapsed_str = f"{int(elapsed_seconds//3600):02d}:{int((elapsed_seconds%3600)//60):02d}:{int(elapsed_seconds%60):02d}"
-                    root.total_time_label.setText(f"Total: {elapsed_str}")
-                
-                # Update total speed label (only if it exists)
-                if hasattr(root, 'total_speed_label') and root.total_speed_label:
-                    root.total_speed_label.setText(f"{current_speed:.0f} MB/s")
+                    root.eta_label.setText("--:--:--")
                 
                 # Remove forced repaints - let Qt handle updates naturally
                 # This prevents beachballing caused by excessive UI updates
@@ -390,7 +378,7 @@ def build_ingest_tab():
     root.src_combo = src_combo
     root.dest_combo = dest_combo
     
-    layout.addLayout(paths_layout, 0)  # No stretch - keep fixed size
+    layout.addLayout(paths_layout, 1)  # Add stretch - allow expansion for destinations
     
     # Settings section
     settings_container = QWidget()
@@ -655,31 +643,27 @@ def build_ingest_tab():
     # Main progress display (clean, compact)
     progress_frame = QFrame()
     progress_frame.setStyleSheet(CARD_FRAME_STYLE)
-    progress_frame.setMinimumHeight(80)  # Further reduced height to save space
+    progress_frame.setMinimumHeight(60)  # Reduced height to save space
     progress_layout = QVBoxLayout(progress_frame)
     progress_layout.setSpacing(8)  # Further reduced spacing
     progress_layout.setContentsMargins(12, 12, 12, 12)  # Further reduced padding
     
-    # Speed display (above progress bar, smaller and white)
-    speed_label = QLabel("0 MB/s Transfer")
-    speed_label.setStyleSheet(SPEED_LABEL_STYLE)
-    speed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    progress_layout.addWidget(speed_label)
-    
-    # Total progress with integrated label - now 3x taller with gradient
+    # Total progress with integrated label - reasonable height for visibility
     total_progress = QProgressBar()
     total_progress.setRange(0, 100)
     total_progress.setValue(0)
-    total_progress.setFixedHeight(60)  # 3x taller (was 20px)
+    total_progress.setFixedHeight(24)  # Reasonable height for visibility
     total_progress.setStyleSheet(PROGRESS_BAR_STYLE)
     total_progress.setVisible(True)  # Ensure it's visible
     total_progress.setEnabled(True)  # Ensure it's enabled
     total_progress.setFormat("%p%")  # Show percentage
     total_progress.setTextVisible(True)  # Ensure text is visible
+    
+    # Add progress bar with normal layout
     progress_layout.addWidget(total_progress)
     
     # Debug progress bar setup
-    print(f"DEBUG: Progress bar created with range 0-100, height 60px")
+    print(f"DEBUG: Progress bar created with range 0-100, height 24px")
     print(f"DEBUG: Progress bar is visible: {total_progress.isVisible()}")
     print(f"DEBUG: Progress bar is enabled: {total_progress.isEnabled()}")
     print(f"DEBUG: Progress bar size: {total_progress.size()}")
@@ -690,104 +674,123 @@ def build_ingest_tab():
     
     layout.addWidget(progress_frame, 0)  # No stretch - keep fixed size
 
-    # Add total time and total speed labels (footer row)
-    root.total_time_label = QtWidgets.QLabel("Total: 00:00")
-    root.total_speed_label = QtWidgets.QLabel("— MB/s")
-    stats_row = QtWidgets.QHBoxLayout()
-    stats_row.setSpacing(15)  # Reduced spacing
-    stats_row.addWidget(root.total_time_label)
-    stats_row.addStretch(1)
-    stats_row.addWidget(root.total_speed_label)
-    layout.addLayout(stats_row, 0)  # No stretch - keep fixed size
+    # Unified summary row with equal column widths (Elapsed | ETA | Speed | Avg | Peak)
+    summary_frame = QFrame()
+    summary_frame.setStyleSheet(CARD_FRAME_STYLE)
+    summary_frame.setMinimumHeight(70)  # Height for labels and values
+    summary_layout = QHBoxLayout(summary_frame)
+    summary_layout.setSpacing(0)  # No spacing between columns
+    summary_layout.setContentsMargins(12, 8, 12, 8)  # Reduced padding
+    
+    # Create equal-width columns for the five metrics with labels
+    # Elapsed time
+    elapsed_container = QVBoxLayout()
+    elapsed_container.setSpacing(2)
+    elapsed_header = QLabel("Elapsed")
+    elapsed_header.setStyleSheet(FIELD_LABEL_STYLE)
+    elapsed_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    elapsed_label = QLabel("00:00:00")
+    elapsed_label.setStyleSheet(SUMMARY_METRIC_STYLE)
+    elapsed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    elapsed_container.addWidget(elapsed_header)
+    elapsed_container.addWidget(elapsed_label)
+    elapsed_widget = QWidget()
+    elapsed_widget.setLayout(elapsed_container)
+    summary_layout.addWidget(elapsed_widget, 1)
+    
+    # ETA
+    eta_container = QVBoxLayout()
+    eta_container.setSpacing(2)
+    eta_header = QLabel("ETA")
+    eta_header.setStyleSheet(FIELD_LABEL_STYLE)
+    eta_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    eta_label = QLabel("--:--:--")
+    eta_label.setStyleSheet(SUMMARY_METRIC_STYLE)
+    eta_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    eta_container.addWidget(eta_header)
+    eta_container.addWidget(eta_label)
+    eta_widget = QWidget()
+    eta_widget.setLayout(eta_container)
+    summary_layout.addWidget(eta_widget, 1)
+    
+    # Current speed (centered)
+    speed_container = QVBoxLayout()
+    speed_container.setSpacing(2)
+    speed_header = QLabel("Speed")
+    speed_header.setStyleSheet(FIELD_LABEL_STYLE)
+    speed_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    current_speed_label = QLabel("0 MB/s")
+    current_speed_label.setStyleSheet(SUMMARY_METRIC_STYLE)
+    current_speed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    speed_container.addWidget(speed_header)
+    speed_container.addWidget(current_speed_label)
+    speed_widget = QWidget()
+    speed_widget.setLayout(speed_container)
+    summary_layout.addWidget(speed_widget, 1)
+    
+    # Average speed
+    avg_container = QVBoxLayout()
+    avg_container.setSpacing(2)
+    avg_header = QLabel("Avg")
+    avg_header.setStyleSheet(FIELD_LABEL_STYLE)
+    avg_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    avg_speed_label = QLabel("0 MB/s")
+    avg_speed_label.setStyleSheet(SUMMARY_METRIC_STYLE)
+    avg_speed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    avg_container.addWidget(avg_header)
+    avg_container.addWidget(avg_speed_label)
+    avg_widget = QWidget()
+    avg_widget.setLayout(avg_container)
+    summary_layout.addWidget(avg_widget, 1)
+    
+    # Peak speed
+    peak_container = QVBoxLayout()
+    peak_container.setSpacing(2)
+    peak_header = QLabel("Peak")
+    peak_header.setStyleSheet(FIELD_LABEL_STYLE)
+    peak_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    peak_speed_label = QLabel("0 MB/s")
+    peak_speed_label.setStyleSheet(SUMMARY_METRIC_STYLE)
+    peak_speed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    peak_container.addWidget(peak_header)
+    peak_container.addWidget(peak_speed_label)
+    peak_widget = QWidget()
+    peak_widget.setLayout(peak_container)
+    summary_layout.addWidget(peak_widget, 1)
+    
+    layout.addWidget(summary_frame, 0)  # No stretch - keep fixed size
     
     # Files frame - store for later use and ensure proper display
     files_frame = QFrame()
     files_frame.setStyleSheet(CARD_FRAME_STYLE)
-    files_frame.setMinimumHeight(200)  # Reduced height but still shows content clearly
+    files_frame.setMinimumHeight(80)  # Reasonable height for Transfer Status
     files_layout = QVBoxLayout(files_frame)
-    files_layout.setSpacing(8)  # Reduced spacing to save space
-    files_layout.setContentsMargins(12, 12, 12, 12)  # Reduced padding to save space
+    files_layout.setSpacing(8)  # Normal spacing
+    files_layout.setContentsMargins(12, 12, 12, 12)  # Normal padding
     
-    # Combined time and speed display section - inline to save space
-    time_speed_layout = QHBoxLayout()
-    time_speed_layout.setSpacing(10)  # Reduced spacing
-    
-    # Elapsed time
-    elapsed_label = QLabel("Elapsed: 00:00:00")
-    elapsed_label.setStyleSheet(TIME_LABEL_STYLE)
-    time_speed_layout.addWidget(elapsed_label)
-    
-    # ETA
-    eta_label = QLabel("ETA: --:--:--")
-    eta_label.setStyleSheet(TIME_LABEL_STYLE)
-    time_speed_layout.addWidget(eta_label)
-    
-    # Current speed
-    current_speed_label = QLabel("Speed: 0 MB/s")
-    current_speed_label.setStyleSheet(SPEED_LABEL_STYLE)
-    time_speed_layout.addWidget(current_speed_label)
-    
-    # Average speed
-    avg_speed_label = QLabel("Avg: 0 MB/s")
-    avg_speed_label.setStyleSheet(SPEED_LABEL_STYLE)
-    time_speed_layout.addWidget(avg_speed_label)
-    
-    # Peak speed
-    peak_speed_label = QLabel("Peak: 0 MB/s")
-    peak_speed_label.setStyleSheet(SPEED_LABEL_STYLE)
-    time_speed_layout.addWidget(peak_speed_label)
-    
-    time_speed_layout.addStretch()
-    files_layout.addLayout(time_speed_layout)
-    
-    # PROFESSIONAL DIT APPROACH: Simple file status display
+    # Compact Transfer Status display
     files_header = QHBoxLayout()
     files_header.setSpacing(5)
-    files_header.setContentsMargins(0, 0, 0, 5)
+    files_header.setContentsMargins(0, 0, 0, 0)
     files_label = QLabel("Transfer Status")
     files_label.setStyleSheet(SECTION_HEADER_STYLE)
-    files_count = QLabel("0 files")
-    files_count.setStyleSheet(SECONDARY_TEXT_STYLE)
+    files_count = QLabel("0 of 0 files")
+    files_count.setStyleSheet(SUMMARY_METRIC_STYLE)
     files_header.addWidget(files_label)
     files_header.addStretch()
     files_header.addWidget(files_count)
     files_layout.addLayout(files_header)
     
-    # Current file display - professional DIT standard
-    current_file_layout = QHBoxLayout()
-    current_file_layout.setSpacing(10)
-    current_file_layout.setContentsMargins(10, 5, 10, 5)
-    
-    current_file_label = QLabel("Ready to transfer")
-    current_file_label.setStyleSheet("""
-        QLabel {
-            color: #E0E0E0;
-            font-size: 11px;
-            padding: 8px;
-            background-color: rgba(255, 255, 255, 0.03);
-            border-radius: 4px;
-            border-left: 3px solid #4A9EFF;
-        }
-    """)
-    current_file_layout.addWidget(current_file_label)
-    files_layout.addLayout(current_file_layout)
-    
     # Store references to labels and progress bar for event handlers
     root.elapsed_label = elapsed_label
     root.eta_label = eta_label
     root.current_speed_label = current_speed_label
-    root.current_file_label = current_file_label  # PROFESSIONAL DIT APPROACH
     root.avg_speed_label = avg_speed_label
     root.peak_speed_label = peak_speed_label
     root.total_progress = total_progress
-    root.speed_label = speed_label
+    root.files_count = files_count
     
-    # Add status label for current file
-    status_label = QLabel("Ready")
-    status_label.setStyleSheet(LABEL_STYLE)
-    status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    files_layout.addWidget(status_label)
-    root.status_label = status_label
+
     
     # PROFESSIONAL DIT APPROACH: No complex file widgets, just clean status
     # Professional DIT tools focus on job-level progress, not individual file scrolling
@@ -795,7 +798,7 @@ def build_ingest_tab():
     # Store simple file count reference
     root.files_count = files_count
     
-    layout.addWidget(files_frame, 1)  # Add stretch - allow expansion
+    layout.addWidget(files_frame, 0)  # No stretch - keep compact
     
     # Destination management functions
     def add_destination_from_path(path):
@@ -812,8 +815,7 @@ def build_ingest_tab():
                 "ranges_per_file": None,
                 "use_direct_io": None,
                 "verify": "FAST",
-                "progress_bar": None,  # Will be set when widget is created
-                "progress_label": None  # Will be set when widget is created
+                "progress_bar": None  # Will be set when widget is created
             }
             root.destinations.append(dest_obj)
             create_destination_widget(dest_obj)
@@ -942,12 +944,7 @@ def build_ingest_tab():
         
         info_row.addStretch()  # Push labels to the left
         
-        # Add Ready status on the same line
-        dest_status = QLabel("Ready")
-        dest_status.setStyleSheet(SECONDARY_TEXT_STYLE)
-        dest_status.setFixedHeight(20)
-        dest_status.setFixedWidth(60)
-        info_row.addWidget(dest_status)
+
         
         dest_layout.addLayout(info_row)
         
@@ -971,7 +968,6 @@ def build_ingest_tab():
         # Store references
         dest_obj["widget"] = dest_widget
         dest_obj["progress_bar"] = dest_progress
-        dest_obj["status_label"] = dest_status
         
         # Add to container
         root.dest_container_layout.addWidget(dest_widget)
@@ -995,9 +991,7 @@ def build_ingest_tab():
             else:
                 print(f"DEBUG: No current job or job doesn't have cancel_destination method")
             
-            # Update destination status
-            if 'status_label' in dest_obj:
-                dest_obj['status_label'].setText("Cancelled")
+
                 
         except Exception as e:
             print(f"DEBUG: Error canceling destination: {e}")
@@ -1097,17 +1091,13 @@ def build_ingest_tab():
                 root.total_progress.setVisible(True)
                 print("DEBUG: Total progress bar updated")
             
-            if hasattr(root, 'status_label') and root.status_label:
-                root.status_label.setText(f"Starting transfer of {total_files} files...")
-                print("DEBUG: Status label updated")
+
             
             if hasattr(root, 'elapsed_label') and root.elapsed_label:
                 root.elapsed_label.setText("00:00")
                 print("DEBUG: Elapsed label updated")
             
-            if hasattr(root, 'speed_label') and root.speed_label:
-                root.speed_label.setText("— MB/s")
-                print("DEBUG: Speed label updated")
+
             
             # Show destination progress bars IMMEDIATELY
             if hasattr(root, 'destinations'):
@@ -1119,25 +1109,20 @@ def build_ingest_tab():
                         dest_obj['progress_bar'].setValue(0)
                         print(f"DEBUG: Showed progress bar for destination {i+1}")
                     
-                    # Update status
-                    if 'status_label' in dest_obj:
-                        dest_obj['status_label'].setText("Starting...")
-                        print(f"DEBUG: Updated status for destination {i+1}")
+
             
             # PROFESSIONAL DIT APPROACH: No individual file widgets
             # Clear any existing file widgets and keep the files area clean
             _clear_all_file_widgets()
             
-            # Set up current file display
-            if hasattr(root, 'current_file_label'):
-                root.current_file_label.setText("Preparing transfer...")
+
             
             print(f"DEBUG: Using professional DIT approach - job-level progress only")
             
             # Update file count display
             if hasattr(root, 'files_count') and root.files_count:
-                root.files_count.setText(f"0 / {total_files} files")
-                print(f"DEBUG: File count display updated to show 0 / {total_files} files")
+                root.files_count.setText(f"0 of {total_files} files")
+                print(f"DEBUG: File count display updated to show 0 of {total_files} files")
             
             # Store data for later use
             root.job_start_time = time.time()
@@ -1210,10 +1195,6 @@ def build_ingest_tab():
                             dest_obj['progress_bar'].setValue(progress_percent)
                             print(f"DEBUG: Destination {i+1} progress bar updated to {progress_percent}%")
                             
-                            # Update destination status
-                            if 'status_label' in dest_obj:
-                                dest_obj['status_label'].setText(f"{progress_percent}%")
-                
                 # Update speed and elapsed time (less frequently to avoid UI blocking)
                 if hasattr(root, 'job_data') and root.job_data:
                     elapsed_from_engine = payload.get("elapsed_time")
@@ -1227,20 +1208,14 @@ def build_ingest_tab():
                     if speed_mbps is None and elapsed > 0:
                         speed_mbps = (copied_bytes / elapsed) / (1024 * 1024)
 
-                    if hasattr(root, 'speed_label') and root.speed_label and speed_mbps is not None:
-                        root.speed_label.setText(f"{float(speed_mbps):.1f} MB/s")
-                        print("DEBUG: Speed label updated")
+                    
 
                     if hasattr(root, 'elapsed_label') and root.elapsed_label:
                         elapsed_str = f"{int(elapsed//3600):02d}:{int((elapsed%3600)//60):02d}:{int(elapsed%60):02d}"
-                        root.elapsed_label.setText(f"Elapsed: {elapsed_str}")
+                        root.elapsed_label.setText(elapsed_str)
                         print("DEBUG: Elapsed label updated")
                 
-                # Update status (less frequently)
-                if hasattr(root, 'status_label') and root.status_label:
-                    percent = (copied_bytes / total_bytes * 100) if total_bytes > 0 else 0
-                    root.status_label.setText(f"Copying... {percent:.1f}% ({copied_bytes:,}/{total_bytes:,} bytes)")
-                    print("DEBUG: Status label updated")
+
             
             # Update stored data (always update this)
             if hasattr(root, 'job_data'):
@@ -1277,19 +1252,9 @@ def build_ingest_tab():
         try:
             filename = payload.get("filename", "Processing...")
             
-            # Update current file display in the UI
-            if hasattr(root, 'current_file_label'):
-                root.current_file_label.setText(f"Current: {filename}")
+
             
-            # Update main status to show current file
-            if hasattr(root, 'status_label') and root.status_label and filename != "Processing...":
-                # Get current progress for context
-                if hasattr(root, 'job_data') and root.job_data:
-                    completed = root.job_data.get('completed_files', 0)
-                    total = root.job_data.get('total_files', 0)
-                    root.status_label.setText(f"Processing {filename} ({completed}/{total})")
-                else:
-                    root.status_label.setText(f"Processing {filename}")
+
             
             print(f"DEBUG: Current file display updated: {filename}")
             
@@ -1308,10 +1273,7 @@ def build_ingest_tab():
             # Professional DIT tools show immediate alerts for failures
             print(f"ERROR: File failed: {filename} - {error}")
             
-            # Update status to show the failure
-            if hasattr(root, 'status_label') and root.status_label:
-                root.status_label.setText(f"FAILED: {filename}")
-                # Could add visual alert here (red status, popup, etc.)
+
             
         except Exception as e:
             print(f"DEBUG: Error in handle_file_failed: {e}")
@@ -1353,21 +1315,7 @@ def build_ingest_tab():
                         # If total_bytes is 0, show indeterminate progress
                         progress_bar.setFormat(f"Dest {dest_index + 1}: Calculating...")
                     
-                    # Update status label with more detailed status
-                    if 'status_label' in dest_obj and dest_obj['status_label']:
-                        if bytes_copied == 0 and total_bytes == 0:
-                            dest_obj['status_label'].setText("Preparing...")
-                        elif bytes_copied == 0:
-                            dest_obj['status_label'].setText("Starting...")
-                        elif bytes_copied >= total_bytes and total_bytes > 0:
-                            dest_obj['status_label'].setText("Complete")
-                        else:
-                            # Show transfer rate if available
-                            rate_mbps = payload.get("speed_mbps", 0)
-                            if rate_mbps > 0:
-                                dest_obj['status_label'].setText(f"Copying ({rate_mbps:.1f} MB/s)")
-                            else:
-                                dest_obj['status_label'].setText("Copying...")
+
                 else:
                     print(f"DEBUG: No progress bar found for destination {dest_index}")
             else:
@@ -1389,7 +1337,7 @@ def build_ingest_tab():
             if file_id in root.file_widgets:
                 root.file_widgets[file_id].mark_failed(error)
                 root.active_files -= 1
-                files_count.setText(f"{root.active_files} files")
+                files_count.setText(f"{root.active_files} of {root.job_data.get('total_files', 0)} files")
                 print(f"DEBUG: File marked as failed, active files: {root.active_files}")
             else:
                 print(f"DEBUG: File widget not found for failed file: {file_id}")
@@ -1415,26 +1363,18 @@ def build_ingest_tab():
                 root.total_progress.setValue(100)
                 print("DEBUG: Progress bar set to 100%")
             
-            if hasattr(root, 'status_label') and root.status_label:
-                speed_mbps = speed if isinstance(speed, (int, float)) else 0
-                root.status_label.setText(f"Completed! {speed_mbps:.1f} MB/s average")
-                print("DEBUG: Status label updated to show completion")
+
             
-            if hasattr(root, 'speed_label') and root.speed_label:
-                speed_mbps = speed if isinstance(speed, (int, float)) else 0
-                root.speed_label.setText(f"{speed_mbps:.1f} MB/s")
-                print("DEBUG: Speed label updated")
+
             
             if hasattr(root, 'elapsed_label') and root.elapsed_label:
                 elapsed_str = f"{int(elapsed//3600):02d}:{int((elapsed%3600)//60):02d}:{int(elapsed%60):02d}"
-                root.elapsed_label.setText(f"Elapsed: {elapsed_str}")
+                root.elapsed_label.setText(elapsed_str)
                 print("DEBUG: Elapsed label updated")
             
             # Update destination status and reset to 100%
             if hasattr(root, 'destinations'):
                 for i, dest_obj in enumerate(root.destinations):
-                    if 'status_label' in dest_obj:
-                        dest_obj['status_label'].setText("Complete")
                     if 'progress_bar' in dest_obj:
                         dest_obj['progress_bar'].setValue(100)
                         dest_obj['progress_bar'].setFormat(f"Dest {i + 1}: 100%")
@@ -1475,12 +1415,10 @@ def build_ingest_tab():
                 if hasattr(root, 'total_progress') and root.total_progress:
                     root.total_progress.setValue(0)
                     root.total_progress.setFormat("0%")
-                if hasattr(root, 'status_label') and root.status_label:
-                    root.status_label.setText("Ready")
-                if hasattr(root, 'speed_label') and root.speed_label:
-                    root.speed_label.setText("0 MB/s")
+
+
                 if hasattr(root, 'files_count') and root.files_count:
-                    root.files_count.setText("0 files")
+                    root.files_count.setText("0 of 0 files")
                 
                 print("DEBUG: Transfer state reset and controls re-enabled")
             
@@ -1523,7 +1461,7 @@ def build_ingest_tab():
                 _remove_file_widget(file_id)
             root.active_files = 0
             if hasattr(root, 'files_count') and root.files_count:
-                root.files_count.setText("0 files")
+                root.files_count.setText("0 of 0 files")
             print("DEBUG: All file widgets cleared")
         except Exception as e:
             print(f"DEBUG: Error in _clear_all_file_widgets: {e}")
@@ -1857,15 +1795,11 @@ def build_ingest_tab():
                 root.total_progress.setFormat("0%")
                 print("DEBUG: Progress bar reset to 0%")
             
-            if hasattr(root, 'status_label') and root.status_label:
-                root.status_label.setText("Cancelled")
-                print("DEBUG: Status label updated to show cancellation")
+
             
             # Update destination status
             if hasattr(root, 'destinations'):
                 for i, dest_obj in enumerate(root.destinations):
-                    if 'status_label' in dest_obj:
-                        dest_obj['status_label'].setText("Cancelled")
                     if 'progress_bar' in dest_obj:
                         dest_obj['progress_bar'].setValue(0)
                         dest_obj['progress_bar'].setFormat(f"Dest {i + 1}: 0%")
@@ -1899,10 +1833,9 @@ def build_ingest_tab():
                 cancel_btn.setEnabled(False)
                 
                 # Reset additional status displays
-                if hasattr(root, 'speed_label') and root.speed_label:
-                    root.speed_label.setText("0 MB/s")
+
                 if hasattr(root, 'elapsed_label') and root.elapsed_label:
-                    root.elapsed_label.setText("Elapsed: 00:00:00")
+                    root.elapsed_label.setText("00:00:00")
                 
                 print("DEBUG: Main controls re-enabled after cancellation")
             

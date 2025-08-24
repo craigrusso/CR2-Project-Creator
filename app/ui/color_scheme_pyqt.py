@@ -869,11 +869,11 @@ PROGRESS_BAR_STYLE = f"""
         text-align: center;
         background-color: {colors['bg']};
         color: {colors['text']};
-        font-size: 14px;
+        font-size: 12px;
         font-weight: 600;
         margin: 0;
         padding: 0;
-        min-height: 30px;
+        min-height: 24px;
     }}
     QProgressBar::chunk {{
         background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
@@ -881,6 +881,20 @@ PROGRESS_BAR_STYLE = f"""
                                    stop:0.5 #4a7c4a, 
                                    stop:1 #6ba06b);
         border-radius: 2px;
+    }}
+"""
+
+# Style for summary metrics (Elapsed, ETA, Speed, Avg, Peak)
+SUMMARY_METRIC_STYLE = f"""
+    QLabel {{
+        color: {colors['text']};
+        font-size: 13px;
+        font-weight: 600;
+        font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+        text-align: center;
+        padding: 8px 4px;
+        margin: 0;
+        min-width: 80px;
     }}
 """
 
