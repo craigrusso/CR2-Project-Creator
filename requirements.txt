@@ -1,9 +1,7 @@
-# CR2 Creative Pro - PyQt Version Requirements
-PyQt6>=6.0.0
-# Removed strict version requirements to allow py2app to resolve compatible versions
-# Previous PyQt5 versions:
-# PyQt5>=5.15.0
-# PyQt5-Qt5==5.15.2
-# PyQt5-sip==12.12.2 
-requests>=2.25.0 
-xxhash>=3.4.1
+# Core dependencies
+PyQt6>=6.4.0
+psutil>=5.9.0  # For memory management and system monitoring
+
+# Development dependencies
+pytest>=7.0.0
+pytest-qt>=4.0.0

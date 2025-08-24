@@ -27,6 +27,13 @@ class IngestDefaults:
     min_multistream_size_bytes: int = 100 * 1024 * 1024  # Reduced to 100 MiB for more files
     io_chunk_size_bytes: int = 256 * 1024 * 1024  # Increased to 128 MiB for much better performance
     verify_algorithm: str = "xxh64"  # Phase 1: non-cryptographic
+    
+    # NEW: Memory and cache configuration
+    buffer_size_preset: str = "auto"  # auto, conservative, balanced, aggressive, maximum
+    memory_allocation_percent: int = 15  # Percentage of system memory to use
+    adaptive_memory: bool = True  # Automatically adjust based on available memory
+    max_buffer_size_mb: int = 4  # Maximum buffer size in MB
+    min_buffer_size_mb: int = 0.5  # Minimum buffer size in MB
 
 
 DEFAULTS = IngestDefaults()

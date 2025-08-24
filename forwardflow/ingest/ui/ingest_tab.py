@@ -148,8 +148,12 @@ def build_ingest_tab():
     
     # Main layout
     layout = QVBoxLayout(root)
-    layout.setContentsMargins(5, 5, 5, 5)  # Reduced to 5px for tight spacing
-    layout.setSpacing(5)  # Reduced to 5px for tight spacing
+    layout.setContentsMargins(0, 0, 0, 0)  # No margins - title goes to very top
+    layout.setSpacing(6)  # Further reduced spacing between sections
+    
+    # Set minimum dimensions to prevent UI collapse and ensure full visibility
+    root.setMinimumWidth(1000)  # Increased minimum width for better layout
+    root.setMinimumHeight(900)  # Further increased minimum height to show all sections
     
     print("DEBUG: Creating IngestViewModel...")
     vm = IngestViewModel()
@@ -257,103 +261,102 @@ def build_ingest_tab():
         self._last_bytes = self.copied_bytes
         return "0.0 MB/s Transfer"
     
-    # Header
-    header_label = QLabel("Turbo Transfer")
-    header_label.setStyleSheet(HEADER_LABEL_STYLE)
-    layout.addWidget(header_label)
+    # Title at the very top with minimal margin
+    title = QLabel("Turbo Transfer")
+    title.setStyleSheet(HEADER_LABEL_STYLE)
+    title.setFixedHeight(30)  # Reduced height
+    title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+    title.setContentsMargins(10, 2, 10, 2)  # Reduced padding inside title
+    layout.addWidget(title)
     
-    # Source and Destinations (compact)
+    # Paths section
     paths_layout = QVBoxLayout()
-    paths_layout.setSpacing(5)  # Reduced to 5px for tight spacing
+    paths_layout.setSpacing(8)  # Further reduced spacing
+    paths_layout.setContentsMargins(0, 0, 0, 0)
     
-    # Source with dropdown
-    src_layout = QVBoxLayout()
-    src_layout.setSpacing(2)  # Reduced to 2px for very tight spacing
+    # Source section - inline layout
+    src_layout = QHBoxLayout()
+    src_layout.setSpacing(10)  # Spacing between label and dropdown
+    src_layout.setContentsMargins(0, 0, 0, 0)
+    
     src_label = QLabel("Source:")
     src_label.setStyleSheet(FIELD_LABEL_STYLE)
+    src_label.setFixedHeight(38)  # Match combo box height
+    src_label.setFixedWidth(60)  # Fixed width for consistency
+    src_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
     
-    # Source dropdown
     src_combo = QComboBox()
     src_combo.setEditable(True)
     src_combo.setStyleSheet(COMBOBOX_STYLE)
     src_combo.setPlaceholderText("Select source folder...")
+    src_combo.setFixedHeight(38)  # Match button height
+    src_combo.setMinimumHeight(38)
+    src_combo.setMaximumHeight(38)
     
     # Add recent sources to dropdown
     for source in recent_sources:
         src_combo.addItem(source)
     
-    # Source browse button
-    src_btn = QPushButton("Browse…")
-    src_btn.setObjectName("src_browse_btn")
-    # Use the standard app colors
-    src_btn.setStyleSheet(f"""
-        QPushButton {{
-            background-color: {colors['card_bg']};
-            color: {colors['text']};
-            border: 1px solid {colors['border']};
-            padding: 5px 10px;
-            border-radius: 3px;
-        }}
-        QPushButton:hover {{
-            background-color: {colors['hover_bg']};
-            border: 1px solid {colors['accent']};
-        }}
-        QPushButton:pressed {{
-            background-color: {colors['accent']};
-            color: white;
-        }}
-    """)
-    
-    src_row = QHBoxLayout()
-    src_row.setSpacing(2)  # Reduced to 2px for very tight spacing
-    src_row.addWidget(src_combo, 1)
-    src_row.addWidget(src_btn)
+    src_btn = QPushButton("Browse...")
+    src_btn.setObjectName("src_btn")
+    src_btn.setStyleSheet(BUTTON_STYLE)  # Use app-wide button styling
+    src_btn.setFixedHeight(38)  # Fixed height for consistency
+    src_btn.setFixedWidth(110)  # Fixed width for consistency
     
     src_layout.addWidget(src_label)
-    src_layout.addLayout(src_row)
+    src_layout.addWidget(src_combo, 1)
+    src_layout.addWidget(src_btn)
+    
     paths_layout.addLayout(src_layout)
     
     # Destinations section with pinned header and scrollable content
     dest_frame = QFrame()
     dest_frame.setStyleSheet(CARD_FRAME_STYLE)
     dest_layout = QVBoxLayout(dest_frame)
-    dest_layout.setSpacing(5)
-    dest_layout.setContentsMargins(5, 5, 5, 5)
+    dest_layout.setSpacing(8)  # Further reduced spacing
+    dest_layout.setContentsMargins(12, 12, 12, 12)  # Further reduced padding
     
     # Destinations header (pinned to top)
     dest_header = QHBoxLayout()
+    dest_header.setSpacing(10)  # Reduced spacing
+    dest_header.setContentsMargins(0, 0, 0, 0)
     dest_label = QLabel("Destinations:")
     dest_label.setStyleSheet(FIELD_LABEL_STYLE)
+    dest_label.setFixedHeight(25)  # Fixed height for consistency
     
-    # Destinations dropdown
+    # Destinations dropdown - now automatically adds destinations when clicked
     dest_combo = QComboBox()
     dest_combo.setEditable(True)
     dest_combo.setStyleSheet(COMBOBOX_STYLE)
     dest_combo.setPlaceholderText("Select destination folder...")
+    dest_combo.setFixedHeight(38)  # Match button height
+    dest_combo.setMinimumHeight(38)
+    dest_combo.setMaximumHeight(38)
     
     # Add recent destinations to dropdown
     for destination in recent_destinations:
         dest_combo.addItem(destination)
     
+    # Connect dropdown selection to automatic destination addition
+    def on_destination_selected(index):
+        """Automatically add destination when selected from dropdown"""
+        if index >= 0:
+            path = dest_combo.currentText().strip()
+            if path and path != dest_combo.placeholderText():
+                # Check if destination already exists
+                existing_paths = [dest.get("path", "") for dest in root.destinations]
+                if path not in existing_paths:
+                    add_destination_from_path(path)
+                    # Clear the dropdown after adding
+                    dest_combo.setCurrentText("")
+    
+    dest_combo.currentIndexChanged.connect(on_destination_selected)
+    
     add_dest_btn = QPushButton("+ Add Destination")
     add_dest_btn.setObjectName("add_dest_btn")
-    add_dest_btn.setStyleSheet(f"""
-        QPushButton {{
-            background-color: {colors['card_bg']};
-            color: {colors['text']};
-            border: 1px solid {colors['border']};
-            padding: 5px 10px;
-            border-radius: 3px;
-        }}
-        QPushButton:hover {{
-            background-color: {colors['hover_bg']};
-            border: 1px solid {colors['accent']};
-        }}
-        QPushButton:pressed {{
-            background-color: {colors['accent']};
-            color: white;
-        }}
-    """)
+    add_dest_btn.setStyleSheet(BUTTON_STYLE)  # Use app-wide button styling
+    add_dest_btn.setFixedHeight(38)  # Fixed height for consistency
+    add_dest_btn.setFixedWidth(150)  # Fixed width for consistency
     
     dest_header.addWidget(dest_label)
     dest_header.addWidget(dest_combo, 1)
@@ -363,7 +366,7 @@ def build_ingest_tab():
     # Destinations list (scrollable with expandable height)
     dest_scroll = QScrollArea()
     dest_scroll.setWidgetResizable(True)
-    dest_scroll.setMinimumHeight(80)
+    dest_scroll.setMinimumHeight(150)  # Increased minimum height to show bottom clearly
     dest_scroll.setMaximumHeight(400)  # Increased max height for more destinations
     dest_scroll.setStyleSheet(SCROLL_AREA_STYLE)
     dest_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -371,8 +374,8 @@ def build_ingest_tab():
     
     dest_container = QWidget()
     dest_container_layout = QVBoxLayout(dest_container)
-    dest_container_layout.setSpacing(2)
-    dest_container_layout.setContentsMargins(0, 0, 0, 0)
+    dest_container_layout.setSpacing(4)  # Further reduced spacing
+    dest_container_layout.setContentsMargins(6, 6, 6, 6)  # Further reduced margins
     dest_container_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
     
     dest_scroll.setWidget(dest_container)
@@ -389,15 +392,73 @@ def build_ingest_tab():
     
     layout.addLayout(paths_layout)
     
-    # Settings (compact)
-    settings_layout = QHBoxLayout()
-    settings_layout.setSpacing(5)  # Reduced to 5px for tight spacing
+    # Settings section
+    settings_container = QWidget()
+    settings_container.setMinimumWidth(800)  # Increased minimum width to prevent collapse
+    settings_container.setMinimumHeight(120)  # Further reduced height to save space
+    settings_layout = QVBoxLayout(settings_container)
+    settings_layout.setSpacing(10)  # Further reduced spacing to save vertical space
+    settings_layout.setContentsMargins(15, 10, 15, 10)  # Further reduced margins to save space
     
-    # Global Preset
+    # Transfer Settings
+    transfer_container = QWidget()
+    transfer_container.setMinimumWidth(400)  # Increased minimum width to prevent collapse
+    transfer_container.setMinimumHeight(100)  # Further reduced height to save space
+    transfer_settings_layout = QVBoxLayout(transfer_container)
+    transfer_settings_layout.setSpacing(8)  # Further reduced spacing to save vertical space
+    
+    # Transfer Settings Header with Generate Verification Report checkbox (right justified)
+    header_layout = QHBoxLayout()
+    header_layout.setSpacing(20)  # Increased spacing for better breathing room
+    header_layout.setContentsMargins(0, 0, 0, 0)
+    
+    transfer_header = QLabel("Transfer Settings")
+    transfer_header.setStyleSheet(SECTION_HEADER_STYLE)
+    transfer_header.setFixedHeight(30)  # Increased height for better visibility
+    
+    # Generate Verification Report checkbox (right justified)
+    report_checkbox = QCheckBox("Generate Verification Report")
+    report_checkbox.setChecked(True)  # Default to enabled
+    report_checkbox.setStyleSheet(f"""
+        QCheckBox {{
+            color: {colors['text']};
+            font-size: 12px;
+            spacing: 8px;
+        }}
+        QCheckBox::indicator {{
+            width: 16px;
+            height: 16px;
+        }}
+        QCheckBox::indicator:unchecked {{
+            border: 2px solid {colors['border']};
+            background-color: {colors['card_bg']};
+            border-radius: 3px;
+        }}
+        QCheckBox::indicator:checked {{
+            border: 2px solid {colors['accent']};
+            background-color: {colors['accent']};
+            border-radius: 3px;
+        }}
+    """)
+    report_checkbox.setFixedHeight(30)
+    
+    header_layout.addWidget(transfer_header)
+    header_layout.addStretch()  # Push checkbox to the right
+    header_layout.addWidget(report_checkbox)
+    
+    transfer_settings_layout.addLayout(header_layout)
+    
+    # Single row: All controls on one line using full width
+    controls_row = QHBoxLayout()
+    controls_row.setSpacing(30)  # Increased spacing for better separation
+    controls_row.setContentsMargins(0, 0, 0, 0)
+    
+    # Global Preset (expands with available space)
     preset_layout = QVBoxLayout()
-    preset_layout.setSpacing(2)  # Reduced to 2px for very tight spacing
+    preset_layout.setSpacing(5)
     preset_label = QLabel("Global Preset:")
     preset_label.setStyleSheet(FIELD_LABEL_STYLE)
+    preset_label.setFixedHeight(18)
     preset_combo = QComboBox()
     preset_combo.addItems([
         "Auto (recommended)",
@@ -407,6 +468,9 @@ def build_ingest_tab():
     ])
     preset_combo.setStyleSheet(COMBOBOX_STYLE)
     preset_combo.setCurrentIndex(0)
+    preset_combo.setFixedHeight(28)
+    preset_combo.setMinimumWidth(150)  # Increased minimum width
+    # Remove maximum width constraint to allow expansion
     
     # Apply hover delegate for proper hover effects
     try:
@@ -417,13 +481,14 @@ def build_ingest_tab():
     
     preset_layout.addWidget(preset_label)
     preset_layout.addWidget(preset_combo)
-    settings_layout.addLayout(preset_layout)
+    controls_row.addLayout(preset_layout, 1)  # Add stretch factor
     
-    # Verify Mode
+    # Verify Mode (expands with available space)
     verify_layout = QVBoxLayout()
-    verify_layout.setSpacing(2)  # Reduced to 2px for very tight spacing
+    verify_layout.setSpacing(5)
     verify_label = QLabel("Verify Mode:")
     verify_label.setStyleSheet(FIELD_LABEL_STYLE)
+    verify_label.setFixedHeight(18)
     verify_combo = QComboBox()
     verify_combo.addItems([
         "FAST",
@@ -432,6 +497,9 @@ def build_ingest_tab():
     ])
     verify_combo.setStyleSheet(COMBOBOX_STYLE)
     verify_combo.setCurrentIndex(0)
+    verify_combo.setFixedHeight(28)
+    verify_combo.setMinimumWidth(140)  # Increased minimum width
+    # Remove maximum width constraint to allow expansion
     
     # Apply hover delegate for proper hover effects
     try:
@@ -442,171 +510,119 @@ def build_ingest_tab():
     
     verify_layout.addWidget(verify_label)
     verify_layout.addWidget(verify_combo)
-    settings_layout.addLayout(verify_layout)
+    controls_row.addLayout(verify_layout, 1)  # Add stretch factor
     
-    # Concurrency sliders
+    # Per-file concurrency (expands with available space)
     conc_layout = QVBoxLayout()
-    conc_layout.setSpacing(2)  # Reduced to 2px for very tight spacing
+    conc_layout.setSpacing(5)
     conc_label = QLabel("Per-file concurrency:")
     conc_label.setStyleSheet(FIELD_LABEL_STYLE)
+    conc_label.setFixedHeight(18)
     conc_slider = QSlider(Qt.Orientation.Horizontal)
     conc_slider.setRange(1, 16)
-    conc_slider.setValue(1)
+    conc_slider.setValue(2)
     conc_slider.setStyleSheet(SLIDER_STYLE)
-    conc_value = QLabel("1")
+    conc_slider.setFixedHeight(22)
+    conc_slider.setMinimumHeight(22)
+    conc_slider.setMaximumHeight(22)
+    conc_slider.setMinimumWidth(150)  # Increased minimum width
+    # Remove maximum width constraint to allow expansion
+    conc_value = QLabel("2")
     conc_value.setStyleSheet(ACCENT_VALUE_STYLE)
+    conc_value.setFixedHeight(22)
+    conc_value.setFixedWidth(25)
     conc_slider.valueChanged.connect(lambda v: conc_value.setText(str(v)))
     
     conc_row = QHBoxLayout()
-    conc_row.setSpacing(2)  # Reduced to 2px for very tight spacing
+    conc_row.setSpacing(8)
     conc_row.addWidget(conc_slider, 1)
     conc_row.addWidget(conc_value)
     
     conc_layout.addWidget(conc_label)
     conc_layout.addLayout(conc_row)
-    settings_layout.addLayout(conc_layout)
+    controls_row.addLayout(conc_layout, 1)  # Add stretch factor
     
-    # Stream concurrency
+    # Stream concurrency (expands with available space)
     stream_layout = QVBoxLayout()
-    stream_layout.setSpacing(2)  # Reduced to 2px for very tight spacing
+    stream_layout.setSpacing(5)
     stream_label = QLabel("Stream concurrency:")
     stream_label.setStyleSheet(FIELD_LABEL_STYLE)
+    stream_label.setFixedHeight(18)
     stream_slider = QSlider(Qt.Orientation.Horizontal)
     stream_slider.setRange(1, 32)
-    stream_slider.setValue(2)
+    stream_slider.setValue(4)
     stream_slider.setStyleSheet(SLIDER_STYLE)
-    stream_value = QLabel("2")
+    stream_slider.setFixedHeight(22)
+    stream_slider.setMinimumHeight(22)
+    stream_slider.setMaximumHeight(22)
+    stream_slider.setMinimumWidth(150)  # Increased minimum width
+    # Remove maximum width constraint to allow expansion
+    stream_value = QLabel("4")
     stream_value.setStyleSheet(ACCENT_VALUE_STYLE)
+    stream_value.setFixedHeight(22)
+    stream_value.setFixedWidth(25)
     stream_slider.valueChanged.connect(lambda v: stream_value.setText(str(v)))
     
     stream_row = QHBoxLayout()
-    stream_row.setSpacing(2)  # Reduced to 2px for very tight spacing
+    stream_row.setSpacing(8)
     stream_row.addWidget(stream_slider, 1)
     stream_row.addWidget(stream_value)
     
     stream_layout.addWidget(stream_label)
     stream_layout.addLayout(stream_row)
-    settings_layout.addLayout(stream_layout)
+    controls_row.addLayout(stream_layout, 1)  # Add stretch factor
     
-    # NEW: Verification Report checkbox
-    report_layout = QVBoxLayout()
-    report_layout.setSpacing(2)
-    report_checkbox = QCheckBox("Generate Verification Report")
-    report_checkbox.setChecked(True)  # Default to enabled
-    report_checkbox.setStyleSheet(f"""
-        QCheckBox {{
-            color: {colors['text']};
-            font-size: 12px;
-            spacing: 5px;
-        }}
-        QCheckBox::indicator {{
-            width: 16px;
-            height: 16px;
-            border: 1px solid {colors['border']};
-            border-radius: 3px;
-            background-color: {colors['card_bg']};
-        }}
-        QCheckBox::indicator:checked {{
-            background-color: {colors['accent']};
-            border-color: {colors['accent']};
-        }}
-        QCheckBox::indicator:hover {{
-            border-color: {colors['accent']};
-        }}
-    """)
-    report_layout.addWidget(report_checkbox)
-    settings_layout.addLayout(report_layout)
+    transfer_settings_layout.addLayout(controls_row)
+    
+    # Add spacer to push everything to the top
+    transfer_settings_layout.addStretch()
+    
+    # Add transfer settings to settings layout
+    settings_layout.addWidget(transfer_container)
     
     # Store widget references in root for access from button handlers
-    root.verify_combo = verify_combo
     root.preset_combo = preset_combo
+    root.verify_combo = verify_combo
+    root.conc_slider = conc_slider
+    root.stream_slider = stream_slider
     root.report_checkbox = report_checkbox
+    root.src_combo = src_combo
+    root.dest_combo = dest_combo
+    root.dest_container_layout = dest_container_layout
+    root.destinations = []
+    root.current_job = None
+    root.job_timer = None
+    root.progress_update_timer = None
+    root.src_btn = src_btn
+    root.add_dest_btn = add_dest_btn
     
-    layout.addLayout(settings_layout)
+    # Add settings container to main layout
+    layout.addWidget(settings_container)
     
     # Control buttons
     buttons_layout = QHBoxLayout()
-    buttons_layout.setSpacing(5)  # Reduced to 5px for tight spacing
+    buttons_layout.setSpacing(10)  # Reduced spacing
+    buttons_layout.setContentsMargins(0, 0, 0, 0)
     
+    # Start button
     start_btn = QPushButton("Start Transfer")
-    start_btn.setObjectName("start_transfer_btn")
-    # Use the standard app accent color - force the blue color
-    start_btn.setStyleSheet(f"""
-        QPushButton {{
-            background-color: #2C4F76;
-            color: white;
-            border: none;
-            padding: 5px 10px;
-            border-radius: 3px;
-        }}
-        QPushButton:hover {{
-            background-color: #36648B;
-        }}
-        QPushButton:pressed {{
-            background-color: #1E3A5C;
-        }}
-        QPushButton:disabled {{
-            background-color: #1E1E1E;
-            color: #666666;
-            border: 1px solid #666666;
-        }}
-    """)
-    start_btn.setFixedHeight(40)
+    start_btn.setObjectName("start_btn")
+    start_btn.setStyleSheet(ACCENT_BUTTON_STYLE)
+    start_btn.setFixedHeight(45)  # Increased from 40 for better button size
     start_btn.setEnabled(False)
     
+    # Pause button
     pause_btn = QPushButton("Pause")
     pause_btn.setObjectName("pause_btn")
-    # Use the standard app colors
-    pause_btn.setStyleSheet(f"""
-        QPushButton {{
-            background-color: {colors['card_bg']};
-            color: {colors['text']};
-            border: 1px solid {colors['border']};
-            padding: 5px 10px;
-            border-radius: 3px;
-        }}
-        QPushButton:hover {{
-            background-color: {colors['hover_bg']};
-            border: 1px solid {colors['accent']};
-        }}
-        QPushButton:pressed {{
-            background-color: {colors['accent']};
-            color: white;
-        }}
-        QPushButton:disabled {{
-            background-color: #1E1E1E;
-            color: #666666;
-            border: 1px solid #666666;
-        }}
-    """)
-    pause_btn.setFixedHeight(40)
+    pause_btn.setStyleSheet(BUTTON_STYLE)
+    pause_btn.setFixedHeight(45)  # Increased from 40 for better button size
     pause_btn.setEnabled(False)
     
+    # Cancel button
     cancel_btn = QPushButton("Cancel")
     cancel_btn.setObjectName("cancel_btn")
-    # Use simple styling like the working main app buttons
-    cancel_btn.setStyleSheet("""
-        QPushButton {
-            background-color: #902A2A;
-            color: white;
-            border: 1px solid #732121;
-            padding: 5px 10px;
-            border-radius: 3px;
-        }
-        QPushButton:hover {
-            background-color: #A33030;
-            border: 1px solid #8A2727;
-        }
-        QPushButton:pressed {
-            background-color: #7D2525;
-        }
-        QPushButton:disabled {
-            background-color: #1E1E1E;
-            color: #666666;
-            border: 1px solid #666666;
-        }
-    """)
-    cancel_btn.setFixedHeight(40)
+    cancel_btn.setStyleSheet(DANGER_BUTTON_STYLE)
+    cancel_btn.setFixedHeight(45)  # Increased from 40 for better button size
     cancel_btn.setEnabled(False)
     
     buttons_layout.addWidget(start_btn)
@@ -614,6 +630,7 @@ def build_ingest_tab():
     buttons_layout.addWidget(cancel_btn)
     
     # Store button references in root for access by event handlers
+    root.start_btn = start_btn  # Store start button reference
     root.pause_btn = pause_btn
     root.cancel_btn = cancel_btn
     
@@ -622,9 +639,10 @@ def build_ingest_tab():
     # Main progress display (clean, compact)
     progress_frame = QFrame()
     progress_frame.setStyleSheet(CARD_FRAME_STYLE)
+    progress_frame.setMinimumHeight(80)  # Further reduced height to save space
     progress_layout = QVBoxLayout(progress_frame)
-    progress_layout.setSpacing(0)  # No spacing between speed and progress bar
-    progress_layout.setContentsMargins(5, 5, 5, 5)  # Reduced to 5px for tight spacing
+    progress_layout.setSpacing(8)  # Further reduced spacing
+    progress_layout.setContentsMargins(12, 12, 12, 12)  # Further reduced padding
     
     # Speed display (above progress bar, smaller and white)
     speed_label = QLabel("0 MB/s Transfer")
@@ -660,21 +678,23 @@ def build_ingest_tab():
     root.total_time_label = QtWidgets.QLabel("Total: 00:00")
     root.total_speed_label = QtWidgets.QLabel("— MB/s")
     stats_row = QtWidgets.QHBoxLayout()
+    stats_row.setSpacing(15)  # Reduced spacing
     stats_row.addWidget(root.total_time_label)
     stats_row.addStretch(1)
     stats_row.addWidget(root.total_speed_label)
     layout.addLayout(stats_row)
     
-    # Individual files section - restored from C++ engine layout
+    # Files frame - store for later use and ensure proper display
     files_frame = QFrame()
     files_frame.setStyleSheet(CARD_FRAME_STYLE)
+    files_frame.setMinimumHeight(200)  # Reduced height but still shows content clearly
     files_layout = QVBoxLayout(files_frame)
-    files_layout.setSpacing(5)
-    files_layout.setContentsMargins(5, 5, 5, 5)
+    files_layout.setSpacing(8)  # Reduced spacing to save space
+    files_layout.setContentsMargins(12, 12, 12, 12)  # Reduced padding to save space
     
     # Combined time and speed display section - inline to save space
     time_speed_layout = QHBoxLayout()
-    time_speed_layout.setSpacing(15)
+    time_speed_layout.setSpacing(10)  # Reduced spacing
     
     # Elapsed time
     elapsed_label = QLabel("Elapsed: 00:00:00")
@@ -736,8 +756,8 @@ def build_ingest_tab():
     # Scrollable area for file progress - more compact
     scroll_area = QScrollArea()
     scroll_area.setWidgetResizable(True)
-    scroll_area.setMinimumHeight(100)  # Reduced minimum height
-    scroll_area.setMaximumHeight(400)  # Increased maximum height for resizability
+    scroll_area.setMinimumHeight(120)  # Increased minimum height for better visibility
+    scroll_area.setMaximumHeight(500)  # Increased maximum height for more files
     scroll_area.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)  # Make it resizable
     scroll_area.setStyleSheet(SCROLL_AREA_STYLE)
     
@@ -758,6 +778,27 @@ def build_ingest_tab():
     layout.addWidget(files_frame)
     
     # Destination management functions
+    def add_destination_from_path(path):
+        """Add a destination from a given path"""
+        if path:
+            # Add to recent destinations
+            add_to_recent_locations(path, is_source=False)
+            
+            dest_obj = {
+                "path": path,
+                "preset": "auto",
+                "block_size": None,
+                "files_in_flight": None,
+                "ranges_per_file": None,
+                "use_direct_io": None,
+                "verify": "FAST",
+                "progress_bar": None,  # Will be set when widget is created
+                "progress_label": None  # Will be set when widget is created
+            }
+            root.destinations.append(dest_obj)
+            create_destination_widget(dest_obj)
+            check_button_states()
+    
     def add_destination():
         """Add a new destination to the list"""
         # Use the dropdown value if it has text, otherwise show file dialog
@@ -771,22 +812,7 @@ def build_ingest_tab():
             )
         
         if path:
-            # Add to recent destinations
-            add_to_recent_locations(path, is_source=False)
-            
-            dest_obj = {
-                "path": path,
-                "preset": "auto",
-                "block_size": None,
-                "files_in_flight": None,
-                "ranges_per_file": None,
-                "use_direct_io": None,
-                "verify": "FAST"
-            }
-            root.destinations.append(dest_obj)
-            create_destination_widget(dest_obj)
-            check_button_states()
-            
+            add_destination_from_path(path)
             # Clear the dropdown
             root.dest_combo.setCurrentText("")
     
@@ -821,10 +847,9 @@ def build_ingest_tab():
         preset_combo.addItems(["Auto", "USB/TB", "Network", "Custom"])
         preset_combo.setCurrentText(dest_obj["preset"])
         preset_combo.setStyleSheet(COMBOBOX_STYLE)
+        preset_combo.setFixedHeight(25)  # Fixed height to prevent scaling
         preset_combo.currentTextChanged.connect(lambda text: update_dest_preset(dest_obj, text))
         top_row.addWidget(preset_combo)
-        
-
         
         # Remove button
         remove_btn = QPushButton("×")
@@ -846,7 +871,67 @@ def build_ingest_tab():
         
         dest_layout.addLayout(top_row)
         
-        # Bottom row: progress bar
+        # Transfer type and buffer info row with Ready status on same line
+        info_row = QHBoxLayout()
+        info_row.setSpacing(15)  # Increased spacing between elements
+        
+        # Detect transfer type and optimal buffer size
+        print(f"DEBUG: Attempting to detect transfer type for destination: {dest_obj['path']}")
+        try:
+            from forwardflow.ingest.utils.memory_manager import MemoryManager
+            print("DEBUG: Successfully imported MemoryManager")
+            memory_manager = MemoryManager()
+            print("DEBUG: Created MemoryManager instance")
+            transfer_type = memory_manager._detect_transfer_type(dest_obj["path"])
+            print(f"DEBUG: Detected transfer type: {transfer_type}")
+            optimal_buffer = memory_manager.get_optimal_buffer_size_for_destination(dest_obj["path"], "auto")
+            print(f"DEBUG: Calculated optimal buffer: {optimal_buffer:.1f}MB")
+            
+            # Transfer type label with wider minimum width to prevent cutoff
+            type_label = QLabel(f"Type: {transfer_type.upper()}")
+            type_label.setStyleSheet(SECONDARY_TEXT_STYLE)
+            type_label.setFixedHeight(20)
+            type_label.setMinimumWidth(120)  # Increased minimum width to prevent cutoff
+            info_row.addWidget(type_label)
+            print(f"DEBUG: Added type label: Type: {transfer_type.upper()}")
+            
+            # Optimal buffer size label with wider minimum width to prevent cutoff
+            buffer_label = QLabel(f"Optimal Buffer: {optimal_buffer:.1f}MB")
+            buffer_label.setStyleSheet(SECONDARY_TEXT_STYLE)
+            buffer_label.setFixedHeight(20)
+            buffer_label.setMinimumWidth(150)  # Increased minimum width to prevent cutoff
+            info_row.addWidget(buffer_label)
+            print(f"DEBUG: Added buffer label: Optimal Buffer: {optimal_buffer:.1f}MB")
+            
+        except Exception as e:
+            print(f"DEBUG: Could not detect transfer type for {dest_obj['path']}: {e}")
+            import traceback
+            traceback.print_exc()
+            # Fallback labels
+            type_label = QLabel("Type: Unknown")
+            type_label.setStyleSheet(SECONDARY_TEXT_STYLE)
+            type_label.setFixedHeight(20)
+            type_label.setMinimumWidth(120)
+            info_row.addWidget(type_label)
+            
+            buffer_label = QLabel("Optimal Buffer: 1.0MB")
+            buffer_label.setStyleSheet(SECONDARY_TEXT_STYLE)
+            buffer_label.setFixedHeight(20)
+            buffer_label.setMinimumWidth(150)
+            info_row.addWidget(buffer_label)
+        
+        info_row.addStretch()  # Push labels to the left
+        
+        # Add Ready status on the same line
+        dest_status = QLabel("Ready")
+        dest_status.setStyleSheet(SECONDARY_TEXT_STYLE)
+        dest_status.setFixedHeight(20)
+        dest_status.setFixedWidth(60)
+        info_row.addWidget(dest_status)
+        
+        dest_layout.addLayout(info_row)
+        
+        # Progress bar row
         progress_row = QHBoxLayout()
         progress_row.setSpacing(5)
         
@@ -860,12 +945,6 @@ def build_ingest_tab():
         dest_progress.setFormat(f"Dest {len(root.destinations)+1}: %p%")
         dest_progress.setTextVisible(True)
         progress_row.addWidget(dest_progress, 1)
-        
-        # Status label for this destination
-        dest_status = QLabel("Ready")
-        dest_status.setStyleSheet(SECONDARY_TEXT_STYLE)
-        dest_status.setFixedWidth(80)
-        progress_row.addWidget(dest_status)
         
         dest_layout.addLayout(progress_row)
         
@@ -1256,8 +1335,26 @@ def build_ingest_tab():
             if hasattr(root, 'destinations') and dest_index < len(root.destinations):
                 dest_obj = root.destinations[dest_index]
                 if 'progress_bar' in dest_obj and dest_obj['progress_bar']:
-                    dest_obj['progress_bar'].setValue(bytes_copied)
-                    print(f"DEBUG: Destination {dest_index} progress bar updated")
+                    progress_bar = dest_obj['progress_bar']
+                    # Make progress bar visible when transfer starts
+                    if not progress_bar.isVisible():
+                        progress_bar.setVisible(True)
+                    
+                    # Calculate and update progress
+                    if total_bytes > 0:
+                        progress_percent = int((bytes_copied / total_bytes) * 100)
+                        progress_bar.setValue(progress_percent)
+                        progress_bar.setFormat(f"Dest {dest_index + 1}: {progress_percent}%")
+                        print(f"DEBUG: Destination {dest_index} progress bar updated to {progress_percent}%")
+                    
+                    # Update status label
+                    if 'status_label' in dest_obj and dest_obj['status_label']:
+                        if bytes_copied == 0:
+                            dest_obj['status_label'].setText("Starting...")
+                        elif bytes_copied < total_bytes:
+                            dest_obj['status_label'].setText("Copying...")
+                        else:
+                            dest_obj['status_label'].setText("Complete")
             
         except Exception as e:
             print(f"DEBUG: Error in handle_dest_progress: {e}")
@@ -1520,6 +1617,10 @@ def build_ingest_tab():
             global_preset = root.preset_combo.currentText()
             print(f"DEBUG: Global Preset: {global_preset}")
             
+            # Transfer configuration (C++ engine handles memory automatically)
+            print("DEBUG: Using C++ engine auto-configuration (no memory settings needed)")
+            # C++ engine uses hardcoded 1MB buffer size and manages memory automatically
+            
             # Import JobSpec and JobOptions
             print("DEBUG: Importing JobSpec and JobOptions...")
             try:
@@ -1529,21 +1630,31 @@ def build_ingest_tab():
                 print(f"DEBUG: Failed to import JobSpec/JobOptions: {e}")
                 return
             
-            # Create JobSpec
+            # Create JobSpec with UI-configured parameters
             print("DEBUG: Creating JobSpec...")
             try:
+                # Get concurrency settings from UI sliders
+                per_file_concurrency = root.conc_slider.value()
+                stream_concurrency = root.stream_slider.value()
+                generate_report = root.report_checkbox.isChecked()
+                
+                print(f"DEBUG: Per-file concurrency: {per_file_concurrency}")
+                print(f"DEBUG: Stream concurrency: {stream_concurrency}")
+                print(f"DEBUG: Generate report: {generate_report}")
+                
                 job = JobSpec(
                     job_id=job_id,
                     source_root=source_path,
                     destination_roots=dest_paths,
                     options=JobOptions(
                         mode='FAST' if verify_mode == 'FAST' else 'BALANCED',
-                        per_file_concurrency=1,
-                        stream_concurrency=1,
+                        per_file_concurrency=per_file_concurrency,
+                        stream_concurrency=stream_concurrency,
                         verify_algorithm='xxh64',
                         verify_mode=verify_mode,
                         preset=global_preset,
-                        generate_verification_report=True
+                        generate_verification_report=generate_report
+                        # Note: C++ engine uses hardcoded 1MB buffer and manages memory automatically
                     )
                 )
                 print(f"DEBUG: Created JobSpec: {job}")
@@ -1559,12 +1670,12 @@ def build_ingest_tab():
             
             # Freeze controls
             print("DEBUG: Freezing controls...")
-            start_btn.setEnabled(False)
-            src_combo.setEnabled(False)
-            src_btn.setEnabled(False)
-            dest_combo.setEnabled(False) # Changed from dest_btn to dest_combo
-            verify_combo.setEnabled(False)
-            preset_combo.setEnabled(False)
+            root.start_btn.setEnabled(False)
+            root.src_combo.setEnabled(False)
+            root.src_btn.setEnabled(False)
+            root.dest_combo.setEnabled(False) # Changed from dest_btn to dest_combo
+            root.verify_combo.setEnabled(False)
+            root.preset_combo.setEnabled(False)
             print("DEBUG: Controls frozen")
             
             # Start the job in a background thread
@@ -1831,12 +1942,12 @@ def run_job(job, root):
         
         # Re-enable controls on error
         def reenable_controls():
-            start_btn.setEnabled(True)
-            src_combo.setEnabled(True)
-            src_btn.setEnabled(True)
-            dest_combo.setEnabled(True)
-            verify_combo.setEnabled(True)
-            preset_combo.setEnabled(True)
+            root.start_btn.setEnabled(True)
+            root.src_combo.setEnabled(True)
+            root.src_btn.setEnabled(True)
+            root.dest_combo.setEnabled(True)
+            root.verify_combo.setEnabled(True)
+            root.preset_combo.setEnabled(True)
             print("DEBUG: Controls re-enabled after error")
         
         # Use QTimer to ensure this runs on the main thread
