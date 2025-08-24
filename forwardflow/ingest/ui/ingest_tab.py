@@ -154,7 +154,7 @@ def build_ingest_tab():
     
     # Set minimum dimensions to prevent UI collapse and ensure full visibility
     root.setMinimumWidth(1000)  # Increased minimum width for better layout
-    root.setMinimumHeight(900)  # Further increased minimum height to show all sections
+    root.setMinimumHeight(700)  # Reduced minimum height to fit in smaller windows
     
     print("DEBUG: Creating IngestViewModel...")
     vm = IngestViewModel()
@@ -383,17 +383,17 @@ def build_ingest_tab():
     # Settings section
     settings_container = QWidget()
     settings_container.setMinimumWidth(800)  # Increased minimum width to prevent collapse
-    settings_container.setMinimumHeight(120)  # Further reduced height to save space
+    settings_container.setMinimumHeight(140)  # Increased height to prevent transfer settings cutoff
     settings_layout = QVBoxLayout(settings_container)
-    settings_layout.setSpacing(10)  # Further reduced spacing to save vertical space
-    settings_layout.setContentsMargins(15, 10, 15, 10)  # Further reduced margins to save space
+    settings_layout.setSpacing(6)  # Tighter spacing to save vertical space
+    settings_layout.setContentsMargins(15, 4, 15, 8)  # Reduced top margin to bring closer to destinations
     
     # Transfer Settings
     transfer_container = QWidget()
     transfer_container.setMinimumWidth(400)  # Increased minimum width to prevent collapse
-    transfer_container.setMinimumHeight(100)  # Further reduced height to save space
+    transfer_container.setMinimumHeight(130)  # Increased height to prevent label cutoff
     transfer_settings_layout = QVBoxLayout(transfer_container)
-    transfer_settings_layout.setSpacing(8)  # Further reduced spacing to save vertical space
+    transfer_settings_layout.setSpacing(10)  # Increased spacing to prevent label cutoff
     
     # Transfer Settings Header with Generate Verification Report checkbox (right justified)
     header_layout = QHBoxLayout()
@@ -648,12 +648,34 @@ def build_ingest_tab():
     progress_layout.setSpacing(8)  # Further reduced spacing
     progress_layout.setContentsMargins(12, 12, 12, 12)  # Further reduced padding
     
-    # Total progress with integrated label - reasonable height for visibility
+    # Total progress with integrated label - prominently sized for visibility
     total_progress = QProgressBar()
     total_progress.setRange(0, 100)
     total_progress.setValue(0)
-    total_progress.setFixedHeight(24)  # Reasonable height for visibility
-    total_progress.setStyleSheet(PROGRESS_BAR_STYLE)
+    total_progress.setFixedHeight(60)  # 2.5x taller for prominence (was 24px)
+    # Custom style to override min-height constraint and make progress bar prominent
+    total_progress.setStyleSheet(f"""
+        QProgressBar {{
+            border: 1px solid {colors['border']};
+            border-radius: 3px;
+            text-align: center;
+            background-color: {colors['bg']};
+            color: {colors['text']};
+            font-size: 14px;
+            font-weight: 600;
+            margin: 0;
+            padding: 0;
+            min-height: 60px;
+            max-height: 60px;
+        }}
+        QProgressBar::chunk {{
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                                       stop:0 #2d5a2d, 
+                                       stop:0.5 #4a7c4a, 
+                                       stop:1 #6ba06b);
+            border-radius: 2px;
+        }}
+    """)
     total_progress.setVisible(True)  # Ensure it's visible
     total_progress.setEnabled(True)  # Ensure it's enabled
     total_progress.setFormat("%p%")  # Show percentage
@@ -663,7 +685,7 @@ def build_ingest_tab():
     progress_layout.addWidget(total_progress)
     
     # Debug progress bar setup
-    print(f"DEBUG: Progress bar created with range 0-100, height 24px")
+    print(f"DEBUG: Progress bar created with range 0-100, height 60px")
     print(f"DEBUG: Progress bar is visible: {total_progress.isVisible()}")
     print(f"DEBUG: Progress bar is enabled: {total_progress.isEnabled()}")
     print(f"DEBUG: Progress bar size: {total_progress.size()}")
@@ -672,101 +694,183 @@ def build_ingest_tab():
     print(f"DEBUG: Progress bar text visible: {total_progress.isTextVisible()}")
     print(f"DEBUG: Progress bar initial value: {total_progress.value()}")
     
-    layout.addWidget(progress_frame, 0)  # No stretch - keep fixed size
-
-    # Unified summary row with equal column widths (Elapsed | ETA | Speed | Avg | Peak)
-    summary_frame = QFrame()
-    summary_frame.setStyleSheet(CARD_FRAME_STYLE)
-    summary_frame.setMinimumHeight(70)  # Height for labels and values
-    summary_layout = QHBoxLayout(summary_frame)
-    summary_layout.setSpacing(0)  # No spacing between columns
-    summary_layout.setContentsMargins(12, 8, 12, 8)  # Reduced padding
+    # Add stats labels directly on top of the progress card (no separate card background)
+    stats_layout = QVBoxLayout()
+    stats_layout.setSpacing(1)  # Minimal spacing between header and values
+    stats_layout.setContentsMargins(12, 4, 12, 4)  # Minimal padding
     
-    # Create equal-width columns for the five metrics with labels
+    # Create compact, direct labels without container widgets (no card backgrounds)
     # Elapsed time
-    elapsed_container = QVBoxLayout()
-    elapsed_container.setSpacing(2)
     elapsed_header = QLabel("Elapsed")
-    elapsed_header.setStyleSheet(FIELD_LABEL_STYLE)
+    elapsed_header.setStyleSheet(f"""
+        QLabel {{
+            color: {colors['secondary_text']};
+            font-size: 10px;
+            font-weight: 500;
+            text-align: center;
+            margin: 0;
+            padding: 2px;
+        }}
+    """)
     elapsed_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
     elapsed_label = QLabel("00:00:00")
-    elapsed_label.setStyleSheet(SUMMARY_METRIC_STYLE)
+    elapsed_label.setStyleSheet(f"""
+        QLabel {{
+            color: {colors['text']};
+            font-size: 13px;
+            font-weight: 600;
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            text-align: center;
+            margin: 0;
+            padding: 2px;
+        }}
+    """)
     elapsed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    elapsed_container.addWidget(elapsed_header)
-    elapsed_container.addWidget(elapsed_label)
-    elapsed_widget = QWidget()
-    elapsed_widget.setLayout(elapsed_container)
-    summary_layout.addWidget(elapsed_widget, 1)
     
     # ETA
-    eta_container = QVBoxLayout()
-    eta_container.setSpacing(2)
     eta_header = QLabel("ETA")
-    eta_header.setStyleSheet(FIELD_LABEL_STYLE)
+    eta_header.setStyleSheet(f"""
+        QLabel {{
+            color: {colors['secondary_text']};
+            font-size: 10px;
+            font-weight: 500;
+            text-align: center;
+            margin: 0;
+            padding: 2px;
+        }}
+    """)
     eta_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
     eta_label = QLabel("--:--:--")
-    eta_label.setStyleSheet(SUMMARY_METRIC_STYLE)
+    eta_label.setStyleSheet(f"""
+        QLabel {{
+            color: {colors['text']};
+            font-size: 13px;
+            font-weight: 600;
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            text-align: center;
+            margin: 0;
+            padding: 2px;
+        }}
+    """)
     eta_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    eta_container.addWidget(eta_header)
-    eta_container.addWidget(eta_label)
-    eta_widget = QWidget()
-    eta_widget.setLayout(eta_container)
-    summary_layout.addWidget(eta_widget, 1)
     
-    # Current speed (centered)
-    speed_container = QVBoxLayout()
-    speed_container.setSpacing(2)
+    # Current speed
     speed_header = QLabel("Speed")
-    speed_header.setStyleSheet(FIELD_LABEL_STYLE)
+    speed_header.setStyleSheet(f"""
+        QLabel {{
+            color: {colors['secondary_text']};
+            font-size: 10px;
+            font-weight: 500;
+            text-align: center;
+            margin: 0;
+            padding: 2px;
+        }}
+    """)
     speed_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
     current_speed_label = QLabel("0 MB/s")
-    current_speed_label.setStyleSheet(SUMMARY_METRIC_STYLE)
+    current_speed_label.setStyleSheet(f"""
+        QLabel {{
+            color: {colors['text']};
+            font-size: 13px;
+            font-weight: 600;
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            text-align: center;
+            margin: 0;
+            padding: 2px;
+        }}
+    """)
     current_speed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    speed_container.addWidget(speed_header)
-    speed_container.addWidget(current_speed_label)
-    speed_widget = QWidget()
-    speed_widget.setLayout(speed_container)
-    summary_layout.addWidget(speed_widget, 1)
     
     # Average speed
-    avg_container = QVBoxLayout()
-    avg_container.setSpacing(2)
     avg_header = QLabel("Avg")
-    avg_header.setStyleSheet(FIELD_LABEL_STYLE)
+    avg_header.setStyleSheet(f"""
+        QLabel {{
+            color: {colors['secondary_text']};
+            font-size: 10px;
+            font-weight: 500;
+            text-align: center;
+            margin: 0;
+            padding: 2px;
+        }}
+    """)
     avg_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
     avg_speed_label = QLabel("0 MB/s")
-    avg_speed_label.setStyleSheet(SUMMARY_METRIC_STYLE)
+    avg_speed_label.setStyleSheet(f"""
+        QLabel {{
+            color: {colors['text']};
+            font-size: 13px;
+            font-weight: 600;
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            text-align: center;
+            margin: 0;
+            padding: 2px;
+        }}
+    """)
     avg_speed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    avg_container.addWidget(avg_header)
-    avg_container.addWidget(avg_speed_label)
-    avg_widget = QWidget()
-    avg_widget.setLayout(avg_container)
-    summary_layout.addWidget(avg_widget, 1)
     
     # Peak speed
-    peak_container = QVBoxLayout()
-    peak_container.setSpacing(2)
     peak_header = QLabel("Peak")
-    peak_header.setStyleSheet(FIELD_LABEL_STYLE)
+    peak_header.setStyleSheet(f"""
+        QLabel {{
+            color: {colors['secondary_text']};
+            font-size: 10px;
+            font-weight: 500;
+            text-align: center;
+            margin: 0;
+            padding: 2px;
+        }}
+    """)
     peak_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
     peak_speed_label = QLabel("0 MB/s")
-    peak_speed_label.setStyleSheet(SUMMARY_METRIC_STYLE)
+    peak_speed_label.setStyleSheet(f"""
+        QLabel {{
+            color: {colors['text']};
+            font-size: 13px;
+            font-weight: 600;
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            text-align: center;
+            margin: 0;
+            padding: 2px;
+        }}
+    """)
     peak_speed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    peak_container.addWidget(peak_header)
-    peak_container.addWidget(peak_speed_label)
-    peak_widget = QWidget()
-    peak_widget.setLayout(peak_container)
-    summary_layout.addWidget(peak_widget, 1)
     
-    layout.addWidget(summary_frame, 0)  # No stretch - keep fixed size
+    # Add headers in a row (much more compact)
+    headers_layout = QHBoxLayout()
+    headers_layout.setSpacing(0)
+    headers_layout.setContentsMargins(0, 0, 0, 0)
+    headers_layout.addWidget(elapsed_header, 1)
+    headers_layout.addWidget(eta_header, 1)
+    headers_layout.addWidget(speed_header, 1)
+    headers_layout.addWidget(avg_header, 1)
+    headers_layout.addWidget(peak_header, 1)
+    
+    # Add values in a row (much more compact)
+    values_layout = QHBoxLayout()
+    values_layout.setSpacing(0)
+    values_layout.setContentsMargins(0, 0, 0, 0)
+    values_layout.addWidget(elapsed_label, 1)
+    values_layout.addWidget(eta_label, 1)
+    values_layout.addWidget(current_speed_label, 1)
+    values_layout.addWidget(avg_speed_label, 1)
+    values_layout.addWidget(peak_speed_label, 1)
+    
+    # Add both rows to stats layout
+    stats_layout.addLayout(headers_layout)
+    stats_layout.addLayout(values_layout)
+    
+    # Add the stats layout to the progress frame instead of creating a separate frame
+    progress_layout.addLayout(stats_layout)
+    
+    layout.addWidget(progress_frame, 0)  # No stretch - keep fixed size
     
     # Files frame - store for later use and ensure proper display
     files_frame = QFrame()
     files_frame.setStyleSheet(CARD_FRAME_STYLE)
-    files_frame.setMinimumHeight(80)  # Reasonable height for Transfer Status
+    files_frame.setMinimumHeight(60)  # Tighter height for Transfer Status
     files_layout = QVBoxLayout(files_frame)
-    files_layout.setSpacing(8)  # Normal spacing
-    files_layout.setContentsMargins(12, 12, 12, 12)  # Normal padding
+    files_layout.setSpacing(4)  # Tighter spacing
+    files_layout.setContentsMargins(12, 6, 12, 6)  # Tighter top/bottom padding
     
     # Compact Transfer Status display
     files_header = QHBoxLayout()
@@ -851,17 +955,20 @@ def build_ingest_tab():
         """)
         
         dest_layout = QVBoxLayout(dest_widget)
-        dest_layout.setSpacing(5)
-        dest_layout.setContentsMargins(5, 5, 5, 5)
+        dest_layout.setSpacing(6)  # Slightly increased spacing for better visibility
+        dest_layout.setContentsMargins(8, 8, 8, 8)  # Increased padding to prevent cutoff
         
         # Top row: path and controls
         top_row = QHBoxLayout()
-        top_row.setSpacing(5)
+        top_row.setSpacing(8)  # Slightly increased spacing for better alignment
+        top_row.setContentsMargins(0, 0, 0, 0)
         
         # Path display
         path_label = QLabel(dest_obj["path"])
         path_label.setStyleSheet(LABEL_STYLE)
         path_label.setWordWrap(True)
+        path_label.setMinimumHeight(28)  # Match combo box height for alignment
+        path_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)  # Center vertically
         top_row.addWidget(path_label, 1)
         
         # Preset dropdown
@@ -869,20 +976,22 @@ def build_ingest_tab():
         preset_combo.addItems(["Auto", "USB/TB", "Network", "Custom"])
         preset_combo.setCurrentText(dest_obj["preset"])
         preset_combo.setStyleSheet(COMBOBOX_STYLE)
-        preset_combo.setFixedHeight(25)  # Fixed height to prevent scaling
+        preset_combo.setFixedHeight(28)  # Fixed height to match path label
+        preset_combo.setMinimumWidth(100)  # Ensure minimum width
         preset_combo.currentTextChanged.connect(lambda text: update_dest_preset(dest_obj, text))
         top_row.addWidget(preset_combo)
         
         # Remove button
         remove_btn = QPushButton("×")
-        remove_btn.setFixedSize(20, 20)
+        remove_btn.setFixedSize(24, 24)  # Slightly larger for better visibility
         remove_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: #902A2A;
                 color: white;
                 border: none;
-                border-radius: 10px;
+                border-radius: 12px;
                 font-weight: bold;
+                font-size: 12px;
             }}
             QPushButton:hover {{
                 background-color: #A33030;
@@ -909,18 +1018,20 @@ def build_ingest_tab():
             optimal_buffer = memory_manager.get_optimal_buffer_size_for_destination(dest_obj["path"], "auto")
             print(f"DEBUG: Calculated optimal buffer: {optimal_buffer:.1f}MB")
             
-            # Transfer type label with wider minimum width to prevent cutoff
+            # Transfer type label with proper height and width to prevent cutoff
             type_label = QLabel(f"Type: {transfer_type.upper()}")
             type_label.setStyleSheet(SECONDARY_TEXT_STYLE)
-            type_label.setFixedHeight(20)
+            type_label.setMinimumHeight(24)  # Increased min height to prevent cutoff
+            type_label.setFixedHeight(24)
             type_label.setMinimumWidth(120)  # Increased minimum width to prevent cutoff
             info_row.addWidget(type_label)
             print(f"DEBUG: Added type label: Type: {transfer_type.upper()}")
             
-            # Optimal buffer size label with wider minimum width to prevent cutoff
+            # Optimal buffer size label with proper height and width to prevent cutoff
             buffer_label = QLabel(f"Optimal Buffer: {optimal_buffer:.1f}MB")
             buffer_label.setStyleSheet(SECONDARY_TEXT_STYLE)
-            buffer_label.setFixedHeight(20)
+            buffer_label.setMinimumHeight(24)  # Increased min height to prevent cutoff
+            buffer_label.setFixedHeight(24)
             buffer_label.setMinimumWidth(150)  # Increased minimum width to prevent cutoff
             info_row.addWidget(buffer_label)
             print(f"DEBUG: Added buffer label: Optimal Buffer: {optimal_buffer:.1f}MB")
@@ -929,16 +1040,18 @@ def build_ingest_tab():
             print(f"DEBUG: Could not detect transfer type for {dest_obj['path']}: {e}")
             import traceback
             traceback.print_exc()
-            # Fallback labels
+            # Fallback labels with proper height to prevent cutoff
             type_label = QLabel("Type: Unknown")
             type_label.setStyleSheet(SECONDARY_TEXT_STYLE)
-            type_label.setFixedHeight(20)
+            type_label.setMinimumHeight(24)  # Increased min height to prevent cutoff
+            type_label.setFixedHeight(24)
             type_label.setMinimumWidth(120)
             info_row.addWidget(type_label)
             
             buffer_label = QLabel("Optimal Buffer: 1.0MB")
             buffer_label.setStyleSheet(SECONDARY_TEXT_STYLE)
-            buffer_label.setFixedHeight(20)
+            buffer_label.setMinimumHeight(24)  # Increased min height to prevent cutoff
+            buffer_label.setFixedHeight(24)
             buffer_label.setMinimumWidth(150)
             info_row.addWidget(buffer_label)
         
@@ -1438,12 +1551,11 @@ def build_ingest_tab():
             if file_id in root.file_widgets:
                 widget = root.file_widgets[file_id]
                 print(f"DEBUG: Removing widget {file_id} from layout")
-                files_container_layout.removeWidget(widget)
+                # Note: File widgets no longer used in professional DIT approach
                 widget.deleteLater()
                 del root.file_widgets[file_id]
                 print(f"DEBUG: Widget {file_id} removed successfully")
                 print(f"DEBUG: Remaining file widgets: {list(root.file_widgets.keys())}")
-                print(f"DEBUG: Container layout count: {files_container_layout.count()}")
             else:
                 print(f"DEBUG: Widget {file_id} not found in root.file_widgets")
                 print(f"DEBUG: Available file widgets: {list(root.file_widgets.keys())}")
