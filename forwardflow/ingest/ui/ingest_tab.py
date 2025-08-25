@@ -204,8 +204,8 @@ def build_ingest_tab():
                 
                 # Calculate average speed (only if it exists)
                 if hasattr(root, 'avg_speed_label') and root.avg_speed_label:
-                    total_mb = root.total_bytes / (1024 * 1024)
-                    avg_speed = total_mb / elapsed_seconds
+                    # FIXED: Average speed should be copied_bytes / elapsed_time, not total_bytes / elapsed_time
+                    avg_speed = (root.copied_bytes / elapsed_seconds) / (1024 * 1024)
                     root.avg_speed_label.setText(f"{avg_speed:.0f} MB/s")
                 
                 # Update peak speed if current speed is higher (only if it exists)
@@ -1065,7 +1065,7 @@ def build_ingest_tab():
         
         dest_layout.addLayout(info_row)
         
-        # Progress bar row
+        # Progress bar row with enhanced information
         progress_row = QHBoxLayout()
         progress_row.setSpacing(5)
         
@@ -1073,7 +1073,7 @@ def build_ingest_tab():
         dest_progress = QProgressBar()
         dest_progress.setRange(0, 100)
         dest_progress.setValue(0)
-        dest_progress.setFixedHeight(15)
+        dest_progress.setFixedHeight(20)  # Slightly taller for better visibility
         dest_progress.setStyleSheet(PROGRESS_BAR_STYLE)
         dest_progress.setVisible(False)
         dest_progress.setFormat(f"Dest {len(root.destinations)+1}: %p%")
@@ -1082,9 +1082,79 @@ def build_ingest_tab():
         
         dest_layout.addLayout(progress_row)
         
-        # Store references
+        # Enhanced speed and status row
+        speed_row = QHBoxLayout()
+        speed_row.setSpacing(15)
+        speed_row.setContentsMargins(0, 2, 0, 2)
+        
+        # Current speed label - LARGE and readable
+        current_speed_label = QLabel("0 MB/s")
+        current_speed_label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['accent']};
+                font-size: 16px;
+                font-weight: 600;
+                font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            }}
+        """)
+        current_speed_label.setFixedHeight(24)
+        current_speed_label.setMinimumWidth(90)
+        
+        # Peak speed label - LARGE and readable
+        peak_speed_label = QLabel("Peak: 0 MB/s")
+        peak_speed_label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['secondary_text']};
+                font-size: 14px;
+                font-weight: 500;
+            }}
+        """)
+        peak_speed_label.setFixedHeight(24)
+        peak_speed_label.setMinimumWidth(120)
+        
+        # ETA label - LARGE and readable
+        eta_label = QLabel("ETA: --:--")
+        eta_label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['text']};
+                font-size: 14px;
+                font-weight: 500;
+                font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            }}
+        """)
+        eta_label.setFixedHeight(24)
+        eta_label.setMinimumWidth(100)
+        
+        # Status label (Ready, Transferring, Complete) - LARGE and readable
+        status_label = QLabel("Ready")
+        status_label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['secondary_text']};
+                font-size: 14px;
+                font-weight: 500;
+                padding: 4px 8px;
+                border-radius: 6px;
+                background-color: {colors['bg']};
+            }}
+        """)
+        status_label.setFixedHeight(24)
+        status_label.setMinimumWidth(80)
+        
+        speed_row.addWidget(current_speed_label)
+        speed_row.addWidget(peak_speed_label)
+        speed_row.addWidget(eta_label)
+        speed_row.addStretch()
+        speed_row.addWidget(status_label)
+        
+        dest_layout.addLayout(speed_row)
+        
+        # Store references for UI updates
         dest_obj["widget"] = dest_widget
         dest_obj["progress_bar"] = dest_progress
+        dest_obj["current_speed_label"] = current_speed_label
+        dest_obj["peak_speed_label"] = peak_speed_label
+        dest_obj["eta_label"] = eta_label
+        dest_obj["status_label"] = status_label
         
         # Add to container
         root.dest_container_layout.addWidget(dest_widget)
@@ -1352,12 +1422,32 @@ def build_ingest_tab():
                     root.total_progress.setValue(progress_percent)
                     print(f"DEBUG: Total progress bar updated to {progress_percent}%")
                 
-                # Update destination progress bars (for multi-destination) with percentage
+                # Update destination progress bars and stats (for multi-destination)
                 if hasattr(root, 'destinations'):
                     for i, dest_obj in enumerate(root.destinations):
                         if 'progress_bar' in dest_obj and dest_obj['progress_bar']:
                             dest_obj['progress_bar'].setValue(progress_percent)
                             print(f"DEBUG: Destination {i+1} progress bar updated to {progress_percent}%")
+                            
+                            # FIXED: Update destination speeds with main job speeds for consistency
+                            if 'current_speed_label' in dest_obj and dest_obj['current_speed_label'] and speed_mbps:
+                                dest_obj['current_speed_label'].setText(f"{speed_mbps:.0f} MB/s")
+                                
+                            if 'peak_speed_label' in dest_obj and dest_obj['peak_speed_label']:
+                                main_peak = getattr(root, '_max_speed_seen', 0)
+                                dest_obj['peak_speed_label'].setText(f"Peak: {main_peak:.0f} MB/s")
+                                
+                            # Update destination ETA
+                            if 'eta_label' in dest_obj and dest_obj['eta_label'] and speed_mbps and speed_mbps > 0:
+                                remaining_bytes = max(0, total_bytes - copied_bytes)
+                                eta_seconds = remaining_bytes / (speed_mbps * 1024 * 1024)
+                                if eta_seconds > 0 and eta_seconds < 86400:  # Less than 24 hours
+                                    eta_str = f"ETA: {int(eta_seconds//60):02d}:{int(eta_seconds%60):02d}"
+                                else:
+                                    eta_str = "ETA: --:--"
+                                dest_obj['eta_label'].setText(eta_str)
+                            elif 'eta_label' in dest_obj and dest_obj['eta_label']:
+                                dest_obj['eta_label'].setText("ETA: --:--")
                             
                 # Update speed and elapsed time (less frequently to avoid UI blocking)
                 if hasattr(root, 'job_data') and root.job_data:
@@ -1372,7 +1462,35 @@ def build_ingest_tab():
                     if speed_mbps is None and elapsed > 0:
                         speed_mbps = (copied_bytes / elapsed) / (1024 * 1024)
 
+                    # Update main progress speed and ETA
+                    if hasattr(root, 'current_speed_label') and root.current_speed_label and speed_mbps:
+                        root.current_speed_label.setText(f"{speed_mbps:.0f} MB/s")
+                        root._last_main_speed = speed_mbps  # Store for destination updates
+                        print(f"DEBUG: Main speed updated to {speed_mbps:.0f} MB/s")
                     
+                    # Update peak speed (keep track of maximum speed seen)
+                    if hasattr(root, 'peak_speed_label') and root.peak_speed_label and speed_mbps:
+                        if not hasattr(root, '_max_speed_seen'):
+                            root._max_speed_seen = 0
+                        root._max_speed_seen = max(root._max_speed_seen, speed_mbps)
+                        root.peak_speed_label.setText(f"{root._max_speed_seen:.0f} MB/s")
+                        print(f"DEBUG: Peak speed updated to {root._max_speed_seen:.0f} MB/s")
+                    
+                    # Update average speed (same as current speed for now, but could be rolling average later)
+                    if hasattr(root, 'avg_speed_label') and root.avg_speed_label and elapsed > 0:
+                        # Average speed = total copied bytes / total elapsed time 
+                        avg_speed = (copied_bytes / elapsed) / (1024 * 1024)
+                        root.avg_speed_label.setText(f"{avg_speed:.0f} MB/s")
+                        print(f"DEBUG: Average speed updated to {avg_speed:.0f} MB/s (same calculation as current)")
+                    
+                    # Update ETA
+                    if hasattr(root, 'eta_label') and root.eta_label and speed_mbps and speed_mbps > 0:
+                        remaining_bytes = max(0, total_bytes - copied_bytes)
+                        remaining_mb = remaining_bytes / (1024 * 1024)
+                        eta_seconds = remaining_mb / speed_mbps
+                        eta_str = f"{int(eta_seconds//3600):02d}:{int((eta_seconds%3600)//60):02d}:{int(eta_seconds%60):02d}"
+                        root.eta_label.setText(eta_str)
+                        print(f"DEBUG: ETA updated to {eta_str}")
 
                     if hasattr(root, 'elapsed_label') and root.elapsed_label:
                         elapsed_str = f"{int(elapsed//3600):02d}:{int((elapsed%3600)//60):02d}:{int(elapsed%60):02d}"
@@ -1455,11 +1573,20 @@ def build_ingest_tab():
             dest_path = payload.get("dest_path", "unknown")
             bytes_copied = payload.get("bytes_copied", 0)
             total_bytes = payload.get("total_bytes", 0)
-            print(f"DEBUG: Destination {dest_index} progress: {dest_path} - {bytes_copied}/{total_bytes} bytes")
+            transfer_type = payload.get("transfer_type", "unknown")
+            current_speed = payload.get("current_speed_mbps", 0.0)
+            peak_speed = payload.get("peak_speed_mbps", 0.0)
+            elapsed_time = payload.get("elapsed_time", 0.0)
+            completed_files = payload.get("completed_files", 0)
+            total_files = payload.get("total_files", 0)
             
-            # Update destination-specific progress bar
+            print(f"DEBUG: Destination {dest_index} ({transfer_type}) progress: {bytes_copied}/{total_bytes} bytes at {current_speed:.1f} MB/s")
+            
+            # Update destination-specific UI elements
             if hasattr(root, 'destinations') and dest_index < len(root.destinations):
                 dest_obj = root.destinations[dest_index]
+                
+                # Update progress bar
                 if 'progress_bar' in dest_obj and dest_obj['progress_bar']:
                     progress_bar = dest_obj['progress_bar']
                     
@@ -1467,7 +1594,7 @@ def build_ingest_tab():
                     if not progress_bar.isVisible():
                         progress_bar.setVisible(True)
                         progress_bar.setValue(0)
-                        progress_bar.setFormat(f"Dest {dest_index + 1}: 0%")
+                        dest_obj.get('status_label', {}).setText("Transferring")
                     
                     # Calculate and update progress
                     if total_bytes > 0:
@@ -1475,18 +1602,144 @@ def build_ingest_tab():
                         progress_bar.setValue(progress_percent)
                         progress_bar.setFormat(f"Dest {dest_index + 1}: {progress_percent}%")
                         print(f"DEBUG: Destination {dest_index} progress bar updated to {progress_percent}%")
+                        
+                        # Update status based on progress
+                        if progress_percent >= 100:
+                            if 'status_label' in dest_obj:
+                                dest_obj['status_label'].setText("Complete")
+                                dest_obj['status_label'].setStyleSheet(f"""
+                                    QLabel {{
+                                        color: {colors['text']};
+                                        font-size: 10px;
+                                        font-weight: 500;
+                                        padding: 2px 6px;
+                                        border-radius: 3px;
+                                        background-color: #2d5a2d;
+                                    }}
+                                """)
+                        elif bytes_copied > 0:
+                            if 'status_label' in dest_obj:
+                                dest_obj['status_label'].setText("Transferring")
+                                dest_obj['status_label'].setStyleSheet(f"""
+                                    QLabel {{
+                                        color: {colors['text']};
+                                        font-size: 10px;
+                                        font-weight: 500;
+                                        padding: 2px 6px;
+                                        border-radius: 3px;
+                                        background-color: {colors['accent']};
+                                    }}
+                                """)
                     else:
                         # If total_bytes is 0, show indeterminate progress
                         progress_bar.setFormat(f"Dest {dest_index + 1}: Calculating...")
-                    
+                
+                # FIXED: Update destination current speed from main progress
+                if 'current_speed_label' in dest_obj and dest_obj['current_speed_label']:
+                    # Use main job speed for consistency across all destinations  
+                    main_speed = getattr(root, '_last_main_speed', current_speed)
+                    dest_obj['current_speed_label'].setText(f"{main_speed:.0f} MB/s")
+                
+                # FIXED: Update destination peak speed from main progress
+                if 'peak_speed_label' in dest_obj and dest_obj['peak_speed_label']:
+                    # Use main peak speed for consistency
+                    main_peak = getattr(root, '_max_speed_seen', peak_speed)
+                    dest_obj['peak_speed_label'].setText(f"Peak: {main_peak:.0f} MB/s")
+                
+                # Calculate and update ETA
+                if 'eta_label' in dest_obj and dest_obj['eta_label']:
+                    if current_speed > 0 and bytes_copied < total_bytes:
+                        remaining_bytes = total_bytes - bytes_copied
+                        eta_seconds = remaining_bytes / (current_speed * 1024 * 1024)
+                        if eta_seconds > 0 and eta_seconds < 86400:  # Less than 24 hours
+                            eta_str = f"ETA: {int(eta_seconds//60):02d}:{int(eta_seconds%60):02d}"
+                        else:
+                            eta_str = "ETA: --:--"
+                    elif bytes_copied >= total_bytes:
+                        eta_str = "Complete"
+                    else:
+                        eta_str = "ETA: --:--"
+                    dest_obj['eta_label'].setText(eta_str)
+                
+                print(f"DEBUG: Updated all UI elements for destination {dest_index}")
 
-                else:
-                    print(f"DEBUG: No progress bar found for destination {dest_index}")
             else:
                 print(f"DEBUG: Invalid destination index {dest_index} or no destinations available")
             
         except Exception as e:
             print(f"DEBUG: Error in handle_dest_progress: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def handle_dest_warning(payload):
+        print(f"DEBUG: handle_dest_warning called with: {payload}")
+        try:
+            dest_path = payload.get("dest_path", "unknown")
+            warning_type = payload.get("warning_type", "unknown")
+            message = payload.get("message", "Unknown warning")
+            
+            print(f"DEBUG: Destination warning: {dest_path} - {warning_type}: {message}")
+            
+            # Show immediate warning dialog for disk full
+            if warning_type == "disk_full":
+                def show_warning_dialog():
+                    from PyQt6.QtWidgets import QMessageBox
+                    msg_box = QMessageBox()
+                    msg_box.setIcon(QMessageBox.Icon.Warning)
+                    msg_box.setWindowTitle("Destination Warning")
+                    msg_box.setText(f"⚠️  Destination Skipped")
+                    msg_box.setInformativeText(f"Transfer will continue to other destinations.\n\nSkipped: {dest_path}\nReason: {message}")
+                    msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+                    msg_box.exec()
+                    print("DEBUG: Destination warning dialog shown")
+                
+                # Show on main thread
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(0, show_warning_dialog)
+            
+            # Update destination UI to show warning state
+            if hasattr(root, 'destinations'):
+                for i, dest_obj in enumerate(root.destinations):
+                    if dest_obj.get("path") == dest_path:
+                        print(f"DEBUG: Updating destination {i} UI for warning")
+                        
+                        # Update progress bar to show warning
+                        if 'progress_bar' in dest_obj:
+                            dest_obj['progress_bar'].setFormat(f"⚠️ SKIPPED - Disk Full")
+                            dest_obj['progress_bar'].setStyleSheet("""
+                                QProgressBar {
+                                    background-color: #fff3e0;
+                                    border: 2px solid #ff9800;
+                                    border-radius: 3px;
+                                    text-align: center;
+                                    color: #f57c00;
+                                    font-weight: bold;
+                                }
+                                QProgressBar::chunk {
+                                    background-color: #ff9800;
+                                }
+                            """)
+                            dest_obj['progress_bar'].setValue(0)
+                        
+                        # Update status label
+                        if 'status_label' in dest_obj:
+                            dest_obj['status_label'].setText("Skipped")
+                            dest_obj['status_label'].setStyleSheet(f"""
+                                QLabel {{
+                                    color: #f57c00;
+                                    font-size: 14px;
+                                    font-weight: bold;
+                                    padding: 4px 8px;
+                                    border-radius: 6px;
+                                    background-color: #fff3e0;
+                                    border: 1px solid #ff9800;
+                                }}
+                            """)
+                        
+                        break
+            
+        except Exception as e:
+            print(f"DEBUG: Error in handle_dest_warning: {e}")
             import traceback
             traceback.print_exc()
             
@@ -1732,8 +1985,14 @@ def build_ingest_tab():
                             handle_file_failed(payload)  # Still handle failures for alerts
                         elif event_type == "job.completed":
                             handle_job_completed(payload)
+                        elif event_type == "dest.progress":
+                            handle_dest_progress(payload)
+                        elif event_type == "dest.warning":
+                            handle_dest_warning(payload)
                         elif event_type == "job.cancelled":
                             handle_job_cancelled(payload)
+                        elif event_type == "job.error":
+                            handle_job_error(payload)
                         else:
                             print(f"DEBUG: Unknown event type: {event_type}")
                     except Exception as e:
@@ -1961,7 +2220,7 @@ def build_ingest_tab():
             
             # Immediately stop all progress animations and show canceling status
             if hasattr(root, 'total_progress') and root.total_progress:
-                root.total_progress.setFormat("Canceling - Creating transfer report...")
+                root.total_progress.setFormat("Canceling - Creating verification report...")
                 # Stop progress animation by setting to current value
                 current_value = root.total_progress.value()
                 root.total_progress.setValue(current_value)
@@ -1971,7 +2230,7 @@ def build_ingest_tab():
             if hasattr(root, 'destinations'):
                 for i, dest_obj in enumerate(root.destinations):
                     if 'progress_bar' in dest_obj and dest_obj['progress_bar']:
-                        dest_obj['progress_bar'].setFormat(f"Dest {i + 1}: Canceling...")
+                        dest_obj['progress_bar'].setFormat(f"Dest {i + 1}: Creating report...")
                         # Stop progress animation
                         current_value = dest_obj['progress_bar'].value()
                         dest_obj['progress_bar'].setValue(current_value)
@@ -2054,9 +2313,9 @@ def build_ingest_tab():
         try:
             # Job has been cancelled, update UI
             if hasattr(root, 'total_progress') and root.total_progress:
-                root.total_progress.setValue(0)
-                root.total_progress.setFormat("0%")
-                print("DEBUG: Progress bar reset to 0%")
+                root.total_progress.setValue(100)  # Show completed transfer
+                root.total_progress.setFormat("Transfer cancelled - Verification report complete")
+                print("DEBUG: Progress bar updated to show verification report completion")
             
 
             
@@ -2064,8 +2323,8 @@ def build_ingest_tab():
             if hasattr(root, 'destinations'):
                 for i, dest_obj in enumerate(root.destinations):
                     if 'progress_bar' in dest_obj:
-                        dest_obj['progress_bar'].setValue(0)
-                        dest_obj['progress_bar'].setFormat(f"Dest {i + 1}: 0%")
+                        dest_obj['progress_bar'].setValue(100)
+                        dest_obj['progress_bar'].setFormat(f"Dest {i + 1}: Report complete")
                 print("DEBUG: Destination controls updated for cancellation")
             
             # Clear file widgets immediately
@@ -2112,9 +2371,127 @@ def build_ingest_tab():
             print(f"DEBUG: Error in handle_job_cancelled: {e}")
             import traceback
             traceback.print_exc()
+
+    def handle_job_error(payload):
+        print(f"DEBUG: handle_job_error called with: {payload}")
+        try:
+            errors = payload.get("errors", [])
+            job_id = payload.get("job_id", "unknown")
+            
+            # Show disk space errors prominently - ensure it runs on main thread
+            def show_error_dialog():
+                from PyQt6.QtWidgets import QMessageBox
+                if errors:
+                    error_msg = "\n".join(errors)
+                    print(f"DEBUG: Showing error dialog on main thread: {error_msg}")
+                    
+                    # Create error dialog
+                    msg_box = QMessageBox()
+                    msg_box.setIcon(QMessageBox.Icon.Critical)
+                    msg_box.setWindowTitle("Transfer Error")
+                    msg_box.setText("Transfer failed!")
+                    
+                    # Check for disk space error specifically and make it prominent
+                    if "Insufficient disk space" in error_msg:
+                        msg_box.setText("❌ DISK FULL - Transfer Failed!")
+                        msg_box.setInformativeText(f"Not enough space on destination drive.\n\n{error_msg}\n\nPlease free up disk space or choose a different destination.")
+                        msg_box.setWindowTitle("Disk Space Error")
+                    else:
+                        msg_box.setInformativeText(error_msg)
+                    
+                    msg_box.setDetailedText(f"Job ID: {job_id}\nErrors:\n" + error_msg)
+                    msg_box.exec()
+                    print("DEBUG: Error dialog shown successfully")
+                else:
+                    print("DEBUG: No errors in payload, showing generic error")
+                    msg_box = QMessageBox()
+                    msg_box.setIcon(QMessageBox.Icon.Critical)
+                    msg_box.setWindowTitle("Transfer Error") 
+                    msg_box.setText("Transfer failed due to an unknown error.")
+                    msg_box.exec()
+            
+            # Ensure dialog shows on main thread
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(0, show_error_dialog)
+            
+            # Show error in progress bar immediately  
+            if hasattr(root, 'total_progress') and root.total_progress:
+                if errors and "Insufficient disk space" in str(errors):
+                    root.total_progress.setFormat("❌ DISK FULL - Transfer Failed!")
+                    root.total_progress.setStyleSheet("""
+                        QProgressBar {
+                            background-color: #ffebee;
+                            border: 2px solid #f44336;
+                            border-radius: 5px;
+                            text-align: center;
+                            color: #d32f2f;
+                            font-weight: bold;
+                        }
+                        QProgressBar::chunk {
+                            background-color: #f44336;
+                        }
+                    """)
+                else:
+                    root.total_progress.setFormat("❌ Transfer Failed!")
+                    root.total_progress.setStyleSheet("""
+                        QProgressBar {
+                            background-color: #ffebee;
+                            border: 2px solid #f44336;
+                            border-radius: 5px;
+                            text-align: center;
+                            color: #d32f2f;
+                            font-weight: bold;
+                        }
+                        QProgressBar::chunk {
+                            background-color: #f44336;
+                        }
+                    """)
+                root.total_progress.setValue(0)
+                
+            # Re-enable controls after error (similar to cancellation)
+            def reset_after_error():
+                # Reset job tracking
+                root.current_job = None
+                root.job_start_time = None
+                root.total_bytes = 0
+                root.copied_bytes = 0
+                root.active_files = 0
+                
+                # Re-enable controls
+                if hasattr(root, 'report_checkbox'):
+                    root.report_checkbox.setEnabled(True)
+                
+                conc_slider.setEnabled(True)
+                stream_slider.setEnabled(True)
+                verify_combo.setEnabled(True)
+                preset_combo.setEnabled(True)
+                add_dest_btn.setEnabled(True)
+                start_btn.setEnabled(True)
+                pause_btn.setEnabled(False)
+                cancel_btn.setEnabled(False)
+                cancel_btn.setText("Cancel")
+                
+                if hasattr(root, 'elapsed_label') and root.elapsed_label:
+                    root.elapsed_label.setText("00:00:00")
+                
+                print("DEBUG: Controls re-enabled after error")
+            
+            # Reset state after brief delay
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(500, reset_after_error)
+                
+            print("DEBUG: Job error handled successfully")
+            
+        except Exception as e:
+            print(f"DEBUG: Error in handle_job_error: {e}")
+            import traceback
+            traceback.print_exc()
     
     # Connect the job cancelled signal after the function is defined
     bridge.sigJobCancelled.connect(handle_job_cancelled, QtCore.Qt.ConnectionType.QueuedConnection)
+    
+    # Connect the job error signal directly for immediate error display
+    bridge.sigJobError.connect(handle_job_error, QtCore.Qt.ConnectionType.QueuedConnection)
     
     # Wire up browse buttons
     def _browse_for_path():
