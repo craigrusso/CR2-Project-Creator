@@ -13,9 +13,10 @@ The ForwardFlow ingest system now includes comprehensive verification reporting 
 - **Performance Optimized**: Asynchronous report writing that doesn't impact copy performance
 
 ### Report Location
-- Reports are saved in a `_ForwardFlow_Reports` subfolder alongside each destination root folder
+- Reports are saved in a configurable subfolder alongside each destination root folder
+- Default folder name: `_ForwardFlow_verification_Reports` (configurable in Preferences → General → Transfer Reports)
 - File naming format: `verify_report_YYYY-MM-DD_HHMM.txt` and `verify_report_YYYY-MM-DD_HHMM.csv`
-- Example: `_ForwardFlow_Reports/verify_report_2025-08-22_1530.txt`
+- Example: `_ForwardFlow_verification_Reports/verify_report_2025-08-22_1530.txt`
 
 ### Report Contents
 Each report contains one row per file with the following information:
@@ -113,7 +114,7 @@ options = JobOptions(generate_verification_report=False)
 ```
 destination_folder/
 ├── copied_files/
-└── _ForwardFlow_Reports/
+└── _ForwardFlow_verification_Reports/
     ├── verify_report_2025-08-22_1530.txt
     └── verify_report_2025-08-22_1530.csv
 ```

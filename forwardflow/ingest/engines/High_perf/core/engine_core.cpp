@@ -4,6 +4,9 @@
 #include <sstream> // Required for std::stringstream
 #include <iomanip> // Required for std::put_time
 #include <fstream> // Required for std::ofstream
+#include <filesystem> // Required for filesystem operations
+#include <future> // Required for std::async
+#include <thread> // Required for threading
 #include "../verification/verification_record.hpp" // For verification records
 
 namespace EngineCore {
@@ -57,17 +60,44 @@ DataStructures::CopyStats EnhancedHighPerfTransferEngine::copy_files(const DataS
         
         std::cout << "DEBUG: Total bytes to copy: " << stats_.total_bytes << std::endl;
         
-        // Check disk space for each destination before starting
+        // Check disk space for each destination and collect valid destinations
+        std::vector<std::string> valid_destinations;
+        std::vector<std::string> full_destinations;
+        
         for (const auto& dest : job.destination_paths) {
             if (!check_disk_space(dest, stats_.total_bytes)) {
                 std::string error_msg = "Insufficient disk space on destination: " + dest;
-                std::cout << "ERROR: " << error_msg << std::endl;
-                add_error(error_msg);
+                std::cout << "WARNING: " << error_msg << std::endl;
+                full_destinations.push_back(dest);
                 
-                // Emit job error event
-                emit_event("job.error", nullptr);
-                return stats_;  // Fail fast - don't start copying
+                // Emit per-destination warning event
+                struct DestWarningPayload {
+                    const char* dest_path;
+                    const char* warning_type;
+                    const char* message;
+                };
+                DestWarningPayload warning_payload = {dest.c_str(), "disk_full", error_msg.c_str()};
+                emit_event("dest.warning", &warning_payload);
+            } else {
+                valid_destinations.push_back(dest);
+                std::cout << "DEBUG: Destination has sufficient space: " << dest << std::endl;
             }
+        }
+        
+        // If NO destinations have space, then fail
+        if (valid_destinations.empty()) {
+            std::string error_msg = "No destinations have sufficient disk space";
+            std::cout << "ERROR: " << error_msg << std::endl;
+            add_error(error_msg);
+            emit_event("job.error", nullptr);
+            return stats_;
+        }
+        
+        // Update job to only copy to valid destinations
+        if (full_destinations.size() > 0) {
+            std::cout << "INFO: Proceeding with " << valid_destinations.size() << " destinations (skipping " << full_destinations.size() << " full destinations)" << std::endl;
+            // Update the job's destination paths to only include valid ones
+            // Note: We'll modify the copy logic to use valid_destinations instead of job.destination_paths
         }
         
         // Emit job started event with proper payload
@@ -100,13 +130,13 @@ DataStructures::CopyStats EnhancedHighPerfTransferEngine::copy_files(const DataS
         };
         emit_event("job.progress", &initial_progress);
         
-        // Determine copy strategy based on destination count
-        if (job.destination_paths.size() == 1) {
+        // Determine copy strategy based on valid destination count
+        if (valid_destinations.size() == 1) {
             std::cout << "DEBUG: Using single destination copy strategy" << std::endl;
-            copy_to_single_destination(job, files);
+            copy_to_single_destination_with_destinations(job, files, valid_destinations);
         } else {
             std::cout << "DEBUG: Using multiple destination copy strategy" << std::endl;
-            copy_to_multiple_destinations(job, files);
+            copy_to_multiple_destinations_with_destinations(job, files, valid_destinations);
         }
         
         std::cout << "DEBUG: Copy operation completed. Copied bytes: " << stats_.copied_bytes << std::endl;
@@ -161,6 +191,132 @@ size_t EnhancedHighPerfTransferEngine::get_available_disk_space(const std::strin
     }
 }
 
+bool EnhancedHighPerfTransferEngine::copy_file_parallel_multi_dest(const DataStructures::CopyJob& /* job */, const std::string& source_path, const std::vector<std::string>& dest_paths) {
+    std::cout << "DEBUG: PARALLEL MULTI-DEST copy starting for " << source_path << std::endl;
+    
+    try {
+        // Get file size for buffer allocation
+        size_t file_size = std::filesystem::file_size(source_path);
+        std::cout << "DEBUG: File size: " << file_size << " bytes" << std::endl;
+        
+        // Use memory buffer for entire file (optimal for parallel writes)
+        
+        // Read entire file into memory buffer ONCE (from fast 6GB/s source)
+        std::vector<char> file_buffer;
+        file_buffer.reserve(file_size);
+        
+        std::cout << "DEBUG: Reading entire file into memory buffer..." << std::endl;
+        auto read_start = std::chrono::steady_clock::now();
+        
+        std::ifstream source_file(source_path, std::ios::binary);
+        if (!source_file) {
+            std::cout << "ERROR: Failed to open source file: " << source_path << std::endl;
+            return false;
+        }
+        
+        // Read entire file into buffer
+        file_buffer.resize(file_size);
+        source_file.read(file_buffer.data(), file_size);
+        source_file.close();
+        
+        auto read_end = std::chrono::steady_clock::now();
+        double read_time = std::chrono::duration<double>(read_end - read_start).count();
+        double read_speed_mbps = (file_size / (1024.0 * 1024.0)) / read_time;
+        std::cout << "DEBUG: File read completed in " << read_time << "s at " << read_speed_mbps << " MB/s" << std::endl;
+        
+        // Create futures for parallel writes to all destinations
+        std::vector<std::future<bool>> write_futures;
+        write_futures.reserve(dest_paths.size());
+        
+        std::cout << "DEBUG: Starting parallel writes to " << dest_paths.size() << " destinations..." << std::endl;
+        
+        for (size_t dest_idx = 0; dest_idx < dest_paths.size(); ++dest_idx) {
+            const std::string& dest_path = dest_paths[dest_idx];
+            
+            // Create destination file path
+            std::filesystem::path source_file_path(source_path);
+            std::filesystem::path dest_file_path = std::filesystem::path(dest_path) / source_file_path.filename();
+            
+            // Ensure destination directory exists
+            std::filesystem::create_directories(std::filesystem::path(dest_path));
+            
+            // Launch async write task for this destination
+            auto write_future = std::async(std::launch::async, [this, dest_idx, dest_file_path, &file_buffer, file_size]() -> bool {
+                std::cout << "DEBUG: THREAD " << dest_idx << ": Starting write to " << dest_file_path << std::endl;
+                auto write_start = std::chrono::steady_clock::now();
+                
+                std::ofstream dest_file(dest_file_path, std::ios::binary);
+                if (!dest_file) {
+                    std::cout << "ERROR: THREAD " << dest_idx << ": Failed to create destination file: " << dest_file_path << std::endl;
+                    return false;
+                }
+                
+                // Write entire buffer to destination
+                dest_file.write(file_buffer.data(), file_size);
+                dest_file.close();
+                
+                auto write_end = std::chrono::steady_clock::now();
+                double write_time = std::chrono::duration<double>(write_end - write_start).count();
+                double write_speed_mbps = (file_size / (1024.0 * 1024.0)) / write_time;
+                
+                std::cout << "DEBUG: THREAD " << dest_idx << ": Write completed in " << write_time << "s at " << write_speed_mbps << " MB/s" << std::endl;
+                
+                // Update destination stats
+                {
+                    std::lock_guard<std::mutex> lock(dest_stats_mutex_);
+                    if (dest_idx < dest_stats_.size()) {
+                        dest_stats_[dest_idx].bytes_copied += file_size;
+                        dest_stats_[dest_idx].files_completed++;
+                        
+                        // Update speed calculation
+                        auto now = std::chrono::steady_clock::now();
+                        double elapsed = std::chrono::duration<double>(now - dest_stats_[dest_idx].start_time).count();
+                        if (elapsed > 0) {
+                            double current_speed = (dest_stats_[dest_idx].bytes_copied.load() / (1024.0 * 1024.0)) / elapsed;
+                            dest_stats_[dest_idx].current_speed_mbps = current_speed;
+                            
+                            // Update peak speed
+                            if (current_speed > dest_stats_[dest_idx].peak_speed_mbps.load()) {
+                                dest_stats_[dest_idx].peak_speed_mbps = current_speed;
+                            }
+                        }
+                    }
+                }
+                
+                return true;
+            });
+            
+            write_futures.push_back(std::move(write_future));
+        }
+        
+        // Wait for all writes to complete
+        bool all_successful = true;
+        for (size_t i = 0; i < write_futures.size(); ++i) {
+            bool result = write_futures[i].get();
+            if (!result) {
+                std::cout << "ERROR: Write to destination " << i << " failed" << std::endl;
+                all_successful = false;
+            }
+        }
+        
+        if (all_successful) {
+            // Update global stats (file copied to ALL destinations)
+            add_bytes(file_size * dest_paths.size()); // Total bytes written across all destinations
+            inc_files();
+            
+            std::cout << "DEBUG: PARALLEL MULTI-DEST copy completed successfully for " << source_path << std::endl;
+            return true;
+        } else {
+            std::cout << "ERROR: Some destination writes failed for " << source_path << std::endl;
+            return false;
+        }
+        
+    } catch (const std::exception& e) {
+        std::cout << "ERROR: Exception in parallel multi-dest copy: " << e.what() << std::endl;
+        return false;
+    }
+}
+
 bool EnhancedHighPerfTransferEngine::check_disk_space(const std::string& destination_path, size_t required_bytes) {
     size_t available = get_available_disk_space(destination_path);
     
@@ -202,7 +358,7 @@ void EnhancedHighPerfTransferEngine::write_verification_reports_to_destination(c
             
             // Create verification report directory
             std::filesystem::path dest_dir(dest_path);
-            std::filesystem::path report_dir = dest_dir / "ForwardFlow_Verification_Reports";
+            std::filesystem::path report_dir = dest_dir / job.reports_folder_name;
             std::filesystem::create_directories(report_dir);
             
             // Generate timestamp
@@ -398,7 +554,9 @@ void EnhancedHighPerfTransferEngine::copy_to_single_destination(const DataStruct
         };
         
         // Calculate current progress
-        double elapsed_seconds = stats_.duration();
+        auto current_time = std::chrono::steady_clock::now();
+        // Calculate elapsed time directly from stored start_time (which is in seconds)
+        double elapsed_seconds = std::chrono::duration<double>(current_time.time_since_epoch()).count() - stats_.start_time;
         double current_speed_mbps = 0.0;
         if (elapsed_seconds > 0) {
             current_speed_mbps = (stats_.copied_bytes / (1024.0 * 1024.0)) / elapsed_seconds;
@@ -420,6 +578,159 @@ void EnhancedHighPerfTransferEngine::copy_to_single_destination(const DataStruct
 void EnhancedHighPerfTransferEngine::copy_to_multiple_destinations(const DataStructures::CopyJob& job, const std::vector<std::string>& files) {
     // Use fan-out strategy for multiple destinations
     copy_to_multiple_destinations_fanout(job, files);
+}
+
+void EnhancedHighPerfTransferEngine::copy_to_single_destination_with_destinations(const DataStructures::CopyJob& job, const std::vector<std::string>& files, const std::vector<std::string>& valid_destinations) {
+    // Copy to the single valid destination
+    if (valid_destinations.empty()) {
+        std::cout << "ERROR: No valid destinations provided" << std::endl;
+        return;
+    }
+    
+    const std::string& dest = valid_destinations[0];
+    std::cout << "DEBUG: Copying to single valid destination: " << dest << std::endl;
+    
+    for (const auto& file : files) {
+        if (cancelled_.load()) {
+            std::cout << "DEBUG: Job cancelled, emitting cancellation event" << std::endl;
+            emit_event("job.cancelled", nullptr);
+            break;
+        }
+        
+        copy_single_file(job, file, dest);
+    }
+}
+
+void EnhancedHighPerfTransferEngine::copy_to_multiple_destinations_with_destinations(const DataStructures::CopyJob& job, const std::vector<std::string>& files, const std::vector<std::string>& valid_destinations) {
+    // Initialize per-destination statistics
+    {
+        std::lock_guard<std::mutex> lock(dest_stats_mutex_);
+        dest_stats_.clear();
+        dest_stats_.reserve(valid_destinations.size());
+        
+        for (const auto& dest : valid_destinations) {
+            DestinationStats stats;
+            stats.path = dest;
+            stats.start_time = std::chrono::steady_clock::now();
+            stats.last_update = stats.start_time;
+            dest_stats_.push_back(std::move(stats));
+        }
+    }
+    
+    std::cout << "DEBUG: HIGH-PERFORMANCE parallel copying to " << valid_destinations.size() << " destinations" << std::endl;
+    
+    for (const auto& file : files) {
+        if (cancelled_.load()) {
+            std::cout << "DEBUG: Job cancelled, emitting cancellation event" << std::endl;
+            emit_event("job.cancelled", nullptr);
+            break;
+        }
+        
+        // Get file info for events
+        std::string filename = std::filesystem::path(file).filename().string();
+        std::string file_id = "file_" + std::to_string(files_processed_);
+        size_t file_size = std::filesystem::file_size(file);
+        
+        std::cout << "DEBUG: Starting parallel copy of " << filename << " (" << file_size << " bytes) to " << valid_destinations.size() << " destinations" << std::endl;
+        
+        // Emit file started event with file context
+        struct FileStartedPayload {
+            const char* file_id;
+            const char* filename;
+            size_t total_bytes;
+        };
+        FileStartedPayload file_started_payload = {file_id.c_str(), filename.c_str(), file_size};
+        emit_event("file.started", &file_started_payload);
+        
+        // Use parallel multi-destination copy (read once, write to all in parallel)
+        if (copy_file_parallel_multi_dest(job, file, valid_destinations)) {
+            files_processed_++;
+            
+            // Emit file completed event
+            struct FileCompletedPayload {
+                const char* file_id;
+                const char* filename;
+                size_t file_size;
+            };
+            FileCompletedPayload file_completed_payload = {file_id.c_str(), filename.c_str(), file_size};
+            emit_event("file.completed", &file_completed_payload);
+            
+            // Emit per-destination progress events
+            {
+                std::lock_guard<std::mutex> lock(dest_stats_mutex_);
+                for (size_t i = 0; i < dest_stats_.size(); ++i) {
+                    auto& dest_stat = dest_stats_[i];
+                    
+                    // Calculate current speed for this destination
+                    auto now = std::chrono::steady_clock::now();
+                    double elapsed_seconds = std::chrono::duration<double>(now - dest_stat.start_time).count();
+                    double current_speed_mbps = 0.0;
+                    
+                    if (elapsed_seconds > 0) {
+                        current_speed_mbps = (dest_stat.bytes_copied.load() / (1024.0 * 1024.0)) / elapsed_seconds;
+                        dest_stat.current_speed_mbps = current_speed_mbps;
+                        
+                        // Update peak speed
+                        double current_peak = dest_stat.peak_speed_mbps.load();
+                        if (current_speed_mbps > current_peak) {
+                            dest_stat.peak_speed_mbps = current_speed_mbps;
+                        }
+                    }
+                    
+                    // Emit destination progress using the new robust method
+                    DataStructures::DestProgressPayload dest_progress;
+                    dest_progress.dest_index = i;
+                    dest_progress.dest_path = dest_stat.path.c_str();
+                    dest_progress.transfer_type = "parallel_optimized";
+                    dest_progress.bytes_copied = dest_stat.bytes_copied.load();
+                    dest_progress.total_bytes = stats_.total_bytes;  // total bytes for entire job
+                    dest_progress.current_speed_mbps = current_speed_mbps;
+                    dest_progress.peak_speed_mbps = dest_stat.peak_speed_mbps.load();
+                    dest_progress.elapsed_time = elapsed_seconds;
+                    dest_progress.completed_files = dest_stat.files_completed.load();
+                    dest_progress.total_files = static_cast<size_t>(stats_.total_files);
+                    
+                    // Use the new emission method that works for any number of destinations
+                    emit_dest_progress(dest_progress);
+                }
+            }
+        }
+        
+        // Emit job progress event every few files
+        if (files_processed_ % 3 == 0) {
+            struct JobProgressPayload {
+                const char* job_id;
+                size_t bytes_copied;
+                size_t total_bytes;
+                size_t files_completed;
+                size_t total_files;
+                double elapsed;
+                double speed_mbps;
+            };
+            
+            // Calculate current elapsed time for accurate progress reporting
+            auto current_time = std::chrono::steady_clock::now();
+            // Calculate elapsed time directly from stored start_time (which is in seconds)
+            double current_elapsed = std::chrono::duration<double>(current_time.time_since_epoch()).count() - stats_.start_time;
+            
+            // Calculate current speed based on current elapsed time
+            double current_speed = 0.0;
+            if (current_elapsed > 0) {
+                current_speed = (stats_.copied_bytes / (1024.0 * 1024.0)) / current_elapsed;
+            }
+            
+            JobProgressPayload progress_payload = {
+                "",  // job_id
+                stats_.copied_bytes,
+                stats_.total_bytes,
+                static_cast<size_t>(stats_.copied_files),
+                static_cast<size_t>(stats_.total_files),
+                current_elapsed,
+                current_speed
+            };
+            emit_event("job.progress", &progress_payload);
+        }
+    }
 }
 
 void EnhancedHighPerfTransferEngine::copy_to_multiple_destinations_fanout(const DataStructures::CopyJob& job, const std::vector<std::string>& files) {
@@ -632,8 +943,48 @@ bool EnhancedHighPerfTransferEngine::copy_single_file(const DataStructures::Copy
 // Event emission
 void EnhancedHighPerfTransferEngine::emit_event(const std::string& event_type, const void* payload) {
     if (event_sink_) {
-        // Pass the actual payload data to the Python event sink
+        // For now, pass the payload as-is until we fix Python extraction
+        // TODO: Convert specific payload types to Python-readable objects
         event_sink_(event_type, payload);
+    }
+}
+
+// Specific event emission methods that create Python-readable payloads
+void EnhancedHighPerfTransferEngine::emit_dest_progress(const DataStructures::DestProgressPayload& payload) {
+    if (event_sink_) {
+        // For now, still emit as PyCapsule until we can implement Python dict creation
+        // The Python layer will need to extract the fields manually
+        emit_event("dest.progress", &payload);
+    }
+}
+
+void EnhancedHighPerfTransferEngine::emit_job_progress(size_t bytes_copied, size_t total_bytes, int files_completed, int total_files, double elapsed, double speed_mbps) {
+    if (event_sink_) {
+        // For now, still emit as PyCapsule until we can implement Python dict creation
+        struct JobProgressPayload {
+            size_t bytes_copied;
+            size_t total_bytes;
+            int files_completed;
+            int total_files;
+            double elapsed;
+            double speed_mbps;
+        };
+        
+        JobProgressPayload payload = {bytes_copied, total_bytes, files_completed, total_files, elapsed, speed_mbps};
+        emit_event("job.progress", &payload);
+    }
+}
+
+void EnhancedHighPerfTransferEngine::emit_file_completed(const std::string& filename, size_t bytes) {
+    if (event_sink_) {
+        // For now, still emit as PyCapsule until we can implement Python dict creation
+        struct FileCompletedPayload {
+            const char* filename;
+            size_t bytes;
+        };
+        
+        FileCompletedPayload payload = {filename.c_str(), bytes};
+        emit_event("file.completed", &payload);
     }
 }
 

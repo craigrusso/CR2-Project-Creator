@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, TextIO
 import threading
 
 from ..logging import get_logger
+from app.core import config_manager
 
 
 @dataclass
@@ -67,7 +68,8 @@ class VerificationReportManager:
     
     def __init__(self, destination_root: Path):
         self.destination_root = Path(destination_root)
-        self.reports_dir = self.destination_root / "_ForwardFlow_Reports"
+        reports_folder_name = config_manager.get_transfer_reports_folder_name()
+        self.reports_dir = self.destination_root / reports_folder_name
         self._logger = get_logger("forwardflow.ingest.verification_report")
         self._active_reports: Dict[str, VerificationReport] = {}
         self._lock = threading.Lock()

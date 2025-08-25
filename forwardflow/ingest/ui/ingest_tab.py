@@ -1417,6 +1417,22 @@ def build_ingest_tab():
             if not hasattr(root, '_last_progress_update') or (current_time - root._last_progress_update) >= 0.1:
                 root._last_progress_update = current_time
                 
+                # Calculate speed and elapsed time FIRST before using in destination updates
+                speed_mbps = None
+                elapsed = 0
+                
+                if hasattr(root, 'job_data') and root.job_data:
+                    elapsed_from_engine = payload.get("elapsed_time")
+                    if elapsed_from_engine is not None:
+                        elapsed = float(elapsed_from_engine)
+                    else:
+                        elapsed = time.time() - root.job_data['start_time']
+
+                    # Prefer engine-reported speed if present
+                    speed_mbps = payload.get("speed_mbps")
+                    if speed_mbps is None and elapsed > 0:
+                        speed_mbps = (copied_bytes / elapsed) / (1024 * 1024)
+                
                 # Update total progress bar with percentage
                 if hasattr(root, 'total_progress') and root.total_progress:
                     root.total_progress.setValue(progress_percent)
@@ -1429,7 +1445,7 @@ def build_ingest_tab():
                             dest_obj['progress_bar'].setValue(progress_percent)
                             print(f"DEBUG: Destination {i+1} progress bar updated to {progress_percent}%")
                             
-                            # FIXED: Update destination speeds with main job speeds for consistency
+                            # Update destination speeds with main job speeds for consistency
                             if 'current_speed_label' in dest_obj and dest_obj['current_speed_label'] and speed_mbps:
                                 dest_obj['current_speed_label'].setText(f"{speed_mbps:.0f} MB/s")
                                 
@@ -1449,53 +1465,40 @@ def build_ingest_tab():
                             elif 'eta_label' in dest_obj and dest_obj['eta_label']:
                                 dest_obj['eta_label'].setText("ETA: --:--")
                             
-                # Update speed and elapsed time (less frequently to avoid UI blocking)
-                if hasattr(root, 'job_data') and root.job_data:
-                    elapsed_from_engine = payload.get("elapsed_time")
-                    if elapsed_from_engine is not None:
-                        elapsed = float(elapsed_from_engine)
-                    else:
-                        elapsed = time.time() - root.job_data['start_time']
+                # Update main progress speed and ETA
+                if hasattr(root, 'current_speed_label') and root.current_speed_label and speed_mbps:
+                    root.current_speed_label.setText(f"{speed_mbps:.0f} MB/s")
+                    root._last_main_speed = speed_mbps  # Store for destination updates
+                    print(f"DEBUG: Main speed updated to {speed_mbps:.0f} MB/s")
+                
+                # Update peak speed (keep track of maximum speed seen)
+                if hasattr(root, 'peak_speed_label') and root.peak_speed_label and speed_mbps:
+                    if not hasattr(root, '_max_speed_seen'):
+                        root._max_speed_seen = 0
+                    root._max_speed_seen = max(root._max_speed_seen, speed_mbps)
+                    root.peak_speed_label.setText(f"{root._max_speed_seen:.0f} MB/s")
+                    print(f"DEBUG: Peak speed updated to {root._max_speed_seen:.0f} MB/s")
+                
+                # Update average speed (rolling average over time, not just current speed)
+                if hasattr(root, 'avg_speed_label') and root.avg_speed_label and elapsed > 0:
+                    # Calculate true average speed: total copied bytes / total elapsed time
+                    avg_speed = (copied_bytes / elapsed) / (1024 * 1024)
+                    root.avg_speed_label.setText(f"{avg_speed:.0f} MB/s")
+                    print(f"DEBUG: Average speed updated to {avg_speed:.0f} MB/s (true average)")
+                
+                # Update ETA
+                if hasattr(root, 'eta_label') and root.eta_label and speed_mbps and speed_mbps > 0:
+                    remaining_bytes = max(0, total_bytes - copied_bytes)
+                    remaining_mb = remaining_bytes / (1024 * 1024)
+                    eta_seconds = remaining_mb / speed_mbps
+                    eta_str = f"{int(eta_seconds//3600):02d}:{int((eta_seconds%3600)//60):02d}:{int(eta_seconds%60):02d}"
+                    root.eta_label.setText(eta_str)
+                    print(f"DEBUG: ETA updated to {eta_str}")
 
-                    # Prefer engine-reported speed if present
-                    speed_mbps = payload.get("speed_mbps")
-                    if speed_mbps is None and elapsed > 0:
-                        speed_mbps = (copied_bytes / elapsed) / (1024 * 1024)
-
-                    # Update main progress speed and ETA
-                    if hasattr(root, 'current_speed_label') and root.current_speed_label and speed_mbps:
-                        root.current_speed_label.setText(f"{speed_mbps:.0f} MB/s")
-                        root._last_main_speed = speed_mbps  # Store for destination updates
-                        print(f"DEBUG: Main speed updated to {speed_mbps:.0f} MB/s")
-                    
-                    # Update peak speed (keep track of maximum speed seen)
-                    if hasattr(root, 'peak_speed_label') and root.peak_speed_label and speed_mbps:
-                        if not hasattr(root, '_max_speed_seen'):
-                            root._max_speed_seen = 0
-                        root._max_speed_seen = max(root._max_speed_seen, speed_mbps)
-                        root.peak_speed_label.setText(f"{root._max_speed_seen:.0f} MB/s")
-                        print(f"DEBUG: Peak speed updated to {root._max_speed_seen:.0f} MB/s")
-                    
-                    # Update average speed (same as current speed for now, but could be rolling average later)
-                    if hasattr(root, 'avg_speed_label') and root.avg_speed_label and elapsed > 0:
-                        # Average speed = total copied bytes / total elapsed time 
-                        avg_speed = (copied_bytes / elapsed) / (1024 * 1024)
-                        root.avg_speed_label.setText(f"{avg_speed:.0f} MB/s")
-                        print(f"DEBUG: Average speed updated to {avg_speed:.0f} MB/s (same calculation as current)")
-                    
-                    # Update ETA
-                    if hasattr(root, 'eta_label') and root.eta_label and speed_mbps and speed_mbps > 0:
-                        remaining_bytes = max(0, total_bytes - copied_bytes)
-                        remaining_mb = remaining_bytes / (1024 * 1024)
-                        eta_seconds = remaining_mb / speed_mbps
-                        eta_str = f"{int(eta_seconds//3600):02d}:{int((eta_seconds%3600)//60):02d}:{int(eta_seconds%60):02d}"
-                        root.eta_label.setText(eta_str)
-                        print(f"DEBUG: ETA updated to {eta_str}")
-
-                    if hasattr(root, 'elapsed_label') and root.elapsed_label:
-                        elapsed_str = f"{int(elapsed//3600):02d}:{int((elapsed%3600)//60):02d}:{int(elapsed%60):02d}"
-                        root.elapsed_label.setText(elapsed_str)
-                        print("DEBUG: Elapsed label updated")
+                if hasattr(root, 'elapsed_label') and root.elapsed_label:
+                    elapsed_str = f"{int(elapsed//3600):02d}:{int((elapsed%3600)//60):02d}:{int(elapsed%60):02d}"
+                    root.elapsed_label.setText(elapsed_str)
+                    print("DEBUG: Elapsed label updated")
                 
 
             

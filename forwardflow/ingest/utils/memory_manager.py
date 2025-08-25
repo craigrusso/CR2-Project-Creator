@@ -193,19 +193,19 @@ class MemoryManager:
         # Detect transfer type based on destination path
         transfer_type = self._detect_transfer_type(destination_path)
         
-        # Base buffer sizes for each transfer type
+        # Enhanced buffer sizes for each transfer type based on real-world performance
         type_buffers = {
-            "usb": 0.5,      # 512KB for USB (conservative)
-            "thunderbolt": 2.0,  # 2MB for Thunderbolt
-            "network": 1.0,   # 1MB for network (balanced)
-            "local_ssd": 4.0, # 4MB for local SSD
-            "local_hdd": 1.0, # 1MB for local HDD
-            "cloud": 0.5,     # 512KB for cloud (conservative)
-            "unknown": 1.0    # 1MB default
+            "usb_ssd": 4.0,         # 4MB for USB SSD (high throughput)
+            "thunderbolt_ssd": 8.0,  # 8MB for Thunderbolt SSD (maximum throughput)
+            "network_nas": 1.0,      # 1MB for NAS (1GbE = ~125MB/s, smaller buffers better)
+            "local_ssd": 8.0,        # 8MB for local SSD (maximum throughput)
+            "local_hdd": 2.0,        # 2MB for local HDD (balanced)
+            "cloud": 0.5,            # 512KB for cloud (conservative, high latency)
+            "unknown": 2.0           # 2MB default (balanced)
         }
         
         # Get base size for detected transfer type
-        base_size = type_buffers.get(transfer_type, 1.0)
+        base_size = type_buffers.get(transfer_type, 2.0)
         
         # Apply preset adjustments
         if preset == "conservative":
@@ -217,40 +217,161 @@ class MemoryManager:
         elif preset == "maximum":
             base_size *= 2.0
         
-        # Clamp to reasonable bounds
-        final_size = max(0.5, min(8.0, base_size))
+        # Clamp to reasonable bounds (0.5MB to 16MB)
+        final_size = max(0.5, min(16.0, base_size))
         
         print(f"DEBUG: Destination {destination_path} - Type: {transfer_type}, Buffer: {final_size:.1f}MB")
         return final_size
     
+    def get_optimal_transfer_params_for_destination(self, destination_path: str, preset: str = "auto") -> Dict[str, Any]:
+        """Get complete optimized transfer parameters for a specific destination"""
+        transfer_type = self._detect_transfer_type(destination_path)
+        buffer_size = self.get_optimal_buffer_size_for_destination(destination_path, preset)
+        
+        # Enhanced transfer parameters based on destination type
+        if transfer_type == "usb_ssd":
+            # USB SSD: High throughput, moderate concurrency
+            params = {
+                "block_size": int(buffer_size * 1024 * 1024),
+                "files_in_flight": 2,
+                "ranges_per_file": 4,
+                "use_direct_io": True,
+                "transfer_type": transfer_type,
+                "expected_speed_mbps": 400,  # Typical USB 3.0+ SSD speed
+                "priority": "high"  # Complete faster destinations first
+            }
+        elif transfer_type == "thunderbolt_ssd":
+            # Thunderbolt SSD: Maximum throughput and concurrency
+            params = {
+                "block_size": int(buffer_size * 1024 * 1024),
+                "files_in_flight": 4,
+                "ranges_per_file": 8,
+                "use_direct_io": True,
+                "transfer_type": transfer_type,
+                "expected_speed_mbps": 1000,  # Thunderbolt 3+ speed
+                "priority": "highest"
+            }
+        elif transfer_type == "network_nas":
+            # 1GbE NAS: Lower throughput, network-optimized
+            params = {
+                "block_size": int(buffer_size * 1024 * 1024),
+                "files_in_flight": 1,  # Single file for network stability
+                "ranges_per_file": 2,   # Limited parallelism for network
+                "use_direct_io": False,  # Buffered I/O better for network
+                "transfer_type": transfer_type,
+                "expected_speed_mbps": 110,  # Realistic 1GbE throughput
+                "priority": "normal"
+            }
+        else:
+            # Default parameters for unknown types
+            params = {
+                "block_size": int(buffer_size * 1024 * 1024),
+                "files_in_flight": 2,
+                "ranges_per_file": 2,
+                "use_direct_io": buffer_size >= 4.0,
+                "transfer_type": transfer_type,
+                "expected_speed_mbps": 200,  # Conservative estimate
+                "priority": "normal"
+            }
+        
+        print(f"DEBUG: Transfer params for {destination_path} ({transfer_type}): {params}")
+        return params
+    
     def _detect_transfer_type(self, path: str) -> str:
-        """Detect the type of transfer based on destination path"""
+        """Detect the type of transfer based on destination path with enhanced detection"""
         path_lower = path.lower()
         
-        # USB detection
+        print(f"DEBUG: Analyzing path for transfer type detection: {path}")
+        
+        # Enhanced USB/External SSD detection
         if any(usb_indicator in path_lower for usb_indicator in ["usb", "flash", "thumb"]):
-            return "usb"
+            print(f"DEBUG: Detected USB drive from path indicators")
+            return "usb_ssd"  # Modern USB drives are usually SSDs
         
-        # Thunderbolt detection
+        # Thunderbolt detection - typically high-speed SSDs
         if any(tb_indicator in path_lower for tb_indicator in ["thunderbolt", "tb", "tbolt"]):
-            return "thunderbolt"
+            print(f"DEBUG: Detected Thunderbolt connection")
+            return "thunderbolt_ssd"
         
-        # Network detection
+        # Enhanced Network/NAS detection
         if any(net_indicator in path_lower for net_indicator in ["smb://", "afp://", "nfs://", "//", "\\\\", "network", "nas", "server"]):
-            return "network"
+            print(f"DEBUG: Detected network storage from protocol indicators")
+            return "network_nas"
         
         # Cloud detection
         if any(cloud_indicator in path_lower for cloud_indicator in ["onedrive", "dropbox", "google", "icloud", "cloud"]):
+            print(f"DEBUG: Detected cloud storage")
             return "cloud"
         
-        # Local storage detection
+        # Enhanced macOS /Volumes detection with filesystem analysis
         if path.startswith("/Volumes/"):
-            # Check if it's likely an external drive
-            if any(ext_indicator in path_lower for ext_indicator in ["external", "portable", "backup"]):
-                return "usb"  # Assume USB for external drives
-            else:
-                # Check if it's likely an SSD or HDD
-                return "local_ssd"  # Default to SSD for local volumes
+            volume_name = path.split("/")[2] if len(path.split("/")) > 2 else ""
+            volume_name_lower = volume_name.lower()
+            
+            print(f"DEBUG: Analyzing volume: {volume_name}")
+            
+            # Common NAS names and patterns
+            nas_indicators = [
+                "synology", "qnap", "drobo", "buffalo", "western", "wd", "seagate",
+                "nas", "server", "storage", "network", "shared", "diskstation",
+                "cr2_creative", "creative"  # User's specific NAS
+            ]
+            
+            # Common external SSD/USB indicators
+            external_ssd_indicators = [
+                "ssd", "samsung", "sandisk", "crucial", "kingston", "portable",
+                "external", "backup", "usb", "cr_drive"  # User's specific USB SSD
+            ]
+            
+            # Check for NAS indicators first
+            if any(nas_ind in volume_name_lower for nas_ind in nas_indicators):
+                print(f"DEBUG: Detected NAS from volume name: {volume_name}")
+                return "network_nas"
+            
+            # Check for external SSD indicators
+            if any(ssd_ind in volume_name_lower for ssd_ind in external_ssd_indicators):
+                print(f"DEBUG: Detected external SSD from volume name: {volume_name}")
+                return "usb_ssd"
+            
+            # Try to get filesystem information for better detection
+            try:
+                import os
+                import subprocess
+                
+                # Use diskutil on macOS to get more information
+                result = subprocess.run(
+                    ["diskutil", "info", path], 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=5
+                )
+                
+                if result.returncode == 0:
+                    info_lower = result.stdout.lower()
+                    
+                    # Look for connection type indicators in diskutil output
+                    if any(indicator in info_lower for indicator in ["smb", "afp", "nfs", "network"]):
+                        print(f"DEBUG: Detected network storage from diskutil info")
+                        return "network_nas"
+                    elif any(indicator in info_lower for indicator in ["usb", "external"]):
+                        print(f"DEBUG: Detected USB/external storage from diskutil info")
+                        return "usb_ssd"
+                    elif "thunderbolt" in info_lower:
+                        print(f"DEBUG: Detected Thunderbolt storage from diskutil info")
+                        return "thunderbolt_ssd"
+                        
+            except Exception as e:
+                print(f"DEBUG: Could not get diskutil info: {e}")
+            
+            # Default for /Volumes/ - assume external SSD if can't determine otherwise
+            print(f"DEBUG: Defaulting to external SSD for volume: {volume_name}")
+            return "usb_ssd"
+        
+        # Check if it's internal storage
+        if path.startswith(("/Users/", "/Applications/", "/System/", "/Library/")):
+            print(f"DEBUG: Detected internal storage")
+            return "local_ssd"
         
         # Default to local SSD for unknown paths
+        print(f"DEBUG: Defaulting to local SSD for unknown path")
         return "local_ssd"

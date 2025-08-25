@@ -260,6 +260,14 @@ def set_app_preference(key, value):
     prefs[key] = value
     return save_app_preferences(prefs)
 
+def get_transfer_reports_folder_name():
+    """Gets the configured transfer reports folder name."""
+    return get_app_preference("transfer_reports_folder_name", "_ForwardFlow_verification_Reports")
+
+def set_transfer_reports_folder_name(folder_name):
+    """Sets the transfer reports folder name."""
+    return set_app_preference("transfer_reports_folder_name", folder_name)
+
 
 # Example Usage (for testing when run directly)
 if __name__ == "__main__":

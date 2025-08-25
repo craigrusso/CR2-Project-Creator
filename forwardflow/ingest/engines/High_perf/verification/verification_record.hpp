@@ -44,8 +44,8 @@ public:
 class VerificationReportManager {
 public:
     void add_record(const VerificationRecord& record);
-    void write_reports(const std::string& job_id, const std::vector<std::string>& destinations);
-    void write_verification_reports_to_destination(const std::string& job_id, const std::string& dest_path);
+    void write_reports(const std::string& job_id, const std::vector<std::string>& destinations, const std::string& reports_folder_name = "_ForwardFlow_Reports");
+    void write_verification_reports_to_destination(const std::string& job_id, const std::string& dest_path, const std::string& reports_folder_name = "_ForwardFlow_Reports");
     
 private:
     std::vector<VerificationRecord> records_;

@@ -25,11 +25,10 @@ ext_modules = [
             "platform/platform_helpers.cpp",
             "stall/stall_watchdog.cpp",
             "verification/verification_record.cpp",
-            "cloud/cloud_detection.cpp",
-            "cloud/cloud_materialization.cpp"
+            "cloud/cloud_detection.cpp"
         ],
         cxx_std=17,
-        extra_compile_args=["-O3", "-Wall", "-Wextra"],
+        extra_compile_args=["-O3", "-Wall", "-Wextra", "-mmacosx-version-min=10.15"],
     ),
 ]
 

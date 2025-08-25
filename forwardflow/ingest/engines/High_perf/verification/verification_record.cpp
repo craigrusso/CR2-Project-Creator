@@ -40,16 +40,16 @@ void VerificationReportManager::add_record(const VerificationRecord& record) {
     records_.push_back(record);
 }
 
-void VerificationReportManager::write_reports(const std::string& job_id, const std::vector<std::string>& destinations) {
+void VerificationReportManager::write_reports(const std::string& job_id, const std::vector<std::string>& destinations, const std::string& reports_folder_name) {
     for (const auto& dest : destinations) {
-        write_verification_reports_to_destination(job_id, dest);
+        write_verification_reports_to_destination(job_id, dest, reports_folder_name);
     }
 }
 
-void VerificationReportManager::write_verification_reports_to_destination(const std::string& job_id, const std::string& dest_path) {
+void VerificationReportManager::write_verification_reports_to_destination(const std::string& job_id, const std::string& dest_path, const std::string& reports_folder_name) {
     try {
         namespace fs = std::filesystem;
-        fs::path dest_dir = fs::path(dest_path) / "_ForwardFlow_Reports";
+        fs::path dest_dir = fs::path(dest_path) / reports_folder_name;
         fs::create_directories(dest_dir);
         
         std::string timestamp = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(

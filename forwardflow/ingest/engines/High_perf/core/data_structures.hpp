@@ -5,6 +5,8 @@
 #include <atomic>
 #include <functional>
 #include <chrono>
+#include <unordered_map>
+#include <mutex>
 
 namespace DataStructures {
 
@@ -75,9 +77,26 @@ struct CopyJob {
     // Verification report generation
     bool   generate_verification_report = true;
     std::string job_id = "";                // For report identification
+    std::string reports_folder_name = "_ForwardFlow_verification_Reports";  // Configurable reports folder name
     
     // Cloud source detection
     bool   cloud_source = false;            // Indicates if source is cloud-backed
+};
+
+/**
+ * Destination progress payload for UI updates
+ */
+struct DestProgressPayload {
+    size_t dest_index;
+    const char* dest_path;
+    const char* transfer_type;
+    size_t bytes_copied;
+    size_t total_bytes;
+    double current_speed_mbps;
+    double peak_speed_mbps;
+    double elapsed_time;
+    size_t completed_files;
+    size_t total_files;
 };
 
 /**

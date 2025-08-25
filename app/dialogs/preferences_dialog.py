@@ -460,6 +460,41 @@ def show_preferences_dialog(parent=None):
     examples_layout.addWidget(examples_note)
     
     general_layout.addWidget(examples_group)
+    
+    # Transfer Reports Folder Configuration
+    reports_group = QGroupBox("Transfer Reports")
+    reports_group.setStyleSheet(GROUPBOX_STYLE)
+    reports_layout = QVBoxLayout(reports_group)
+    
+    # Folder name input row
+    folder_layout = QHBoxLayout()
+    folder_label = QLabel("Folder Name:")
+    folder_label.setStyleSheet(LABEL_STYLE)
+    folder_layout.addWidget(folder_label)
+    
+    transfer_reports_folder_field = QLineEdit()
+    transfer_reports_folder_field.setText(config_manager.get_transfer_reports_folder_name())
+    transfer_reports_folder_field.setStyleSheet(LINEEDIT_STYLE)
+    transfer_reports_folder_field.setToolTip("The name of the folder where verification reports will be saved alongside transferred files")
+    folder_layout.addWidget(transfer_reports_folder_field)
+    
+    # Reset button for folder name
+    reset_folder_btn = QPushButton("Reset")
+    reset_folder_btn.setStyleSheet(BUTTON_STYLE)
+    def reset_transfer_reports_folder():
+        transfer_reports_folder_field.setText("_ForwardFlow_verification_Reports")
+    reset_folder_btn.clicked.connect(reset_transfer_reports_folder)
+    folder_layout.addWidget(reset_folder_btn)
+    
+    reports_layout.addLayout(folder_layout)
+    
+    # Description note
+    reports_note = QLabel("Verification reports will be saved in this folder alongside your transferred files. The underscore prefix helps sort the folder to the top of directory listings.")
+    reports_note.setStyleSheet(f"color: {colors['secondary_text']}; font-style: italic;")
+    reports_note.setWordWrap(True)
+    reports_layout.addWidget(reports_note)
+    
+    general_layout.addWidget(reports_group)
     general_layout.addStretch()
     tabs.addTab(general_tab, "General")
 
@@ -618,6 +653,17 @@ def show_preferences_dialog(parent=None):
             enable_file_logging(file_check.isChecked())
         except Exception as e:
             print(f"ERROR: Failed to save logging preferences: {e}")
+        
+        # Save transfer reports folder name
+        try:
+            folder_name = transfer_reports_folder_field.text().strip()
+            if folder_name:  # Only save if not empty
+                config_manager.set_transfer_reports_folder_name(folder_name)
+                print(f"DEBUG: Transfer reports folder name saved: {folder_name}")
+            else:
+                print("DEBUG: Transfer reports folder name not saved (empty value)")
+        except Exception as e:
+            print(f"ERROR: Failed to save transfer reports folder name: {e}")
         
         print("DEBUG: Preferences saved (Cache settings saved, Data Root handled by QSettings).")
         dialog.accept()
