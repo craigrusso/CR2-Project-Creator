@@ -361,6 +361,7 @@ class ControlSection(QWidget):
                     job_id = 'unknown'
                     source_path = 'unknown'
                     destinations = []
+                    enhanced_stats = None
                     
                     # Try to get job info from the current job object
                     if hasattr(root, 'current_job') and root.current_job:
@@ -372,6 +373,15 @@ class ControlSection(QWidget):
                                     job_id = getattr(current_job, 'job_id', 'unknown')
                                     source_path = getattr(current_job, 'source_paths', ['unknown'])[0] if hasattr(current_job, 'source_paths') and current_job.source_paths else 'unknown'
                                     destinations = getattr(current_job, 'destination_paths', [])
+                            
+                            # Get enhanced stats from C++ engine for detailed reporting
+                            if hasattr(root.current_job, 'get_enhanced_stats'):
+                                try:
+                                    enhanced_stats = root.current_job.get_enhanced_stats()
+                                    print(f"DEBUG: Got enhanced stats: {enhanced_stats.total_files} files, {enhanced_stats.completed_files} completed, {enhanced_stats.cancelled_files} cancelled")
+                                except Exception as e:
+                                    print(f"DEBUG: Could not get enhanced stats: {e}")
+                                    enhanced_stats = None
                         except Exception as e:
                             print(f"DEBUG: Could not get job info from current job: {e}")
                     
@@ -384,13 +394,45 @@ class ControlSection(QWidget):
                     
                     print(f"DEBUG: Writing log with job_id={job_id}, source={source_path}, destinations={destinations}")
                     
-                    # Write the log
+                    # Convert enhanced stats to dict format for transfer log writer
+                    stats_dict = None
+                    if enhanced_stats:
+                        stats_dict = {
+                            'total_files': enhanced_stats.total_files,
+                            'completed_files': enhanced_stats.completed_files,
+                            'cancelled_files': enhanced_stats.cancelled_files,
+                            'error_files': enhanced_stats.error_files,
+                            'total_bytes': enhanced_stats.total_bytes,
+                            'completed_bytes': enhanced_stats.completed_bytes,
+                            'average_speed_mbps': enhanced_stats.average_speed_mbps,
+                            'files': []
+                        }
+                        
+                        # Convert individual file records
+                        for record in enhanced_stats.file_records:
+                            file_info = {
+                                'filename': record.filename,
+                                'source_path': record.source_path,
+                                'destination_path': record.destination_path,
+                                'size': record.file_size,
+                                'status': record.status,
+                                'checksum_type': record.checksum_type,
+                                'source_checksum': record.checksum_source,
+                                'destination_checksum': record.checksum_destination,
+                                'verification_status': 'PASS' if record.verification_passed else 'FAIL',
+                                'transfer_speed': record.transfer_speed_mbps,
+                                'error_message': record.error_message
+                            }
+                            stats_dict['files'].append(file_info)
+                    
+                    # Write the log with enhanced stats
                     log_path = write_transfer_log(
                         job_id=job_id,
                         source_path=source_path,
                         destinations=destinations,
                         status="CANCELLED",
-                        error_message="Transfer cancelled by user"
+                        error_message="Transfer cancelled by user",
+                        stats=stats_dict
                     )
                     print(f"DEBUG: Transfer log written to: {log_path}")
                     

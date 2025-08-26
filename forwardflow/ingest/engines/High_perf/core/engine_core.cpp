@@ -803,10 +803,29 @@ bool EnhancedHighPerfTransferEngine::copy_single_file(const DataStructures::Copy
         
         // Note: Removed std::filesystem::equivalent check as it doesn't work on external drives
         
+        // Create enhanced file transfer record for industry-standard DIT reporting
+        DataStructures::FileTransferRecord file_record;
+        file_record.source_path = source_path;
+        file_record.destination_path = final_dest_path.string();
+        file_record.filename = filename;
+        file_record.file_size = file_size;
+        file_record.status = "IN_PROGRESS";
+        file_record.start_time = std::chrono::system_clock::now();
+        file_record.checksum_type = "xxHash64";  // Default checksum type
+        
+        // Add the file record to tracking
+        add_file_transfer_record(file_record);
+        
+        // Emit file started event
+        emit_file_transfer_event("file.transfer.started", file_record);
+        
+        std::cout << "DEBUG: Created file transfer record for: " << filename << std::endl;
+        
         // Open source file for reading
         std::ifstream source_file_stream(source_path, std::ios::binary);
         if (!source_file_stream.is_open()) {
             std::cout << "DEBUG: Failed to open source file: " << source_path << std::endl;
+            update_file_transfer_status(source_path, "ERROR", "Failed to open source file");
             add_error("Failed to open source file: " + source_path);
             return false;
         }
@@ -815,6 +834,7 @@ bool EnhancedHighPerfTransferEngine::copy_single_file(const DataStructures::Copy
         std::ofstream dest_file_stream(final_dest_path, std::ios::binary);
         if (!dest_file_stream.is_open()) {
             std::cout << "DEBUG: Failed to open destination file: " << final_dest_path.string() << std::endl;
+            update_file_transfer_status(source_path, "ERROR", "Failed to open destination file");
             add_error("Failed to open destination file: " + final_dest_path.string());
             return false;
         }
@@ -832,6 +852,7 @@ bool EnhancedHighPerfTransferEngine::copy_single_file(const DataStructures::Copy
             // Check for cancellation during file copy - responsive cancellation
             if (cancelled_.load()) {
                 std::cout << "DEBUG: Copy cancelled during file transfer" << std::endl;
+                update_file_transfer_status(source_path, "CANCELLED", "Transfer cancelled by user");
                 source_file_stream.close();
                 dest_file_stream.close();
                 // Remove partial file
@@ -879,6 +900,20 @@ bool EnhancedHighPerfTransferEngine::copy_single_file(const DataStructures::Copy
                 // Update stats
                 add_bytes(file_size);
                 inc_files();
+                
+                // Update enhanced file transfer record for successful completion
+                update_file_transfer_status(source_path, "COMPLETED");
+                
+                // Get the updated record for emission
+                std::lock_guard<std::mutex> lock(file_records_mu_);
+                for (const auto& record : file_transfer_records_) {
+                    if (record.source_path == source_path) {
+                        // Emit file completed event
+                        emit_file_transfer_event("file.transfer.completed", record);
+                        std::cout << "DEBUG: File transfer completed: " << filename << std::endl;
+                        break;
+                    }
+                }
                 
                 // Add verification record for successful copy
                 if (job.generate_verification_report) {
@@ -975,6 +1010,93 @@ void EnhancedHighPerfTransferEngine::emit_event_make(const std::string& event_ty
     // Create and fill the payload, then emit the event
     auto payload = fill_payload();
     emit_event(event_type, &payload);
+}
+
+// Enhanced file tracking methods for industry-standard DIT reporting
+void EnhancedHighPerfTransferEngine::add_file_transfer_record(const DataStructures::FileTransferRecord& record) {
+    std::lock_guard<std::mutex> lock(file_records_mu_);
+    file_transfer_records_.push_back(record);
+    
+    // Update enhanced stats
+    enhanced_stats_.total_files++;
+    enhanced_stats_.total_bytes += record.file_size;
+    
+    if (record.status == "COMPLETED") {
+        enhanced_stats_.completed_files++;
+        enhanced_stats_.completed_bytes += record.file_size;
+    } else if (record.status == "CANCELLED") {
+        enhanced_stats_.cancelled_files++;
+    } else if (record.status == "ERROR") {
+        enhanced_stats_.error_files++;
+    }
+    
+    std::cout << "DEBUG: Added file transfer record for: " << record.filename 
+              << " (Status: " << record.status << ")" << std::endl;
+}
+
+void EnhancedHighPerfTransferEngine::update_file_transfer_status(const std::string& source_path, const std::string& status, const std::string& error_message) {
+    std::lock_guard<std::mutex> lock(file_records_mu_);
+    
+    for (auto& record : file_transfer_records_) {
+        if (record.source_path == source_path) {
+            record.status = status;
+            record.completion_time = std::chrono::system_clock::now();
+            
+            if (!error_message.empty()) {
+                record.error_message = error_message;
+            }
+            
+            // Calculate transfer speed if completed
+            if (status == "COMPLETED") {
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    record.completion_time - record.start_time).count();
+                if (duration > 0) {
+                    record.transfer_speed_mbps = (record.file_size / (1024.0 * 1024.0)) / (duration / 1000.0);
+                }
+            }
+            
+            std::cout << "DEBUG: Updated file transfer status: " << record.filename 
+                      << " -> " << status << std::endl;
+            break;
+        }
+    }
+}
+
+void EnhancedHighPerfTransferEngine::emit_file_transfer_event(const std::string& event_type, const DataStructures::FileTransferRecord& record) {
+    if (event_sink_) {
+        // Emit the file transfer record as an event
+        emit_event(event_type, &record);
+    }
+}
+
+DataStructures::EnhancedCopyStats EnhancedHighPerfTransferEngine::get_enhanced_stats() const {
+    std::lock_guard<std::mutex> lock(file_records_mu_);
+    return enhanced_stats_;
+}
+
+DataStructures::EnhancedCopyStats EnhancedHighPerfTransferEngine::get_enhanced_stats_public() const {
+    std::lock_guard<std::mutex> lock(file_records_mu_);
+    
+    // Create a copy to avoid const issues
+    DataStructures::EnhancedCopyStats stats = enhanced_stats_;
+    
+    // Calculate average speed from completed files
+    if (stats.completed_files > 0) {
+        double total_duration = 0.0;
+        for (const auto& record : file_transfer_records_) {
+            if (record.status == "COMPLETED") {
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    record.completion_time - record.start_time).count();
+                total_duration += duration / 1000.0;  // Convert to seconds
+            }
+        }
+        
+        if (total_duration > 0) {
+            stats.average_speed_mbps = (stats.completed_bytes / (1024.0 * 1024.0)) / total_duration;
+        }
+    }
+    
+    return stats;
 }
 
 } // namespace EngineCore

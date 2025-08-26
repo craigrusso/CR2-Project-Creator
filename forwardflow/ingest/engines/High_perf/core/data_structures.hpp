@@ -117,6 +117,7 @@ struct ProgressGate {
         std::string destination_path;
         std::string filename;
         uint64_t file_size;
+        std::string checksum_type;      // Type of checksum (xxHash64, MD5, SHA256, etc.)
         std::string checksum_source;
         std::string checksum_destination;
         std::string status;  // "COMPLETED", "IN_PROGRESS", "CANCELLED", "ERROR"

@@ -55,11 +55,26 @@ private:
     std::vector<Verification::VerificationRecord> verification_records_;
     std::mutex verification_mu_;
     
+    // Enhanced file tracking for industry-standard DIT reporting
+    mutable std::vector<DataStructures::FileTransferRecord> file_transfer_records_;
+    mutable std::mutex file_records_mu_;
+    mutable DataStructures::EnhancedCopyStats enhanced_stats_;
+    
     // Helper methods
     void add_bytes(size_t n);
     void inc_files();
     void add_error(const std::string& e);
     void add_verification_record(const Verification::VerificationRecord& record);
+    
+    // Enhanced file tracking methods
+    void add_file_transfer_record(const DataStructures::FileTransferRecord& record);
+    void update_file_transfer_status(const std::string& source_path, const std::string& status, const std::string& error_message = "");
+    void emit_file_transfer_event(const std::string& event_type, const DataStructures::FileTransferRecord& record);
+    DataStructures::EnhancedCopyStats get_enhanced_stats() const;
+    
+public:
+    // Public method to get enhanced stats for Python access
+    DataStructures::EnhancedCopyStats get_enhanced_stats_public() const;
     
     // File operations
     std::vector<std::string> collect_files(const std::vector<std::string>& source_paths);

@@ -118,5 +118,6 @@ PYBIND11_MODULE(enhanced_high_perf_engine, m) {
         .def("write_verification_reports_to_destination", &EngineCore::EnhancedHighPerfTransferEngine::write_verification_reports_to_destination)
         .def("emit_dest_progress", &EngineCore::EnhancedHighPerfTransferEngine::emit_dest_progress)
         .def("emit_job_progress", &EngineCore::EnhancedHighPerfTransferEngine::emit_job_progress)
-        .def("emit_file_completed", &EngineCore::EnhancedHighPerfTransferEngine::emit_file_completed);
+        .def("emit_file_completed", &EngineCore::EnhancedHighPerfTransferEngine::emit_file_completed)
+        .def("get_enhanced_stats", &EngineCore::EnhancedHighPerfTransferEngine::get_enhanced_stats_public);
 }
