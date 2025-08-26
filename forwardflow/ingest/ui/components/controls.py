@@ -318,11 +318,6 @@ class ControlSection(QWidget):
         print("DEBUG: Cancel button clicked - immediately stopping transfer")
         
         try:
-            # Immediately disable all controls to prevent further interaction
-            self.start_btn.setEnabled(False)
-            self.pause_btn.setEnabled(False)
-            self.cancel_btn.setEnabled(False)
-            
             # Cancel the C++ engine immediately
             if hasattr(root, 'current_job') and root.current_job:
                 print("DEBUG: Cancelling C++ engine...")
@@ -350,10 +345,15 @@ class ControlSection(QWidget):
                 except Exception as e:
                     print(f"DEBUG: Error updating progress section: {e}")
             
-            # Write transfer log in background thread
+            # CRITICAL FIX: Re-enable controls immediately after cancellation
+            # This prevents the app from freezing
+            print("DEBUG: Re-enabling controls immediately after cancellation")
+            self.reenable_controls()
+            
+            # Write transfer log in background thread (non-blocking)
             def write_transfer_log():
                 try:
-                    print("DEBUG: Writing transfer log...")
+                    print("DEBUG: Writing transfer log in background...")
                     # Import the transfer log writer
                     from forwardflow.ingest.utils.transfer_log_writer import write_transfer_log
                     
@@ -394,26 +394,38 @@ class ControlSection(QWidget):
                     )
                     print(f"DEBUG: Transfer log written to: {log_path}")
                     
-                    # Re-enable controls after log is written
-                    def reenable_controls():
-                        self.reenable_controls()
-                        print("DEBUG: Controls re-enabled after cancellation")
+                    # Update progress section to show completion
+                    def update_progress_complete():
+                        if hasattr(root, 'progress_section'):
+                            try:
+                                if hasattr(root.progress_section, 'status_label'):
+                                    root.progress_section.status_label.setText("Transfer cancelled - report written")
+                                if hasattr(root.progress_section, 'total_progress'):
+                                    root.progress_section.total_progress.setFormat("Ready")
+                                    root.progress_section.total_progress.setValue(0)
+                            except Exception as e:
+                                print(f"DEBUG: Error updating progress completion: {e}")
                     
                     # Use QTimer to ensure this runs on the main thread
                     from PyQt6.QtCore import QTimer
-                    QTimer.singleShot(0, reenable_controls)
+                    QTimer.singleShot(0, update_progress_complete)
                     
                 except Exception as e:
                     print(f"DEBUG: Error writing transfer log: {e}")
                     import traceback
                     traceback.print_exc()
-                    # Still re-enable controls even if log writing fails
-                    def reenable_controls():
-                        self.reenable_controls()
-                        print("DEBUG: Controls re-enabled after log writing error")
+                    
+                    # Update progress section to show error
+                    def update_progress_error():
+                        if hasattr(root, 'progress_section'):
+                            try:
+                                if hasattr(root.progress_section, 'status_label'):
+                                    root.progress_section.status_label.setText("Error writing report")
+                            except Exception as e2:
+                                print(f"DEBUG: Error updating progress error: {e2}")
                     
                     from PyQt6.QtCore import QTimer
-                    QTimer.singleShot(0, reenable_controls)
+                    QTimer.singleShot(0, update_progress_error)
             
             # Start log writing in background thread
             import threading
