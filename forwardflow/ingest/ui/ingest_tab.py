@@ -44,7 +44,7 @@ from PyQt6.QtWidgets import (
 
 from .ingest_vm import IngestViewModel
 from .file_progress_line import FileProgressLine
-from ..engines.enhanced_multi_destination_engine import EnhancedMultiDestinationEngine as PythonCopyEngine
+
 from forwardflow.ingest.runtime.crash_first_aid import enable as _crash_enable
 _crash_enable()
 from forwardflow.ingest.ui.qt_safe_bridge import get_bridge, emit_event, cleanup_bridge
@@ -393,71 +393,6 @@ def build_ingest_tab():
     return root
 
 
-def run_job(job, root):
-    """Run the job in a background thread with comprehensive debugging"""
-    print(f"DEBUG: ===== RUN_JOB STARTED =====")
-    print(f"DEBUG: Job ID: {job.job_id}")
-    print(f"DEBUG: Thread ID: {threading.current_thread().ident}")
-    
-    try:
-        # Use bridge emitter via engine wrapper
-        print("DEBUG: Creating BridgeSink...")
-        sink = type("BridgeSink", (), {"emit": lambda _self, kind, payload: emit_event(kind, payload)})()
-        print("DEBUG: BridgeSink created")
-        
-        # Create and start the engine
-        print("DEBUG: Importing PythonCopyEngine...")
-        try:
-            from forwardflow.ingest.engines.python_engine import PythonCopyEngine
-            print("DEBUG: PythonCopyEngine imported successfully")
-        except ImportError as e:
-            print(f"DEBUG: Failed to import PythonCopyEngine: {e}")
-            raise
-        
-        print("DEBUG: Creating PythonCopyEngine instance...")
-        try:
-            engine = PythonCopyEngine(sink=sink)
-            print(f"DEBUG: PythonCopyEngine created: {engine}")
-        except Exception as e:
-            print(f"DEBUG: Failed to create PythonCopyEngine: {e}")
-            raise
-        
-        # Check which engine type is being used
-        if hasattr(engine, '_cpp_engine_used'):
-            print("DEBUG: C++ engine is being used")
-        else:
-            print("DEBUG: Python fallback engine is being used")
-        
-        # Store the engine reference
-        root.current_job = engine
-        print("DEBUG: Engine stored in root.current_job")
-        
-        print("DEBUG: Starting engine with job...")
-        try:
-            engine.start(job)
-            print("DEBUG: Engine completed successfully")
-        except Exception as e:
-            print(f"DEBUG: Engine failed: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
-            
-    except Exception as e:
-        print(f"DEBUG: Error in run_job: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        # Re-enable controls on error
-        def reenable_controls():
-            if hasattr(root, 'control_section'):
-                root.control_section.reenable_controls()
-            print("DEBUG: Controls re-enabled after error")
-        
-        # Use QTimer to ensure this runs on the main thread
-        from PyQt6.QtCore import QTimer
-        QTimer.singleShot(0, reenable_controls)
-        
-    finally:
-        print("DEBUG: ===== RUN_JOB COMPLETED =====")
+
 
 

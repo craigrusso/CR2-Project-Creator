@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton,
     QFrame, QScrollArea, QFileDialog, QProgressBar
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 
 try:
     from app.ui.color_scheme_pyqt import (
@@ -188,6 +188,9 @@ class DestinationWidget(QFrame):
 class SourceDestinationSection(QWidget):
     """Source and Destination Section with exact original design"""
     
+    # Signal emitted when destinations change
+    destinations_changed = pyqtSignal()
+    
     def __init__(self, parent=None, recent_sources=None, recent_destinations=None):
         super().__init__(parent)
         self.destination_widgets = []
@@ -347,6 +350,8 @@ class SourceDestinationSection(QWidget):
             self.destination_widgets.append(dest_widget)
             self.dest_container_layout.addWidget(dest_widget)
             self.dest_combo.setCurrentText("")
+            # Emit signal that destinations changed
+            self.destinations_changed.emit()
             
     def remove_destination(self, widget):
         """Remove a destination widget"""
@@ -354,6 +359,8 @@ class SourceDestinationSection(QWidget):
             self.destination_widgets.remove(widget)
             self.dest_container_layout.removeWidget(widget)
             widget.deleteLater()
+            # Emit signal that destinations changed
+            self.destinations_changed.emit()
             
     def get_destinations(self):
         """Get list of destination paths"""

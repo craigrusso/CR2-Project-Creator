@@ -147,13 +147,13 @@ class FileOperationsHandler(QObject):
     
     def import_file(self, target_dir, file_path=None, show_dialog=True, use_enhanced_copy=True):
         """
-        Import a file to a target directory
+        Import a file to a target directory using C++ engine ONLY
         
         Args:
             target_dir: Directory to import the file to
             file_path: Path of the file to import (optional)
             show_dialog: Whether to show a file dialog if no path is provided
-            use_enhanced_copy: Whether to use enhanced copy engine (if available)
+            use_enhanced_copy: Whether to use enhanced copy engine (C++ ONLY)
             
         Returns:
             tuple: (success, imported_file_path)
@@ -178,28 +178,21 @@ class FileOperationsHandler(QObject):
             file_name = os.path.basename(file_path)
             target_path = os.path.join(target_dir, file_name)
             
-            # Use enhanced copy if available and requested
+            # Use C++ engine ONLY - NO FALLBACK
             if use_enhanced_copy and ENHANCED_COPY_AVAILABLE and self.enhanced_engine:
                 try:
                     stats = copy_file(file_path, target_path, verify_integrity=True)
                     if stats.copied_files > 0:
                         return True, target_path
                     else:
-                        # Fallback to standard copy if enhanced copy fails
-                        import shutil
-                        shutil.copy2(file_path, target_path)
-                        return True, target_path
+                        # C++ engine failed - fail explicitly
+                        raise RuntimeError("C++ copy engine failed to copy file")
                 except Exception as e:
-                    print(f"Enhanced copy failed, falling back to standard copy: {e}")
-                    # Fallback to standard copy
-                    import shutil
-                    shutil.copy2(file_path, target_path)
-                    return True, target_path
+                    print(f"C++ copy engine failed: {e}")
+                    raise RuntimeError(f"C++ copy engine failed: {e}")
             else:
-                # Use standard copy
-                import shutil
-                shutil.copy2(file_path, target_path)
-                return True, target_path
+                # C++ engine not available - fail explicitly
+                raise RuntimeError("C++ copy engine not available - this is the only engine")
             
         except Exception as e:
             print(f"Error importing file: {e}")
@@ -213,21 +206,20 @@ class FileOperationsHandler(QObject):
     
     def import_file_enhanced(self, target_dir, file_path=None, show_dialog=True, **copy_options):
         """
-        Import a file using the enhanced copy engine with full options
+        Import a file using the C++ copy engine with full options - NO FALLBACK
         
         Args:
             target_dir: Directory to import the file to
             file_path: Path of the file to import (optional)
             show_dialog: Whether to show a file dialog if no path is provided
-            **copy_options: Additional options for enhanced copy engine
+            **copy_options: Additional options for C++ copy engine
             
         Returns:
             tuple: (success, imported_file_path, copy_stats)
         """
         if not ENHANCED_COPY_AVAILABLE:
-            # Fallback to standard import
-            success, imported_path = self.import_file(target_dir, file_path, show_dialog, use_enhanced_copy=False)
-            return success, imported_path, None
+            # C++ engine not available - fail explicitly
+            raise RuntimeError("C++ copy engine not available - this is the only engine")
         
         try:
             # If no file path and show_dialog is True, show a file dialog
@@ -249,7 +241,7 @@ class FileOperationsHandler(QObject):
             file_name = os.path.basename(file_path)
             target_path = os.path.join(target_dir, file_name)
             
-            # Use enhanced copy with options
+            # Use C++ engine with options
             options = CopyOptions(**copy_options)
             stats = copy_file(file_path, target_path, **options.__dict__)
             
@@ -259,7 +251,7 @@ class FileOperationsHandler(QObject):
                 return False, None, stats
             
         except Exception as e:
-            print(f"Error importing file with enhanced copy: {e}")
+            print(f"Error importing file with C++ engine: {e}")
             if self.parent:
                 QMessageBox.warning(
                     self.parent,

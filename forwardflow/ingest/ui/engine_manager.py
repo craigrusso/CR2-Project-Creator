@@ -15,11 +15,20 @@ def get_engine(sink=None):
     with _engine_lock:
         if _engine_instance is None:
             try:
-                from ..engines.High_perf.enhanced_high_perf_engine import EnhancedHighPerfTransferEngine
+                # Try to import from the build/lib directory first
+                import sys
+                import os
+                
+                # Add the build/lib path to sys.path if not already there
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                build_lib_path = os.path.join(current_dir, "..", "engines", "build", "lib")
+                if build_lib_path not in sys.path:
+                    sys.path.insert(0, build_lib_path)
+                
+                import enhanced_high_perf_engine as cpp_engine
+                _engine_instance = cpp_engine.EnhancedHighPerfTransferEngine()
                 if sink:
-                    _engine_instance = EnhancedHighPerfTransferEngine(sink=sink)
-                else:
-                    _engine_instance = EnhancedHighPerfTransferEngine()
+                    _engine_instance.set_event_sink(sink)
                 print("DEBUG: C++ engine created successfully")
             except Exception as e:
                 print(f"DEBUG: Failed to create C++ engine: {e}")

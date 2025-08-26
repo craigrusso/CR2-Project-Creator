@@ -1048,7 +1048,14 @@ class TemplateDirectoryEditor(QDialog):
                 if self._is_text_file(file_path):
                     self._replace_placeholders(file_path, target_path)
                 else:
-                    shutil.copy(file_path, target_path)
+                    # Use C++ engine for file copy
+                    try:
+                        from app.utils.cpp_enhanced_copy import copy_file
+                        stats = copy_file(file_path, target_path)
+                        if stats.copied_files == 0:
+                            raise RuntimeError("C++ copy engine failed to copy file")
+                    except ImportError:
+                        raise RuntimeError("C++ copy engine not available - this is the only engine")
             except Exception as e:
                 QMessageBox.warning(self, "Error Copying File", f"Could not copy file: {str(e)}")
     
@@ -1328,11 +1335,17 @@ class TemplateDirectoryEditor(QDialog):
                         os.makedirs(cache_dir, exist_ok=True)
                         cached_file_path = os.path.join(cache_dir, file_name)
                     
-                    # Copy file to cache
+                    # Copy file to cache using C++ engine
                     try:
                         print(f"Copying file to cache: {file_path} -> {cached_file_path}")
-                        shutil.copy2(file_path, cached_file_path)
-                        print(f"Successfully cached file: {cached_file_path}")
+                        from app.utils.cpp_enhanced_copy import copy_file
+                        stats = copy_file(file_path, cached_file_path)
+                        if stats.copied_files > 0:
+                            print(f"Successfully cached file: {cached_file_path}")
+                        else:
+                            raise RuntimeError("C++ copy engine failed to copy file")
+                    except ImportError:
+                        raise RuntimeError("C++ copy engine not available - this is the only engine")
                     except Exception as e:
                         print(f"Error copying file to cache: {e}")
         except Exception as e:
@@ -1400,17 +1413,23 @@ class TemplateDirectoryEditor(QDialog):
         
         # Ask where to add it in the template
         if self.template_path and os.path.isdir(self.template_path):
-            # Copy the file to the template directory
+            # Copy the file to the template directory using C++ engine
             dest_path = os.path.join(self.template_path, filename)
             try:
-                shutil.copy2(file_path, dest_path)
-                # Refresh file list
-                self._populate_file_list(self.template_path)
-                # Select the new file
-                for i in range(self.files_list.count()):
-                    if self.files_list.item(i).text() == filename:
-                        self.files_list.setCurrentRow(i)
-                        break
+                from app.utils.cpp_enhanced_copy import copy_file
+                stats = copy_file(file_path, dest_path)
+                if stats.copied_files > 0:
+                    # Refresh file list
+                    self._populate_file_list(self.template_path)
+                    # Select the new file
+                    for i in range(self.files_list.count()):
+                        if self.files_list.item(i).text() == filename:
+                            self.files_list.setCurrentRow(i)
+                            break
+                else:
+                    raise RuntimeError("C++ copy engine failed to copy file")
+            except ImportError:
+                raise RuntimeError("C++ copy engine not available - this is the only engine")
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Failed to add file: {str(e)}")
 
