@@ -109,4 +109,47 @@ struct ProgressGate {
     bool should_emit(const std::string& key, int64_t interval_ns = 100'000'000);
 };
 
+    /**
+     * Enhanced file transfer record for industry-standard reporting
+     */
+    struct FileTransferRecord {
+        std::string source_path;
+        std::string destination_path;
+        std::string filename;
+        uint64_t file_size;
+        std::string checksum_source;
+        std::string checksum_destination;
+        std::string status;  // "COMPLETED", "IN_PROGRESS", "CANCELLED", "ERROR"
+        std::string error_message;
+        double transfer_speed_mbps;
+        std::chrono::system_clock::time_point start_time;
+        std::chrono::system_clock::time_point completion_time;
+        bool verification_passed;
+        std::string verification_error;
+        
+        // Constructor for easy initialization
+        FileTransferRecord() : file_size(0), transfer_speed_mbps(0.0), verification_passed(false) {}
+    };
+
+    /**
+     * Enhanced copy stats with detailed file information
+     */
+    struct EnhancedCopyStats {
+        uint64_t total_files;
+        uint64_t completed_files;
+        uint64_t cancelled_files;
+        uint64_t error_files;
+        uint64_t total_bytes;
+        uint64_t completed_bytes;
+        double average_speed_mbps;
+        std::chrono::system_clock::time_point job_start_time;
+        std::chrono::system_clock::time_point job_end_time;
+        std::vector<FileTransferRecord> file_records;
+        
+        // Constructor
+        EnhancedCopyStats() : total_files(0), completed_files(0), cancelled_files(0), 
+                              error_files(0), total_bytes(0), completed_bytes(0), 
+                              average_speed_mbps(0.0) {}
+    };
+
 } // namespace DataStructures

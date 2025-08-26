@@ -21,4 +21,6 @@ bool ProgressGate::should_emit(const std::string& key, int64_t interval_ns) {
     return false;
 }
 
+// Enhanced data structures use inline constructors defined in header
+
 } // namespace DataStructures

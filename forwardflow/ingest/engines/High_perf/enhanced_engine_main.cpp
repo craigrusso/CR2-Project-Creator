@@ -80,6 +80,32 @@ PYBIND11_MODULE(enhanced_high_perf_engine, m) {
         .def("duration", &DataStructures::CopyStats::duration)
         .def("success_rate", &DataStructures::CopyStats::success_rate);
 
+    // Enhanced data structures for industry-standard DIT reporting
+    py::class_<DataStructures::FileTransferRecord>(m, "FileTransferRecord")
+        .def(py::init<>())
+        .def_readwrite("source_path", &DataStructures::FileTransferRecord::source_path)
+        .def_readwrite("destination_path", &DataStructures::FileTransferRecord::destination_path)
+        .def_readwrite("filename", &DataStructures::FileTransferRecord::filename)
+        .def_readwrite("file_size", &DataStructures::FileTransferRecord::file_size)
+        .def_readwrite("checksum_source", &DataStructures::FileTransferRecord::checksum_source)
+        .def_readwrite("checksum_destination", &DataStructures::FileTransferRecord::checksum_destination)
+        .def_readwrite("status", &DataStructures::FileTransferRecord::status)
+        .def_readwrite("error_message", &DataStructures::FileTransferRecord::error_message)
+        .def_readwrite("transfer_speed_mbps", &DataStructures::FileTransferRecord::transfer_speed_mbps)
+        .def_readwrite("verification_passed", &DataStructures::FileTransferRecord::verification_passed)
+        .def_readwrite("verification_error", &DataStructures::FileTransferRecord::verification_error);
+    
+    py::class_<DataStructures::EnhancedCopyStats>(m, "EnhancedCopyStats")
+        .def(py::init<>())
+        .def_readwrite("total_files", &DataStructures::EnhancedCopyStats::total_files)
+        .def_readwrite("completed_files", &DataStructures::EnhancedCopyStats::completed_files)
+        .def_readwrite("cancelled_files", &DataStructures::EnhancedCopyStats::cancelled_files)
+        .def_readwrite("error_files", &DataStructures::EnhancedCopyStats::error_files)
+        .def_readwrite("total_bytes", &DataStructures::EnhancedCopyStats::total_bytes)
+        .def_readwrite("completed_bytes", &DataStructures::EnhancedCopyStats::completed_bytes)
+        .def_readwrite("average_speed_mbps", &DataStructures::EnhancedCopyStats::average_speed_mbps)
+        .def_readwrite("file_records", &DataStructures::EnhancedCopyStats::file_records);
+
     // Expose the real EnhancedHighPerfTransferEngine
     py::class_<EngineCore::EnhancedHighPerfTransferEngine>(m, "EnhancedHighPerfTransferEngine")
         .def(py::init<>())

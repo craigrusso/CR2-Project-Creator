@@ -161,6 +161,7 @@ def create_dit_csv_report(
     
     # Get file information from stats if available
     if stats and 'files' in stats:
+        # Process individual file records for detailed reporting
         for file_info in stats['files']:
             # Determine individual file status based on completion
             file_status = determine_file_status(file_info, status)
@@ -190,28 +191,74 @@ def create_dit_csv_report(
             ]
             csv_data.append(row)
     else:
-        # Fallback row if no detailed file stats
-        # For cancelled jobs, we can't determine individual file status
-        file_status = status if status != 'CANCELLED' else 'UNKNOWN'
-        row = [
-            job_id,
-            timestamp,
-            source_path,
-            destinations[0] if destinations else "",
-            os.path.basename(source_path),
-            str(stats.get('total_bytes', 0) if stats else 0),
-            f"{(stats.get('total_bytes', 0) if stats else 0) / (1024*1024):.2f}",
-            "xxHash64",
-            "",
-            "",
-            "UNKNOWN",
-            file_status,
-            error_message or '',
-            f"{stats.get('avg_speed', 0):.2f}" if stats else "0.00",
-            f"{stats.get('duration', 0):.2f}" if stats else "0.00",
-            "ForwardFlow C++ Engine"
-        ]
-        csv_data.append(row)
+        # For cancelled jobs or when detailed stats aren't available,
+        # we need to create a meaningful report based on what we know
+        
+        if status == "CANCELLED":
+            # Create a summary row for cancelled jobs
+            # This follows DIT standards for interrupted transfers
+            row = [
+                job_id,
+                timestamp,
+                source_path,
+                destinations[0] if destinations else "",
+                os.path.basename(source_path),
+                str(stats.get('total_bytes', 0) if stats else 0),
+                f"{(stats.get('total_bytes', 0) if stats else 0) / (1024*1024):.2f}",
+                "xxHash64",
+                "",
+                "",
+                "UNKNOWN",  # Verification status unknown for cancelled jobs
+                "CANCELLED",  # Individual file status
+                error_message or "Transfer cancelled by user",
+                f"{stats.get('avg_speed', 0):.2f}" if stats else "0.00",
+                f"{stats.get('duration', 0):.2f}" if stats else "0.00",
+                "ForwardFlow C++ Engine"
+            ]
+            csv_data.append(row)
+            
+            # Add a note row explaining the cancellation
+            note_row = [
+                job_id,
+                timestamp,
+                "NOTE",
+                "Transfer was cancelled by user",
+                "Partial transfer report",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "",
+                "CANCELLED",
+                "Some files may have completed successfully before cancellation",
+                "",
+                "",
+                "ForwardFlow C++ Engine"
+            ]
+            csv_data.append(note_row)
+        else:
+            # Standard completed/error report
+            file_status = status if status != 'CANCELLED' else 'UNKNOWN'
+            row = [
+                job_id,
+                timestamp,
+                source_path,
+                destinations[0] if destinations else "",
+                os.path.basename(source_path),
+                str(stats.get('total_bytes', 0) if stats else 0),
+                f"{(stats.get('total_bytes', 0) if stats else 0) / (1024*1024):.2f}",
+                "xxHash64",
+                "",
+                "",
+                "UNKNOWN",
+                file_status,
+                error_message or '',
+                f"{stats.get('avg_speed', 0):.2f}" if stats else "0.00",
+                f"{stats.get('duration', 0):.2f}" if stats else "0.00",
+                "ForwardFlow C++ Engine"
+            ]
+            csv_data.append(row)
     
     return csv_data
 
