@@ -245,13 +245,7 @@ def build_ingest_tab():
                 elif hasattr(root, 'eta_label') and root.eta_label:
                     root.eta_label.setText("--:--:--")
     
-    # Title at the very top with minimal margin
-    title = QLabel("Turbo Transfer")
-    title.setStyleSheet(HEADER_LABEL_STYLE)
-    title.setFixedHeight(25)  # Minimal height
-    title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-    title.setContentsMargins(10, 0, 10, 0)  # Minimal padding inside title
-    layout.addWidget(title)
+
     
     # Create the refactored components
     print("DEBUG: Creating SourceDestinationSection...")

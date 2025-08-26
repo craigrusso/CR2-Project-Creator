@@ -12,6 +12,7 @@ try:
         FIELD_LABEL_STYLE, SCROLL_AREA_STYLE, CARD_FRAME_STYLE,
         LABEL_STYLE, SECONDARY_TEXT_STYLE, HEADER_LABEL_STYLE
     )
+    from app.ui.custom_delegates import apply_hover_delegate
     STYLING_AVAILABLE = True
 except ImportError as e:
     print(f"DEBUG: Failed to import centralized styles: {e}")
@@ -233,6 +234,13 @@ class SourceDestinationSection(QWidget):
         self.src_combo.setMinimumHeight(38)
         self.src_combo.setMaximumHeight(38)
         
+        # Apply hover delegate for proper hover effects and clickable area
+        try:
+            apply_hover_delegate(self.src_combo)
+            print("DEBUG: Applied hover delegate to src_combo")
+        except Exception as e:
+            print(f"DEBUG: Failed to apply hover delegate to src_combo: {e}")
+        
         self.src_btn = QPushButton("Browse...")
         self.src_btn.setObjectName("src_btn")
         self.src_btn.setStyleSheet(BUTTON_STYLE)
@@ -268,6 +276,13 @@ class SourceDestinationSection(QWidget):
         self.dest_combo.setFixedHeight(38)
         self.dest_combo.setMinimumHeight(38)
         self.dest_combo.setMaximumHeight(38)
+        
+        # Apply hover delegate for proper hover effects and clickable area
+        try:
+            apply_hover_delegate(self.dest_combo)
+            print("DEBUG: Applied hover delegate to dest_combo")
+        except Exception as e:
+            print(f"DEBUG: Failed to apply hover delegate to dest_combo: {e}")
         
         # Connect dropdown selection to automatic destination addition
         self.dest_combo.currentTextChanged.connect(self.on_destination_changed)
