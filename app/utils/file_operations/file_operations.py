@@ -11,7 +11,7 @@ import json
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 from PyQt6.QtCore import QObject, pyqtSignal
 
-# Import enhanced copy functionality - try C++ first, then Python
+# Import enhanced copy engines
 try:
     from app.utils.cpp_enhanced_copy import (
         CppEnhancedCopyEngine, CopyOptions, CopyStats, 
@@ -19,20 +19,12 @@ try:
         CPP_ENGINE_AVAILABLE
     )
     ENHANCED_COPY_AVAILABLE = True
-    print(f"✓ Enhanced copy available: C++ engine {'✓' if CPP_ENGINE_AVAILABLE else '✗'}, Python fallback ✓")
-except ImportError:
-    try:
-        from app.utils.enhanced_file_copy import (
-            EnhancedFileCopy, CopyOptions, CopyStats, 
-            copy_files, copy_file, copy_directory
-        )
-        ENHANCED_COPY_AVAILABLE = True
-        CPP_ENGINE_AVAILABLE = False
-        print("✓ Enhanced copy available: Python engine only")
-    except ImportError:
-        ENHANCED_COPY_AVAILABLE = False
-        CPP_ENGINE_AVAILABLE = False
-        print("✗ Enhanced copy not available")
+    print(f"✓ Enhanced copy available: C++ engine {'✓' if CPP_ENGINE_AVAILABLE else '✗'}")
+    print("DEBUG: Using C++ enhanced copy engine exclusively")
+except ImportError as e:
+    print(f"DEBUG: C++ engine import failed: {e}")
+    ENHANCED_COPY_AVAILABLE = False
+    print("✗ No enhanced copy engines available")
 
 
 class FileOperationsHandler(QObject):
@@ -51,8 +43,8 @@ class FileOperationsHandler(QObject):
         # Initialize enhanced copy engine if available
         if ENHANCED_COPY_AVAILABLE:
             try:
-                self.enhanced_engine = CppEnhancedCopyEngine() if CPP_ENGINE_AVAILABLE else EnhancedFileCopy()
-                print(f"✓ Enhanced copy engine initialized: {'C++' if CPP_ENGINE_AVAILABLE else 'Python'}")
+                self.enhanced_engine = CppEnhancedCopyEngine()
+                print(f"✓ Enhanced copy engine initialized: C++")
             except Exception as e:
                 print(f"Warning: Failed to initialize enhanced copy engine: {e}")
                 self.enhanced_engine = None
@@ -317,7 +309,7 @@ class FileOperationsHandler(QObject):
             optimal_params = self.enhanced_engine.get_optimal_parameters()
             
             return {
-                "engine_type": "C++" if CPP_ENGINE_AVAILABLE else "Python",
+                "engine_type": "C++",
                 "bandwidth_mbps": bandwidth.get("avg_speed", 0),
                 "write_speed_mbps": bandwidth.get("write_speed", 0),
                 "read_speed_mbps": bandwidth.get("read_speed", 0),

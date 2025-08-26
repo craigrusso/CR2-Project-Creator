@@ -11,6 +11,38 @@
 
 namespace EngineCore {
 
+// Event payload structs
+struct FileStartedPayload {
+    const char* file_id;
+    const char* filename;
+    size_t total_bytes;
+};
+
+struct FileCompletedPayload {
+    const char* file_id;
+    const char* filename;
+    size_t bytes_copied;
+    size_t total_bytes;
+    bool skipped;
+};
+
+struct JobProgressPayload {
+    const char* job_id;
+    size_t bytes_copied;
+    size_t total_bytes;
+    size_t files_completed;
+    size_t total_files;
+    double elapsed;
+    double speed_mbps;
+};
+
+struct FileProgressPayload {
+    const char* filename;
+    size_t bytes_copied;
+    size_t total_bytes;
+    double progress_percent;
+};
+
 EnhancedHighPerfTransferEngine::EnhancedHighPerfTransferEngine() = default;
 
 void EnhancedHighPerfTransferEngine::set_event_sink(std::function<void(const std::string&, const void*)> sink) {
@@ -76,8 +108,8 @@ DataStructures::CopyStats EnhancedHighPerfTransferEngine::copy_files(const DataS
                     const char* warning_type;
                     const char* message;
                 };
-                DestWarningPayload warning_payload = {dest.c_str(), "disk_full", error_msg.c_str()};
-                emit_event("dest.warning", &warning_payload);
+                DestWarningPayload* warning_payload = new DestWarningPayload{dest.c_str(), "disk_full", error_msg.c_str()};
+                emit_event("dest.warning", warning_payload);
             } else {
                 valid_destinations.push_back(dest);
                 std::cout << "DEBUG: Destination has sufficient space: " << dest << std::endl;
@@ -106,8 +138,8 @@ DataStructures::CopyStats EnhancedHighPerfTransferEngine::copy_files(const DataS
             size_t total_bytes;
             size_t total_files;
         };
-        JobStartedPayload job_started_payload = {"", stats_.total_bytes, static_cast<size_t>(stats_.total_files)};
-        emit_event("job.started", &job_started_payload);
+        JobStartedPayload* job_started_payload = new JobStartedPayload{"", stats_.total_bytes, static_cast<size_t>(stats_.total_files)};
+        emit_event("job.started", job_started_payload);
         
         // Emit job progress event with initial progress data
         struct JobProgressPayload {
@@ -119,7 +151,7 @@ DataStructures::CopyStats EnhancedHighPerfTransferEngine::copy_files(const DataS
             double elapsed;
             double speed_mbps;
         };
-        JobProgressPayload initial_progress = {
+        JobProgressPayload* initial_progress = new JobProgressPayload{
             "",  // job_id
             0,   // bytes_copied (start at 0)
             stats_.total_bytes,
@@ -128,7 +160,7 @@ DataStructures::CopyStats EnhancedHighPerfTransferEngine::copy_files(const DataS
             0.0, // elapsed (start at 0)
             0.0  // speed_mbps (start at 0)
         };
-        emit_event("job.progress", &initial_progress);
+        emit_event("job.progress", initial_progress);
         
         // Determine copy strategy based on valid destination count
         if (valid_destinations.size() == 1) {
@@ -150,8 +182,8 @@ DataStructures::CopyStats EnhancedHighPerfTransferEngine::copy_files(const DataS
             double elapsed;
             double speed_mbps;
         };
-        JobCompletedPayload job_completed_payload = {"", stats_.copied_bytes, stats_.total_bytes, stats_.duration(), stats_.speed_mbps};
-        emit_event("job.completed", &job_completed_payload);
+        JobCompletedPayload* job_completed_payload = new JobCompletedPayload{"", stats_.copied_bytes, stats_.total_bytes, stats_.duration(), stats_.speed_mbps};
+        emit_event("job.completed", job_completed_payload);
         
         // Generate verification reports if requested - async to avoid blocking
         if (job.generate_verification_report) {
@@ -515,44 +547,22 @@ void EnhancedHighPerfTransferEngine::copy_to_single_destination(const DataStruct
         size_t file_size = std::filesystem::file_size(file);
         
         // Emit file started event with file context
-        struct FileStartedPayload {
-            const char* file_id;
-            const char* filename;
-            size_t total_bytes;
-        };
-        FileStartedPayload file_started_payload = {file_id.c_str(), filename.c_str(), file_size};
-        emit_event("file.started", &file_started_payload);
+        FileStartedPayload* file_started_payload = new FileStartedPayload{file_id.c_str(), filename.c_str(), file_size};
+        emit_event("file.started", file_started_payload);
         
         for (const auto& dest : job.destination_paths) {
             if (copy_single_file(job, file, dest)) {
                 inc_files();
                 
                 // Emit file completed event with file context
-                struct FileCompletedPayload {
-                    const char* file_id;
-                    const char* filename;
-                    size_t bytes_copied;
-                    size_t total_bytes;
-                    bool skipped;
-                };
-                FileCompletedPayload file_completed_payload = {file_id.c_str(), filename.c_str(), file_size, file_size, false};
-                emit_event("file.completed", &file_completed_payload);
+                FileCompletedPayload* file_completed_payload = new FileCompletedPayload{file_id.c_str(), filename.c_str(), file_size, file_size, false};
+                emit_event("file.completed", file_completed_payload);
             }
         }
         
         files_processed_++;
         
         // Emit job progress update after each file completion
-        struct JobProgressPayload {
-            const char* job_id;
-            size_t bytes_copied;
-            size_t total_bytes;
-            size_t files_completed;
-            size_t total_files;
-            double elapsed;
-            double speed_mbps;
-        };
-        
         // Calculate current progress
         auto current_time = std::chrono::steady_clock::now();
         // Calculate elapsed time directly from stored start_time (which is in seconds)
@@ -562,7 +572,7 @@ void EnhancedHighPerfTransferEngine::copy_to_single_destination(const DataStruct
             current_speed_mbps = (stats_.copied_bytes / (1024.0 * 1024.0)) / elapsed_seconds;
         }
         
-        JobProgressPayload progress_payload = {
+        JobProgressPayload* progress_payload = new JobProgressPayload{
             "",  // job_id (will be filled by Python side)
             stats_.copied_bytes,
             0,   // total_bytes (will be filled by Python side) 
@@ -571,7 +581,7 @@ void EnhancedHighPerfTransferEngine::copy_to_single_destination(const DataStruct
             elapsed_seconds,
             current_speed_mbps
         };
-        emit_event("job.progress", &progress_payload);
+        emit_event("job.progress", progress_payload);
     }
 }
 
@@ -634,26 +644,16 @@ void EnhancedHighPerfTransferEngine::copy_to_multiple_destinations_with_destinat
         std::cout << "DEBUG: Starting parallel copy of " << filename << " (" << file_size << " bytes) to " << valid_destinations.size() << " destinations" << std::endl;
         
         // Emit file started event with file context
-        struct FileStartedPayload {
-            const char* file_id;
-            const char* filename;
-            size_t total_bytes;
-        };
-        FileStartedPayload file_started_payload = {file_id.c_str(), filename.c_str(), file_size};
-        emit_event("file.started", &file_started_payload);
+        FileStartedPayload* file_started_payload = new FileStartedPayload{file_id.c_str(), filename.c_str(), file_size};
+        emit_event("file.started", file_started_payload);
         
         // Use parallel multi-destination copy (read once, write to all in parallel)
         if (copy_file_parallel_multi_dest(job, file, valid_destinations)) {
             files_processed_++;
             
             // Emit file completed event
-            struct FileCompletedPayload {
-                const char* file_id;
-                const char* filename;
-                size_t file_size;
-            };
-            FileCompletedPayload file_completed_payload = {file_id.c_str(), filename.c_str(), file_size};
-            emit_event("file.completed", &file_completed_payload);
+            FileCompletedPayload* file_completed_payload = new FileCompletedPayload{file_id.c_str(), filename.c_str(), file_size};
+            emit_event("file.completed", file_completed_payload);
             
             // Emit per-destination progress events
             {
@@ -719,7 +719,7 @@ void EnhancedHighPerfTransferEngine::copy_to_multiple_destinations_with_destinat
                 current_speed = (stats_.copied_bytes / (1024.0 * 1024.0)) / current_elapsed;
             }
             
-            JobProgressPayload progress_payload = {
+            JobProgressPayload* progress_payload = new JobProgressPayload{
                 "",  // job_id
                 stats_.copied_bytes,
                 stats_.total_bytes,
@@ -728,7 +728,7 @@ void EnhancedHighPerfTransferEngine::copy_to_multiple_destinations_with_destinat
                 current_elapsed,
                 current_speed
             };
-            emit_event("job.progress", &progress_payload);
+            emit_event("job.progress", progress_payload);
         }
     }
 }
@@ -747,13 +747,8 @@ void EnhancedHighPerfTransferEngine::copy_to_multiple_destinations_fanout(const 
         size_t file_size = std::filesystem::file_size(file);
         
         // Emit file started event with file context
-        struct FileStartedPayload {
-            const char* file_id;
-            const char* filename;
-            size_t total_bytes;
-        };
-        FileStartedPayload file_started_payload = {file_id.c_str(), filename.c_str(), file_size};
-        emit_event("file.started", &file_started_payload);
+        FileStartedPayload* file_started_payload = new FileStartedPayload{file_id.c_str(), filename.c_str(), file_size};
+        emit_event("file.started", file_started_payload);
         
         // Use the copy_file_to_many function for efficient fan-out
         std::vector<DataStructures::TunedParams> tuned_params;
@@ -772,15 +767,8 @@ void EnhancedHighPerfTransferEngine::copy_to_multiple_destinations_fanout(const 
                 inc_files();
                 
                 // Emit file completed event with file context
-                struct FileCompletedPayload {
-                    const char* file_id;
-                    const char* filename;
-                    size_t bytes_copied;
-                    size_t total_bytes;
-                    bool skipped;
-                };
-                FileCompletedPayload file_completed_payload = {file_id.c_str(), filename.c_str(), file_size, file_size, false};
-                emit_event("file.completed", &file_completed_payload);
+                FileCompletedPayload* file_completed_payload = new FileCompletedPayload{file_id.c_str(), filename.c_str(), file_size, file_size, false};
+                emit_event("file.completed", file_completed_payload);
             }
         }
         
@@ -812,6 +800,8 @@ bool EnhancedHighPerfTransferEngine::copy_single_file(const DataStructures::Copy
         std::filesystem::path source_file = std::filesystem::path(source_path).filename();
         std::filesystem::path final_dest_path = dest_dir / source_file;
         std::cout << "DEBUG: Final destination path: " << final_dest_path.string() << std::endl;
+        
+        // Note: Removed std::filesystem::equivalent check as it doesn't work on external drives
         
         // Open source file for reading
         std::ifstream source_file_stream(source_path, std::ios::binary);
@@ -859,26 +849,16 @@ bool EnhancedHighPerfTransferEngine::copy_single_file(const DataStructures::Copy
                 // Emit progress updates every 1MB
                 if (total_copied - last_progress_update >= progress_update_interval) {
                     // Emit file progress event
-                    struct FileProgressPayload {
-                        const char* file_id;
-                        const char* filename;
-                        size_t bytes_copied;
-                        size_t total_bytes;
-                        size_t progress_percent;
-                    };
-                    
-                    size_t progress_percent = (total_copied * 100) / file_size;
-                    FileProgressPayload progress_payload = {
-                        file_id.c_str(),
+                    FileProgressPayload* progress_payload = new FileProgressPayload{
                         filename.c_str(),
                         total_copied,
                         file_size,
-                        progress_percent
+                        static_cast<double>(total_copied) / static_cast<double>(file_size) * 100.0
                     };
-                    emit_event("file.progress", &progress_payload);
+                    emit_event("file.progress", progress_payload);
                     
                     last_progress_update = total_copied;
-                    std::cout << "DEBUG: File progress: " << progress_percent << "% (" << total_copied << "/" << file_size << " bytes)" << std::endl;
+                    std::cout << "DEBUG: File progress: " << progress_payload->progress_percent << "% (" << total_copied << "/" << file_size << " bytes)" << std::endl;
                 }
             }
         }
@@ -960,7 +940,7 @@ void EnhancedHighPerfTransferEngine::emit_dest_progress(const DataStructures::De
 
 void EnhancedHighPerfTransferEngine::emit_job_progress(size_t bytes_copied, size_t total_bytes, int files_completed, int total_files, double elapsed, double speed_mbps) {
     if (event_sink_) {
-        // For now, still emit as PyCapsule until we can implement Python dict creation
+        // Allocate payload on heap to ensure it persists
         struct JobProgressPayload {
             size_t bytes_copied;
             size_t total_bytes;
@@ -970,21 +950,23 @@ void EnhancedHighPerfTransferEngine::emit_job_progress(size_t bytes_copied, size
             double speed_mbps;
         };
         
-        JobProgressPayload payload = {bytes_copied, total_bytes, files_completed, total_files, elapsed, speed_mbps};
-        emit_event("job.progress", &payload);
+        JobProgressPayload* payload = new JobProgressPayload{bytes_copied, total_bytes, files_completed, total_files, elapsed, speed_mbps};
+        emit_event("job.progress", payload);
+        // Note: Python side will be responsible for freeing this memory
     }
 }
 
 void EnhancedHighPerfTransferEngine::emit_file_completed(const std::string& filename, size_t bytes) {
     if (event_sink_) {
-        // For now, still emit as PyCapsule until we can implement Python dict creation
+        // Allocate payload on heap to ensure it persists
         struct FileCompletedPayload {
             const char* filename;
             size_t bytes;
         };
         
-        FileCompletedPayload payload = {filename.c_str(), bytes};
-        emit_event("file.completed", &payload);
+        FileCompletedPayload* payload = new FileCompletedPayload{filename.c_str(), bytes};
+        emit_event("file.completed", payload);
+        // Note: Python side will be responsible for freeing this memory
     }
 }
 

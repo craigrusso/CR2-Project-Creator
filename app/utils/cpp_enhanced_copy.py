@@ -52,19 +52,7 @@ try:
 except Exception as e:
     CPP_ENGINE_AVAILABLE = False
     cpp_engine = None
-    print(f"Warning: C++ enhanced copy engine not available, falling back to Python implementation: {e}")
-
-# Import the Python fallback
-try:
-    from app.utils.enhanced_file_copy import (
-        CopyStats as PyCopyStats, 
-        CopyOptions as PyCopyOptions,
-        EnhancedFileCopy as PyEnhancedFileCopy
-    )
-    PY_ENGINE_AVAILABLE = True
-except ImportError:
-    PY_ENGINE_AVAILABLE = False
-    print("Warning: Python enhanced copy engine not available")
+    print(f"Warning: C++ enhanced copy engine not available: {e}")
 
 @dataclass
 class CopyStats:
@@ -98,104 +86,82 @@ class CopyOptions:
     use_direct_io: Union[bool, str] = "auto"  # "auto", True, or False
     verify_integrity: bool = False  # FAST by default; user can enable
     hash_algorithm: str = "xxhash64"
-    mtu_size: int = 0  # 0 = auto-detect
-    socket_buffer_size: int = 0  # 0 = auto-detect
-    adaptive_parameters: bool = True
-    large_file_threshold: int = 256 * 1024 * 1024  # 256MB (safer)
+    mtu_size: int = 1500  # Network MTU size
+    socket_buffer_size: int = 1024 * 1024  # 1MB socket buffer
+    adaptive_parameters: bool = True  # Auto-tune based on paths
+    large_file_threshold: int = 100 * 1024 * 1024  # 100MB
     progress_callback: Optional[Callable] = None
-    # NEW: Separate concurrency knobs
-    files_in_flight: int = 1  # files copying at once (1 for USB/TB, 2+ for networks/NVMe)
-    ranges_per_file: int = 1  # parallel ranges inside one file (1 for USB/TB, 2+ for fast media)
 
 class PathAnalyzer:
-    """Analyze paths to determine optimal copy parameters"""
+    """Analyzes file paths to determine optimal copy parameters"""
     
     @staticmethod
     def is_usb_or_thunderbolt(path: str) -> bool:
-        """Detect if path is on USB or Thunderbolt device"""
+        """Check if path is on USB or Thunderbolt device"""
         try:
+            path_obj = Path(path)
             if platform.system() == "Darwin":  # macOS
-                # Check if path contains /Volumes/ (external drives)
-                if "/Volumes/" in path:
+                # Check for /Volumes/ which typically indicates external drives
+                if "/Volumes/" in str(path_obj.absolute()):
                     return True
-                # Could add more sophisticated detection here
+                # Check for USB/Thunderbolt device paths
+                if any(part.startswith("USB") or part.startswith("Thunderbolt") 
+                      for part in path_obj.parts):
+                    return True
             elif platform.system() == "Windows":
-                # Check for removable drives (D:, E:, etc.)
-                if len(path) >= 2 and path[1] == ':' and path[0] in 'DEFGHIJKLMNOPQRSTUVWXYZ':
-                    # This is a simple heuristic - could be improved
-                    return True
-            # Linux: could check /proc/mounts for USB devices
+                # Windows USB drive detection
+                if len(path) >= 2 and path[1] == ":":
+                    drive = path[0].upper()
+                    # This is a simplified check - in practice you'd use WMI
+                    return False  # Assume not USB for now
             return False
-        except:
+        except Exception:
             return False
     
     @staticmethod
     def is_network_path(path: str) -> bool:
-        """Detect if path is a network location"""
+        """Check if path is a network location"""
         try:
-            # Common network path patterns
-            network_patterns = [
-                "//", "\\\\",  # SMB/CIFS
-                "smb://", "nfs://", "ftp://", "sftp://",  # Various protocols
-                "/mnt/", "/media/",  # Linux mount points
-            ]
-            
-            path_lower = path.lower()
-            return any(pattern in path_lower for pattern in network_patterns)
-        except:
+            path_obj = Path(path)
+            # Check for common network path patterns
+            if platform.system() == "Darwin":  # macOS
+                return any(part.startswith("smb://") or part.startswith("afp://") 
+                          for part in path_obj.parts)
+            elif platform.system() == "Windows":
+                return path.startswith("\\\\") or ":" in path and "\\" in path
+            return False
+        except Exception:
             return False
     
     @staticmethod
     def is_nvme_path(path: str) -> bool:
-        """Detect if path is on NVMe storage (heuristic)"""
+        """Check if path is on NVMe storage"""
         try:
+            path_obj = Path(path)
             if platform.system() == "Darwin":  # macOS
-                # Check for common NVMe mount points
-                nvme_patterns = ["/System/", "/Applications/", "/Users/"]
-                return any(pattern in path for pattern in nvme_patterns)
+                # Check for NVMe device paths
+                if any("nvme" in part.lower() for part in path_obj.parts):
+                    return True
+                # Check for SSD paths (simplified)
+                return False
             elif platform.system() == "Windows":
-                # Usually C: drive on modern systems
-                return path.startswith("C:")
-            else:  # Linux
-                # Check for /dev/nvme devices
-                return "/dev/nvme" in path or "/nvme" in path
-        except:
+                # Windows NVMe detection would require WMI queries
+                return False
+            return False
+        except Exception:
             return False
 
 class CppEnhancedCopyEngine:
-    """C++ Enhanced Copy Engine with Python fallback"""
+    """C++ Enhanced Copy Engine - C++ ONLY, NO PYTHON FALLBACK"""
     
     def __init__(self):
-        self.cpp_engine = None
-        self.py_engine = None
-        
-        # Check if C++ engine is available
-        cpp_available = globals().get('CPP_ENGINE_AVAILABLE', False)
-        py_available = globals().get('PY_ENGINE_AVAILABLE', False)
-        
-        if cpp_available:
-            try:
-                self.cpp_engine = cpp_engine.EnhancedHighPerfTransferEngine()
-                print("✓ C++ Enhanced Copy Engine loaded successfully")
-            except Exception as e:
-                print(f"Warning: Failed to initialize C++ engine: {e}")
-                cpp_available = False
-        
-        if not cpp_available and py_available:
-            try:
-                self.py_engine = PyEnhancedFileCopy()
-                print("✓ Using Python Enhanced Copy Engine as fallback")
-            except Exception as e:
-                print(f"Warning: Failed to initialize Python engine: {e}")
-                py_available = False
-        
-        if not cpp_available and not py_available:
-            print("Warning: No enhanced copy engines available")
+        self.cpp_engine = cpp_engine if CPP_ENGINE_AVAILABLE else None
+        if not self.cpp_engine:
+            raise RuntimeError("C++ engine not available - this is the only engine")
     
     def _auto_tune_parameters(self, source_paths: List[str], destination_paths: List[str], 
                              options: CopyOptions) -> CopyOptions:
-        """Auto-tune parameters based on source and destination paths"""
-        # Only copy attributes that exist in the target CopyOptions class
+        """Auto-tune parameters based on path analysis"""
         tuned_options = CopyOptions()
         
         # Copy basic attributes
@@ -264,7 +230,7 @@ class CppEnhancedCopyEngine:
     def copy_files(self, source_paths: List[str], destination_paths: List[str], 
                    options: Optional[CopyOptions] = None) -> CopyStats:
         """
-        Copy files using the best available engine with auto-tuning
+        Copy files using C++ engine ONLY - NO FALLBACK
         
         Args:
             source_paths: List of source file/directory paths
@@ -281,19 +247,18 @@ class CppEnhancedCopyEngine:
         if options.adaptive_parameters:
             options = self._auto_tune_parameters(source_paths, destination_paths, options)
         
-        if self.cpp_engine:
-            return self._copy_with_cpp_engine(source_paths, destination_paths, options)
-        elif self.py_engine:
-            return self._copy_with_py_engine(source_paths, destination_paths, options)
-        else:
-            # No engines available, return error stats
+        # C++ ENGINE ONLY - NO FALLBACK
+        if not self.cpp_engine:
             stats = CopyStats()
-            stats.errors.append("No enhanced copy engines available")
+            stats.errors.append("C++ engine not available - this is the only engine")
             return stats
+        
+        print("DEBUG: Using C++ engine exclusively - no fallback")
+        return self._copy_with_cpp_engine(source_paths, destination_paths, options)
     
     def _copy_with_cpp_engine(self, source_paths: List[str], destination_paths: List[str], 
                              options: CopyOptions) -> CopyStats:
-        """Copy using C++ engine"""
+        """Copy using C++ engine ONLY"""
         try:
             # Convert to C++ job
             cpp_job = cpp_engine.CopyJob()
@@ -346,173 +311,29 @@ class CppEnhancedCopyEngine:
             return stats
             
         except Exception as e:
-            print(f"C++ engine failed, falling back to Python: {e}")
-            return self._copy_with_py_engine(source_paths, destination_paths, options)
-    
-    def _copy_with_py_engine(self, source_paths: List[str], destination_paths: List[str], 
-                            options: CopyOptions) -> CopyStats:
-        """Copy using Python engine"""
-        try:
-            # Convert to Python options
-            py_options = PyCopyOptions(
-                block_size=options.block_size,
-                thread_count=options.thread_count,
-                use_direct_io=bool(options.use_direct_io),  # Convert to bool
-                verify_integrity=options.verify_integrity,
-                hash_algorithm=options.hash_algorithm,
-                mtu_size=options.mtu_size,
-                socket_buffer_size=options.socket_buffer_size,
-                adaptive_parameters=options.adaptive_parameters,
-                large_file_threshold=options.large_file_threshold
-            )
-            
-            # Perform copy
-            py_stats = self.py_engine.copy_files(source_paths, destination_paths, py_options)
-            
-            # Convert to our stats format
-            stats = CopyStats(
-                total_files=py_stats.total_files,
-                copied_files=py_stats.copied_files,
-                total_bytes=py_stats.total_bytes,
-                copied_bytes=py_stats.copied_bytes,
-                start_time=py_stats.start_time,
-                end_time=py_stats.end_time,
-                speed_mbps=py_stats.speed_mbps,
-                errors=py_stats.errors,
-                hash_verifications=py_stats.hash_verifications,
-                hash_failures=py_stats.hash_failures
-            )
-            
-            return stats
-            
-        except Exception as e:
-            print(f"Python engine also failed: {e}")
-            # Return empty stats with error
+            print(f"C++ engine failed: {e}")
+            # NO FALLBACK - C++ ENGINE ONLY
             stats = CopyStats()
-            stats.errors.append(f"Both engines failed: {e}")
+            stats.errors.append(f"C++ engine failed: {e}")
             return stats
-    
-    def test_bandwidth(self) -> Dict[str, float]:
-        """Test disk bandwidth using the best available method"""
-        if self.cpp_engine:
-            try:
-                bandwidth_test = cpp_engine.test_disk_bandwidth("")  # Pass empty string as argument
-                return {
-                    "write_speed": bandwidth_test.write_speed,
-                    "read_speed": bandwidth_test.read_speed,
-                    "avg_speed": bandwidth_test.avg_speed
-                }
-            except Exception as e:
-                print(f"C++ bandwidth test failed: {e}")
-        
-        # Fallback to Python
-        if self.py_engine:
-            try:
-                from app.utils.enhanced_file_copy import BandwidthDetector
-                bandwidth_test = BandwidthDetector.test_disk_bandwidth()
-                return {
-                    "write_speed": bandwidth_test["write_speed"],
-                    "read_speed": bandwidth_test["read_speed"],
-                    "avg_speed": bandwidth_test["avg_speed"]
-                }
-            except Exception as e:
-                print(f"Python bandwidth test failed: {e}")
-        
-        # Default fallback
-        return {"write_speed": 100.0, "read_speed": 100.0, "avg_speed": 100.0}
-    
-    def get_optimal_parameters(self, bandwidth_mbps: float = 0.0) -> Dict[str, Any]:
-        """Get optimal parameters based on bandwidth"""
-        if self.cpp_engine:
-            try:
-                return cpp_engine.get_optimal_parameters(bandwidth_mbps)
-            except Exception as e:
-                print(f"C++ optimal parameters failed: {e}")
-        
-        # Fallback to Python
-        if self.py_engine:
-            try:
-                from app.utils.enhanced_file_copy import BandwidthDetector
-                return BandwidthDetector.get_optimal_parameters(bandwidth_mbps)
-            except Exception as e:
-                print(f"Python optimal parameters failed: {e}")
-        
-        # Default fallback with safer defaults
-        return {
-            "block_size": 4 * 1024 * 1024,  # 4MB default
-            "thread_count": 2,  # Conservative default
-            "use_direct_io": False,  # Buffered by default
-            "large_file_threshold": 256 * 1024 * 1024  # 256MB
-        }
-    
-    def calculate_file_hash(self, file_path: str, algorithm: str = "xxhash64") -> str:
-        """Calculate file hash using the best available method"""
-        if self.cpp_engine:
-            try:
-                return cpp_engine.calculate_file_hash(file_path, algorithm)
-            except Exception as e:
-                print(f"C++ hash calculation failed: {e}")
-        
-        # Fallback to Python
-        if self.py_engine:
-            try:
-                from app.utils.enhanced_file_copy import HashCalculator
-                return HashCalculator.calculate_file_hash(file_path, algorithm)
-            except Exception as e:
-                print(f"Python hash calculation failed: {e}")
-        
-        return ""
 
-# Convenience functions
-def copy_files(source_paths: List[str], destination_paths: List[str], **kwargs) -> CopyStats:
-    """Copy files using the best available engine with auto-tuning"""
+# Global functions for backward compatibility
+def copy_files(source_paths: List[str], destination_paths: List[str], 
+               options: Optional[CopyOptions] = None) -> CopyStats:
+    """Copy files using C++ engine only"""
     engine = CppEnhancedCopyEngine()
-    
-    # Filter out unsupported parameters for Python fallback
-    supported_kwargs = {k: v for k, v in kwargs.items() 
-                       if k in ['block_size', 'thread_count', 'use_direct_io', 
-                               'verify_integrity', 'hash_algorithm', 'progress_callback',
-                               'adaptive_parameters', 'large_file_threshold', 'files_in_flight', 'ranges_per_file']}
-    
-    options = CopyOptions(**supported_kwargs)
     return engine.copy_files(source_paths, destination_paths, options)
 
-def copy_file(source_path: str, destination_path: str, **kwargs) -> CopyStats:
-    """Copy a single file using the best available engine with auto-tuning"""
-    # For single file copy, the destination should be a file path, not a directory
-    # The C++ engine expects destination_paths to be directories, so we need to extract the directory
-    if os.path.isfile(source_path):
-        # Single file copy - destination should be the directory containing the file
-        dest_dir = os.path.dirname(destination_path)
-        # The C++ engine will copy the file to the destination directory with the same name
-        return copy_files([source_path], [dest_dir], **kwargs)
-    else:
-        # Directory copy
-        return copy_files([source_path], [destination_path], **kwargs)
+def copy_file(source_path: str, destination_path: str, 
+              options: Optional[CopyOptions] = None) -> CopyStats:
+    """Copy a single file using C++ engine only"""
+    return copy_files([source_path], [destination_path], options)
 
-def copy_directory(source_dir: str, destination_dir: str, **kwargs) -> CopyStats:
-    """Copy a directory using the best available engine with auto-tuning"""
-    return copy_files([source_dir], [destination_dir], **kwargs)
-
-def test_bandwidth() -> Dict[str, float]:
-    """Test disk bandwidth"""
-    engine = CppEnhancedCopyEngine()
-    return engine.test_bandwidth()
-
-def get_optimal_parameters(bandwidth_mbps: float = 0.0) -> Dict[str, Any]:
-    """Get optimal parameters based on bandwidth"""
-    engine = CppEnhancedCopyEngine()
-    return engine.get_optimal_parameters(bandwidth_mbps)
-
-def calculate_file_hash(file_path: str, algorithm: str = "xxhash64") -> str:
-    """Calculate file hash"""
-    engine = CppEnhancedCopyEngine()
-    return engine.calculate_file_hash(file_path, algorithm)
-
-# Export the main engine class
-__all__ = [
-    'CppEnhancedCopyEngine', 'CopyStats', 'CopyOptions', 'PathAnalyzer',
-    'copy_files', 'copy_file', 'copy_directory',
-    'test_bandwidth', 'get_optimal_parameters', 'calculate_file_hash',
-    'CPP_ENGINE_AVAILABLE'
-]
+def copy_directory(source_dir: str, destination_dir: str, 
+                   options: Optional[CopyOptions] = None) -> CopyStats:
+    """Copy a directory using C++ engine only"""
+    # This would need to be implemented to scan the directory first
+    # For now, just return an error
+    stats = CopyStats()
+    stats.errors.append("Directory copy not implemented - use copy_files with file lists")
+    return stats

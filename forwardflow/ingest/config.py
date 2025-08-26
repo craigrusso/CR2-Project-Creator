@@ -25,7 +25,7 @@ class IngestDefaults:
     per_file_concurrency: int = 4  # Increased from 2
     stream_concurrency: int = 16   # Increased from 8
     min_multistream_size_bytes: int = 100 * 1024 * 1024  # Reduced to 100 MiB for more files
-    io_chunk_size_bytes: int = 256 * 1024 * 1024  # Increased to 128 MiB for much better performance
+    io_chunk_size_bytes: int = 1024 * 1024 * 1024  # Increased to 1GB for USB 3.1 optimization
     verify_algorithm: str = "xxh64"  # Phase 1: non-cryptographic
     
     # NEW: Memory and cache configuration
