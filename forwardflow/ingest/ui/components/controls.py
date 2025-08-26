@@ -249,9 +249,11 @@ class ControlSection(QWidget):
             
             print("DEBUG: C++ engine is being used")
             
-            # Store the engine reference
+            # Store the engine reference and job spec
             root.current_job = engine
+            root.current_job_spec = job
             print("DEBUG: Engine stored in root.current_job")
+            print("DEBUG: Job spec stored in root.current_job_spec")
             
             print("DEBUG: Starting engine with job...")
             try:
@@ -355,10 +357,32 @@ class ControlSection(QWidget):
                     # Import the transfer log writer
                     from forwardflow.ingest.utils.transfer_log_writer import write_transfer_log
                     
-                    # Get job info for the log
-                    job_id = getattr(root, 'current_job_id', 'unknown')
-                    source_path = getattr(root, 'source_path', 'unknown')
-                    destinations = getattr(root, 'destinations', [])
+                    # Get job info for the log - try to get from current job first
+                    job_id = 'unknown'
+                    source_path = 'unknown'
+                    destinations = []
+                    
+                    # Try to get job info from the current job object
+                    if hasattr(root, 'current_job') and root.current_job:
+                        try:
+                            # If it's a C++ engine, try to get job info from it
+                            if hasattr(root.current_job, 'get_current_job'):
+                                current_job = root.current_job.get_current_job()
+                                if current_job:
+                                    job_id = getattr(current_job, 'job_id', 'unknown')
+                                    source_path = getattr(current_job, 'source_paths', ['unknown'])[0] if hasattr(current_job, 'source_paths') and current_job.source_paths else 'unknown'
+                                    destinations = getattr(current_job, 'destination_paths', [])
+                        except Exception as e:
+                            print(f"DEBUG: Could not get job info from current job: {e}")
+                    
+                    # Fallback to stored job info if available
+                    if job_id == 'unknown' and hasattr(root, 'current_job_spec'):
+                        job_spec = root.current_job_spec
+                        job_id = getattr(job_spec, 'job_id', 'unknown')
+                        source_path = getattr(job_spec, 'source_root', 'unknown')
+                        destinations = getattr(job_spec, 'destination_roots', [])
+                    
+                    print(f"DEBUG: Writing log with job_id={job_id}, source={source_path}, destinations={destinations}")
                     
                     # Write the log
                     log_path = write_transfer_log(
@@ -381,6 +405,8 @@ class ControlSection(QWidget):
                     
                 except Exception as e:
                     print(f"DEBUG: Error writing transfer log: {e}")
+                    import traceback
+                    traceback.print_exc()
                     # Still re-enable controls even if log writing fails
                     def reenable_controls():
                         self.reenable_controls()
@@ -390,6 +416,7 @@ class ControlSection(QWidget):
                     QTimer.singleShot(0, reenable_controls)
             
             # Start log writing in background thread
+            import threading
             log_thread = threading.Thread(target=write_transfer_log, daemon=True)
             log_thread.start()
             
