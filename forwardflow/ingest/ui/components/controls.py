@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 
 try:
     from app.ui.color_scheme_pyqt import (
@@ -224,25 +224,23 @@ class ControlSection(QWidget):
         print(f"DEBUG: Thread ID: {threading.current_thread().ident}")
         
         try:
-            # Use bridge emitter via engine wrapper
-            print("DEBUG: Creating event sink...")
-            from forwardflow.ingest.ui.qt_safe_bridge import emit_event
-            # Create a callable function that the C++ engine expects
-            def event_sink(event_type, payload):
-                # Convert PyCapsule to dict if needed
-                if hasattr(payload, '__class__') and 'PyCapsule' in str(payload.__class__):
-                    # For now, just log the event type and skip the payload
-                    print(f"DEBUG: C++ event: {event_type} (PyCapsule payload)")
-                    return
-                emit_event(event_type, payload)
-            print("DEBUG: Event sink created")
-            
-            # Get the C++ engine instance
+            # Get the C++ engine instance with proper event sink
             print("DEBUG: Getting C++ engine instance...")
             try:
                 from ..engine_manager import get_engine
+                from ..cpp_event_sink import CppEventSink
+                
+                # Create event sink first
+                event_sink = CppEventSink()
+                
+                # Get engine with event sink
                 engine = get_engine(sink=event_sink)
                 print(f"DEBUG: C++ engine retrieved: {engine}")
+                
+                # Store event sink reference in root for report generation
+                root._cpp_event_sink = event_sink
+                print("DEBUG: Event sink stored in root for report generation")
+                
             except Exception as e:
                 print(f"DEBUG: Failed to get C++ engine: {e}")
                 raise
@@ -260,34 +258,65 @@ class ControlSection(QWidget):
                 # Import C++ engine module to access CopyJob class
                 import sys
                 import os
+                
+                # Add the build/lib path to sys.path if not already there
                 current_dir = os.path.dirname(os.path.abspath(__file__))
-                build_lib_path = os.path.join(current_dir, "..", "..", "engines", "build", "lib")
+                build_lib_path = os.path.join(current_dir, "..", "..", "engines", "High_perf")
                 if build_lib_path not in sys.path:
                     sys.path.insert(0, build_lib_path)
                 
                 import enhanced_high_perf_engine as cpp_engine
+                print("DEBUG: C++ engine module imported successfully")
                 
-                # Convert JobSpec to CopyJob for C++ engine
-                cpp_job = cpp_engine.CopyJob()
-                cpp_job.source_paths = [job.source_root]
-                cpp_job.destination_paths = job.destination_roots
-                cpp_job.job_id = job.job_id
+                # Create CopyJob object for the C++ engine
+                copy_job = cpp_engine.CopyJob()
+                copy_job.source_paths = [job.source_root]
+                copy_job.destination_paths = job.destination_roots
+                copy_job.job_id = job.job_id
+                copy_job.files_in_flight = job.options.per_file_concurrency
+                copy_job.ranges_per_file = job.options.stream_concurrency
+                copy_job.verify_integrity = job.options.verify_mode != 'NONE'
+                copy_job.hash_algorithm = job.options.verify_algorithm
+                copy_job.generate_verification_report = job.options.generate_verification_report
                 
-                # Set concurrency settings
-                cpp_job.files_in_flight = job.options.per_file_concurrency
-                cpp_job.ranges_per_file = job.options.stream_concurrency
+                # Set preset-specific parameters
+                if job.options.preset == 'FAST':
+                    copy_job.use_direct_io = True
+                    copy_job.block_size = 4 * 1024 * 1024  # 4MB blocks
+                elif job.options.preset == 'BALANCED':
+                    copy_job.use_direct_io = True
+                    copy_job.block_size = 2 * 1024 * 1024  # 2MB blocks
+                else:  # STRICT
+                    copy_job.use_direct_io = True
+                    copy_job.block_size = 1 * 1024 * 1024  # 1MB blocks
                 
-                # Set verification settings
-                if hasattr(job.options, 'verify_mode'):
-                    cpp_job.verify_mode = job.options.verify_mode
+                print(f"DEBUG: CopyJob created: {copy_job}")
+                print(f"DEBUG: Source paths: {copy_job.source_paths}")
+                print(f"DEBUG: Destination paths: {copy_job.destination_paths}")
+                print(f"DEBUG: Job ID: {copy_job.job_id}")
+                print(f"DEBUG: Files in flight: {copy_job.files_in_flight}")
+                print(f"DEBUG: Ranges per file: {copy_job.ranges_per_file}")
+                print(f"DEBUG: Verify integrity: {copy_job.verify_integrity}")
+                print(f"DEBUG: Hash algorithm: {copy_job.hash_algorithm}")
+                print(f"DEBUG: Generate verification report: {copy_job.generate_verification_report}")
+                print(f"DEBUG: Use direct I/O: {copy_job.use_direct_io}")
+                print(f"DEBUG: Block size: {copy_job.block_size}")
                 
-                print(f"DEBUG: Created CopyJob: {cpp_job}")
-                engine.copy_files(cpp_job)
-                print("DEBUG: Engine completed successfully")
+                # Start the copy operation
+                print("DEBUG: Starting copy operation...")
+                stats = engine.copy_files(copy_job)
+                print(f"DEBUG: Copy operation completed with stats: {stats}")
+                
+                # Generate completion report
+                self._generate_completion_report(root, "completed", stats, job)
+                
             except Exception as e:
-                print(f"DEBUG: Engine failed: {e}")
+                print(f"DEBUG: Error in copy operation: {e}")
                 import traceback
                 traceback.print_exc()
+                
+                # Generate error report
+                self._generate_error_report(root, str(e), job)
                 raise
                 
         except Exception as e:
@@ -295,17 +324,168 @@ class ControlSection(QWidget):
             import traceback
             traceback.print_exc()
             
+            # Generate error report
+            self._generate_error_report(root, str(e), job)
+            
             # Re-enable controls on error
-            def reenable_controls():
-                self.reenable_controls()
-                print("DEBUG: Controls re-enabled after error")
+            QTimer.singleShot(0, self.reenable_controls)
+    
+    def _generate_completion_report(self, root, status, stats, job):
+        """Generate completion report using the report generator"""
+        try:
+            from ...utils.report_generator import TransferReportGenerator
             
-            # Use QTimer to ensure this runs on the main thread
-            from PyQt6.QtCore import QTimer
-            QTimer.singleShot(0, reenable_controls)
+            # Create report generator
+            report_gen = TransferReportGenerator()
             
-        finally:
-            print("DEBUG: ===== RUN_JOB COMPLETED =====")
+            # Get stats from the C++ event sink instead of the C++ engine
+            from ..cpp_event_sink import CppEventSink
+            event_sink = getattr(root, '_cpp_event_sink', None)
+            
+            if event_sink and hasattr(event_sink, 'get_current_stats'):
+                current_stats = event_sink.get_current_stats()
+                total_bytes = current_stats.get('total_bytes', 0)
+                copied_bytes = current_stats.get('bytes_copied', 0)
+                elapsed_time = time.time() - current_stats.get('start_time', time.time()) if current_stats.get('start_time') else 0.0
+            else:
+                # Fallback to stats parameter
+                total_bytes = getattr(stats, 'total_bytes', 0)
+                copied_bytes = getattr(stats, 'copied_bytes', 0)
+                elapsed_time = getattr(stats, 'duration', lambda: 0.0)()
+            
+            # Generate report
+            if status == "completed":
+                report_path = report_gen.generate_completed_report(
+                    job_id=job.job_id,
+                    copied_bytes=copied_bytes,
+                    total_bytes=total_bytes,
+                    elapsed_time=elapsed_time,
+                    destinations=job.destination_roots
+                )
+            else:
+                report_path = report_gen.generate_cancelled_report(
+                    job_id=job.job_id,
+                    copied_bytes=copied_bytes,
+                    total_bytes=total_bytes,
+                    elapsed_time=elapsed_time,
+                    destinations=job.destination_roots
+                )
+            
+            if report_path:
+                print(f"DEBUG: Report generated successfully: {report_path}")
+            else:
+                print("DEBUG: Failed to generate report")
+                
+        except Exception as e:
+            print(f"DEBUG: Error generating completion report: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _generate_error_report(self, root, error_message, job):
+        """Generate error report using the report generator"""
+        try:
+            from ...utils.report_generator import TransferReportGenerator
+            
+            # Create report generator
+            report_gen = TransferReportGenerator()
+            
+            # Generate error report
+            report_path = report_gen.generate_error_report(
+                job_id=job.job_id,
+                error_message=error_message
+            )
+            
+            if report_path:
+                print(f"DEBUG: Error report generated: {report_path}")
+            else:
+                print("DEBUG: Failed to generate error report")
+                
+        except Exception as e:
+            print(f"DEBUG: Error generating error report: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _generate_detailed_report(self, root, status, error_message, comprehensive_stats=None):
+        """Generate detailed transfer report with enhanced stats from C++ engine"""
+        print(f"DEBUG: Generating detailed report for status: {status}")
+        print(f"DEBUG: Comprehensive stats: {comprehensive_stats}")
+        
+        # Import the transfer log writer at the top of the method
+        from forwardflow.ingest.utils.transfer_log_writer import write_transfer_log
+        import os
+        import time
+        
+        try:
+            # Get job information from root
+            job_id = getattr(root, 'current_job_id', f"job_{int(time.time())}")
+            source_path = getattr(root, 'source_path', "Unknown")
+            
+            # Get destinations from the current job instead of root.destinations
+            destinations = []
+            if hasattr(root, 'current_job') and root.current_job and hasattr(root.current_job, 'destination_roots'):
+                destinations = root.current_job.destination_roots
+                print(f"DEBUG: Got destinations from current job: {destinations}")
+            else:
+                # Fallback to source_dest_section if available
+                if hasattr(root, 'source_dest_section') and root.source_dest_section:
+                    try:
+                        destinations = root.source_dest_section.get_destinations()
+                        print(f"DEBUG: Got destinations from source_dest_section: {destinations}")
+                    except Exception as e:
+                        print(f"DEBUG: Error getting destinations from source_dest_section: {e}")
+                
+                if not destinations:
+                    print("DEBUG: No destinations found, using fallback")
+                    destinations = ["Unknown"]
+            
+            # Use comprehensive stats if available, otherwise fall back to basic stats
+            if comprehensive_stats:
+                # Use the comprehensive stats from the C++ engine
+                stats = comprehensive_stats
+                print(f"DEBUG: Using comprehensive stats from C++ engine: {stats}")
+            else:
+                # Fallback to basic stats (for backward compatibility)
+                stats = {
+                    "total_bytes": getattr(root, 'total_bytes', 0),
+                    "copied_bytes": getattr(root, 'copied_bytes', 0),
+                    "duration": getattr(root, 'elapsed_time', 0),
+                    "avg_speed": getattr(root, 'avg_speed', 0),
+                    "total_files": getattr(root, 'total_files', 0),
+                    "completed_files": getattr(root, 'completed_files', 0),
+                    "cancelled_files": getattr(root, 'cancelled_files', 0),
+                    "error_files": getattr(root, 'error_files', 0),
+                    "files": []  # Placeholder for individual file records
+                }
+                print(f"DEBUG: Using fallback basic stats: {stats}")
+            
+            # Write the comprehensive transfer log
+            log_path = write_transfer_log(
+                job_id=job_id,
+                source_path=source_path,
+                destinations=destinations,
+                status=status,
+                error_message=error_message,
+                stats=stats
+            )
+            
+            print(f"DEBUG: Transfer log written to: {log_path}")
+            
+            # Update UI to show report completion
+            if hasattr(root, 'progress_section') and root.progress_section:
+                if hasattr(root.progress_section, 'status_label'):
+                    root.progress_section.status_label.setText(f"Report written: {os.path.basename(log_path)}")
+            
+            # Re-enable controls after successful report generation
+            self.reenable_controls()
+            print("DEBUG: Controls re-enabled after successful report generation")
+            
+        except Exception as e:
+            print(f"DEBUG: Error generating detailed report: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Re-enable controls on error
+            self.reenable_controls()
     
     def on_pause(self, root):
         """Handle pause button click"""
@@ -350,129 +530,16 @@ class ControlSection(QWidget):
             print("DEBUG: Re-enabling controls immediately after cancellation")
             self.reenable_controls()
             
-            # Write transfer log in background thread (non-blocking)
-            def write_transfer_log():
-                try:
-                    print("DEBUG: Writing transfer log in background...")
-                    # Import the transfer log writer
-                    from forwardflow.ingest.utils.transfer_log_writer import write_transfer_log
-                    
-                    # Get job info for the log - try to get from current job first
-                    job_id = 'unknown'
-                    source_path = 'unknown'
-                    destinations = []
-                    enhanced_stats = None
-                    
-                    # Try to get job info from the current job object
-                    if hasattr(root, 'current_job') and root.current_job:
-                        try:
-                            # If it's a C++ engine, try to get job info from it
-                            if hasattr(root.current_job, 'get_current_job'):
-                                current_job = root.current_job.get_current_job()
-                                if current_job:
-                                    job_id = getattr(current_job, 'job_id', 'unknown')
-                                    source_path = getattr(current_job, 'source_paths', ['unknown'])[0] if hasattr(current_job, 'source_paths') and current_job.source_paths else 'unknown'
-                                    destinations = getattr(current_job, 'destination_paths', [])
-                            
-                            # Get enhanced stats from C++ engine for detailed reporting
-                            if hasattr(root.current_job, 'get_enhanced_stats'):
-                                try:
-                                    enhanced_stats = root.current_job.get_enhanced_stats()
-                                    print(f"DEBUG: Got enhanced stats: {enhanced_stats.total_files} files, {enhanced_stats.completed_files} completed, {enhanced_stats.cancelled_files} cancelled")
-                                except Exception as e:
-                                    print(f"DEBUG: Could not get enhanced stats: {e}")
-                                    enhanced_stats = None
-                        except Exception as e:
-                            print(f"DEBUG: Could not get job info from current job: {e}")
-                    
-                    # Fallback to stored job info if available
-                    if job_id == 'unknown' and hasattr(root, 'current_job_spec'):
-                        job_spec = root.current_job_spec
-                        job_id = getattr(job_spec, 'job_id', 'unknown')
-                        source_path = getattr(job_spec, 'source_root', 'unknown')
-                        destinations = getattr(job_spec, 'destination_roots', [])
-                    
-                    print(f"DEBUG: Writing log with job_id={job_id}, source={source_path}, destinations={destinations}")
-                    
-                    # Convert enhanced stats to dict format for transfer log writer
-                    stats_dict = None
-                    if enhanced_stats:
-                        stats_dict = {
-                            'total_files': enhanced_stats.total_files,
-                            'completed_files': enhanced_stats.completed_files,
-                            'cancelled_files': enhanced_stats.cancelled_files,
-                            'error_files': enhanced_stats.error_files,
-                            'total_bytes': enhanced_stats.total_bytes,
-                            'completed_bytes': enhanced_stats.completed_bytes,
-                            'average_speed_mbps': enhanced_stats.average_speed_mbps,
-                            'files': []
-                        }
-                        
-                        # Convert individual file records
-                        for record in enhanced_stats.file_records:
-                            file_info = {
-                                'filename': record.filename,
-                                'source_path': record.source_path,
-                                'destination_path': record.destination_path,
-                                'size': record.file_size,
-                                'status': record.status,
-                                'checksum_type': record.checksum_type,
-                                'source_checksum': record.checksum_source,
-                                'destination_checksum': record.checksum_destination,
-                                'verification_status': 'PASS' if record.verification_passed else 'FAIL',
-                                'transfer_speed': record.transfer_speed_mbps,
-                                'error_message': record.error_message
-                            }
-                            stats_dict['files'].append(file_info)
-                    
-                    # Write the log with enhanced stats
-                    log_path = write_transfer_log(
-                        job_id=job_id,
-                        source_path=source_path,
-                        destinations=destinations,
-                        status="CANCELLED",
-                        error_message="Transfer cancelled by user",
-                        stats=stats_dict
-                    )
-                    print(f"DEBUG: Transfer log written to: {log_path}")
-                    
-                    # Update progress section to show completion
-                    def update_progress_complete():
-                        if hasattr(root, 'progress_section'):
-                            try:
-                                if hasattr(root.progress_section, 'status_label'):
-                                    root.progress_section.status_label.setText("Transfer cancelled - report written")
-                                if hasattr(root.progress_section, 'total_progress'):
-                                    root.progress_section.total_progress.setFormat("Ready")
-                                    root.progress_section.total_progress.setValue(0)
-                            except Exception as e:
-                                print(f"DEBUG: Error updating progress completion: {e}")
-                    
-                    # Use QTimer to ensure this runs on the main thread
-                    from PyQt6.QtCore import QTimer
-                    QTimer.singleShot(0, update_progress_complete)
-                    
-                except Exception as e:
-                    print(f"DEBUG: Error writing transfer log: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    
-                    # Update progress section to show error
-                    def update_progress_error():
-                        if hasattr(root, 'progress_section'):
-                            try:
-                                if hasattr(root.progress_section, 'status_label'):
-                                    root.progress_section.status_label.setText("Error writing report")
-                            except Exception as e2:
-                                print(f"DEBUG: Error updating progress error: {e2}")
-                    
-                    from PyQt6.QtCore import QTimer
-                    QTimer.singleShot(0, update_progress_error)
-            
-            # Start log writing in background thread
-            import threading
-            log_thread = threading.Thread(target=write_transfer_log, daemon=True)
-            log_thread.start()
+            # Write transfer log immediately (simple and working)
+            try:
+                print("DEBUG: Writing transfer log immediately...")
+                # Use the simple working method
+                self._generate_detailed_report(root, "CANCELLED", "Transfer cancelled by user")
+                print("DEBUG: Transfer log written successfully")
+            except Exception as e:
+                print(f"DEBUG: Error writing transfer log: {e}")
+                import traceback
+                traceback.print_exc()
             
         except Exception as e:
             print(f"DEBUG: Error in on_cancel: {e}")

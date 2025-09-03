@@ -27,9 +27,14 @@ def get_engine(sink=None):
                 
                 import enhanced_high_perf_engine as cpp_engine
                 _engine_instance = cpp_engine.EnhancedHighPerfTransferEngine()
-                if sink:
-                    _engine_instance.set_event_sink(sink)
-                print("DEBUG: C++ engine created successfully")
+                
+                # Use the new C++ event sink wrapper if no sink provided
+                if sink is None:
+                    from .cpp_event_sink import CppEventSink
+                    sink = CppEventSink()
+                
+                _engine_instance.set_event_sink(sink)
+                print("DEBUG: C++ engine created successfully with event sink")
             except Exception as e:
                 print(f"DEBUG: Failed to create C++ engine: {e}")
                 raise
