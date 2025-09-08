@@ -262,7 +262,7 @@ def set_app_preference(key, value):
 
 def get_transfer_reports_folder_name():
     """Gets the configured transfer reports folder name."""
-    return get_app_preference("transfer_reports_folder_name", "_ForwardFlow_verification_Reports")
+    return get_app_preference("transfer_reports_folder_name", "_CR2_CREATIVE_REPORTS")
 
 def set_transfer_reports_folder_name(folder_name):
     """Sets the transfer reports folder name."""

@@ -1,7 +1,0 @@
-/Users/craigrusso/SynologyDrive/SCRIPTS/CLAUDE_PROJECT_CREATOR/FF_V1_1/forwardflow/ingest/engines/High_perf/build_modular/CMakeFiles/enhanced_high_perf_engine.dir
-/Users/craigrusso/SynologyDrive/SCRIPTS/CLAUDE_PROJECT_CREATOR/FF_V1_1/forwardflow/ingest/engines/High_perf/build_modular/CMakeFiles/edit_cache.dir
-/Users/craigrusso/SynologyDrive/SCRIPTS/CLAUDE_PROJECT_CREATOR/FF_V1_1/forwardflow/ingest/engines/High_perf/build_modular/CMakeFiles/rebuild_cache.dir
-/Users/craigrusso/SynologyDrive/SCRIPTS/CLAUDE_PROJECT_CREATOR/FF_V1_1/forwardflow/ingest/engines/High_perf/build_modular/CMakeFiles/list_install_components.dir
-/Users/craigrusso/SynologyDrive/SCRIPTS/CLAUDE_PROJECT_CREATOR/FF_V1_1/forwardflow/ingest/engines/High_perf/build_modular/CMakeFiles/install.dir
-/Users/craigrusso/SynologyDrive/SCRIPTS/CLAUDE_PROJECT_CREATOR/FF_V1_1/forwardflow/ingest/engines/High_perf/build_modular/CMakeFiles/install/local.dir
-/Users/craigrusso/SynologyDrive/SCRIPTS/CLAUDE_PROJECT_CREATOR/FF_V1_1/forwardflow/ingest/engines/High_perf/build_modular/CMakeFiles/install/strip.dir

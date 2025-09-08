@@ -1169,4 +1169,16 @@ FILE_STATUS_LABEL_STYLE = f"""
         font-size: 11px;
         font-weight: 500;
     }}
+"""
+
+# Style for stats headers in progress section
+STATS_HEADER_STYLE = f"""
+    QLabel {{
+        color: {colors['secondary_text']};
+        font-size: 10px;
+        font-weight: 500;
+        text-align: center;
+        margin: 0;
+        padding: 2px;
+    }}
 """ 

@@ -24,7 +24,8 @@ class TransferReportGenerator:
                            status: str,
                            stats: Dict[str, Any],
                            destination_details: Optional[Dict[str, Any]] = None,
-                           file_records: Optional[List[Dict[str, Any]]] = None) -> str:
+                           file_records: Optional[List[Dict[str, Any]]] = None,
+                           engine_type: str = "Unknown") -> str:
         """Generate a comprehensive job report"""
         
         timestamp = datetime.now().isoformat()
@@ -51,6 +52,7 @@ class TransferReportGenerator:
             "metadata": {
                 "report_version": "1.0",
                 "generator": "ForwardFlow Transfer Engine",
+                "engine_type": engine_type,
                 "platform": os.name,
                 "python_version": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}"
             }
@@ -94,14 +96,21 @@ class TransferReportGenerator:
                                  copied_bytes: int,
                                  total_bytes: int,
                                  elapsed_time: float,
-                                 destinations: List[str]) -> str:
+                                 destinations: List[str],
+                                 file_records: Optional[List[Dict[str, Any]]] = None) -> str:
         """Generate a report for cancelled transfers"""
         
+        # Calculate file statistics from file_records if available
+        total_files = len(file_records) if file_records else 0
+        completed_files = sum(1 for record in file_records if record.get('status') == 'completed') if file_records else 0
+        cancelled_files = sum(1 for record in file_records if record.get('status') == 'cancelled') if file_records else 0
+        error_files = sum(1 for record in file_records if record.get('status') == 'error') if file_records else 0
+        
         stats = {
-            "total_files": 0,  # Will be filled by C++ engine
-            "completed_files": 0,
-            "cancelled_files": 0,
-            "error_files": 0,
+            "total_files": total_files,
+            "completed_files": completed_files,
+            "cancelled_files": cancelled_files,
+            "error_files": error_files,
             "total_bytes": total_bytes,
             "completed_bytes": copied_bytes,
             "elapsed_time": elapsed_time,
@@ -118,11 +127,21 @@ class TransferReportGenerator:
                 "average_speed_mbps": stats["average_speed_mbps"]
             }
         
+        # Get engine information from the engine manager
+        engine_type = "Unknown"
+        try:
+            from ..ui.engine_manager import get_engine_type
+            engine_type = get_engine_type()
+        except Exception:
+            pass
+        
         return self.generate_job_report(
             job_id=job_id,
             status="cancelled",
             stats=stats,
-            destination_details=destination_details
+            destination_details=destination_details,
+            engine_type=engine_type,
+            file_records=file_records
         )
     
     def generate_completed_report(self, 
@@ -130,14 +149,21 @@ class TransferReportGenerator:
                                  copied_bytes: int,
                                  total_bytes: int,
                                  elapsed_time: float,
-                                 destinations: List[str]) -> str:
+                                 destinations: List[str],
+                                 file_records: Optional[List[Dict[str, Any]]] = None) -> str:
         """Generate a report for completed transfers"""
         
+        # Calculate file statistics from file_records if available
+        total_files = len(file_records) if file_records else 0
+        completed_files = sum(1 for record in file_records if record.get('status') == 'completed') if file_records else 0
+        cancelled_files = sum(1 for record in file_records if record.get('status') == 'cancelled') if file_records else 0
+        error_files = sum(1 for record in file_records if record.get('status') == 'error') if file_records else 0
+        
         stats = {
-            "total_files": 0,  # Will be filled by C++ engine
-            "completed_files": 0,
-            "cancelled_files": 0,
-            "error_files": 0,
+            "total_files": total_files,
+            "completed_files": completed_files,
+            "cancelled_files": cancelled_files,
+            "error_files": error_files,
             "total_bytes": total_bytes,
             "completed_bytes": copied_bytes,
             "elapsed_time": elapsed_time,
@@ -154,11 +180,21 @@ class TransferReportGenerator:
                 "average_speed_mbps": stats["average_speed_mbps"]
             }
         
+        # Get engine information from the engine manager
+        engine_type = "Unknown"
+        try:
+            from ..ui.engine_manager import get_engine_type
+            engine_type = get_engine_type()
+        except Exception:
+            pass
+        
         return self.generate_job_report(
             job_id=job_id,
             status="completed",
             stats=stats,
-            destination_details=destination_details
+            destination_details=destination_details,
+            engine_type=engine_type,
+            file_records=file_records
         )
     
     def generate_error_report(self, 

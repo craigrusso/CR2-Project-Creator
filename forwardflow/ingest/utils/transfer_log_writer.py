@@ -20,7 +20,7 @@ try:
 except ImportError:
     # Fallback if config manager is not available
     def get_transfer_reports_folder_name():
-        return "_ForwardFlow_verification_Reports"
+        return "_CR2_CREATIVE_REPORTS"
 
 
 def write_transfer_log(
@@ -46,6 +46,20 @@ def write_transfer_log(
     Returns:
         str: Path to the written log file
     """
+    # Debug logging
+    print(f"DEBUG: write_transfer_log called with:")
+    print(f"DEBUG:   job_id: {job_id}")
+    print(f"DEBUG:   source_path: {source_path}")
+    print(f"DEBUG:   destinations: {destinations}")
+    print(f"DEBUG:   status: {status}")
+    print(f"DEBUG:   error_message: {error_message}")
+    print(f"DEBUG:   stats: {stats}")
+    if stats:
+        print(f"DEBUG:   stats type: {type(stats)}")
+        print(f"DEBUG:   stats keys: {list(stats.keys()) if isinstance(stats, dict) else 'Not a dict'}")
+        if 'files' in stats:
+            print(f"DEBUG:   stats['files'] count: {len(stats['files'])}")
+    
     try:
         # Get the user's preferred reports folder name
         reports_folder_name = get_transfer_reports_folder_name()
@@ -89,6 +103,14 @@ def write_transfer_log(
         json_filename = f"verify_report_{timestamp}.json"
         json_path = reports_dir / json_filename
         
+        # Get engine information from the engine manager
+        engine_type = "Unknown"
+        try:
+            from ..ui.engine_manager import get_engine_type
+            engine_type = get_engine_type()
+        except Exception:
+            pass
+        
         json_data = {
             "job_id": job_id,
             "timestamp": datetime.now().isoformat(),
@@ -100,7 +122,7 @@ def write_transfer_log(
             "system_info": {
                 "platform": os.name,
                 "python_version": f"{os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}",
-                "engine": "ForwardFlow C++ Enhanced Copy Engine"
+                "engine": f"ForwardFlow {engine_type} Engine"
             }
         }
         
@@ -187,7 +209,7 @@ def create_dit_csv_report(
                 error_message if file_status != 'COMPLETED' else '',
                 f"{file_info.get('transfer_speed', 0):.2f}",
                 f"{file_info.get('transfer_duration', 0):.2f}",
-                "ForwardFlow C++ Engine"
+                "ForwardFlow Rust Engine"
             ]
             csv_data.append(row)
     else:
@@ -213,7 +235,7 @@ def create_dit_csv_report(
                 error_message or "Transfer cancelled by user",
                 f"{stats.get('avg_speed', 0):.2f}" if stats else "0.00",
                 f"{stats.get('duration', 0):.2f}" if stats else "0.00",
-                "ForwardFlow C++ Engine"
+                "ForwardFlow Rust Engine"
             ]
             csv_data.append(row)
             
@@ -234,7 +256,7 @@ def create_dit_csv_report(
                 "Some files may have completed successfully before cancellation",
                 "",
                 "",
-                "ForwardFlow C++ Engine"
+                "ForwardFlow Rust Engine"
             ]
             csv_data.append(note_row)
         else:
@@ -256,7 +278,7 @@ def create_dit_csv_report(
                 error_message or '',
                 f"{stats.get('avg_speed', 0):.2f}" if stats else "0.00",
                 f"{stats.get('duration', 0):.2f}" if stats else "0.00",
-                "ForwardFlow C++ Engine"
+                "ForwardFlow Rust Engine"
             ]
             csv_data.append(row)
     
@@ -394,12 +416,20 @@ Total Destinations: {len(destinations)}
                     report += f"  {i}. {file_info.get('filename', 'Unknown')}\n"
                     report += f"     Size: {file_info.get('size', 0)} bytes ({file_info.get('size', 0) / (1024*1024):.2f} MB)\n"
     
+    # Get engine information from the engine manager
+    engine_type = "Unknown"
+    try:
+        from ..ui.engine_manager import get_engine_type
+        engine_type = get_engine_type()
+    except Exception:
+        pass
+    
     # Add system information
     report += f"""
 === SYSTEM INFORMATION ===
 Platform: {os.name}
 Python Version: {os.sys.version_info.major}.{os.sys.version_info.minor}.{os.sys.version_info.micro}
-Engine: ForwardFlow C++ Enhanced Copy Engine
+Engine: ForwardFlow {engine_type} Engine
 Timestamp: {datetime.now().isoformat()}
 """
     

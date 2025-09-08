@@ -176,6 +176,15 @@ class VerificationReportManager:
             f.write(f"End Time: {report.job_end_time.strftime('%Y-%m-%d %H:%M:%S')}\n")
             duration = report.job_end_time - report.job_start_time
             f.write(f"Duration: {duration}\n")
+        
+        # Add engine information
+        try:
+            from ..ui.engine_manager import get_engine_type
+            engine_type = get_engine_type()
+            f.write(f"Engine: ForwardFlow {engine_type} Engine\n")
+        except Exception:
+            f.write("Engine: ForwardFlow Engine\n")
+        
         f.write(f"Total Files: {report.total_files}\n")
         f.write(f"Passed: {report.passed_files}\n")
         f.write(f"Failed: {report.failed_files}\n")

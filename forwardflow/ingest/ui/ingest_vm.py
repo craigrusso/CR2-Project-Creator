@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-# Import engines - only import when actually needed to avoid double registration
-CPP_ENGINE_AVAILABLE = True  # We'll import when needed
+# RUST ENGINE ONLY - NO C++ ENGINE
+RUST_ENGINE_AVAILABLE = True
 
 
 @dataclass
@@ -29,11 +29,12 @@ class IngestViewModel:
         if not self.source or not self.destination:
             return
         
-        # Import engine only when needed to avoid double registration
+        # Import Rust engine only - NO C++ ENGINE
         try:
-            from ..engines.High_perf.enhanced_high_perf_engine import EnhancedHighPerfTransferEngine, CopyJob
+            from ..engines.rust_high_perf.rust_high_perf_engine_wrapper import RustHighPerfEngineWrapper as EnhancedHighPerfTransferEngine
+            from rust_high_perf_engine import CopyJob
         except Exception as e:
-            print(f"DEBUG: Failed to import C++ engine in ingest_vm: {e}")
+            print(f"DEBUG: Failed to import Rust engine in ingest_vm: {e}")
             return
             
         # Use the engine override (with event sink) if provided, otherwise create default
@@ -41,7 +42,7 @@ class IngestViewModel:
         # Track current job for pause/cancel wiring
         self._current_job_id = job_id
         self._current_engine = engine
-        # Create a CopyJob object for the C++ engine
+        # Create a CopyJob object for the Rust engine
         copy_job = CopyJob()
         copy_job.source_paths = [str(self.source)]
         copy_job.destination_paths = [str(self.destination)]

@@ -1,4 +1,4 @@
-"""Engine Manager for handling C++ engine imports"""
+"""Engine Manager for handling Rust engine imports"""
 
 import threading
 from typing import Optional
@@ -9,35 +9,44 @@ _engine_lock = threading.Lock()
 
 
 def get_engine(sink=None):
-    """Get the C++ engine instance (singleton pattern)"""
+    """Get the Rust engine instance (singleton pattern) - RUST ENGINE ONLY, NO FALLBACK"""
     global _engine_instance
     
     with _engine_lock:
         if _engine_instance is None:
             try:
-                # Try to import from the build/lib directory first
+                # Use Rust engine ONLY - NO FALLBACK
+                print("DEBUG: Using Rust engine - NO FALLBACK")
+                
+                # Import the real Rust engine from the built module
                 import sys
                 import os
                 
-                # Add the build/lib path to sys.path if not already there
-                current_dir = os.path.dirname(os.path.abspath(__file__))
-                build_lib_path = os.path.join(current_dir, "..", "engines", "build", "lib")
-                if build_lib_path not in sys.path:
-                    sys.path.insert(0, build_lib_path)
+                # Add the rust_high_perf directory to the path
+                rust_engine_path = os.path.join(os.path.dirname(__file__), '..', 'engines', 'rust_high_perf')
+                sys.path.insert(0, rust_engine_path)
                 
-                import enhanced_high_perf_engine as cpp_engine
-                _engine_instance = cpp_engine.EnhancedHighPerfTransferEngine()
+                # Import the real Rust engine via loader - NO FALLBACK
+                from forwardflow.ingest.engines.rust_high_perf.rust_engine_loader import PyEnhancedHighPerfTransferEngine
+                print("DEBUG: Successfully imported real Rust engine via loader")
                 
-                # Use the new C++ event sink wrapper if no sink provided
+                # Create Rust engine instance directly
+                _engine_instance = PyEnhancedHighPerfTransferEngine()
+                
+                # Use the Rust event sink wrapper if no sink provided
                 if sink is None:
-                    from .cpp_event_sink import CppEventSink
-                    sink = CppEventSink()
+                    from .rust_event_sink import RustEventSink
+                    sink = RustEventSink()
                 
+                # Set the event sink
                 _engine_instance.set_event_sink(sink)
-                print("DEBUG: C++ engine created successfully with event sink")
+                print("DEBUG: Real Rust engine created successfully with event sink")
+                
             except Exception as e:
-                print(f"DEBUG: Failed to create C++ engine: {e}")
-                raise
+                print(f"ERROR: Failed to create Rust engine: {e}")
+                import traceback
+                traceback.print_exc()
+                raise RuntimeError(f"Rust engine is REQUIRED and failed to initialize: {e}")
         
         return _engine_instance
 
@@ -48,4 +57,16 @@ def reset_engine():
     
     with _engine_lock:
         _engine_instance = None
-        print("DEBUG: C++ engine instance reset")
+        print("DEBUG: Engine instance reset")
+
+
+def get_engine_type():
+    """Get the type of engine currently in use"""
+    if _engine_instance is None:
+        return "None"
+    
+    engine_class = _engine_instance.__class__.__name__
+    if "Rust" in engine_class or hasattr(_engine_instance, 'rust_engine'):
+        return "Rust"
+    else:
+        return "Unknown"

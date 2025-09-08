@@ -11,18 +11,15 @@ import json
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 from PyQt6.QtCore import QObject, pyqtSignal
 
-# Import enhanced copy engines
+# Import Rust enhanced copy engine - NO C++ ENGINE
 try:
-    from app.utils.cpp_enhanced_copy import (
-        CppEnhancedCopyEngine, CopyOptions, CopyStats, 
-        copy_files, copy_file, copy_directory,
-        CPP_ENGINE_AVAILABLE
-    )
+    from forwardflow.ingest.engines.rust_high_perf.rust_high_perf_engine_wrapper import RustHighPerfEngineWrapper as EnhancedCopyEngine
+    from rust_high_perf_engine import CopyJob, CopyStats
     ENHANCED_COPY_AVAILABLE = True
-    print(f"✓ Enhanced copy available: C++ engine {'✓' if CPP_ENGINE_AVAILABLE else '✗'}")
-    print("DEBUG: Using C++ enhanced copy engine exclusively")
+    print("✓ Enhanced copy available: Rust engine ✓")
+    print("DEBUG: Using Rust enhanced copy engine exclusively")
 except ImportError as e:
-    print(f"DEBUG: C++ engine import failed: {e}")
+    print(f"DEBUG: Rust engine import failed: {e}")
     ENHANCED_COPY_AVAILABLE = False
     print("✗ No enhanced copy engines available")
 
@@ -43,8 +40,8 @@ class FileOperationsHandler(QObject):
         # Initialize enhanced copy engine if available
         if ENHANCED_COPY_AVAILABLE:
             try:
-                self.enhanced_engine = CppEnhancedCopyEngine()
-                print(f"✓ Enhanced copy engine initialized: C++")
+                self.enhanced_engine = EnhancedCopyEngine()
+                print(f"✓ Enhanced copy engine initialized: Rust")
             except Exception as e:
                 print(f"Warning: Failed to initialize enhanced copy engine: {e}")
                 self.enhanced_engine = None

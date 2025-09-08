@@ -85,9 +85,9 @@ class DestinationProgressWidget(QWidget):
             }}
             QProgressBar::chunk {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                                           stop:0 #2d5a2d, 
-                                           stop:0.5 #4a7c4a, 
-                                           stop:1 #6ba06b);
+                                           stop:0 #2563eb, 
+                                           stop:0.5 #3b82f6, 
+                                           stop:1 #60a5fa);
                 border-radius: 1px;
             }}
         """)
@@ -272,9 +272,9 @@ class ProgressSection(QWidget):
             }}
             QProgressBar::chunk {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                                           stop:0 #2d5a2d, 
-                                           stop:0.5 #4a7c4a, 
-                                           stop:1 #6ba06b);
+                                           stop:0 #2563eb, 
+                                           stop:0.5 #3b82f6, 
+                                           stop:1 #60a5fa);
                 border-radius: 2px;
             }}
         """)
@@ -286,10 +286,18 @@ class ProgressSection(QWidget):
         # Add progress bar with normal layout
         progress_layout.addWidget(self.total_progress)
         
-        # Add stats labels BELOW the progress bar (not inside it)
-        stats_layout = QVBoxLayout()
-        stats_layout.setSpacing(1)  # Minimal spacing between header and values
-        stats_layout.setContentsMargins(12, 8, 12, 4)  # Added top margin to separate from progress bar
+        # Add substantial vertical spacing to clearly separate progress bar from stats
+        spacer = QWidget()
+        spacer.setFixedHeight(20)  # 20px separation to prevent overlap
+        progress_layout.addWidget(spacer)
+        
+        # Create a separate container for stats to prevent overlap
+        stats_container = QWidget()
+        stats_container.setMinimumHeight(80)  # Ensure sufficient height for two rows
+        stats_container.setStyleSheet("background: transparent; border: none;")
+        stats_container_layout = QVBoxLayout(stats_container)
+        stats_container_layout.setSpacing(2)
+        stats_container_layout.setContentsMargins(0, 0, 0, 0)
         
         # Create compact, direct labels without container widgets (no card backgrounds)
         # Elapsed time
@@ -302,6 +310,8 @@ class ProgressSection(QWidget):
                 text-align: center;
                 margin: 0;
                 padding: 2px;
+                background: transparent;
+                border: none;
             }}
         """)
         elapsed_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -316,6 +326,8 @@ class ProgressSection(QWidget):
                 text-align: center;
                 margin: 0;
                 padding: 2px;
+                background: transparent;
+                border: none;
             }}
         """)
         self.elapsed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -331,6 +343,8 @@ class ProgressSection(QWidget):
                 text-align: center;
                 margin: 0;
                 padding: 2px;
+                background: transparent;
+                border: none;
             }}
         """)
         eta_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -345,6 +359,8 @@ class ProgressSection(QWidget):
                 text-align: center;
                 margin: 0;
                 padding: 2px;
+                background: transparent;
+                border: none;
             }}
         """)
         self.eta_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -360,6 +376,8 @@ class ProgressSection(QWidget):
                 text-align: center;
                 margin: 0;
                 padding: 2px;
+                background: transparent;
+                border: none;
             }}
         """)
         speed_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -374,6 +392,8 @@ class ProgressSection(QWidget):
                 text-align: center;
                 margin: 0;
                 padding: 2px;
+                background: transparent;
+                border: none;
             }}
         """)
         self.current_speed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -389,6 +409,8 @@ class ProgressSection(QWidget):
                 text-align: center;
                 margin: 0;
                 padding: 2px;
+                background: transparent;
+                border: none;
             }}
         """)
         avg_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -403,6 +425,8 @@ class ProgressSection(QWidget):
                 text-align: center;
                 margin: 0;
                 padding: 2px;
+                background: transparent;
+                border: none;
             }}
         """)
         self.avg_speed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -418,6 +442,8 @@ class ProgressSection(QWidget):
                 text-align: center;
                 margin: 0;
                 padding: 2px;
+                background: transparent;
+                border: none;
             }}
         """)
         peak_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -432,6 +458,8 @@ class ProgressSection(QWidget):
                 text-align: center;
                 margin: 0;
                 padding: 2px;
+                background: transparent;
+                border: none;
             }}
         """)
         self.peak_speed_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -457,12 +485,13 @@ class ProgressSection(QWidget):
         values_layout.addWidget(self.avg_speed_label, 1)
         values_layout.addWidget(self.peak_speed_label, 1)
         
-        # Add both rows to stats layout
-        stats_layout.addLayout(headers_layout)
-        stats_layout.addLayout(values_layout)
+        # Add both rows to the stats container layout
+        stats_container_layout.addLayout(headers_layout)
+        stats_container_layout.addLayout(values_layout)
+        stats_container_layout.addStretch()  # Push content to top
         
-        # Add the stats layout to the progress frame instead of creating a separate frame
-        progress_layout.addLayout(stats_layout)
+        # Add the stats container to the progress frame
+        progress_layout.addWidget(stats_container)
         
 
         
@@ -548,6 +577,16 @@ class ProgressSection(QWidget):
             if not self.job_data:
                 print("DEBUG: No job data available, skipping progress update")
                 return
+            
+            # Throttle progress updates to prevent UI freezing
+            current_time = time.time() * 1000  # Convert to milliseconds
+            if not hasattr(self, '_last_progress_update'):
+                self._last_progress_update = 0
+                self._progress_throttle_ms = 100  # Update progress max every 100ms
+            
+            if current_time - self._last_progress_update < self._progress_throttle_ms:
+                return  # Skip this update to prevent UI flooding
+            self._last_progress_update = current_time
             
             # Extract progress data
             copied_bytes = payload.get("copied_bytes") or payload.get("bytes", 0)
@@ -652,8 +691,18 @@ class ProgressSection(QWidget):
     def handle_file_progress(self, payload):
         """Handle file progress event - this is the key method for updating progress bars"""
         try:
-            # Extract progress information from C++ engine payload
-            # The C++ engine sends: filename, bytes_copied, total_bytes, progress_percent
+            # Throttle file progress updates to prevent UI freezing
+            current_time = time.time() * 1000  # Convert to milliseconds
+            if not hasattr(self, '_last_file_update'):
+                self._last_file_update = 0
+                self._file_throttle_ms = 500  # Update file progress max every 500ms
+            
+            if current_time - self._last_file_update < self._file_throttle_ms:
+                return  # Skip this update to prevent UI flooding
+            self._last_file_update = current_time
+            
+            # Extract progress information from Rust engine payload
+            # The Rust engine sends: filename, bytes_copied, total_bytes, progress_percent
             filename = payload.get("filename", "Unknown")
             bytes_copied = payload.get("bytes_copied", 0)
             total_bytes = payload.get("total_bytes", 0)
@@ -663,7 +712,7 @@ class ProgressSection(QWidget):
             
             # Update the main progress bar if we have valid data
             if total_bytes > 0 and hasattr(self, 'total_progress'):
-                # Use the progress_percent from C++ engine directly
+                # Use the progress_percent from Rust engine directly
                 progress_percent_int = int(progress_percent)
                 self.total_progress.setValue(progress_percent_int)
                 self.total_progress.setFormat(f"{progress_percent_int}%")
@@ -676,7 +725,7 @@ class ProgressSection(QWidget):
                 self.files_count.setText(f"{filename}: {mb_copied:.1f}/{mb_total:.1f} MB")
             
             # Calculate current speed based on progress updates
-            # Since C++ engine doesn't provide speed, we'll calculate it from progress
+            # Since Rust engine doesn't provide speed, we'll calculate it from progress
             if hasattr(self, 'current_speed_label'):
                 # For now, show progress percentage as speed indicator
                 # In a real implementation, you'd want to track time between updates
@@ -777,5 +826,147 @@ class ProgressSection(QWidget):
             
         except Exception as e:
             print(f"DEBUG: Error in ProgressSection.handle_job_cancelled: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def handle_progress_update(self, payload):
+        """Handle simple progress updates from Rust engine"""
+        try:
+            # Throttle progress updates to prevent UI freezing
+            current_time = time.time() * 1000  # Convert to milliseconds
+            if not hasattr(self, '_last_progress_update'):
+                self._last_progress_update = 0
+                self._progress_throttle_ms = 100  # Update progress max every 100ms
+            
+            if current_time - self._last_progress_update < self._progress_throttle_ms:
+                return  # Skip this update to prevent UI flooding
+            self._last_progress_update = current_time
+            
+            print(f"DEBUG: Progress section received progress_update: {payload}")
+            
+            # Handle different payload formats from Rust engine
+            if 'progress_percent' in payload:
+                # New format from Rust engine
+                percent = payload.get('progress_percent', 0)
+                files_completed = payload.get('completed_files', 0)
+                total_files = payload.get('total_files', 0)
+                elapsed_time = payload.get('elapsed_time', 0)
+                speed_mbps = payload.get('current_speed_mbps', 0)
+                filename = payload.get('filename', '')
+            else:
+                # Legacy format
+                percent = payload.get('percent', 0)
+                files_completed = payload.get('files_completed', 0)
+                total_files = payload.get('total_files', 0)
+                elapsed_time = payload.get('elapsed_time', 0)
+                speed_mbps = payload.get('speed_mbps', 0)
+                filename = payload.get('filename', '')
+            
+            # Update progress bar
+            if hasattr(self, 'total_progress'):
+                self.total_progress.setValue(int(percent))
+                self.total_progress.setFormat(f"{int(percent)}%")
+                print(f"DEBUG: Updated progress bar to {int(percent)}%")
+            
+            # Update files count
+            if hasattr(self, 'files_count'):
+                if filename:
+                    self.files_count.setText(f"{filename}: {files_completed}/{total_files} files")
+                else:
+                    self.files_count.setText(f"{files_completed} of {total_files} files")
+                print(f"DEBUG: Updated files count to {files_completed}/{total_files}")
+            
+            # Update elapsed time
+            if hasattr(self, 'elapsed_label'):
+                elapsed_str = f"{int(elapsed_time//3600):02d}:{int((elapsed_time%3600)//60):02d}:{int(elapsed_time%60):02d}"
+                self.elapsed_label.setText(elapsed_str)
+                print(f"DEBUG: Updated elapsed time to {elapsed_str}")
+            
+            # Update speed
+            if hasattr(self, 'current_speed_label'):
+                self.current_speed_label.setText(f"{speed_mbps:.1f} MB/s")
+                print(f"DEBUG: Updated current speed to {speed_mbps:.1f} MB/s")
+            
+            # Update average speed
+            if hasattr(self, 'avg_speed_label'):
+                self.avg_speed_label.setText(f"{speed_mbps:.1f} MB/s")
+                print(f"DEBUG: Updated average speed to {speed_mbps:.1f} MB/s")
+            
+            # Update peak speed
+            if hasattr(self, 'peak_speed_label'):
+                try:
+                    current_peak_text = self.peak_speed_label.text()
+                    if " MB/s" in current_peak_text:
+                        current_peak = float(current_peak_text.split(' ')[0])
+                        if speed_mbps > current_peak:
+                            self.peak_speed_label.setText(f"{speed_mbps:.1f} MB/s")
+                            print(f"DEBUG: Updated peak speed to {speed_mbps:.1f} MB/s")
+                    else:
+                        self.peak_speed_label.setText(f"{speed_mbps:.1f} MB/s")
+                except (ValueError, IndexError):
+                    self.peak_speed_label.setText(f"{speed_mbps:.1f} MB/s")
+            
+            # Calculate ETA
+            bytes_copied = payload.get('bytes_copied', 0)
+            total_bytes = payload.get('total_bytes', 0)
+            if hasattr(self, 'eta_label') and speed_mbps > 0 and bytes_copied < total_bytes:
+                remaining_bytes = total_bytes - bytes_copied
+                eta_seconds = remaining_bytes / (speed_mbps * 1024 * 1024)
+                if eta_seconds > 0:
+                    eta_str = f"{int(eta_seconds//3600):02d}:{int((eta_seconds%3600)//60):02d}:{int(eta_seconds%60):02d}"
+                    self.eta_label.setText(eta_str)
+                    print(f"DEBUG: Updated ETA to {eta_str}")
+                else:
+                    self.eta_label.setText("--:--:--")
+            elif hasattr(self, 'eta_label'):
+                self.eta_label.setText("--:--:--")
+            
+        except Exception as e:
+            print(f"DEBUG: Error handling progress_update: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def mark_transfer_completed(self):
+        """Mark transfer as completed and switch to green styling"""
+        try:
+            print("DEBUG: Marking transfer as completed with green styling")
+            
+            # Update progress bar to 100% and switch to green
+            if hasattr(self, 'total_progress'):
+                self.total_progress.setValue(100)
+                self.total_progress.setFormat("100%")
+                
+                # Switch to green gradient for completion
+                self.total_progress.setStyleSheet(f"""
+                    QProgressBar {{
+                        border: 1px solid {colors['border']};
+                        border-radius: 3px;
+                        text-align: center;
+                        background-color: {colors['bg']};
+                        color: {colors['text']};
+                        font-size: 14px;
+                        font-weight: 600;
+                        margin: 0;
+                        padding: 0;
+                        min-height: 60px;
+                        max-height: 60px;
+                    }}
+                    QProgressBar::chunk {{
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
+                                                   stop:0 #16a34a, 
+                                                   stop:0.5 #22c55e, 
+                                                   stop:1 #4ade80);
+                        border-radius: 2px;
+                    }}
+                """)
+                print("DEBUG: Progress bar switched to green completion styling")
+            
+            # Update status to show completion
+            if hasattr(self, 'status_label'):
+                self.status_label.setText("Transfer Complete")
+                print("DEBUG: Status updated to 'Transfer Complete'")
+                
+        except Exception as e:
+            print(f"DEBUG: Error marking transfer as completed: {e}")
             import traceback
             traceback.print_exc()

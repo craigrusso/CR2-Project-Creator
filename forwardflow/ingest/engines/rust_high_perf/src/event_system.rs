@@ -1,0 +1,285 @@
+//! Event system for Python callbacks and event emission
+
+use pyo3::prelude::*;
+use pyo3::types::PyDict;
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use crate::data_structures::{DestProgressPayload, FileTransferRecord};
+
+/// Event payload types for Python interop
+#[derive(Debug, Clone)]
+pub struct FileProgressPayload {
+    pub filename: String,
+    pub bytes_copied: u64,
+    pub total_bytes: u64,
+    pub progress_percent: f64,
+}
+
+impl FileProgressPayload {
+    pub fn new(filename: String, bytes_copied: u64, total_bytes: u64) -> Self {
+        let progress_percent = if total_bytes > 0 {
+            (bytes_copied as f64 / total_bytes as f64) * 100.0
+        } else {
+            0.0
+        };
+        
+        Self {
+            filename,
+            bytes_copied,
+            total_bytes,
+            progress_percent,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FileStartedPayload {
+    pub file_id: String,
+    pub filename: String,
+    pub total_bytes: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct FileCompletedPayload {
+    pub file_id: String,
+    pub filename: String,
+    pub bytes_copied: u64,
+    pub total_bytes: u64,
+    pub skipped: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct JobProgressPayload {
+    pub job_id: String,
+    pub bytes_copied: u64,
+    pub total_bytes: u64,
+    pub files_completed: usize,
+    pub total_files: usize,
+    pub elapsed: f64,
+    pub speed_mbps: f64,
+}
+
+/// Event sink for Python callbacks
+pub type EventSink = Arc<Mutex<Option<Box<dyn Fn(String, PyObject) + Send + Sync>>>>;
+
+/// Event system for managing Python callbacks
+pub struct EventSystem {
+    event_sink: EventSink,
+    progress_gate: Arc<Mutex<crate::data_structures::ProgressGate>>,
+}
+
+impl EventSystem {
+    pub fn new() -> Self {
+        Self {
+            event_sink: Arc::new(Mutex::new(None)),
+            progress_gate: Arc::new(Mutex::new(crate::data_structures::ProgressGate::new())),
+        }
+    }
+    
+    /// Set the event sink callback
+    pub fn set_event_sink(&mut self, sink: Box<dyn Fn(String, PyObject) + Send + Sync>) {
+        if let Ok(mut event_sink) = self.event_sink.lock() {
+            *event_sink = Some(sink);
+        }
+    }
+    
+    /// Emit an event to Python
+    pub fn emit_event(&self, event_type: &str, payload: PyObject) {
+        if let Ok(event_sink) = self.event_sink.lock() {
+            if let Some(ref sink) = *event_sink {
+                sink(event_type.to_string(), payload);
+            }
+        }
+    }
+    
+    /// Emit destination progress event
+    pub fn emit_dest_progress(&self, payload: &DestProgressPayload) -> PyResult<()> {
+        Python::with_gil(|py| {
+            let py_payload = PyDict::new(py);
+            py_payload.set_item("dest_index", payload.dest_index)?;
+            py_payload.set_item("dest_path", &payload.dest_path)?;
+            py_payload.set_item("transfer_type", &payload.transfer_type)?;
+            py_payload.set_item("bytes_copied", payload.bytes_copied)?;
+            py_payload.set_item("total_bytes", payload.total_bytes)?;
+            py_payload.set_item("current_speed_mib_s", payload.current_speed_mib_s)?;
+            py_payload.set_item("peak_speed_mib_s", payload.peak_speed_mib_s)?;
+            py_payload.set_item("elapsed_time", payload.elapsed_time)?;
+            py_payload.set_item("completed_files", payload.completed_files)?;
+            py_payload.set_item("total_files", payload.total_files)?;
+            
+            let py_object = py_payload.into_py(py);
+            self.emit_event("dest_progress", py_object);
+            Ok(())
+        })
+    }
+    
+    /// Emit job progress event
+    pub fn emit_job_progress(
+        &self,
+        bytes_copied: u64,
+        total_bytes: u64,
+        files_completed: usize,
+        total_files: usize,
+        elapsed_s: f64,
+        speed_mib_s: f64, // NOTE: MiB/s
+    ) -> PyResult<()> {
+        Python::with_gil(|py| {
+            let py_payload = PyDict::new(py);
+            py_payload.set_item("bytes_copied", bytes_copied)?;
+            py_payload.set_item("total_bytes", total_bytes)?;
+            py_payload.set_item("files_completed", files_completed)?;
+            py_payload.set_item("total_files", total_files)?;
+            py_payload.set_item("elapsed_s", elapsed_s)?;
+            py_payload.set_item("speed_mib_s", speed_mib_s)?;
+            
+            let py_object = py_payload.into_py(py);
+            self.emit_event("job_progress", py_object);
+            Ok(())
+        })
+    }
+    
+    /// Emit file completed event
+    pub fn emit_file_completed(&self, filename: &str, bytes: u64) -> PyResult<()> {
+        Python::with_gil(|py| {
+            let py_payload = PyDict::new(py);
+            py_payload.set_item("filename", filename)?;
+            py_payload.set_item("bytes_copied", bytes)?;
+            
+            let py_object = py_payload.into_py(py);
+            self.emit_event("file_completed", py_object);
+            Ok(())
+        })
+    }
+    
+    /// Emit file started event
+    pub fn emit_file_started(&self, file_id: &str, filename: &str, total_bytes: u64) -> PyResult<()> {
+        Python::with_gil(|py| {
+            let py_payload = PyDict::new(py);
+            py_payload.set_item("file_id", file_id)?;
+            py_payload.set_item("filename", filename)?;
+            py_payload.set_item("total_bytes", total_bytes)?;
+            
+            let py_object = py_payload.into_py(py);
+            self.emit_event("file_started", py_object);
+            Ok(())
+        })
+    }
+    
+    /// Emit file progress event with throttling
+    pub fn emit_file_progress_throttled(
+        &self,
+        file_id: u64,
+        filename: &str,
+        bytes_copied: u64,
+        total_bytes: u64,
+        min_interval_ms: u64,
+    ) -> PyResult<()> {
+        let key = format!("file_progress_{}", file_id);
+        let interval_ns = min_interval_ms * 1_000_000; // Convert to nanoseconds
+        
+        if let Ok(mut progress_gate) = self.progress_gate.lock() {
+            if progress_gate.should_emit(&key, interval_ns) {
+                Python::with_gil(|py| {
+                    let py_payload = PyDict::new(py);
+                    py_payload.set_item("file_id", file_id)?;
+                    py_payload.set_item("filename", filename)?;
+                    py_payload.set_item("bytes_copied", bytes_copied)?;
+                    py_payload.set_item("total_bytes", total_bytes)?;
+                    
+                    let py_object = py_payload.into_py(py);
+                    self.emit_event("file_progress", py_object);
+                    Ok::<(), pyo3::PyErr>(())
+                })?;
+            }
+        }
+        Ok(())
+    }
+    
+    /// Emit verification event
+    pub fn emit_verification_event(&self, record: &FileTransferRecord) -> PyResult<()> {
+        Python::with_gil(|py| {
+            let py_payload = PyDict::new(py);
+            py_payload.set_item("source_path", &record.source_path)?;
+            py_payload.set_item("destination_path", &record.destination_path)?;
+            py_payload.set_item("filename", &record.filename)?;
+            py_payload.set_item("file_size", record.file_size)?;
+            py_payload.set_item("checksum_source", &record.checksum_source)?;
+            py_payload.set_item("checksum_destination", &record.checksum_destination)?;
+            py_payload.set_item("status", &record.status)?;
+            py_payload.set_item("verification_passed", record.verification_passed)?;
+            
+            let py_object = py_payload.into_py(py);
+            self.emit_event("verification_result", py_object);
+            Ok(())
+        })
+    }
+    
+    /// Emit error event
+    pub fn emit_error_event(&self, error_message: &str, context: Option<&str>) -> PyResult<()> {
+        Python::with_gil(|py| {
+            let py_payload = PyDict::new(py);
+            py_payload.set_item("error_message", error_message)?;
+            if let Some(ctx) = context {
+                py_payload.set_item("context", ctx)?;
+            }
+            
+            let py_object = py_payload.into_py(py);
+            self.emit_event("error", py_object);
+            Ok(())
+        })
+    }
+    
+    /// Get current timestamp in seconds
+    pub fn now_seconds() -> f64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64()
+    }
+}
+
+impl Default for EventSystem {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Python wrapper for EventSystem
+#[pyclass]
+pub struct PyEventSystem {
+    inner: Arc<Mutex<EventSystem>>,
+}
+
+#[pymethods]
+impl PyEventSystem {
+    #[new]
+    fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(EventSystem::new())),
+        }
+    }
+    
+    fn set_event_sink(&self, sink: PyObject) {
+        if let Ok(mut event_system) = self.inner.lock() {
+            let sink_box = Box::new(move |event_type: String, payload: PyObject| {
+                Python::with_gil(|py| {
+                    let _ = sink.call1(py, (event_type, payload));
+                });
+            });
+            event_system.set_event_sink(sink_box);
+        }
+    }
+    
+    fn emit_event(&self, event_type: &str, payload: PyObject) {
+        if let Ok(event_system) = self.inner.lock() {
+            event_system.emit_event(event_type, payload);
+        }
+    }
+}
+
+/// Register Python types for this module
+pub fn register_python_types(m: &PyModule) -> PyResult<()> {
+    m.add_class::<PyEventSystem>()?;
+    Ok(())
+}

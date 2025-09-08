@@ -199,51 +199,51 @@ def build_ingest_tab():
                 current_speed = (root.copied_bytes / (1024 * 1024)) / elapsed_seconds
                 
                 # Update progress bar (only if it exists and hasn't been updated recently)
-                if hasattr(root, 'total_progress') and root.total_progress:
+                if hasattr(progress_section, 'total_progress') and progress_section.total_progress:
                     progress_percent = int((root.copied_bytes / root.total_bytes) * 100)
                     # Only update if the value has changed significantly
                     if not hasattr(root, '_last_progress_percent') or abs(progress_percent - root._last_progress_percent) >= 1:
-                        root.total_progress.setValue(progress_percent)
-                        root.total_progress.setFormat(f"{progress_percent}%")
+                        progress_section.total_progress.setValue(progress_percent)
+                        progress_section.total_progress.setFormat(f"{progress_percent}%")
                         root._last_progress_percent = progress_percent
                 
                 # Update current speed stat (only if it exists)
-                if hasattr(root, 'current_speed_label') and root.current_speed_label:
-                    root.current_speed_label.setText(f"{current_speed:.0f} MB/s")
+                if hasattr(progress_section, 'current_speed_label') and progress_section.current_speed_label:
+                    progress_section.current_speed_label.setText(f"{current_speed:.0f} MB/s")
                 
                 # Calculate average speed (only if it exists)
-                if hasattr(root, 'avg_speed_label') and root.avg_speed_label:
+                if hasattr(progress_section, 'avg_speed_label') and progress_section.avg_speed_label:
                     total_mb = root.total_bytes / (1024 * 1024)
                     avg_speed = total_mb / elapsed_seconds
-                    root.avg_speed_label.setText(f"{avg_speed:.0f} MB/s")
+                    progress_section.avg_speed_label.setText(f"{avg_speed:.0f} MB/s")
                 
                 # Update peak speed if current speed is higher (only if it exists)
-                if hasattr(root, 'peak_speed_label') and root.peak_speed_label:
+                if hasattr(progress_section, 'peak_speed_label') and progress_section.peak_speed_label:
                     try:
-                        current_peak_text = root.peak_speed_label.text()
+                        current_peak_text = progress_section.peak_speed_label.text()
                         # Parse current peak value (format: "XXX MB/s" or "0 MB/s")
                         if " MB/s" in current_peak_text:
                             current_peak = float(current_peak_text.split(' ')[0])
                             if current_speed > current_peak:
-                                root.peak_speed_label.setText(f"{current_speed:.0f} MB/s")
+                                progress_section.peak_speed_label.setText(f"{current_speed:.0f} MB/s")
                         else:
                             # If we can't parse, initialize with current speed
-                            root.peak_speed_label.setText(f"{current_speed:.0f} MB/s")
+                            progress_section.peak_speed_label.setText(f"{current_speed:.0f} MB/s")
                     except (ValueError, IndexError):
                         # If we can't parse the current peak, just set it
-                        root.peak_speed_label.setText(f"{current_speed:.0f} MB/s")
+                        progress_section.peak_speed_label.setText(f"{current_speed:.0f} MB/s")
                 
                 # Calculate ETA (only if it exists)
-                if hasattr(root, 'eta_label') and root.eta_label and current_speed > 0 and root.copied_bytes < root.total_bytes:
+                if hasattr(progress_section, 'eta_label') and progress_section.eta_label and current_speed > 0 and root.copied_bytes < root.total_bytes:
                     remaining_bytes = root.total_bytes - root.copied_bytes
                     eta_seconds = remaining_bytes / (current_speed * 1024 * 1024)
                     if eta_seconds > 0:
                         eta_str = f"{int(eta_seconds//3600):02d}:{int((eta_seconds%3600)//60):02d}:{int(eta_seconds%60):02d}"
-                        root.eta_label.setText(eta_str)
+                        progress_section.eta_label.setText(eta_str)
                     else:
-                        root.eta_label.setText("--:--:--")
-                elif hasattr(root, 'eta_label') and root.eta_label:
-                    root.eta_label.setText("--:--:--")
+                        progress_section.eta_label.setText("--:--:--")
+                elif hasattr(progress_section, 'eta_label') and progress_section.eta_label:
+                    progress_section.eta_label.setText("--:--:--")
     
 
     
@@ -278,17 +278,29 @@ def build_ingest_tab():
             self.pending_events = []
             self._timer = QTimer()
             self._timer.timeout.connect(self._process_pending_events)
-            self._timer.start(50)  # Process events every 50ms for real-time responsiveness
-            print(f"DEBUG: QtSink timer started with interval 50ms")
+            self._timer.start(100)  # Process events every 100ms to prevent UI flooding
+            print(f"DEBUG: QtSink timer started with interval 100ms")
             self._lock = threading.Lock()  # Add thread safety
             self._widgets_valid = True  # Track if widgets are still valid
             self._processing = False  # Prevent re-entrant processing
             self._event_count = 0  # Track total events received
+            
+            # Event throttling to prevent UI freezing
+            self._last_progress_update = 0
+            self._progress_throttle_ms = 100  # Update progress max every 100ms
+            self._last_file_update = 0
+            self._file_throttle_ms = 500  # Update file progress max every 500ms
+            self._last_dest_update = 0
+            self._dest_throttle_ms = 200  # Update destination progress max every 200ms
         
         def emit(self, event_type: str, payload: dict) -> None:
             """Emit an event to be processed on the main thread"""
             if not self._widgets_valid:
                 print(f"DEBUG: QtSink ignoring event {event_type} - widgets no longer valid")
+                return
+            
+            # Check if event should be throttled to prevent UI freezing
+            if self._should_throttle_event(event_type):
                 return
                 
             self._event_count += 1
@@ -300,6 +312,31 @@ def build_ingest_tab():
                 # This avoids issues with cross-thread QTimer calls
                 self.pending_events.append((event_type, payload))
                 print(f"DEBUG: Event queued, pending events: {len(self.pending_events)}")
+        
+        def _should_throttle_event(self, event_type: str) -> bool:
+            """Check if event should be throttled to prevent UI freezing"""
+            current_time = time.time() * 1000  # Convert to milliseconds
+            
+            if event_type == "job.progress":
+                if current_time - self._last_progress_update < self._progress_throttle_ms:
+                    return True
+                self._last_progress_update = current_time
+                return False
+                
+            elif event_type == "file.progress":
+                if current_time - self._last_file_update < self._file_throttle_ms:
+                    return True
+                self._last_file_update = current_time
+                return False
+                
+            elif event_type == "dest.progress":
+                if current_time - self._last_dest_update < self._dest_throttle_ms:
+                    return True
+                self._last_dest_update = current_time
+                return False
+                
+            # Never throttle important events
+            return False
         
         def _process_pending_events(self):
             """Process pending events on the main thread"""
@@ -313,11 +350,12 @@ def build_ingest_tab():
                     if not self.pending_events:
                         return
                     
-                    # Process all pending events
-                    events_to_process = self.pending_events.copy()
-                    self.pending_events.clear()
+                    # Process only a limited number of events per cycle to prevent UI blocking
+                    max_events_per_cycle = 10  # Limit to prevent UI freezing
+                    events_to_process = self.pending_events[:max_events_per_cycle]
+                    self.pending_events = self.pending_events[max_events_per_cycle:]
                 
-                print(f"DEBUG: Processing {len(events_to_process)} pending events")
+                print(f"DEBUG: Processing {len(events_to_process)} pending events (max {max_events_per_cycle} per cycle)")
                 
                 for event_type, payload in events_to_process:
                     try:
@@ -333,8 +371,14 @@ def build_ingest_tab():
                             progress_section.handle_job_started(payload)
                         elif event_type == "job.progress":
                             progress_section.handle_job_progress(payload)
+                        elif event_type == "dest.progress":
+                            source_dest_section.handle_destination_progress(payload)
                         elif event_type == "current.file":
                             progress_section.handle_current_file(payload)
+                        elif event_type == "file.started":
+                            progress_section.handle_file_started(payload)
+                        elif event_type == "file.progress":
+                            progress_section.handle_file_progress(payload)
                         elif event_type == "file.completed":
                             progress_section.handle_file_completed(payload)
                         elif event_type == "file.failed":

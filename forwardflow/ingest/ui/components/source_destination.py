@@ -22,9 +22,10 @@ except ImportError as e:
 class DestinationWidget(QFrame):
     """Individual destination widget with transfer type detection"""
     
-    def __init__(self, path, parent=None):
+    def __init__(self, path, parent=None, parent_section=None):
         super().__init__(parent)
         self.path = path
+        self.parent_section = parent_section  # Reference to SourceDestinationSection
         self.setup_ui()
         
     def setup_ui(self):
@@ -141,7 +142,7 @@ class DestinationWidget(QFrame):
         info_row.addStretch()
         layout.addLayout(info_row)
         
-        # Progress bar row
+        # Progress bar row with enhanced information
         progress_row = QHBoxLayout()
         progress_row.setSpacing(5)
         
@@ -149,7 +150,7 @@ class DestinationWidget(QFrame):
         dest_progress = QProgressBar()
         dest_progress.setRange(0, 100)
         dest_progress.setValue(0)
-        dest_progress.setFixedHeight(15)
+        dest_progress.setFixedHeight(20)  # Slightly taller for better visibility
         dest_progress.setStyleSheet(f"""
             QProgressBar {{
                 border: 1px solid {colors['border']};
@@ -161,28 +162,98 @@ class DestinationWidget(QFrame):
             }}
             QProgressBar::chunk {{
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0, 
-                                           stop:0 #2d5a2d, 
-                                           stop:0.5 #4a7c4a, 
-                                           stop:1 #6ba06b);
+                                           stop:0 #2563eb, 
+                                           stop:0.5 #3b82f6, 
+                                           stop:1 #60a5fa);
                 border-radius: 1px;
             }}
         """)
-        dest_progress.setVisible(False)
+        dest_progress.setVisible(True)  # Always show progress bar for destination tracking
         dest_progress.setFormat("Dest: %p%")
         dest_progress.setTextVisible(True)
         progress_row.addWidget(dest_progress, 1)
         
         layout.addLayout(progress_row)
         
+        # Enhanced speed and status row
+        speed_row = QHBoxLayout()
+        speed_row.setSpacing(15)
+        speed_row.setContentsMargins(0, 2, 0, 2)
+        
+        # Current speed label - LARGE and readable
+        current_speed_label = QLabel("0 MB/s")
+        current_speed_label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['accent']};
+                font-size: 16px;
+                font-weight: 600;
+                font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            }}
+        """)
+        current_speed_label.setFixedHeight(24)
+        current_speed_label.setMinimumWidth(90)
+        
+        # Peak speed label - LARGE and readable
+        peak_speed_label = QLabel("Peak: 0 MB/s")
+        peak_speed_label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['secondary_text']};
+                font-size: 14px;
+                font-weight: 500;
+            }}
+        """)
+        peak_speed_label.setFixedHeight(24)
+        peak_speed_label.setMinimumWidth(120)
+        
+        # ETA label - LARGE and readable
+        eta_label = QLabel("ETA: --:--")
+        eta_label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['text']};
+                font-size: 14px;
+                font-weight: 500;
+                font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            }}
+        """)
+        eta_label.setFixedHeight(24)
+        eta_label.setMinimumWidth(100)
+        
+        # Status label (Ready, Transferring, Complete) - LARGE and readable
+        status_label = QLabel("Ready")
+        status_label.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['secondary_text']};
+                font-size: 14px;
+                font-weight: 500;
+                padding: 4px 8px;
+                border-radius: 6px;
+                background-color: {colors['bg']};
+            }}
+        """)
+        status_label.setFixedHeight(24)
+        status_label.setMinimumWidth(80)
+        
+        speed_row.addWidget(current_speed_label)
+        speed_row.addWidget(peak_speed_label)
+        speed_row.addWidget(eta_label)
+        speed_row.addStretch()
+        speed_row.addWidget(status_label)
+        
+        layout.addLayout(speed_row)
+        
         # Store references
         self.preset_combo = preset_combo
         self.remove_btn = remove_btn
         self.dest_progress = dest_progress
+        self.current_speed_label = current_speed_label
+        self.peak_speed_label = peak_speed_label
+        self.eta_label = eta_label
+        self.status_label = status_label
         
     def remove_self(self):
         """Remove this destination widget"""
-        if hasattr(self.parent(), 'remove_destination'):
-            self.parent().remove_destination(self)
+        if self.parent_section and hasattr(self.parent_section, 'remove_destination'):
+            self.parent_section.remove_destination(self)
 
 
 class SourceDestinationSection(QWidget):
@@ -301,6 +372,10 @@ class SourceDestinationSection(QWidget):
         dest_header.addWidget(self.add_dest_btn)
         dest_layout.addLayout(dest_header, 0)
         
+        # Connect button signals
+        self.add_dest_btn.clicked.connect(self.add_destination)
+        self.src_btn.clicked.connect(self._browse_for_source)
+        
         # Destinations list (scrollable with expandable height)
         dest_scroll = QScrollArea()
         dest_scroll.setWidgetResizable(True)
@@ -346,7 +421,7 @@ class SourceDestinationSection(QWidget):
         
         if path:
             print(f"DEBUG: Added destination: {path}")
-            dest_widget = DestinationWidget(path, self.dest_container)
+            dest_widget = DestinationWidget(path, self.dest_container, self)
             self.destination_widgets.append(dest_widget)
             self.dest_container_layout.addWidget(dest_widget)
             self.dest_combo.setCurrentText("")
@@ -366,6 +441,18 @@ class SourceDestinationSection(QWidget):
         """Get list of destination paths"""
         return [widget.path for widget in self.destination_widgets]
     
+    def _browse_for_source(self):
+        """Browse for source directory"""
+        path = QFileDialog.getExistingDirectory(
+            self,
+            "Select Source Folder",
+            "",
+            QFileDialog.Option.ShowDirsOnly | QFileDialog.Option.DontResolveSymlinks
+        )
+        if path:
+            self.src_combo.setCurrentText(path)
+            print(f"DEBUG: Source selected: {path}")
+    
     def populate_recent_locations(self):
         """Populate the source and destination dropdowns with recent locations"""
         # Populate source dropdown with recent sources
@@ -377,3 +464,110 @@ class SourceDestinationSection(QWidget):
         if self.recent_destinations:
             self.dest_combo.addItems(self.recent_destinations)
             print(f"DEBUG: Populated destination dropdown with {len(self.recent_destinations)} recent destinations")
+    
+    def handle_destination_progress(self, payload):
+        """Handle destination progress events to update individual destination cards"""
+        try:
+            dest_index = payload.get("dest_index", 0)
+            dest_path = payload.get("dest_path", "")
+            bytes_copied = payload.get("bytes_copied", 0)
+            total_bytes = payload.get("total_bytes", 0)
+            completed_files = payload.get("completed_files", 0)
+            total_files = payload.get("total_files", 0)
+            current_speed = payload.get("current_speed_mbps", 0.0)
+            peak_speed = payload.get("peak_speed_mbps", 0.0)
+            elapsed_time = payload.get("elapsed_time", 0.0)
+            
+            print(f"DEBUG: Destination {dest_index} progress: {dest_path} - {bytes_copied}/{total_bytes} bytes")
+            
+            # Find the destination widget by index
+            if dest_index < len(self.destination_widgets):
+                dest_widget = self.destination_widgets[dest_index]
+                
+                # Update progress bar
+                if hasattr(dest_widget, 'dest_progress') and dest_widget.dest_progress:
+                    progress_bar = dest_widget.dest_progress
+                    
+                    # Ensure progress bar is visible and initialized
+                    if not progress_bar.isVisible():
+                        progress_bar.setVisible(True)
+                        progress_bar.setValue(0)
+                        progress_bar.setFormat(f"Dest {dest_index + 1}: 0%")
+                    
+                    # Calculate and update progress
+                    if total_bytes > 0:
+                        progress_percent = min(100, int((bytes_copied / total_bytes) * 100))
+                        progress_bar.setValue(progress_percent)
+                        progress_bar.setFormat(f"Dest {dest_index + 1}: {progress_percent}%")
+                        print(f"DEBUG: Destination {dest_index} progress bar updated to {progress_percent}%")
+                    else:
+                        # If total_bytes is 0, show indeterminate progress
+                        progress_bar.setFormat(f"Dest {dest_index + 1}: Calculating...")
+                
+                # Update speed labels
+                if hasattr(dest_widget, 'current_speed_label') and dest_widget.current_speed_label:
+                    dest_widget.current_speed_label.setText(f"{current_speed:.1f} MB/s")
+                
+                if hasattr(dest_widget, 'peak_speed_label') and dest_widget.peak_speed_label:
+                    dest_widget.peak_speed_label.setText(f"Peak: {peak_speed:.1f} MB/s")
+                
+                # Update ETA if we have speed data
+                if hasattr(dest_widget, 'eta_label') and dest_widget.eta_label:
+                    if current_speed > 0 and bytes_copied < total_bytes:
+                        remaining_bytes = total_bytes - bytes_copied
+                        eta_seconds = remaining_bytes / (current_speed * 1024 * 1024)
+                        if eta_seconds > 0:
+                            eta_str = f"ETA: {int(eta_seconds//3600):02d}:{int((eta_seconds%3600)//60):02d}:{int(eta_seconds%60):02d}"
+                            dest_widget.eta_label.setText(eta_str)
+                        else:
+                            dest_widget.eta_label.setText("ETA: --:--:--")
+                    else:
+                        dest_widget.eta_label.setText("ETA: --:--:--")
+                
+                # Update status label
+                if hasattr(dest_widget, 'status_label') and dest_widget.status_label:
+                    if completed_files == total_files:
+                        dest_widget.status_label.setText("Complete")
+                        dest_widget.status_label.setStyleSheet(f"""
+                            QLabel {{
+                                color: #4a7c4a;
+                                font-size: 14px;
+                                font-weight: 500;
+                                padding: 4px 8px;
+                                border-radius: 6px;
+                                background-color: {colors['bg']};
+                            }}
+                        """)
+                    elif completed_files > 0:
+                        dest_widget.status_label.setText("Transferring...")
+                        dest_widget.status_label.setStyleSheet(f"""
+                            QLabel {{
+                                color: #2d5a2d;
+                                font-size: 14px;
+                                font-weight: 500;
+                                padding: 4px 8px;
+                                border-radius: 6px;
+                                background-color: {colors['bg']};
+                            }}
+                        """)
+                    else:
+                        dest_widget.status_label.setText("Ready")
+                        dest_widget.status_label.setStyleSheet(f"""
+                            QLabel {{
+                                color: {colors['secondary_text']};
+                                font-size: 14px;
+                                font-weight: 500;
+                                padding: 4px 8px;
+                                border-radius: 6px;
+                                background-color: {colors['bg']};
+                            }}
+                        """)
+                
+                print(f"DEBUG: Destination {dest_index} progress updated successfully")
+            else:
+                print(f"DEBUG: Invalid destination index {dest_index} or no destinations available")
+                
+        except Exception as e:
+            print(f"DEBUG: Error in handle_destination_progress: {e}")
+            import traceback
+            traceback.print_exc()

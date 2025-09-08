@@ -86,3 +86,5 @@ def calculate_optimal_buffer(transfer_type: str) -> float:
         "local": 8.0
     }
     return buffer_sizes.get(transfer_type, 2.0)
+
+
