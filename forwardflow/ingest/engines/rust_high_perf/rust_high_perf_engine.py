@@ -251,15 +251,81 @@ class PyEnhancedHighPerfTransferEngine:
         
         print(f"DEBUG: All {len(destination_threads)} destination threads started")
         
-        # Monitor progress and wait for all destinations to complete
+        # ACTIVE AGGREGATE PROGRESS MONITORING - Emit job.progress events in real-time
+        print(f"DEBUG: Starting active aggregate progress monitoring")
+        
+        # Calculate job totals for aggregate progress
+        total_job_bytes = sum(entry['size'] for entry in file_manifest) * len(destinations)  # All files to all destinations
+        total_job_files = len(file_manifest)  # Files counted once (not per destination)
+        
+        print(f"DEBUG: Total job bytes: {total_job_bytes}, total job files: {total_job_files}")
+        
+        last_progress_time = time.time()
+        progress_update_interval = 0.1  # Update every 100ms for responsive UI
+        
         while any(thread.is_alive() for thread in destination_threads):
             if self.is_cancelled:
                 print("DEBUG: Transfer cancelled, stopping all destination threads")
-                # Note: In a real implementation, you'd want to signal threads to stop gracefully
                 break
+            
+            current_time = time.time()
+            
+            # Update aggregate progress at regular intervals
+            if current_time - last_progress_time >= progress_update_interval:
+                # Calculate real-time aggregate metrics from all destinations
+                current_aggregate_bytes = sum(dest_bytes_copied[dest] for dest in destinations)
+                current_aggregate_files = max(dest_files_completed[dest] for dest in destinations) if destinations else 0  # Use max completed files
+                
+                # Calculate job-level progress metrics
+                elapsed = current_time - start_time
+                current_speed = (current_aggregate_bytes / (1024 * 1024)) / elapsed if elapsed > 0 else 0
+                progress_percent = (current_aggregate_bytes / total_job_bytes * 100) if total_job_bytes > 0 else 0
+                eta = (total_job_bytes - current_aggregate_bytes) / (current_speed * 1024 * 1024) if current_speed > 0 else 0
+                
+                # Emit job.progress event for main UI progress bar and metrics
+                if hasattr(self, 'event_sink') and self.event_sink:
+                    self.event_sink.emit('job.progress', {
+                        'job_id': job_id,
+                        'bytes_copied': current_aggregate_bytes,
+                        'total_target_bytes': total_job_bytes,
+                        'completed_files': current_aggregate_files,
+                        'total_files': total_job_files,
+                        'current_speed_mbps': current_speed,
+                        'peak_speed_mbps': current_speed,  # Track peak separately in a real implementation
+                        'elapsed_seconds': elapsed,
+                        'progress_percent': progress_percent,
+                        'eta_seconds': eta
+                    })
+                    
+                    print(f"DEBUG: Emitted job.progress - {progress_percent:.1f}% ({current_aggregate_files}/{total_job_files} files, {current_speed:.1f} MB/s)")
+                
+                last_progress_time = current_time
+            
             time.sleep(0.1)  # Brief pause to prevent busy waiting
         
         print(f"DEBUG: All destination threads completed")
+        
+        # EMIT FINAL JOB.PROGRESS EVENT - Critical for UI to show completion
+        final_aggregate_bytes = sum(dest_bytes_copied[dest] for dest in destinations)
+        final_aggregate_files = max(dest_files_completed[dest] for dest in destinations) if destinations else 0
+        final_elapsed = time.time() - start_time
+        final_speed = (final_aggregate_bytes / (1024 * 1024)) / final_elapsed if final_elapsed > 0 else 0
+        final_progress_percent = (final_aggregate_bytes / total_job_bytes * 100) if total_job_bytes > 0 else 100
+        
+        if hasattr(self, 'event_sink') and self.event_sink:
+            self.event_sink.emit('job.progress', {
+                'job_id': job_id,
+                'bytes_copied': final_aggregate_bytes,
+                'total_target_bytes': total_job_bytes,
+                'completed_files': final_aggregate_files,
+                'total_files': total_job_files,
+                'current_speed_mbps': final_speed,
+                'peak_speed_mbps': final_speed,
+                'elapsed_seconds': final_elapsed,
+                'progress_percent': final_progress_percent,
+                'eta_seconds': 0.0
+            })
+            print(f"DEBUG: ✅ Emitted FINAL job.progress - {final_progress_percent:.1f}% ({final_aggregate_files}/{total_job_files} files, {final_speed:.1f} MB/s)")
         
         # Collect any errors from parallel processing
         while not error_queue.empty():
@@ -280,115 +346,6 @@ class PyEnhancedHighPerfTransferEngine:
         print(f"DEBUG: Total bytes copied: {aggregate_bytes_copied}")
         print(f"DEBUG: Total files copied: {copied_files}")
         
-        # Skip the old sequential processing loop - replaced with parallel version above
-        if False:  # Disable old sequential code
-            for file_entry in file_manifest:
-                if self.is_cancelled:
-                    break
-                    
-                while self.is_paused:
-                    time.sleep(0.1)
-                    if self.is_cancelled:
-                        break
-                
-                if self.is_cancelled:
-                    break
-                
-                try:
-                    file_path = file_entry['full_path']
-                    rel_path = file_entry['rel_path']
-                    file_size = file_entry['size']
-                    
-                    # Create destination path
-                    dest_path = os.path.join(dest, rel_path)
-                    
-                    # Ensure destination directory exists
-                    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-                    
-                    # Emit file.progress with proper schema AND destination context
-                    if hasattr(self, 'event_sink') and self.event_sink:
-                        self.event_sink.emit('file.progress', {
-                            'job_id': job_id,
-                            'filename': os.path.basename(file_path),
-                            'file_bytes': file_size,
-                            'file_bytes_copied': 0,
-                            'dest_index': dest_idx,
-                            'dest_path': dest,  # Add destination path for JobAggregator
-                            'transfer_state': 'IN_PROGRESS'
-                        })
-                    
-                    # Copy file with progress tracking
-                    copied = self._copy_file_with_progress_stable(file_path, dest_path, file_size, job_id)
-                    
-                    if copied:
-                        # Update aggregate tracking
-                        aggregate_bytes_copied += file_size
-                        if dest_idx == len(destinations) - 1:  # Last destination
-                            copied_files += 1
-                        
-                        # Update destination-specific tracking
-                        dest_bytes_copied[dest] += file_size
-                        dest_files_completed[dest] += 1
-                        
-                        # Emit job.progress with stable totals
-                        if hasattr(self, 'event_sink') and self.event_sink:
-                            elapsed = time.time() - start_time
-                            current_speed = (aggregate_bytes_copied / (1024 * 1024)) / elapsed if elapsed > 0 else 0
-                            eta = (total_target_bytes - aggregate_bytes_copied) / (current_speed * 1024 * 1024) if current_speed > 0 else 0
-                            
-                            self.event_sink.emit('job.progress', {
-                                'job_id': job_id,
-                                'bytes_copied': aggregate_bytes_copied,
-                                'total_target_bytes': total_target_bytes,  # Never changes
-                                'completed_files': copied_files,
-                                'total_files': total_files,
-                                'current_speed_mbps': current_speed,
-                                'peak_speed_mbps': current_speed,  # Simplified for now
-                                'elapsed_seconds': elapsed,
-                                'eta_seconds': eta
-                            })
-                            
-                            # Emit destination-specific progress event
-                            dest_progress_percent = (dest_bytes_copied[dest] / dest_total_bytes[dest] * 100) if dest_total_bytes[dest] > 0 else 0
-                            dest_eta = (dest_total_bytes[dest] - dest_bytes_copied[dest]) / (current_speed * 1024 * 1024) if current_speed > 0 else 0
-                            
-                            self.event_sink.emit('dest.progress', {
-                                'job_id': job_id,
-                                'dest_path': dest,
-                                'dest_index': dest_idx,
-                                'progress_percent': dest_progress_percent,
-                                'bytes_copied': dest_bytes_copied[dest],
-                                'total_bytes': dest_total_bytes[dest],
-                                'completed_files': dest_files_completed[dest],
-                                'total_files': dest_total_files[dest],
-                                'current_speed_mbps': current_speed,  # Shared for now
-                                'peak_speed_mbps': current_speed,
-                                'elapsed_seconds': elapsed,
-                                'eta_seconds': dest_eta
-                            })
-                        
-                        # Emit file completion with destination context
-                        if hasattr(self, 'event_sink') and self.event_sink:
-                            self.event_sink.emit('file.complete', {
-                                'job_id': job_id,
-                                'filename': os.path.basename(file_path),
-                                'file_bytes': file_size,
-                                'dest_index': dest_idx,
-                                'dest_path': dest,  # Add destination path
-                                'transfer_state': 'COMPLETED'
-                            })
-                        
-                        # Verify file integrity
-                        verification_result = self.verification_manager.verify_file_transfer(
-                            file_path, dest_path, "xxhash64"
-                        )
-                        if not verification_result.get("verification_passed", False):
-                            errors.append(f"Verification failed for {file_path}")
-                        
-                except Exception as e:
-                    errors.append(f"Error copying {file_path}: {str(e)}")
-        
-        # End of disabled old sequential processing code
         
         elapsed_time = time.time() - start_time
         
