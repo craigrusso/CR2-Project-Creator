@@ -94,9 +94,22 @@ class RustEventSink(QObject):
     
     def emit(self, event_type: str, payload: dict) -> None:
         """Handle events from Rust engine with thread-safe EventBridge routing"""
-        # Log all events for debugging
+        # Log destination events for debugging
         if 'dest' in event_type.lower() or 'destination' in event_type.lower():
             print(f"🔍 RustEventSink.emit() DESTINATION EVENT: type='{event_type}', payload={payload}")
+        
+        # Log file completion events for debugging
+        elif 'completed' in event_type.lower() or event_type.lower().endswith('.completed'):
+            print(f"🔍 RustEventSink.emit() COMPLETION EVENT: type='{event_type}', payload={payload}")
+        
+        # Log periodic job progress events (less verbose)
+        elif 'progress' in event_type.lower() or 'job' in event_type.lower():
+            # Only log every 20th progress event to avoid spam
+            if not hasattr(self, '_progress_event_counter'):
+                self._progress_event_counter = 0
+            self._progress_event_counter += 1
+            if self._progress_event_counter % 20 == 0:
+                print(f"🔍 RustEventSink.emit() PROGRESS EVENT (every 20th): type='{event_type}', payload_keys={list(payload.keys())}")
         
         # Route all events through EventBridge (thread-safe)
         self.event_bridge.emit_event(event_type, payload)

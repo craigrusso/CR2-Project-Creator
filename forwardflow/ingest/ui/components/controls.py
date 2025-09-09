@@ -1394,64 +1394,97 @@ class ControlSection(QWidget):
         print(f"📊 Generating per-destination DIT report for: {dest_path}")
         
         try:
-            # Get current stats from EventBridge with actual data retention
-            if hasattr(self.root, '_rust_event_sink') and self.root._rust_event_sink:
-                event_sink = self.root._rust_event_sink
-                stats = event_sink.get_comprehensive_stats()
-                
-                # DEBUG: Print what stats we're getting
-                print(f"🔍 REPORT DEBUG: Comprehensive stats received:")
-                print(f"  - Total files: {stats.get('total_files', 'N/A')}")
-                print(f"  - Total bytes: {stats.get('total_bytes', 'N/A')}")
-                print(f"  - Copied bytes: {stats.get('copied_bytes', 'N/A')}")
-                print(f"  - Files array length: {len(stats.get('files', []))}")
-                print(f"  - Destinations keys: {list(stats.get('destinations', {}).keys())}")
-                
-                # Print sample file records if available
-                files_data = stats.get('files', [])
-                if files_data:
-                    print(f"  - Sample file record: {files_data[0]}")
-                else:
-                    print(f"  - No file records found in stats!")
-                
-                # Filter data for this specific destination
-                dest_stats = stats.get('destinations', {}).get(dest_path, {})
-                dest_files = [f for f in stats.get('files', []) if f.get('dest_path') == dest_path]
-                
-                print(f"🔍 REPORT DEBUG: Filtered for destination '{dest_path}':")
-                print(f"  - Destination stats: {dest_stats}")
-                print(f"  - Filtered files count: {len(dest_files)}")
-                if dest_files:
-                    print(f"  - Sample filtered file: {dest_files[0]}")
-                
-                # Create job-like object for report generation
-                from types import SimpleNamespace
-                job = SimpleNamespace()
-                job.id = getattr(self.root, 'current_job_id', f'dest_report_{int(time.time())}')
-                job.source_paths = getattr(self.root, 'current_source_path', [])  
-                job.destination_paths = [dest_path]  # Single destination
-                # Get verification algorithm from options section
-                verify_algorithm = "xxhash64be"  # Default
-                if hasattr(self.root, 'options_section') and self.root.options_section:
-                    verify_algorithm = self.root.options_section.get_verification_algorithm()
-                job.verification_method = verify_algorithm
-                
-                # Generate the report using existing method but for single destination
-                self._generate_completion_report(
-                    self.root, 
-                    "completed", 
-                    {
-                        'stats': dest_stats,
-                        'files': dest_files,
-                        'destinations': {dest_path: dest_stats}
-                    },
-                    job
-                )
-                
-                print(f"✅ Per-destination report generated for: {dest_path}")
-                
-            else:
-                print(f"❌ Cannot generate report - event sink not available")
+            # Use the same data acquisition strategy as _generate_completion_report for consistency
+            
+            # Get comprehensive stats with fallback logic (same as main completion report)
+            comprehensive_stats = {
+                'total_bytes': 0,
+                'copied_bytes': 0,
+                'duration': 0,
+                'avg_speed': 0,
+                'peak_speed': 0,
+                'total_files': 0,
+                'completed_files': 0,
+                'cancelled_files': 0,
+                'error_files': 0
+            }
+            file_records = []
+            
+            # Primary source: Get stats from EventBridge through Rust event sink
+            event_sink = getattr(self.root, '_rust_event_sink', None)
+            if event_sink and hasattr(event_sink, 'get_comprehensive_stats'):
+                try:
+                    bridge_stats = event_sink.get_comprehensive_stats()
+                    bridge_file_records = event_sink.get_file_records()
+                    
+                    print(f"🔍 PER-DEST DEBUG: EventBridge stats - total: {bridge_stats.get('total_bytes', 0)}, "
+                          f"copied: {bridge_stats.get('copied_bytes', 0)}, "
+                          f"files: {len(bridge_file_records)}")
+                    
+                    # Use EventBridge data if available
+                    if bridge_stats.get('total_bytes', 0) > 0 or bridge_stats.get('copied_bytes', 0) > 0:
+                        comprehensive_stats.update(bridge_stats)
+                        file_records = bridge_file_records
+                        print(f"🔍 PER-DEST DEBUG: Using EventBridge data: {len(file_records)} file records")
+                    else:
+                        print("🔍 PER-DEST DEBUG: EventBridge stats are empty, will use engine stats as fallback")
+                        
+                except Exception as e:
+                    print(f"🔍 PER-DEST DEBUG: Error accessing EventBridge stats: {e}")
+            
+            # Secondary source: Engine stats (fallback)
+            if hasattr(self.root, 'current_job') and self.root.current_job and hasattr(self.root.current_job, 'get_stats'):
+                try:
+                    engine_stats = self.root.current_job.get_stats()
+                    print(f"🔍 PER-DEST DEBUG: Engine stats available, using as fallback or supplement")
+                    
+                    # If EventBridge stats are empty, use engine stats
+                    if comprehensive_stats['total_bytes'] == 0:
+                        print(f"🔍 PER-DEST DEBUG: Using engine stats as primary source")
+                        # Convert engine stats format if needed
+                        if hasattr(engine_stats, 'total_bytes'):
+                            comprehensive_stats['total_bytes'] = engine_stats.total_bytes
+                            comprehensive_stats['copied_bytes'] = engine_stats.copied_bytes
+                        # Add more engine stat conversions as needed
+                        
+                except Exception as e:
+                    print(f"🔍 PER-DEST DEBUG: Error accessing engine stats: {e}")
+            
+            # Filter data for this specific destination
+            dest_stats = comprehensive_stats
+            dest_files = [f for f in file_records if f.get('dest_path') == dest_path]
+            
+            print(f"🔍 PER-DEST FINAL: Filtered for destination '{dest_path}':")
+            print(f"  - Destination stats total_bytes: {dest_stats.get('total_bytes', 0)}")
+            print(f"  - Destination stats copied_bytes: {dest_stats.get('copied_bytes', 0)}")
+            print(f"  - Filtered files count: {len(dest_files)}")
+            
+            # Create job-like object for report generation
+            from types import SimpleNamespace
+            job = SimpleNamespace()
+            job.id = getattr(self.root, 'current_job_id', f'dest_report_{int(time.time())}')
+            job.source_paths = getattr(self.root, 'current_source_path', [])  
+            job.destination_paths = [dest_path]  # Single destination
+            # Get verification algorithm from options section
+            verify_algorithm = "xxhash64be"  # Default
+            if hasattr(self.root, 'options_section') and self.root.options_section:
+                verify_algorithm = self.root.options_section.get_verification_algorithm()
+            job.verification_method = verify_algorithm
+            
+            # Generate the report using existing method with actual data
+            self._generate_completion_report(
+                self.root, 
+                "completed", 
+                {
+                    'total_bytes': dest_stats.get('total_bytes', 0),
+                    'copied_bytes': dest_stats.get('copied_bytes', 0),
+                    'duration': dest_stats.get('duration', 0),
+                    'files': dest_files,
+                },
+                job
+            )
+            
+            print(f"✅ Per-destination report generated for: {dest_path}")
                 
         except Exception as e:
             print(f"❌ Error generating per-destination report: {e}")
