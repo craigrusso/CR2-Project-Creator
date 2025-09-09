@@ -16,6 +16,7 @@ class RustEventSink(QObject):
     # Progress update signals
     progress_update = pyqtSignal(dict)
     destination_update = pyqtSignal(dict)
+    destination_completed = pyqtSignal(str)  # Signal for immediate per-destination reporting
     
     def __init__(self):
         super().__init__()
@@ -30,6 +31,10 @@ class RustEventSink(QObject):
         # Legacy compatibility - file records for reporting
         self._file_records = {}  # filename -> file record with verification info
         
+        # Per-destination completion tracking for immediate report generation
+        self._completed_destinations = set()  # Track which destinations are complete
+        self._last_destination_check = {}     # Track destination progress for completion detection
+        
         # Thread-safe timer for periodic updates
         self.update_timer = QTimer()
         self.update_timer.setSingleShot(False)
@@ -37,13 +42,37 @@ class RustEventSink(QObject):
         
         print("DEBUG: Professional RustEventSink with EventBridge initialized")
     
+    def _check_destination_completion(self, event_type: str, payload: dict) -> None:
+        """Check if a destination has completed and trigger immediate report generation"""
+        normalized_type = self._normalize_event_type(event_type)
+        
+        if normalized_type == 'dest.progress':
+            dest_path = payload.get('dest_path', '')
+            progress_percent = payload.get('progress_percent', 0)
+            
+            # Check if destination reached 100% completion
+            if progress_percent >= 100.0 and dest_path and dest_path not in self._completed_destinations:
+                print(f"🎯 DESTINATION COMPLETED: {dest_path} - Triggering immediate report generation")
+                
+                # Mark as completed
+                self._completed_destinations.add(dest_path)
+                
+                # Emit custom signal for per-destination completion
+                if hasattr(self, 'destination_completed'):
+                    self.destination_completed.emit(dest_path)
+                else:
+                    # If signal doesn't exist, trigger report generation directly
+                    self._trigger_destination_report(dest_path)
+    
     def initialize_job(self, total_files: int, destinations: List[str]) -> None:
         """Initialize EventBridge for a new transfer job"""
         # Direct initialization - we're already in the main thread
         self.event_bridge.initialize_job(total_files, destinations)
         
-        # Clear file records and start update timer
+        # Clear file records and destination completion tracking
         self._file_records.clear()
+        self._completed_destinations.clear()
+        self._last_destination_check.clear()
         
         # Start periodic update timer
         if not self.update_timer.isActive():
@@ -55,6 +84,9 @@ class RustEventSink(QObject):
         """Handle events from Rust engine with thread-safe EventBridge routing"""
         # Route all events through EventBridge (thread-safe)
         self.event_bridge.emit_event(event_type, payload)
+        
+        # Check for destination completion to trigger immediate reports
+        self._check_destination_completion(event_type, payload)
         
         # Handle file record updates for legacy compatibility
         normalized_type = self._normalize_event_type(event_type)
@@ -194,6 +226,16 @@ class RustEventSink(QObject):
         # Reset EventBridge
         self.event_bridge.reset_for_new_job()
         
-        # Clear file records
+        # Clear file records and destination completion tracking
         self._file_records.clear()
+        self._completed_destinations.clear()
+        self._last_destination_check.clear()
+    
+    def _trigger_destination_report(self, dest_path: str) -> None:
+        """Trigger immediate report generation for a completed destination"""
+        print(f"📊 Triggering immediate DIT report for destination: {dest_path}")
+        
+        # This will be connected to the controls for actual report generation
+        # For now, just emit the signal - controls will handle the actual report generation
+        pass
     

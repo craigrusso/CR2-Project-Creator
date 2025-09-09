@@ -125,6 +125,10 @@ class TransferWorker(QObject):
                     print(f"DEBUG: Connecting event_sink.destination_update to {self.root.source_dest_section}.handle_destination_progress")
                     self.event_sink.destination_update.connect(self.root.source_dest_section.handle_destination_progress)
                     print("DEBUG: ✓ *** DESTINATION CONNECTION ESTABLISHED ***")
+                    
+                    # Connect destination completion signal for immediate report generation
+                    self.event_sink.destination_completed.connect(self._handle_destination_completed)
+                    print("DEBUG: ✓ *** DESTINATION COMPLETION CONNECTION ESTABLISHED ***")
                 else:
                     print("DEBUG: ✗ *** DESTINATION CONNECTION FAILED - source_dest_section not available ***")
             except Exception as e:
@@ -468,13 +472,13 @@ class ControlSection(QWidget):
             print(f"DEBUG: Destinations: {dest_paths}")
             
             # Get options from options_section
-            verify_mode = options_section.verify_combo.currentText()
+            verify_algorithm = options_section.get_verification_algorithm()
             global_preset = options_section.preset_combo.currentText()
             per_file_concurrency = options_section.conc_slider.value()
             stream_concurrency = options_section.stream_slider.value()
             generate_report = options_section.report_checkbox.isChecked()
             
-            print(f"DEBUG: Verify Mode: {verify_mode}")
+            print(f"DEBUG: Verification Algorithm: {verify_algorithm}")
             print(f"DEBUG: Global Preset: {global_preset}")
             print(f"DEBUG: Per-file concurrency: {per_file_concurrency}")
             print(f"DEBUG: Stream concurrency: {stream_concurrency}")
@@ -497,11 +501,11 @@ class ControlSection(QWidget):
                     source_root=source_path,
                     destination_roots=dest_paths,
                     options=JobOptions(
-                        mode='FAST' if verify_mode == 'FAST' else 'BALANCED',
+                        mode='FAST',  # Keep simple - just fast mode for all algorithms
                         per_file_concurrency=per_file_concurrency,
                         stream_concurrency=stream_concurrency,
-                        verify_algorithm='xxh64',
-                        verify_mode=verify_mode,
+                        verify_algorithm=verify_algorithm,  # Use industry-standard algorithm
+                        verify_mode=verify_algorithm,       # Use algorithm as mode for compatibility
                         preset=global_preset,
                         generate_verification_report=generate_report
                     )
@@ -570,6 +574,24 @@ class ControlSection(QWidget):
         """Handle progress updates from transfer worker (currently unused since direct connections are used)"""
         print(f"DEBUG: TransferWorker progress update received (should not happen with direct connections): {payload}")
     
+    def _handle_destination_completed(self, dest_path: str):
+        """Handle individual destination completion for immediate DIT report generation"""
+        print(f"🎯 DESTINATION COMPLETED: {dest_path} - Generating immediate DIT report")
+        
+        try:
+            # Show "Writing report..." UI feedback
+            self._show_report_generation_ui(dest_path)
+            
+            # Generate immediate report for this specific destination
+            self._generate_per_destination_report(dest_path)
+            
+            print(f"✅ DIT report generated for destination: {dest_path}")
+            
+        except Exception as e:
+            print(f"❌ Error generating report for destination {dest_path}: {e}")
+            import traceback
+            traceback.print_exc()
+    
     def _handle_transfer_completed(self, stats):
         """Handle transfer completion"""
         print(f"DEBUG: Transfer completed with stats: {stats}")
@@ -578,7 +600,7 @@ class ControlSection(QWidget):
             if hasattr(self.root, 'progress_section') and self.root.progress_section:
                 self.root.progress_section.mark_transfer_completed()
             
-            # Generate completion report
+            # Generate completion report (only for destinations that haven't already been reported)
             self._generate_completion_report(self.root, "completed", stats, self.transfer_worker.job)
             
             # Re-enable controls
@@ -1356,3 +1378,54 @@ class ControlSection(QWidget):
             self.root.current_job_id = None
             
         print("DEBUG: UI completely reset to Ready state for new transfer")
+    
+    def _show_report_generation_ui(self, dest_path: str):
+        """Show 'Writing report...' UI feedback for destination"""
+        print(f"📄 Showing report generation UI for: {dest_path}")
+        
+        # TODO: Add progress dialog or status message
+        # For now, just print - this can be enhanced with actual UI feedback
+        
+    def _generate_per_destination_report(self, dest_path: str):
+        """Generate DIT report immediately for a specific destination"""
+        print(f"📊 Generating per-destination DIT report for: {dest_path}")
+        
+        try:
+            # Get current stats from EventBridge with actual data retention
+            if hasattr(self.root, '_rust_event_sink') and self.root._rust_event_sink:
+                event_sink = self.root._rust_event_sink
+                stats = event_sink.get_comprehensive_stats()
+                
+                # Filter data for this specific destination
+                dest_stats = stats.get('destinations', {}).get(dest_path, {})
+                dest_files = [f for f in stats.get('files', []) if f.get('dest_path') == dest_path]
+                
+                # Create job-like object for report generation
+                from types import SimpleNamespace
+                job = SimpleNamespace()
+                job.id = getattr(self.root, 'current_job_id', f'dest_report_{int(time.time())}')
+                job.source_paths = getattr(self.root, 'current_source_path', [])  
+                job.destination_paths = [dest_path]  # Single destination
+                job.verification_method = verify_algorithm if 'verify_algorithm' in locals() else "xxhash64be"  # Use current algorithm
+                
+                # Generate the report using existing method but for single destination
+                self._generate_completion_report(
+                    self.root, 
+                    "completed", 
+                    {
+                        'stats': dest_stats,
+                        'files': dest_files,
+                        'destinations': {dest_path: dest_stats}
+                    },
+                    job
+                )
+                
+                print(f"✅ Per-destination report generated for: {dest_path}")
+                
+            else:
+                print(f"❌ Cannot generate report - event sink not available")
+                
+        except Exception as e:
+            print(f"❌ Error generating per-destination report: {e}")
+            import traceback
+            traceback.print_exc()

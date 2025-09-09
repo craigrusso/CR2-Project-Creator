@@ -280,6 +280,74 @@ class JobAggregator:
             current_filename=self.current_filename
         )
     
+    def get_comprehensive_stats_for_reporting(self) -> Dict[str, Any]:
+        """Get comprehensive stats formatted for DIT report generation"""
+        snapshot = self.get_current_snapshot()
+        
+        # Convert file progress data to report format
+        file_records = []
+        for file_id, file_progress in self.files.items():
+            file_records.append({
+                'filename': file_id,
+                'size_bytes': file_progress.total_bytes,
+                'bytes_copied': file_progress.bytes_copied,
+                'completed': file_progress.completed,
+                'dest_path': file_progress.dest_path,
+                'started_at': file_progress.started_at,
+                'completed_at': file_progress.completed_at,
+                'transfer_speed_mbps': 0.0,  # Calculate if needed
+                'verification_status': 'PENDING',  # Will be updated by verification
+                'checksum_source': '',
+                'checksum_dest': ''
+            })
+        
+        # Prepare comprehensive stats
+        stats = {
+            'total_bytes': snapshot.job_total_bytes,
+            'copied_bytes': snapshot.job_bytes_copied,
+            'duration_seconds': snapshot.job_elapsed_seconds,
+            'avg_speed_mb_s': snapshot.job_avg_mb_s,
+            'peak_speed_mb_s': snapshot.job_peak_mb_s,
+            'total_files': snapshot.job_total_files,
+            'completed_files': snapshot.job_completed_files,
+            'cancelled_files': 0,  # Track separately if needed
+            'error_files': 0,      # Track separately if needed
+            'progress_percent': snapshot.job_progress_percent,
+            'eta_seconds': snapshot.job_eta_seconds,
+            'current_speed_mb_s': snapshot.job_current_mb_s
+        }
+        
+        # Per-destination statistics
+        dest_stats = {}
+        for dest_path, dest_metrics in snapshot.destinations.items():
+            dest_stats[dest_path] = {
+                'bytes_copied': dest_metrics.bytes_copied,
+                'total_bytes': dest_metrics.total_bytes,
+                'completed_files': dest_metrics.completed_files,
+                'total_files': dest_metrics.total_files,
+                'current_speed_mb_s': dest_metrics.current_mb_s,
+                'peak_speed_mb_s': dest_metrics.peak_mb_s,
+                'progress_percent': (dest_metrics.bytes_copied / dest_metrics.total_bytes * 100) if dest_metrics.total_bytes > 0 else 0.0,
+                'is_completed': dest_metrics.completed_files >= dest_metrics.total_files and dest_metrics.total_files > 0
+            }
+        
+        return {
+            'stats': stats,
+            'files': file_records,
+            'destinations': dest_stats,
+            'started_at': self.started_at,
+            'snapshot_time': time.monotonic()
+        }
+    
+    def get_destination_completion_status(self) -> Dict[str, bool]:
+        """Check which destinations have completed their transfers"""
+        completion_status = {}
+        for dest_path, dest_metrics in self.dest_metrics.items():
+            is_completed = (dest_metrics.completed_files >= dest_metrics.total_files and 
+                          dest_metrics.total_files > 0)
+            completion_status[dest_path] = is_completed
+        return completion_status
+    
     def reset_for_new_job(self, total_files: int, destinations: List[str]):
         """Reset aggregator for a new transfer job"""
         self.started_at = time.monotonic()

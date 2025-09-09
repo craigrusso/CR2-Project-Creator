@@ -118,19 +118,21 @@ class OptionsSection(QWidget):
         # Verify Mode (expands with available space)
         verify_layout = QVBoxLayout()
         verify_layout.setSpacing(5)
-        verify_label = QLabel("Verify Mode:")
+        verify_label = QLabel("Checksum Algorithm:")
         verify_label.setStyleSheet(FIELD_LABEL_STYLE)
         verify_label.setFixedHeight(18)
         self.verify_combo = QComboBox()
         self.verify_combo.addItems([
-            "FAST",
-            "STREAM_VERIFY",
-            "READBACK_VERIFY"
+            "xxHash64BE (Netflix Standard)",
+            "xxHash128 (Fast, Secure)",
+            "SHA-256 (Secure)",
+            "SHA-3 (Latest Standard)", 
+            "MD5 (Legacy Compatible)"
         ])
         self.verify_combo.setStyleSheet(COMBOBOX_STYLE)
         self.verify_combo.setCurrentIndex(0)
         self.verify_combo.setFixedHeight(28)
-        self.verify_combo.setMinimumWidth(140)
+        self.verify_combo.setMinimumWidth(200)  # Wider for longer names
         
         # Apply hover delegate for proper hover effects
         try:
@@ -223,3 +225,20 @@ class OptionsSection(QWidget):
         
         # Add transfer settings to main layout
         layout.addWidget(transfer_container)
+        
+        self.setLayout(layout)
+    
+    def get_verification_algorithm(self) -> str:
+        """Convert display name to actual algorithm name for engine"""
+        display_text = self.verify_combo.currentText()
+        
+        # Map display names to actual algorithm names
+        algorithm_mapping = {
+            "xxHash64BE (Netflix Standard)": "xxhash64be",
+            "xxHash128 (Fast, Secure)": "xxhash128", 
+            "SHA-256 (Secure)": "sha256",
+            "SHA-3 (Latest Standard)": "sha3",
+            "MD5 (Legacy Compatible)": "md5"
+        }
+        
+        return algorithm_mapping.get(display_text, "xxhash64be")  # Default to Netflix standard

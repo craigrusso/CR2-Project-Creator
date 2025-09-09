@@ -441,20 +441,24 @@ class EventBridge(QObject):
         return None
     
     def get_comprehensive_stats(self) -> Dict[str, Any]:
-        """Get comprehensive stats for report generation"""
+        """Get comprehensive stats for DIT report generation with full data retention"""
         if self.is_initialized and self.job_aggregator:
-            snapshot = self.job_aggregator.get_current_snapshot()
+            # Use the enhanced reporting method that includes file records and destination data
+            comprehensive_data = self.job_aggregator.get_comprehensive_stats_for_reporting()
+            
+            # Return in the expected format for report generation
             return {
-                'total_bytes': snapshot.job_total_bytes,
-                'copied_bytes': snapshot.job_bytes_copied,
-                'duration': snapshot.job_elapsed_seconds,
-                'avg_speed': snapshot.job_avg_mb_s,
-                'peak_speed': snapshot.job_peak_mb_s,
-                'total_files': snapshot.job_total_files,
-                'completed_files': snapshot.job_completed_files,
-                'cancelled_files': snapshot.job_total_files - snapshot.job_completed_files,
-                'error_files': 0,
-                'files': []  # Individual file records would need to be tracked separately
+                'total_bytes': comprehensive_data['stats']['total_bytes'],
+                'copied_bytes': comprehensive_data['stats']['copied_bytes'],
+                'duration': comprehensive_data['stats']['duration_seconds'],
+                'avg_speed': comprehensive_data['stats']['avg_speed_mb_s'],
+                'peak_speed': comprehensive_data['stats']['peak_speed_mb_s'],
+                'total_files': comprehensive_data['stats']['total_files'],
+                'completed_files': comprehensive_data['stats']['completed_files'],
+                'cancelled_files': comprehensive_data['stats']['total_files'] - comprehensive_data['stats']['completed_files'],
+                'error_files': comprehensive_data['stats']['error_files'],
+                'files': comprehensive_data['files'],  # Now includes actual file records
+                'destinations': comprehensive_data['destinations']  # Per-destination data
             }
         
         return {
@@ -467,8 +471,15 @@ class EventBridge(QObject):
             'completed_files': 0,
             'cancelled_files': 0,
             'error_files': 0,
-            'files': []
+            'files': [],
+            'destinations': {}
         }
+    
+    def get_destination_completion_status(self) -> Dict[str, bool]:
+        """Check which destinations have completed - for per-destination reporting"""
+        if self.is_initialized and self.job_aggregator:
+            return self.job_aggregator.get_destination_completion_status()
+        return {}
     
     @pyqtSlot(str)
     def _stop_timer_on_ui_thread(self, timer_name: str):
