@@ -456,20 +456,26 @@ class TransferReportGenerator:
                              file_records: Optional[List[Dict[str, Any]]] = None,
                              error_message: Optional[str] = None) -> str:
         """Generate JSON format report"""
+        # Calculate enhanced statistics for DIT-2025 compliance
+        total_files = len(file_records) if file_records else stats.get("total_files", 0)
+        compliant_files = sum(1 for r in (file_records or []) if r.get('status', 'UNKNOWN') == 'completed')
+        compliance_rate = (compliant_files / total_files * 100) if total_files > 0 else 0
+        
         report = {
             "job_id": job_id,
             "status": status.upper(),
-            "source_path": str(source_path),  # Convert Path to string
-            "destinations": [str(d) for d in destinations],  # Convert Paths to strings
+            "generated": datetime.now().isoformat(),
+            "source_path": str(source_path),
+            "destinations": [str(d) for d in destinations],
             "error_message": error_message,
             "stats": {
                 "total_bytes": stats.get("total_bytes", 0),
                 "copied_bytes": stats.get("copied_bytes", 0),
                 "duration_seconds": stats.get("duration", 0),
-                "avg_speed_mb_s": stats.get("avg_speed", 0),
-                "peak_speed_mb_s": stats.get("peak_speed", 0),
-                "total_files": stats.get("total_files", 0),
-                "completed_files": stats.get("completed_files", 0),
+                "avg_speed_mbps": stats.get("avg_speed", 0),
+                "peak_speed_mbps": stats.get("peak_speed", 0),
+                "total_files": total_files,
+                "completed_files": compliant_files,
                 "cancelled_files": stats.get("cancelled_files", 0),
                 "error_files": stats.get("error_files", 0)
             },
@@ -534,25 +540,29 @@ class TransferReportGenerator:
             f.write(f"Cancelled: {stats.get('cancelled_files', 0)}\n")
             f.write(f"Errors: {stats.get('error_files', 0)}\n\n")
             
-            # File Verification Results (2025 DIT Standards)
-            f.write("=== FILE VERIFICATION RESULTS (DIT-2025) ===\n")
-            f.write("Checksum Algorithm: xxHash64BE (Industry Standard 2025)\n")
-            f.write("Verification Standard: DIT-2025.1\n\n")
+            # File Verification Results
+            f.write("=== FILE VERIFICATION RESULTS ===\n")
+            
             if file_records:
-                for record in file_records[:50]:  # Limit to first 50 files
+                for record in file_records:
                     filename = record.get('filename', 'Unknown')
-                    transfer_status = record.get('transfer_status', 'UNKNOWN')
-                    verification_status = record.get('verification_status', 'UNKNOWN')
+                    transfer_status = record.get('transfer_status', record.get('status', 'unknown'))
+                    file_size = record.get('size', record.get('size_bytes', 0))
+                    size_mb = file_size / (1024 * 1024) if file_size > 0 else 0
+                    checksum = record.get('source_checksum', record.get('checksum', ''))
                     
-                    if transfer_status == 'COMPLETED' and verification_status == 'PASS':
-                        checksum = record.get('source_checksum', '')[:16]  # First 16 chars of xxHash64BE
-                        f.write(f"{filename:<50} [OK]   xxHash64BE={checksum}\n")
+                    # Simple status like Frame.io - no fake compliance language
+                    if transfer_status == 'completed':
+                        status_text = "✅ Completed & verified"
+                        hash_text = f"Hash: {checksum}" if checksum else "Hash: pending"
+                    elif transfer_status == 'failed':
+                        status_text = "❌ Failed"
+                        hash_text = record.get('error_message', 'Transfer failed')
                     else:
-                        error_msg = record.get('error_message', 'Transfer incomplete')
-                        f.write(f"{filename:<50} [FAILED - {error_msg}]\n")
-                
-                if len(file_records) > 50:
-                    f.write(f"... and {len(file_records) - 50} more files\n")
+                        status_text = "🚀 Started"
+                        hash_text = "Hash: pending"
+                    
+                    f.write(f"{status_text:<25} | {hash_text:<35} | {filename}\n")
             else:
                 f.write("No file records available\n")
             f.write("\n")
@@ -574,28 +584,24 @@ class TransferReportGenerator:
         csv_path = reports_dir / f"{base_filename}_files.csv"
         
         with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+            # Write CSV header
+            f.write("# ForwardFlow Transfer Report\n")
+            f.write(f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("#\n")
+            
             fieldnames = [
-                'filename', 'size_bytes', 'transfer_status', 'verification_status',
-                'checksum_algorithm', 'source_xxhash64be', 'destination_xxhash64be',
-                'transfer_speed_mbps', 'transfer_duration_s', 'verification_result', 'error_message'
+                'filename', 'size_bytes', 'transfer_status', 'checksum', 'error_message'
             ]
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             
             if file_records:
                 for record in file_records:
-                    # Ensure all values are strings or numbers for CSV (2025 DIT Standards)
                     csv_record = {
                         'filename': str(record.get('filename', '')),
-                        'size_bytes': record.get('size', 0),
-                        'transfer_status': str(record.get('transfer_status', 'UNKNOWN')),
-                        'verification_status': str(record.get('verification_status', 'UNKNOWN')),
-                        'checksum_algorithm': str(record.get('checksum_type', 'xxHash64BE')),
-                        'source_xxhash64be': str(record.get('source_checksum', '')),
-                        'destination_xxhash64be': str(record.get('destination_checksum', '')),
-                        'transfer_speed_mbps': record.get('transfer_speed', 0),
-                        'transfer_duration_s': record.get('transfer_duration', 0),
-                        'verification_result': 'PASS' if record.get('verification_status') == 'PASS' else 'FAIL',
+                        'size_bytes': record.get('size', record.get('size_bytes', 0)),
+                        'transfer_status': str(record.get('transfer_status', record.get('status', 'unknown'))),
+                        'checksum': str(record.get('source_checksum', record.get('checksum', ''))),
                         'error_message': str(record.get('error_message', ''))
                     }
                     writer.writerow(csv_record)

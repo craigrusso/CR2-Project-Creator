@@ -551,7 +551,20 @@ class PyEnhancedHighPerfTransferEngine:
                         
                         print(f"DEBUG: [{thread_name}] File completed: {os.path.basename(file_path)} - Destination progress: {progress_percent:.1f}%")
                         
-                        # Emit file completion for this destination
+                        # Verify file integrity with user-selected algorithm
+                        hash_algorithm = getattr(self.current_job, 'hash_algorithm', 'xxhash64')
+                        print(f"DEBUG: [{thread_name}] Using hash algorithm: {hash_algorithm}")
+                        verification_result = self.verification_manager.verify_file_transfer(
+                            file_path, final_dest_path, hash_algorithm
+                        )
+                        
+                        source_hash = verification_result.get("source_hash", "pending")
+                        dest_hash = verification_result.get("destination_hash", "pending") 
+                        verification_passed = verification_result.get("verification_passed", False)
+                        
+                        print(f"DEBUG: [{thread_name}] Hash verification: {os.path.basename(file_path)} -> {source_hash} | Passed: {verification_passed}")
+                        
+                        # Emit file completion for this destination WITH HASH VALUES
                         if hasattr(self, 'event_sink') and self.event_sink:
                             self.event_sink.emit('file.complete', {
                                 'job_id': job_id,
@@ -559,15 +572,15 @@ class PyEnhancedHighPerfTransferEngine:
                                 'file_bytes': file_size,
                                 'dest_index': dest_idx,
                                 'dest_path': dest_path,
-                                'transfer_state': 'COMPLETED'
+                                'transfer_state': 'COMPLETED',
+                                'source_hash': source_hash,
+                                'dest_hash': dest_hash,
+                                'verification_passed': verification_passed,
+                                'hash_algorithm': hash_algorithm
                             })
                         
-                        # Verify file integrity
-                        verification_result = self.verification_manager.verify_file_transfer(
-                            file_path, final_dest_path, "xxhash64"
-                        )
-                        if not verification_result.get("verification_passed", False):
-                            error_msg = f"Verification failed for {file_path} -> {dest_path}"
+                        if not verification_passed:
+                            error_msg = f"Verification failed for {file_path} -> {dest_path} (source: {source_hash}, dest: {dest_hash})"
                             error_queue.put(error_msg)
                             print(f"DEBUG: [{thread_name}] {error_msg}")
                     else:

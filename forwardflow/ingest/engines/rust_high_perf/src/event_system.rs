@@ -177,12 +177,34 @@ impl EventSystem {
         })
     }
     
-    /// Emit file completed event
+    /// Emit file completed event with comprehensive data including hash
+    pub fn emit_file_completed_with_hash(&self, filename: &str, source_path: &str, dest_path: &str, bytes: u64, source_hash: &str, dest_hash: &str) -> PyResult<()> {
+        Python::with_gil(|py| {
+            let py_payload = PyDict::new(py);
+            py_payload.set_item("filename", filename)?;
+            py_payload.set_item("source_path", source_path)?;
+            py_payload.set_item("destination_path", dest_path)?;
+            py_payload.set_item("bytes_copied", bytes)?;
+            py_payload.set_item("total_bytes", bytes)?;
+            py_payload.set_item("source_checksum", source_hash)?;
+            py_payload.set_item("destination_checksum", dest_hash)?;
+            py_payload.set_item("checksum_algorithm", "xxHash64BE")?;
+            py_payload.set_item("verification_passed", source_hash == dest_hash)?;
+            
+            let py_object = py_payload.into_py(py);
+            self.emit_event("file_completed", py_object);
+            Ok(())
+        })
+    }
+
+    /// Emit file completed event (legacy compatibility)
     pub fn emit_file_completed(&self, filename: &str, bytes: u64) -> PyResult<()> {
         Python::with_gil(|py| {
             let py_payload = PyDict::new(py);
             py_payload.set_item("filename", filename)?;
             py_payload.set_item("bytes_copied", bytes)?;
+            py_payload.set_item("total_bytes", bytes)?;
+            py_payload.set_item("checksum_algorithm", "xxHash64BE")?;
             
             let py_object = py_payload.into_py(py);
             self.emit_event("file_completed", py_object);

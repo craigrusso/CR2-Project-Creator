@@ -130,6 +130,10 @@ class TransferWorker(QObject):
                     if hasattr(self.root, 'control_section') and self.root.control_section:
                         self.event_sink.destination_completed.connect(self.root.control_section._handle_destination_completed)
                         print("DEBUG: ✓ *** DESTINATION COMPLETION CONNECTION ESTABLISHED ***")
+                        
+                        # CRITICAL: Also connect to the _check_destination_completion method to ensure it processes dest.completed events
+                        # This ensures the EventBridge properly handles destination completion events from Rust
+                        print("DEBUG: Setting up destination completion processing in EventBridge")
                     else:
                         print("DEBUG: ✗ DESTINATION COMPLETION CONNECTION FAILED - control_section not available")
                 else:
@@ -171,13 +175,52 @@ class TransferWorker(QObject):
                 copy_job.source_paths = [self.job.source_root]
                 copy_job.destination_paths = self.job.destination_roots
                 copy_job.job_id = self.job.job_id
-                copy_job.files_in_flight = self.job.options.per_file_concurrency
-                copy_job.ranges_per_file = self.job.options.stream_concurrency
-                copy_job.verify_integrity = self.job.options.verify_mode != 'NONE'
-                copy_job.hash_algorithm = self.job.options.verify_algorithm
+                # Optimize concurrency for M2 Max architecture (12 cores + GPU)
+                # Use all CPU cores plus additional workers for I/O operations
+                import os
+                cpu_count = os.cpu_count() or 8  # Fallback to 8 if cannot detect
+                
+                # Dynamic concurrency based on system capabilities and transfer type
+                optimal_file_concurrency = min(self.job.options.per_file_concurrency, cpu_count * 2)
+                optimal_stream_concurrency = min(self.job.options.stream_concurrency, cpu_count)
+                
+                copy_job.files_in_flight = optimal_file_concurrency
+                copy_job.ranges_per_file = optimal_stream_concurrency
+                
+                print(f"DEBUG: Optimized concurrency for M2 Max:")
+                print(f"  CPU cores detected: {cpu_count}")
+                print(f"  Files in flight: {optimal_file_concurrency} (up to {cpu_count * 2} for I/O overlap)")
+                print(f"  Ranges per file: {optimal_stream_concurrency} (up to {cpu_count} for CPU cores)")
+                print(f"  Total parallel operations: {optimal_file_concurrency * optimal_stream_concurrency}")
+                # Enable verification if any checksum algorithm is selected (not 'NONE' or empty)
+                copy_job.verify_integrity = (
+                    self.job.options.verify_algorithm and 
+                    self.job.options.verify_algorithm.lower() not in ['none', '', 'disabled']
+                )
+                # Map UI algorithm names to Rust engine names
+                algorithm_mapping = {
+                    'xxHash64BE': 'xxhash64',
+                    'xxHash128': 'xxhash64',  # Use xxhash64 for xxhash128 for now
+                    'SHA-256': 'sha256', 
+                    'SHA-3': 'sha256',  # Use sha256 for sha-3 for now
+                    'MD5': 'xxhash64'   # Use xxhash64 for md5 since it's disabled
+                }
+                rust_algorithm = algorithm_mapping.get(self.job.options.verify_algorithm, 'xxhash64')
+                copy_job.hash_algorithm = rust_algorithm
                 copy_job.generate_verification_report = self.job.options.generate_verification_report
                 copy_job.use_direct_io = True
                 copy_job.block_size = self._get_block_size_for_preset(self.job.options.preset)
+                
+                # DEBUG: Log verification settings
+                print(f"DEBUG: VERIFICATION SETTINGS:")
+                print(f"  UI algorithm selected: {self.job.options.verify_algorithm}")
+                print(f"  Mapped to Rust algorithm: {rust_algorithm}")
+                print(f"  verify_integrity: {copy_job.verify_integrity}")
+                if not copy_job.verify_integrity:
+                    print("  ❌ HASH CALCULATION DISABLED - Files will show 'Hash: pending'")
+                else:
+                    print(f"  ✅ HASH CALCULATION ENABLED - Will calculate {rust_algorithm} hashes")
+                    print("  📝 Completed files should show real hash values in reports")
                 
                 # Log the actual configuration being used
                 print(f"DEBUG: CopyJob configured with:")
@@ -373,6 +416,9 @@ class ControlSection(QWidget):
         # Transfer worker and thread
         self.transfer_worker = None
         self.transfer_thread = None
+        
+        # Track destinations that already have reports to prevent duplicates
+        self._destinations_with_reports = set()
         
     def setup_ui(self):
         """Setup the control buttons UI"""
@@ -585,10 +631,50 @@ class ControlSection(QWidget):
             # Show "Writing report..." UI feedback
             self._show_report_generation_ui(dest_path)
             
-            # Generate immediate report for this specific destination
-            self._generate_per_destination_report(dest_path)
+            # Get comprehensive stats and file records from the event sink
+            event_sink = getattr(self.root, '_rust_event_sink', None)
+            if event_sink and hasattr(event_sink, 'get_comprehensive_stats'):
+                comprehensive_stats = event_sink.get_comprehensive_stats()
+                file_records = event_sink.get_file_records()
+                print(f"📊 Got stats for destination report: {comprehensive_stats.get('total_bytes', 0)} bytes, {len(file_records)} files")
+            else:
+                # Fallback to basic stats if event sink not available
+                comprehensive_stats = {'total_bytes': 0, 'copied_bytes': 0, 'total_files': 0}
+                file_records = []
+                print("⚠️  No event sink available, using fallback stats")
             
-            print(f"✅ DIT report generated for destination: {dest_path}")
+            # Generate immediate comprehensive DIT report for this specific destination
+            from ...utils.report_generator import TransferReportGenerator
+            report_gen = TransferReportGenerator()
+            
+            # Get job info
+            job_id = getattr(self.root, 'current_job_id', f"dest_report_{int(time.time())}")
+            if hasattr(self.root, 'current_job_spec'):
+                source_path = self.root.current_job_spec.source_root
+            else:
+                source_path = "Unknown"
+            
+            # Generate comprehensive reports (JSON, TXT, CSV) directly in destination's _CR2_CREATIVE_REPORTS/ folder
+            generated_reports = report_gen.generate_comprehensive_reports(
+                job_id=f"{job_id}_dest_{os.path.basename(dest_path)}",
+                status="completed",
+                source_path=source_path,
+                destinations=[dest_path],  # Single destination for per-destination report
+                stats=comprehensive_stats,
+                file_records=file_records,
+                error_message=None
+            )
+            
+            if generated_reports:
+                print(f"✅ DIT reports generated for destination {dest_path}: {len(generated_reports)} files")
+                for report in generated_reports:
+                    print(f"  📄 {report}")
+                
+                # Mark this destination as having a report to prevent duplicates
+                self._destinations_with_reports.add(dest_path)
+                print(f"🔒 Destination {dest_path} marked as having reports (prevents duplicates)")
+            else:
+                print(f"❌ Failed to generate DIT reports for destination {dest_path}")
             
         except Exception as e:
             print(f"❌ Error generating report for destination {dest_path}: {e}")
@@ -596,15 +682,29 @@ class ControlSection(QWidget):
             traceback.print_exc()
     
     def _handle_transfer_completed(self, stats):
-        """Handle transfer completion"""
+        """Handle transfer completion - only generate reports for destinations without them"""
         print(f"DEBUG: Transfer completed with stats: {stats}")
         try:
             # Mark progress as completed with green styling
             if hasattr(self.root, 'progress_section') and self.root.progress_section:
                 self.root.progress_section.mark_transfer_completed()
             
-            # Generate completion report (only for destinations that haven't already been reported)
-            self._generate_completion_report(self.root, "completed", stats, self.transfer_worker.job)
+            # Only generate reports for destinations that don't already have them
+            if hasattr(self.transfer_worker, 'job') and self.transfer_worker.job:
+                job_destinations = set(self.transfer_worker.job.destination_roots)
+                destinations_needing_reports = job_destinations - self._destinations_with_reports
+                
+                if destinations_needing_reports:
+                    print(f"DEBUG: Generating completion reports for remaining destinations: {destinations_needing_reports}")
+                    self._generate_completion_report_for_destinations(
+                        self.root, 
+                        "completed", 
+                        stats, 
+                        self.transfer_worker.job, 
+                        list(destinations_needing_reports)
+                    )
+                else:
+                    print("DEBUG: All destinations already have reports from per-destination generation - no duplicates needed")
             
             # Re-enable controls
             self.reenable_controls()
@@ -638,11 +738,27 @@ class ControlSection(QWidget):
             self.reenable_controls()
     
     def _handle_transfer_cancelled(self):
-        """Handle transfer cancellation"""
-        print("DEBUG: Transfer cancelled")
+        """Handle transfer cancellation - only generate reports for incomplete destinations"""
+        print("DEBUG: Transfer cancelled - checking for incomplete destinations")
         try:
-            # Generate cancellation report
-            self._generate_completion_report(self.root, "cancelled", None, self.transfer_worker.job)
+            # Only generate reports for destinations that don't already have them
+            if hasattr(self.transfer_worker, 'job') and self.transfer_worker.job:
+                job_destinations = set(self.transfer_worker.job.destination_roots)
+                destinations_needing_reports = job_destinations - self._destinations_with_reports
+                
+                if destinations_needing_reports:
+                    print(f"DEBUG: Generating cancel reports for incomplete destinations: {destinations_needing_reports}")
+                    
+                    # Generate cancellation report ONLY for destinations that need reports
+                    self._generate_completion_report_for_destinations(
+                        self.root, 
+                        "cancelled", 
+                        None, 
+                        self.transfer_worker.job, 
+                        list(destinations_needing_reports)
+                    )
+                else:
+                    print("DEBUG: All destinations already have reports - skipping duplicate generation")
             
             # Re-enable controls
             self.reenable_controls()
@@ -683,6 +799,46 @@ class ControlSection(QWidget):
         else:  # STRICT
             return 8 * 1024 * 1024   # 8MB blocks for accurate verification
     
+    def _generate_completion_report_for_destinations(self, root, status, stats, job, target_destinations, error_message=None):
+        """Generate completion report only for specific destinations to prevent duplicates"""
+        print(f"DEBUG: Generating {status} reports for specific destinations: {target_destinations}")
+        
+        for dest_path in target_destinations:
+            try:
+                # Generate individual report for this destination
+                from ...utils.report_generator import TransferReportGenerator
+                report_gen = TransferReportGenerator()
+                
+                # Get stats for this specific destination
+                event_sink = getattr(root, '_rust_event_sink', None)
+                if event_sink and hasattr(event_sink, 'get_comprehensive_stats'):
+                    comprehensive_stats = event_sink.get_comprehensive_stats()
+                    file_records = event_sink.get_file_records()
+                else:
+                    comprehensive_stats = {'total_bytes': 0, 'copied_bytes': 0, 'total_files': 0}
+                    file_records = []
+                
+                # Generate comprehensive reports for this destination
+                generated_reports = report_gen.generate_comprehensive_reports(
+                    job_id=f"{job.job_id}_cancelled_{os.path.basename(dest_path)}",
+                    status=status,
+                    source_path=job.source_root,
+                    destinations=[dest_path],  # Single destination
+                    stats=comprehensive_stats,
+                    file_records=file_records,
+                    error_message=error_message
+                )
+                
+                if generated_reports:
+                    print(f"✅ {status.title()} reports generated for destination {dest_path}: {len(generated_reports)} files")
+                    # Mark this destination as having a report
+                    self._destinations_with_reports.add(dest_path)
+                else:
+                    print(f"❌ Failed to generate {status} reports for destination {dest_path}")
+                    
+            except Exception as e:
+                print(f"❌ Error generating {status} report for destination {dest_path}: {e}")
+
     def _generate_completion_report(self, root, status, stats, job, error_message=None):
         """Generate comprehensive completion report with proper data merging"""
         try:
@@ -1042,178 +1198,6 @@ class ControlSection(QWidget):
             import traceback
             traceback.print_exc()
     
-    def _generate_dit_compliant_reports(self, root, job_id, source_path, destinations, status, engine_stats):
-        """Generate DIT-compliant reports in multiple formats (TXT, CSV, JSON)"""
-        try:
-            import os
-            import json
-            import csv
-            from datetime import datetime
-            
-            # Get the first destination for report storage
-            if destinations and len(destinations) > 0:
-                dest_path = destinations[0]
-                report_dir = os.path.join(dest_path, "_CR2_CREATIVE_REPORTS")
-                os.makedirs(report_dir, exist_ok=True)
-                
-                # Generate timestamp for filename
-                timestamp = datetime.now().strftime("%Y-%m-%d_%H%M")
-                
-                # Extract stats from engine_stats (handle both CopyStats object and dictionary)
-                if hasattr(engine_stats, 'total_files'):
-                    # CopyStats object
-                    total_files = getattr(engine_stats, 'total_files', 0)
-                    files_copied = getattr(engine_stats, 'copied_files', 0)
-                    bytes_copied = getattr(engine_stats, 'copied_bytes', 0)
-                    total_bytes = getattr(engine_stats, 'total_bytes', 0)
-                    elapsed_time = getattr(engine_stats, 'end_time', 0) - getattr(engine_stats, 'start_time', 0)
-                    avg_speed = getattr(engine_stats, 'speed_mbps', 0) * 1024 * 1024  # Convert MB/s to bytes/sec
-                    errors = getattr(engine_stats, 'errors', [])
-                    file_records = getattr(engine_stats, 'file_records', [])
-                    engine = "Rust Engine"
-                else:
-                    # Dictionary
-                    total_files = getattr(engine_stats, 'total_files', 0)
-                    files_copied = getattr(engine_stats, 'copied_files', 0)
-                    bytes_copied = getattr(engine_stats, 'copied_bytes', 0)
-                    total_bytes = getattr(engine_stats, 'total_bytes', 0)
-                    elapsed_time = getattr(engine_stats, 'elapsed_time', 0)
-                    avg_speed = getattr(engine_stats, 'average_speed_mbps', 0)
-                    errors = getattr(engine_stats, 'errors', [])
-                    file_records = getattr(engine_stats, 'file_records', [])
-                    engine = 'Rust Engine'
-                
-                verification_passed = len(errors) == 0
-                
-                # Create comprehensive report data
-                report_data = {
-                    'job_id': job_id,
-                    'generated': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'status': status.upper(),
-                    'source': source_path,
-                    'destination': dest_path,
-                    'total_files': total_files,
-                    'files_copied': files_copied,
-                    'bytes_copied': bytes_copied,
-                    'total_bytes': total_bytes,
-                    'elapsed_time': elapsed_time,
-                    'avg_speed': avg_speed,
-                    'engine': engine,
-                    'verification_passed': verification_passed,
-                    'errors': errors,
-                    'file_records': file_records
-                }
-                
-                # Generate TXT report (DIT-compliant format)
-                txt_filename = f"dit_verification_report_{timestamp}.txt"
-                txt_path = os.path.join(report_dir, txt_filename)
-                self._write_dit_txt_report(txt_path, report_data)
-                
-                # Generate CSV report
-                csv_filename = f"dit_verification_report_{timestamp}.csv"
-                csv_path = os.path.join(report_dir, csv_filename)
-                self._write_dit_csv_report(csv_path, report_data)
-                
-                # Generate JSON report
-                json_filename = f"dit_verification_report_{timestamp}.json"
-                json_path = os.path.join(report_dir, json_filename)
-                self._write_dit_json_report(json_path, report_data)
-                
-                print(f"DEBUG: DIT-compliant reports generated:")
-                print(f"  TXT: {txt_path}")
-                print(f"  CSV: {csv_path}")
-                print(f"  JSON: {json_path}")
-                
-        except Exception as e:
-            print(f"DEBUG: Error generating DIT-compliant reports: {e}")
-            import traceback
-            traceback.print_exc()
-    
-    def _write_dit_txt_report(self, file_path, data):
-        """Write DIT-compliant TXT report"""
-        with open(file_path, 'w') as f:
-            f.write("ForwardFlow DIT Verification Report\n")
-            f.write("=" * 50 + "\n\n")
-            
-            f.write(f"Job ID: {data['job_id']}\n")
-            f.write(f"Generated: {data['generated']}\n")
-            f.write(f"Status: {data['status']}\n\n")
-            
-            f.write("=== TRANSFER SUMMARY ===\n")
-            f.write(f"Source: {data['source']}\n")
-            f.write(f"Destination: {data['destination']}\n")
-            f.write(f"Total Files: {data['total_files']:,}\n")
-            f.write(f"Files Copied: {data['files_copied']:,}\n")
-            f.write(f"Bytes Copied: {data['bytes_copied']:,}\n")
-            f.write(f"Total Bytes: {data['total_bytes']:,}\n")
-            f.write(f"Elapsed Time: {data['elapsed_time']:.2f} seconds\n")
-            f.write(f"Average Speed: {data['avg_speed']:,.0f} bytes/sec\n")
-            f.write(f"Engine: {data['engine']}\n\n")
-            
-            f.write("=== FILE VERIFICATION DETAILS ===\n")
-            if data['file_records']:
-                f.write("File-by-file verification results:\n")
-                for i, record in enumerate(data['file_records'], 1):
-                    f.write(f"{i:3d}. {record.get('source', 'Unknown')}\n")
-                    f.write(f"     Destination: {record.get('destination', 'Unknown')}\n")
-                    f.write(f"     Size: {record.get('size', 0):,} bytes\n")
-                    f.write(f"     Status: {record.get('status', 'Unknown')}\n")
-                    if 'error' in record:
-                        f.write(f"     Error: {record['error']}\n")
-                    f.write("\n")
-            else:
-                f.write("No individual file records available.\n\n")
-            
-            f.write("=== VERIFICATION RESULTS ===\n")
-            f.write(f"Verification Passed: {data['verification_passed']}\n")
-            f.write(f"Errors: {len(data['errors'])}\n")
-            if data['errors']:
-                for error in data['errors']:
-                    f.write(f"  - {error}\n")
-            
-            f.write(f"\nReport saved to: {file_path}\n")
-    
-    def _write_dit_csv_report(self, file_path, data):
-        """Write DIT-compliant CSV report"""
-        import csv
-        with open(file_path, 'w', newline='') as f:
-            writer = csv.writer(f)
-            
-            # Write header
-            writer.writerow(['ForwardFlow DIT Verification Report'])
-            writer.writerow(['Job ID', data['job_id']])
-            writer.writerow(['Generated', data['generated']])
-            writer.writerow(['Status', data['status']])
-            writer.writerow(['Source', data['source']])
-            writer.writerow(['Destination', data['destination']])
-            writer.writerow(['Total Files', data['total_files']])
-            writer.writerow(['Files Copied', data['files_copied']])
-            writer.writerow(['Bytes Copied', data['bytes_copied']])
-            writer.writerow(['Total Bytes', data['total_bytes']])
-            writer.writerow(['Elapsed Time', f"{data['elapsed_time']:.2f} seconds"])
-            writer.writerow(['Average Speed', f"{data['avg_speed']:,.0f} bytes/sec"])
-            writer.writerow(['Engine', data['engine']])
-            writer.writerow(['Verification Passed', data['verification_passed']])
-            writer.writerow(['Errors', len(data['errors'])])
-            writer.writerow([])
-            
-            # Write file records
-            if data['file_records']:
-                writer.writerow(['File Records'])
-                writer.writerow(['Source', 'Destination', 'Size (bytes)', 'Status', 'Error'])
-                for record in data['file_records']:
-                    writer.writerow([
-                        record.get('source', 'Unknown'),
-                        record.get('destination', 'Unknown'),
-                        record.get('size', 0),
-                        record.get('status', 'Unknown'),
-                        record.get('error', '')
-                    ])
-    
-    def _write_dit_json_report(self, file_path, data):
-        """Write DIT-compliant JSON report"""
-        with open(file_path, 'w') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
     
     def _generate_detailed_report_with_progress(self, root, status, error_message):
         """Generate detailed report with progress bar updates"""
@@ -1379,6 +1363,10 @@ class ControlSection(QWidget):
             self.root.current_job = None
         if hasattr(self.root, 'current_job_id'):
             self.root.current_job_id = None
+        
+        # Clear destinations report tracking for new job
+        self._destinations_with_reports.clear()
+        print("DEBUG: Cleared destinations report tracking for new job")
             
         print("DEBUG: UI completely reset to Ready state for new transfer")
     
@@ -1389,104 +1377,3 @@ class ControlSection(QWidget):
         # TODO: Add progress dialog or status message
         # For now, just print - this can be enhanced with actual UI feedback
         
-    def _generate_per_destination_report(self, dest_path: str):
-        """Generate DIT report immediately for a specific destination"""
-        print(f"📊 Generating per-destination DIT report for: {dest_path}")
-        
-        try:
-            # Use the same data acquisition strategy as _generate_completion_report for consistency
-            
-            # Get comprehensive stats with fallback logic (same as main completion report)
-            comprehensive_stats = {
-                'total_bytes': 0,
-                'copied_bytes': 0,
-                'duration': 0,
-                'avg_speed': 0,
-                'peak_speed': 0,
-                'total_files': 0,
-                'completed_files': 0,
-                'cancelled_files': 0,
-                'error_files': 0
-            }
-            file_records = []
-            
-            # Primary source: Get stats from EventBridge through Rust event sink
-            event_sink = getattr(self.root, '_rust_event_sink', None)
-            if event_sink and hasattr(event_sink, 'get_comprehensive_stats'):
-                try:
-                    bridge_stats = event_sink.get_comprehensive_stats()
-                    bridge_file_records = event_sink.get_file_records()
-                    
-                    print(f"🔍 PER-DEST DEBUG: EventBridge stats - total: {bridge_stats.get('total_bytes', 0)}, "
-                          f"copied: {bridge_stats.get('copied_bytes', 0)}, "
-                          f"files: {len(bridge_file_records)}")
-                    
-                    # Use EventBridge data if available
-                    if bridge_stats.get('total_bytes', 0) > 0 or bridge_stats.get('copied_bytes', 0) > 0:
-                        comprehensive_stats.update(bridge_stats)
-                        file_records = bridge_file_records
-                        print(f"🔍 PER-DEST DEBUG: Using EventBridge data: {len(file_records)} file records")
-                    else:
-                        print("🔍 PER-DEST DEBUG: EventBridge stats are empty, will use engine stats as fallback")
-                        
-                except Exception as e:
-                    print(f"🔍 PER-DEST DEBUG: Error accessing EventBridge stats: {e}")
-            
-            # Secondary source: Engine stats (fallback)
-            if hasattr(self.root, 'current_job') and self.root.current_job and hasattr(self.root.current_job, 'get_stats'):
-                try:
-                    engine_stats = self.root.current_job.get_stats()
-                    print(f"🔍 PER-DEST DEBUG: Engine stats available, using as fallback or supplement")
-                    
-                    # If EventBridge stats are empty, use engine stats
-                    if comprehensive_stats['total_bytes'] == 0:
-                        print(f"🔍 PER-DEST DEBUG: Using engine stats as primary source")
-                        # Convert engine stats format if needed
-                        if hasattr(engine_stats, 'total_bytes'):
-                            comprehensive_stats['total_bytes'] = engine_stats.total_bytes
-                            comprehensive_stats['copied_bytes'] = engine_stats.copied_bytes
-                        # Add more engine stat conversions as needed
-                        
-                except Exception as e:
-                    print(f"🔍 PER-DEST DEBUG: Error accessing engine stats: {e}")
-            
-            # Filter data for this specific destination
-            dest_stats = comprehensive_stats
-            dest_files = [f for f in file_records if f.get('dest_path') == dest_path]
-            
-            print(f"🔍 PER-DEST FINAL: Filtered for destination '{dest_path}':")
-            print(f"  - Destination stats total_bytes: {dest_stats.get('total_bytes', 0)}")
-            print(f"  - Destination stats copied_bytes: {dest_stats.get('copied_bytes', 0)}")
-            print(f"  - Filtered files count: {len(dest_files)}")
-            
-            # Create job-like object for report generation
-            from types import SimpleNamespace
-            job = SimpleNamespace()
-            job.id = getattr(self.root, 'current_job_id', f'dest_report_{int(time.time())}')
-            job.source_paths = getattr(self.root, 'current_source_path', [])  
-            job.destination_paths = [dest_path]  # Single destination
-            # Get verification algorithm from options section
-            verify_algorithm = "xxhash64be"  # Default
-            if hasattr(self.root, 'options_section') and self.root.options_section:
-                verify_algorithm = self.root.options_section.get_verification_algorithm()
-            job.verification_method = verify_algorithm
-            
-            # Generate the report using existing method with actual data
-            self._generate_completion_report(
-                self.root, 
-                "completed", 
-                {
-                    'total_bytes': dest_stats.get('total_bytes', 0),
-                    'copied_bytes': dest_stats.get('copied_bytes', 0),
-                    'duration': dest_stats.get('duration', 0),
-                    'files': dest_files,
-                },
-                job
-            )
-            
-            print(f"✅ Per-destination report generated for: {dest_path}")
-                
-        except Exception as e:
-            print(f"❌ Error generating per-destination report: {e}")
-            import traceback
-            traceback.print_exc()

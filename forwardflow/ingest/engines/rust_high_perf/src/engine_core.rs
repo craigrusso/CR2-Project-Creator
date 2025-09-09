@@ -213,24 +213,53 @@ impl EnhancedHighPerfTransferEngine {
                     .unwrap_or("unknown")
                     .to_string();
                 
+                // Calculate real hashes if verification is enabled
+                let source_file_path = &source_files[index];
+                let dest_file_path = std::path::Path::new(dest_path).join(&filename);
+                let (source_hash, dest_hash, verification_passed) = if job.verify_integrity {
+                    match self.calculate_file_hashes(source_file_path, &dest_file_path, &job.hash_algorithm) {
+                        Ok((src, dst)) => {
+                            let passed = src == dst;
+                            (src, dst, passed)
+                        },
+                        Err(e) => {
+                            println!("Hash calculation error for {}: {}", filename, e);
+                            ("hash_error".to_string(), "hash_error".to_string(), false)
+                        }
+                    }
+                } else {
+                    ("".to_string(), "".to_string(), true)
+                };
+
                 let file_record = FileTransferRecord {
                     filename: filename.clone(),
                     source_path: source_files[index].to_string_lossy().to_string(),
                     destination_path: format!("{}/{}", dest_path, filename),
                     file_size: result.bytes_copied,
-                    checksum_source: "xxh64_hash".to_string(), // Placeholder
-                    checksum_destination: "xxh64_hash".to_string(), // Placeholder
+                    checksum_source: source_hash.clone(),
+                    checksum_destination: dest_hash.clone(),
                     status: "completed".to_string(),
                     error_message: String::new(),
                     transfer_speed_mib_s: 0.0, // Will be calculated
-                    verification_passed: true,
+                    verification_passed,
                     verification_error: String::new(),
                 };
                 file_records.push(file_record);
                 
-                // Emit file completed event
+                // Emit file completed event with hash data
                 if let Ok(event_system) = self.event_system.lock() {
-                    let _ = event_system.emit_file_completed(&filename, result.bytes_copied);
+                    if !source_hash.is_empty() {
+                        let _ = event_system.emit_file_completed_with_hash(
+                            &filename,
+                            source_file_path.to_str().unwrap_or(""),
+                            dest_file_path.to_str().unwrap_or(""),
+                            result.bytes_copied,
+                            &source_hash,
+                            &dest_hash
+                        );
+                    } else {
+                        let _ = event_system.emit_file_completed(&filename, result.bytes_copied);
+                    }
                     
                     // Emit job progress event
                     let elapsed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs_f64() - start_time;
@@ -278,6 +307,34 @@ impl EnhancedHighPerfTransferEngine {
                     file_records.push(file_record);
                 }
             }
+        }
+        
+        // Emit destination completion event once all files are processed for this destination
+        if let Ok(event_system) = self.event_system.lock() {
+            let completed_files = self.total_files_processed.load(std::sync::atomic::Ordering::Relaxed) as usize;
+            let mut dest_completion = DestProgressPayload::default();
+            dest_completion.dest_index = 0;
+            dest_completion.dest_path = dest_path.clone();
+            dest_completion.transfer_type = "COPY".to_string();
+            dest_completion.completed_files = completed_files;
+            dest_completion.total_files = total_files;
+            dest_completion.bytes_copied = self.total_bytes_transferred.load(std::sync::atomic::Ordering::Relaxed);
+            dest_completion.total_bytes = total_bytes;
+            
+            // Emit as both dest_progress at 100% and explicit dest.completed event
+            let _ = event_system.emit_dest_progress(&dest_completion);
+            let _ = event_system.emit_event("dest.completed", Python::with_gil(|py| {
+                let payload = pyo3::types::PyDict::new(py);
+                let _ = payload.set_item("dest_path", &dest_path);
+                let _ = payload.set_item("dest_index", 0);
+                let _ = payload.set_item("completed_files", completed_files);
+                let _ = payload.set_item("total_files", total_files);
+                let _ = payload.set_item("bytes_copied", self.total_bytes_transferred.load(std::sync::atomic::Ordering::Relaxed));
+                let _ = payload.set_item("total_bytes", total_bytes);
+                payload.into_py(py)
+            }));
+            
+            println!("DEBUG: 🎯 EMITTED dest.completed EVENT for {}", dest_path);
         }
         
         Ok(file_records)
@@ -393,6 +450,39 @@ impl EnhancedHighPerfTransferEngine {
             }
         }
         
+        // Emit destination completion events for multiple destinations
+        if let Ok(event_system) = self.event_system.lock() {
+            let completed_files = self.total_files_processed.load(std::sync::atomic::Ordering::Relaxed) as usize;
+            let total_bytes_copied = self.total_bytes_transferred.load(std::sync::atomic::Ordering::Relaxed);
+            
+            // Emit completion event for each destination
+            for (dest_index, dest_path) in job.destination_paths.iter().enumerate() {
+                let mut dest_completion = DestProgressPayload::default();
+                dest_completion.dest_index = dest_index;
+                dest_completion.dest_path = dest_path.clone();
+                dest_completion.transfer_type = "COPY".to_string();
+                dest_completion.completed_files = completed_files / job.destination_paths.len(); // Divide by destination count
+                dest_completion.total_files = total_files;
+                dest_completion.bytes_copied = total_bytes_copied / job.destination_paths.len() as u64; // Divide by destination count
+                dest_completion.total_bytes = total_bytes;
+                
+                // Emit as both dest_progress at 100% and explicit dest.completed event
+                let _ = event_system.emit_dest_progress(&dest_completion);
+                let _ = event_system.emit_event("dest.completed", Python::with_gil(|py| {
+                    let payload = pyo3::types::PyDict::new(py);
+                    let _ = payload.set_item("dest_path", dest_path);
+                    let _ = payload.set_item("dest_index", dest_index);
+                    let _ = payload.set_item("completed_files", dest_completion.completed_files);
+                    let _ = payload.set_item("total_files", total_files);
+                    let _ = payload.set_item("bytes_copied", dest_completion.bytes_copied);
+                    let _ = payload.set_item("total_bytes", total_bytes);
+                    payload.into_py(py)
+                }));
+                
+                println!("DEBUG: 🎯 EMITTED dest.completed EVENT for {} (index {})", dest_path, dest_index);
+            }
+        }
+        
         Ok(file_records)
     }
     
@@ -480,6 +570,19 @@ impl EnhancedHighPerfTransferEngine {
     /// Check if operation is cancelled
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Calculate file hashes for verification
+    fn calculate_file_hashes(&self, source_path: &std::path::Path, dest_path: &std::path::Path, algorithm: &str) -> Result<(String, String)> {
+        use crate::verification::{HashCalculator, HashAlgorithm};
+        
+        let hash_algo = HashAlgorithm::from_string(algorithm);
+        let calculator = HashCalculator::new(hash_algo);
+        
+        let source_hash = calculator.calculate_file_hash(source_path)?;
+        let dest_hash = calculator.calculate_file_hash(dest_path)?;
+        
+        Ok((source_hash, dest_hash))
     }
     
     /// Check if operation is paused

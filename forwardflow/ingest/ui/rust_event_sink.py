@@ -117,9 +117,11 @@ class RustEventSink(QObject):
         # Check for destination completion to trigger immediate reports
         self._check_destination_completion(event_type, payload)
         
-        # Handle file record updates for legacy compatibility
+        # Handle file record updates for comprehensive tracking
         normalized_type = self._normalize_event_type(event_type)
-        if normalized_type == 'file.progress':
+        if normalized_type == 'file.started':
+            self._add_file_started(payload)
+        elif normalized_type == 'file.progress':
             self._update_file_record(payload)
         elif normalized_type == 'file.completed':
             self._mark_file_completed(payload)
@@ -128,8 +130,10 @@ class RustEventSink(QObject):
         """Normalize various event type formats to standard names"""
         event_type = event_type.lower().strip()
         
-        # File progress events
-        if event_type in ['file.progress', 'file_progress', 'fileprogress']:
+        # File lifecycle events  
+        if event_type in ['file.started', 'file_started', 'filestarted']:
+            return 'file.started'
+        elif event_type in ['file.progress', 'file_progress', 'fileprogress']:
             return 'file.progress'
         elif event_type in ['file.completed', 'file_completed', 'filecompleted']:
             return 'file.completed'
@@ -183,15 +187,89 @@ class RustEventSink(QObject):
         if elapsed > 0:
             file_record['transfer_speed'] = bytes_copied / elapsed / (1024 * 1024)  # MB/s
     
-    def _mark_file_completed(self, payload: dict) -> None:
-        """Mark file as completed in records (legacy compatibility)"""
+    def _add_file_started(self, payload: dict) -> None:
+        """Add file record when transfer starts"""
         filename = payload.get('filename', payload.get('file_id', 'unknown_file'))
         
-        if filename in self._file_records:
-            file_record = self._file_records[filename]
-            file_record['transfer_status'] = 'COMPLETED'
-            file_record['verification_status'] = 'PASS'
-            file_record['transfer_duration'] = time.time() - file_record['start_time']
+        if filename not in self._file_records:
+            self._file_records[filename] = {
+                'filename': filename,
+                'source_path': payload.get('source_path', ''),
+                'destination_path': payload.get('destination_path', ''),
+                'size': payload.get('total_bytes', payload.get('file_size', 0)),
+                'size_bytes': payload.get('total_bytes', payload.get('file_size', 0)),
+                'transfer_status': 'IN_PROGRESS',
+                'verification_status': 'PENDING',
+                'checksum_algorithm': 'xxHash64BE',
+                'source_checksum': '',
+                'destination_checksum': '',
+                'transfer_speed_mbps': 0.0,
+                'transfer_duration_s': 0.0,
+                'status': 'in_progress',
+                'start_time': time.time(),
+                'error_message': ''
+            }
+            print(f"DEBUG: 📂 Added file record for: {filename}")
+
+    def _update_file_record(self, payload: dict) -> None:
+        """Update file record with progress information"""
+        filename = payload.get('filename', payload.get('file_id', 'unknown_file'))
+        
+        # Ensure file record exists - create if missing  
+        if filename not in self._file_records:
+            self._add_file_started(payload)
+        
+        file_record = self._file_records[filename]
+        
+        # Update progress information
+        if 'bytes_copied' in payload:
+            bytes_copied = payload['bytes_copied']
+            total_bytes = file_record['size']
+            if total_bytes > 0:
+                file_record['progress_percent'] = (bytes_copied / total_bytes) * 100.0
+        
+        # Update transfer speed if available
+        if 'speed_mbps' in payload:
+            file_record['transfer_speed_mbps'] = payload['speed_mbps']
+    
+    def _mark_file_completed(self, payload: dict) -> None:
+        """Mark file as completed in records with comprehensive data"""
+        filename = payload.get('filename', payload.get('file_id', 'unknown_file'))
+        
+        # Ensure file record exists
+        if filename not in self._file_records:
+            self._add_file_started(payload)
+        
+        file_record = self._file_records[filename]
+        file_record['transfer_status'] = 'COMPLETED'
+        file_record['verification_status'] = 'PASS'  
+        file_record['status'] = 'completed'  # This is the key field for DIT reports!
+        file_record['transfer_duration_s'] = time.time() - file_record['start_time']
+        
+        # Add hash information from payload if available
+        if 'source_checksum' in payload:
+            file_record['source_checksum'] = payload['source_checksum']
+        if 'destination_checksum' in payload:
+            file_record['destination_checksum'] = payload['destination_checksum']
+        if 'checksum' in payload:
+            file_record['source_checksum'] = payload['checksum']
+            file_record['destination_checksum'] = payload['checksum']
+        
+        # Handle hash values from Rust engine (NEW FORMAT)
+        if 'source_hash' in payload:
+            file_record['source_checksum'] = payload['source_hash']
+        if 'dest_hash' in payload:
+            file_record['destination_checksum'] = payload['dest_hash'] 
+        if 'hash_algorithm' in payload:
+            file_record['hash_algorithm'] = payload['hash_algorithm']
+        if 'verification_passed' in payload:
+            file_record['verification_status'] = 'PASS' if payload['verification_passed'] else 'FAIL'
+            
+        # Debug hash capture
+        hash_info = f"source: {file_record.get('source_checksum', 'N/A')}, dest: {file_record.get('destination_checksum', 'N/A')}"
+        print(f"DEBUG: Hash captured for {filename}: {hash_info}")
+        
+        print(f"DEBUG: ✅ Marked file COMPLETED: {filename} (status: {file_record['status']})")
     
     def _periodic_update(self) -> None:
         """Periodic update for UI refresh (thread-safe)"""

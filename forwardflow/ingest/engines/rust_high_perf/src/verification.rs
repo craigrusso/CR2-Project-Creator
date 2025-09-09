@@ -9,7 +9,9 @@ use std::hash::Hasher;
 use anyhow::Result;
 use xxhash_rust::xxh3::Xxh3;
 use sha2::{Sha256, Digest};
-// use md5::Md5; // Temporarily disabled
+use sha3::Sha3_256;
+use md5::Md5;
+use blake3::Hasher as Blake3Hasher;
 
 use crate::data_structures::FileTransferRecord;
 use pyo3::prelude::*;
@@ -19,8 +21,11 @@ use pyo3::IntoPy;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HashAlgorithm {
     XxHash64,
+    XxHash64BE,
+    XxHash128,
     Sha256,
-    // Md5, // Temporarily disabled
+    Sha3,
+    Md5,
     Blake3,
 }
 

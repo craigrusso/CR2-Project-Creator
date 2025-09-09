@@ -47,6 +47,19 @@ pub struct FileOperationManager {
 
 impl FileOperationManager {
     pub fn new(buffer_size: usize, use_direct_io: bool, parallel_workers: usize) -> Self {
+        // Optimize Rayon threadpool for maximum performance on M2 Max
+        let optimal_threads = std::cmp::max(parallel_workers, num_cpus::get());
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(optimal_threads)
+            .stack_size(2 * 1024 * 1024) // 2MB stack for high-performance operations
+            .thread_name(|i| format!("forwardflow-worker-{}", i))
+            .build_global()
+            .unwrap_or_else(|e| {
+                eprintln!("Warning: Failed to configure optimal Rayon threadpool: {}", e);
+            });
+        
+        println!("DEBUG: Configured Rayon threadpool with {} threads for maximum M2 Max performance", optimal_threads);
+        
         Self {
             buffer_size,
             use_direct_io,
