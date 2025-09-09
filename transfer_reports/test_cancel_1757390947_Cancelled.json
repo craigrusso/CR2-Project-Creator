@@ -1,0 +1,52 @@
+{
+  "report_id": "test_cancel_1757390947",
+  "job_id": "test_cancel",
+  "timestamp": "2025-09-08T21:09:07.023167",
+  "status": "Cancelled",
+  "summary": {
+    "total_files": 3,
+    "completed_files": 2,
+    "cancelled_files": 1,
+    "error_files": 0,
+    "total_bytes": 3072,
+    "completed_bytes": 2048,
+    "elapsed_time_seconds": 5.0,
+    "average_speed_mbps": 0.0,
+    "throughput_gbps": 3.814697265625e-07,
+    "success_rate_percent": 66.66666666666666
+  },
+  "destinations": {},
+  "file_records": [
+    {
+      "filename": "file1.txt",
+      "transfer_status": "COMPLETED",
+      "verification_status": "SKIPPED",
+      "size": 1024,
+      "status": "COMPLETED_UNVERIFIED"
+    },
+    {
+      "filename": "file2.txt",
+      "transfer_status": "COMPLETED",
+      "verification_status": "SKIPPED",
+      "size": 1024,
+      "status": "COMPLETED_UNVERIFIED"
+    },
+    {
+      "filename": "file3.txt",
+      "transfer_status": "CANCELLED",
+      "verification_status": "SKIPPED",
+      "size": 1024,
+      "status": "CANCELLED"
+    }
+  ],
+  "metadata": {
+    "report_version": "2.0",
+    "dit_standard_version": "2025.1",
+    "generator": "ForwardFlow Transfer Engine",
+    "engine_type": "rust_test",
+    "checksum_algorithm": "xxHash64BE",
+    "verification_standard": "DIT-2025",
+    "platform": "posix",
+    "python_version": "3.12.1"
+  }
+}

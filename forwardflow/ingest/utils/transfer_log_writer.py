@@ -14,6 +14,14 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 
+def _json_serializer(obj):
+    """JSON serializer function that handles Path objects and other non-serializable types"""
+    if isinstance(obj, Path):
+        return str(obj)
+    # Add other types as needed
+    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
 # Import config manager to get user preferences
 try:
     from app.core.config_manager import get_transfer_reports_folder_name
@@ -127,7 +135,7 @@ def write_transfer_log(
         }
         
         with open(json_path, 'w', encoding='utf-8') as f:
-            json.dump(json_data, f, indent=2, ensure_ascii=False)
+            json.dump(json_data, f, indent=2, ensure_ascii=False, default=_json_serializer)
         
         print(f"DEBUG: Transfer reports written to: {reports_dir}")
         print(f"DEBUG: CSV report: {csv_path}")

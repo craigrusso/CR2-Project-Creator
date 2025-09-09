@@ -15,23 +15,16 @@ def get_engine(sink=None):
     with _engine_lock:
         if _engine_instance is None:
             try:
-                # Use Rust engine ONLY - NO FALLBACK
-                print("DEBUG: Using Rust engine - NO FALLBACK")
+                # Use REAL Rust engine from system-wide module - NO FALLBACK
+                print("DEBUG: Using REAL Rust engine from system-wide module - NO FALLBACK")
                 
-                # Import the real Rust engine from the built module
-                import sys
-                import os
+                # Import the real Rust engine directly from system-wide module
+                import rust_high_perf_engine
+                print("DEBUG: Successfully imported real Rust engine from system")
                 
-                # Add the rust_high_perf directory to the path
-                rust_engine_path = os.path.join(os.path.dirname(__file__), '..', 'engines', 'rust_high_perf')
-                sys.path.insert(0, rust_engine_path)
-                
-                # Import the real Rust engine via loader - NO FALLBACK
-                from forwardflow.ingest.engines.rust_high_perf.rust_engine_loader import PyEnhancedHighPerfTransferEngine
-                print("DEBUG: Successfully imported real Rust engine via loader")
-                
-                # Create Rust engine instance directly
-                _engine_instance = PyEnhancedHighPerfTransferEngine()
+                # Create REAL Rust engine instance directly
+                _engine_instance = rust_high_perf_engine.PyEnhancedHighPerfTransferEngine()
+                print("DEBUG: Created REAL PyEnhancedHighPerfTransferEngine instance")
                 
                 # Use the Rust event sink wrapper if no sink provided
                 if sink is None:

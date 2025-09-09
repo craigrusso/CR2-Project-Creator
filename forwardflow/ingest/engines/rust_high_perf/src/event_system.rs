@@ -5,7 +5,7 @@ use pyo3::types::PyDict;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::data_structures::{DestProgressPayload, FileTransferRecord};
+use crate::data_structures::{DestProgressPayload, FileTransferRecord, JobManifest, JobStats};
 
 /// Event payload types for Python interop
 #[derive(Debug, Clone)]
@@ -114,7 +114,45 @@ impl EventSystem {
         })
     }
     
-    /// Emit job progress event
+    /// Emit job.start event with JobManifest
+    pub fn emit_job_start(&self, manifest: &JobManifest, destinations: &[String]) -> PyResult<()> {
+        Python::with_gil(|py| {
+            let py_payload = PyDict::new(py);
+            py_payload.set_item("job_id", &manifest.job_id)?;
+            py_payload.set_item("total_files", manifest.total_files)?;
+            py_payload.set_item("total_bytes", manifest.total_bytes)?;
+            py_payload.set_item("destination_count", manifest.destination_count)?;
+            py_payload.set_item("total_target_bytes", manifest.total_target_bytes)?;
+            py_payload.set_item("source_path", &manifest.source_path)?;
+            py_payload.set_item("destinations", destinations)?;
+            
+            let py_object = py_payload.into_py(py);
+            self.emit_event("job.start", py_object);
+            Ok(())
+        })
+    }
+
+    /// Emit job.progress event with JobStats
+    pub fn emit_job_progress_stats(&self, stats: &JobStats) -> PyResult<()> {
+        Python::with_gil(|py| {
+            let py_payload = PyDict::new(py);
+            py_payload.set_item("job_id", &stats.job_id)?;
+            py_payload.set_item("bytes_copied", stats.bytes_copied)?;
+            py_payload.set_item("total_target_bytes", stats.total_target_bytes)?;
+            py_payload.set_item("completed_files", stats.completed_files)?;
+            py_payload.set_item("total_files", stats.total_files)?;
+            py_payload.set_item("current_speed_mbps", stats.current_speed_mbps)?;
+            py_payload.set_item("peak_speed_mbps", stats.peak_speed_mbps)?;
+            py_payload.set_item("elapsed_seconds", stats.elapsed_seconds)?;
+            py_payload.set_item("eta_seconds", stats.eta_seconds)?;
+            
+            let py_object = py_payload.into_py(py);
+            self.emit_event("job.progress", py_object);
+            Ok(())
+        })
+    }
+
+    /// Emit job progress event (legacy compatibility)
     pub fn emit_job_progress(
         &self,
         bytes_copied: u64,
@@ -166,7 +204,32 @@ impl EventSystem {
         })
     }
     
-    /// Emit file progress event with throttling
+    /// Emit file.progress event with proper schema
+    pub fn emit_file_progress_new(
+        &self,
+        job_id: &str,
+        filename: &str,
+        file_bytes: u64,
+        file_bytes_copied: u64,
+        dest_index: usize,
+        transfer_state: &str,
+    ) -> PyResult<()> {
+        Python::with_gil(|py| {
+            let py_payload = PyDict::new(py);
+            py_payload.set_item("job_id", job_id)?;
+            py_payload.set_item("filename", filename)?;
+            py_payload.set_item("file_bytes", file_bytes)?;
+            py_payload.set_item("file_bytes_copied", file_bytes_copied)?;
+            py_payload.set_item("dest_index", dest_index)?;
+            py_payload.set_item("transfer_state", transfer_state)?;
+            
+            let py_object = py_payload.into_py(py);
+            self.emit_event("file.progress", py_object);
+            Ok(())
+        })
+    }
+
+    /// Emit file progress event with throttling (legacy compatibility)
     pub fn emit_file_progress_throttled(
         &self,
         file_id: u64,

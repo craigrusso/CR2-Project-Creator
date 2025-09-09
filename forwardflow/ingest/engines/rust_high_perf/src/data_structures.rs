@@ -363,6 +363,111 @@ impl ProgressGate {
     }
 }
 
+/// File entry for JobManifest
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[pyclass]
+pub struct FileEntry {
+    #[pyo3(get, set)]
+    pub rel_path: String,
+    #[pyo3(get, set)]
+    pub size: u64,
+}
+
+impl Default for FileEntry {
+    fn default() -> Self {
+        Self {
+            rel_path: String::new(),
+            size: 0,
+        }
+    }
+}
+
+/// JobManifest for preflight scanning and stable progress calculation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[pyclass]
+pub struct JobManifest {
+    #[pyo3(get, set)]
+    pub job_id: String,
+    #[pyo3(get, set)]
+    pub source_path: String,
+    #[pyo3(get, set)]
+    pub files: Vec<FileEntry>,
+    #[pyo3(get, set)]
+    pub total_files: u64,
+    #[pyo3(get, set)]
+    pub total_bytes: u128,
+    #[pyo3(get, set)]
+    pub destination_count: u32,
+    #[pyo3(get, set)]
+    pub total_target_bytes: u128,
+}
+
+impl Default for JobManifest {
+    fn default() -> Self {
+        Self {
+            job_id: String::new(),
+            source_path: String::new(),
+            files: Vec::new(),
+            total_files: 0,
+            total_bytes: 0,
+            destination_count: 0,
+            total_target_bytes: 0,
+        }
+    }
+}
+
+#[pymethods]
+impl JobManifest {
+    #[new]
+    fn new() -> Self {
+        Self::default()
+    }
+    
+    pub fn calculate_target_bytes(&mut self) {
+        self.total_target_bytes = self.total_bytes * (self.destination_count as u128);
+    }
+}
+
+/// JobStats for tracking progress against the manifest
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[pyclass]
+pub struct JobStats {
+    #[pyo3(get, set)]
+    pub job_id: String,
+    #[pyo3(get, set)]
+    pub bytes_copied: u128,
+    #[pyo3(get, set)]
+    pub total_target_bytes: u128,
+    #[pyo3(get, set)]
+    pub completed_files: u64,
+    #[pyo3(get, set)]
+    pub total_files: u64,
+    #[pyo3(get, set)]
+    pub current_speed_mbps: f64,
+    #[pyo3(get, set)]
+    pub peak_speed_mbps: f64,
+    #[pyo3(get, set)]
+    pub elapsed_seconds: f64,
+    #[pyo3(get, set)]
+    pub eta_seconds: f64,
+}
+
+impl Default for JobStats {
+    fn default() -> Self {
+        Self {
+            job_id: String::new(),
+            bytes_copied: 0,
+            total_target_bytes: 0,
+            completed_files: 0,
+            total_files: 0,
+            current_speed_mbps: 0.0,
+            peak_speed_mbps: 0.0,
+            elapsed_seconds: 0.0,
+            eta_seconds: 0.0,
+        }
+    }
+}
+
 /// Register Python types for this module
 pub fn register_python_types(m: &PyModule) -> PyResult<()> {
     m.add_class::<CopyDestination>()?;
@@ -372,5 +477,8 @@ pub fn register_python_types(m: &PyModule) -> PyResult<()> {
     m.add_class::<DestProgressPayload>()?;
     m.add_class::<FileTransferRecord>()?;
     m.add_class::<EnhancedCopyStats>()?;
+    m.add_class::<FileEntry>()?;
+    m.add_class::<JobManifest>()?;
+    m.add_class::<JobStats>()?;
     Ok(())
 }

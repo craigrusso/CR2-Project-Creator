@@ -198,14 +198,9 @@ def build_ingest_tab():
                 # Calculate current speed
                 current_speed = (root.copied_bytes / (1024 * 1024)) / elapsed_seconds
                 
-                # Update progress bar (only if it exists and hasn't been updated recently)
-                if hasattr(progress_section, 'total_progress') and progress_section.total_progress:
-                    progress_percent = int((root.copied_bytes / root.total_bytes) * 100)
-                    # Only update if the value has changed significantly
-                    if not hasattr(root, '_last_progress_percent') or abs(progress_percent - root._last_progress_percent) >= 1:
-                        progress_section.total_progress.setValue(progress_percent)
-                        progress_section.total_progress.setFormat(f"{progress_percent}%")
-                        root._last_progress_percent = progress_percent
+                # DO NOT UPDATE PROGRESS BAR HERE - causes per-file 0-100% resets!
+                # Progress bar is now updated ONLY by EventBridge job-level progress events
+                print("DEBUG: Skipping progress bar update in update_stats() - EventBridge handles this now")
                 
                 # Update current speed stat (only if it exists)
                 if hasattr(progress_section, 'current_speed_label') and progress_section.current_speed_label:

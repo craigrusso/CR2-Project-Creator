@@ -1,0 +1,47 @@
+{
+  "report_id": "ingest_20250908_144305_1757367785",
+  "job_id": "ingest_20250908_144305",
+  "timestamp": "2025-09-08T14:43:05.824345",
+  "status": "cancelled",
+  "summary": {
+    "total_files": 0,
+    "completed_files": 0,
+    "cancelled_files": 0,
+    "error_files": 0,
+    "total_bytes": 0,
+    "completed_bytes": 0,
+    "elapsed_time_seconds": 0,
+    "average_speed_mbps": 0,
+    "throughput_gbps": 0.0,
+    "success_rate_percent": 0.0
+  },
+  "destinations": {
+    "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1": {
+      "transfer_type": "unknown",
+      "copied_bytes": 0,
+      "completed_files": 0,
+      "peak_speed_mbps": 0.0,
+      "average_speed_mbps": 0
+    }
+  },
+  "file_records": [
+    {
+      "source_path": ".DS_Store",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/.DS_Store",
+      "filename": ".DS_Store",
+      "size_bytes": 6148,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757367762.370003,
+      "checksum": "d8244bade6ac2b34cfc1637f6f618fbc",
+      "checksum_algorithm": "md5"
+    }
+  ],
+  "metadata": {
+    "report_version": "1.0",
+    "generator": "ForwardFlow Transfer Engine",
+    "engine_type": "Unknown",
+    "platform": "posix",
+    "python_version": "3.12.1"
+  }
+}

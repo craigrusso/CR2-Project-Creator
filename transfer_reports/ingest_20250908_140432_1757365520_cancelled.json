@@ -1,0 +1,410 @@
+{
+  "report_id": "ingest_20250908_140432_1757365520",
+  "job_id": "ingest_20250908_140432",
+  "timestamp": "2025-09-08T14:05:20.286548",
+  "status": "cancelled",
+  "summary": {
+    "total_files": 0,
+    "completed_files": 0,
+    "cancelled_files": 0,
+    "error_files": 0,
+    "total_bytes": 0,
+    "completed_bytes": 0,
+    "elapsed_time_seconds": 0.0,
+    "average_speed_mbps": 0,
+    "throughput_gbps": 0.0,
+    "success_rate_percent": 0.0
+  },
+  "destinations": {
+    "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1": {
+      "transfer_type": "unknown",
+      "copied_bytes": 0,
+      "completed_files": 0,
+      "peak_speed_mbps": 0.0,
+      "average_speed_mbps": 0
+    }
+  },
+  "file_records": [
+    {
+      "source_path": "MVI_0558.MOV",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/MVI_0558.MOV",
+      "filename": "MVI_0558.MOV",
+      "size_bytes": 13092301,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365472.361646,
+      "checksum": "6ae9abcf5f50cb1608ca81b72511088f",
+      "checksum_algorithm": "md5"
+    },
+    {
+      "source_path": "new video insert.wav",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/new video insert.wav",
+      "filename": "new video insert.wav",
+      "size_bytes": 32271450,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365472.4201784,
+      "checksum": "74c101ffe4163a68e81c8f17cef652fe",
+      "checksum_algorithm": "md5"
+    },
+    {
+      "source_path": "end vid 2.wav",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/end vid 2.wav",
+      "filename": "end vid 2.wav",
+      "size_bytes": 31104090,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365472.487867,
+      "checksum": "02c2c83851c309d118d2be99ca5ff3ba",
+      "checksum_algorithm": "md5"
+    },
+    {
+      "source_path": "2020-03-26 14-25-11.mov",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/2020-03-26 14-25-11.mov",
+      "filename": "2020-03-26 14-25-11.mov",
+      "size_bytes": 523010024,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365473.3691013,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": ".DS_Store",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/.DS_Store",
+      "filename": ".DS_Store",
+      "size_bytes": 6148,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365473.6764824,
+      "checksum": "81a145cc792dc1865891e22a1adb5914",
+      "checksum_algorithm": "md5"
+    },
+    {
+      "source_path": "PICKUP 01.wav",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/PICKUP 01.wav",
+      "filename": "PICKUP 01.wav",
+      "size_bytes": 1514586,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365473.6800156,
+      "checksum": "ae65f677dea045c4848b7309f151c811",
+      "checksum_algorithm": "md5"
+    },
+    {
+      "source_path": "2020-04-11 10-52-30.mov",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/2020-04-11 10-52-30.mov",
+      "filename": "2020-04-11 10-52-30.mov",
+      "size_bytes": 650678005,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365474.6275198,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": "2020-03-31 21-42-09 Audio Extracted_1.wav",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/2020-03-31 21-42-09 Audio Extracted_1.wav",
+      "filename": "2020-03-31 21-42-09 Audio Extracted_1.wav",
+      "size_bytes": 558608434,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365475.8293478,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": "PICKUP 03.wav",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/PICKUP 03.wav",
+      "filename": "PICKUP 03.wav",
+      "size_bytes": 2697306,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365476.1596274,
+      "checksum": "ea0b142c44bb681fa67969287f8c7be4",
+      "checksum_algorithm": "md5"
+    },
+    {
+      "source_path": "PICKUP 02.wav",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/PICKUP 02.wav",
+      "filename": "PICKUP 02.wav",
+      "size_bytes": 1996890,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365476.167979,
+      "checksum": "d991e64ee247792c9b6b596d241d8a5e",
+      "checksum_algorithm": "md5"
+    },
+    {
+      "source_path": "MVI_0560.MOV",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/MVI_0560.MOV",
+      "filename": "MVI_0560.MOV",
+      "size_bytes": 84464645,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365476.2990901,
+      "checksum": "ccdf04e6f9a6618e26c0f66356f96ae7",
+      "checksum_algorithm": "md5"
+    },
+    {
+      "source_path": "5.1 TUT V1.wav",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/5.1 TUT V1.wav",
+      "filename": "5.1 TUT V1.wav",
+      "size_bytes": 287929434,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365476.794903,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": "2020-03-31 21-42-09.mov",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/2020-03-31 21-42-09.mov",
+      "filename": "2020-03-31 21-42-09.mov",
+      "size_bytes": 1405372164,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365479.1483543,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": "tutorial v2.wav",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/tutorial v2.wav",
+      "filename": "tutorial v2.wav",
+      "size_bytes": 383004762,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365480.517771,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": "2020-03-31 21-42-09 Audio Extracted.wav",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/2020-03-31 21-42-09 Audio Extracted.wav",
+      "filename": "2020-03-31 21-42-09 Audio Extracted.wav",
+      "size_bytes": 558606432,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365481.589692,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": "ending vid 01.wav",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/ending vid 01.wav",
+      "filename": "ending vid 01.wav",
+      "size_bytes": 24311898,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365481.9625282,
+      "checksum": "0710584bc4b399d54314387457627de7",
+      "checksum_algorithm": "md5"
+    },
+    {
+      "source_path": "inserts 1.wav",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/inserts 1.wav",
+      "filename": "inserts 1.wav",
+      "size_bytes": 20026458,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365482.0092983,
+      "checksum": "7a711c3d86beb72ed92190c70681556a",
+      "checksum_algorithm": "md5"
+    },
+    {
+      "source_path": "2020-03-31 21-42-09 Audio Extracted.pkf",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/2020-03-31 21-42-09 Audio Extracted.pkf",
+      "filename": "2020-03-31 21-42-09 Audio Extracted.pkf",
+      "size_bytes": 8728144,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365482.0367913,
+      "checksum": "ddda98e4bfc446be7e13b3ffefbe61a6",
+      "checksum_algorithm": "md5"
+    },
+    {
+      "source_path": "2020-03-31 21-42-09.wav",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/2020-03-31 21-42-09.wav",
+      "filename": "2020-03-31 21-42-09.wav",
+      "size_bytes": 419460186,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365482.6607716,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": "2020-04-11 10-35-29.mov",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/2020-04-11 10-35-29.mov",
+      "filename": "2020-04-11 10-35-29.mov",
+      "size_bytes": 54896612,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365482.9920602,
+      "checksum": "30799ed53deca3883aec9418000ab5c5",
+      "checksum_algorithm": "md5"
+    },
+    {
+      "source_path": "start video 2.wav",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/start video 2.wav",
+      "filename": "start video 2.wav",
+      "size_bytes": 27577434,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365483.066455,
+      "checksum": "d0ee3a02dc97e9f6f42ab08653216e2f",
+      "checksum_algorithm": "md5"
+    },
+    {
+      "source_path": "MVI_0633.MOV",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/MVI_0633.MOV",
+      "filename": "MVI_0633.MOV",
+      "size_bytes": 1424276257,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365485.356872,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": "MVI_0557.MOV",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/MVI_0557.MOV",
+      "filename": "MVI_0557.MOV",
+      "size_bytes": 4279007309,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365492.9800847,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": "MVI_0635.MOV",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/MVI_0635.MOV",
+      "filename": "MVI_0635.MOV",
+      "size_bytes": 1645023069,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365498.2844574,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": "MVI_0634.MOV",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/MVI_0634.MOV",
+      "filename": "MVI_0634.MOV",
+      "size_bytes": 1444848805,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365501.5232453,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": "MVI_0556.MOV",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/MVI_0556.MOV",
+      "filename": "MVI_0556.MOV",
+      "size_bytes": 1439690349,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365504.6098552,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": "MVI_0636.MOV",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/MVI_0636.MOV",
+      "filename": "MVI_0636.MOV",
+      "size_bytes": 1071368893,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365507.1205764,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": "2020-04-11 10-42-03.mov",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/2020-04-11 10-42-03.mov",
+      "filename": "2020-04-11 10-42-03.mov",
+      "size_bytes": 53032624,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365507.8168745,
+      "checksum": "bdab3873fc2d3a4a26c28d1d640a08f9",
+      "checksum_algorithm": "md5"
+    },
+    {
+      "source_path": "2020-03-31 21-42-09 Audio Extracted_1.pkf",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/2020-03-31 21-42-09 Audio Extracted_1.pkf",
+      "filename": "2020-03-31 21-42-09 Audio Extracted_1.pkf",
+      "size_bytes": 8728144,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365507.8638966,
+      "checksum": "4ac2f88403f0b41863c4c73cb1ca6d5e",
+      "checksum_algorithm": "md5"
+    },
+    {
+      "source_path": "MVI_0637.MOV",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/MVI_0637.MOV",
+      "filename": "MVI_0637.MOV",
+      "size_bytes": 1237519801,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365509.7949746,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": "MVI_0555.MOV",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/MVI_0555.MOV",
+      "filename": "MVI_0555.MOV",
+      "size_bytes": 1652087125,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365513.11042,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": "PROJECT CREATOR_PART_01/python.wav",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/PROJECT CREATOR_PART_01/python.wav",
+      "filename": "python.wav",
+      "size_bytes": 125426778,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365514.271907,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": "PROJECT CREATOR_PART_01/2020-05-02 18-05-18.mov",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/PROJECT CREATOR_PART_01/2020-05-02 18-05-18.mov",
+      "filename": "2020-05-02 18-05-18.mov",
+      "size_bytes": 212434290,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365514.6659875,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    },
+    {
+      "source_path": "PROJECT CREATOR_PART_01/MVI_0008.MOV",
+      "dest_path": "/Users/craigrusso/Desktop/TEST/TEST_TRANSFER 1/PROJECT CREATOR_PART_01/MVI_0008.MOV",
+      "filename": "MVI_0008.MOV",
+      "size_bytes": 3152019456,
+      "status": "completed",
+      "transfer_time": 0.0,
+      "modification_time": 1757365519.6292233,
+      "checksum": "",
+      "checksum_algorithm": "none"
+    }
+  ],
+  "metadata": {
+    "report_version": "1.0",
+    "generator": "ForwardFlow Transfer Engine",
+    "engine_type": "Unknown",
+    "platform": "posix",
+    "python_version": "3.12.1"
+  }
+}

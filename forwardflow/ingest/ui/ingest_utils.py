@@ -31,8 +31,8 @@ def save_recent_locations(sources: List[str], destinations: List[str]) -> None:
         recent_file = os.path.join(settings_dir, "recent_locations.json")
         
         data = {
-            'sources': sources[:5],  # Keep last 5
-            'destinations': destinations[:5]  # Keep last 5
+            'sources': sources[:10],  # Keep last 10
+            'destinations': destinations[:10]  # Keep last 10
         }
         
         with open(recent_file, 'w') as f:
@@ -49,12 +49,12 @@ def add_to_recent_locations(path: str, is_source: bool = True) -> None:
         if path in sources:
             sources.remove(path)
         sources.insert(0, path)
-        sources = sources[:5]  # Keep last 5
+        sources = sources[:10]  # Keep last 10
     else:
         if path in destinations:
             destinations.remove(path)
         destinations.insert(0, path)
-        destinations = destinations[:5]  # Keep last 5
+        destinations = destinations[:10]  # Keep last 10
     
     save_recent_locations(sources, destinations)
 
