@@ -382,8 +382,8 @@ class PyEnhancedHighPerfTransferEngine:
         import os
         
         try:
-            # Simulate progress updates during copy with proper event schema
-            chunk_size = 1024 * 1024  # 1MB chunks
+            # Network-aware chunk sizing for optimal performance
+            chunk_size = self._get_optimal_chunk_size(dest, file_size)
             copied = 0
             
             with open(source, 'rb') as src, open(dest, 'wb') as dst:
@@ -592,6 +592,32 @@ class PyEnhancedHighPerfTransferEngine:
             print(f"DEBUG: [{thread_name}] CRITICAL ERROR: {error_msg}")
             import traceback
             traceback.print_exc()
+    
+    def _get_optimal_chunk_size(self, dest_path, file_size):
+        """Get optimal chunk size based on destination type and file size"""
+        # Network destination detection
+        dest_lower = dest_path.lower()
+        is_network = any(indicator in dest_lower for indicator in [
+            '/volumes/', '\\\\', '//', 'smb://', 'nfs://', 'afp://',
+            '.synology.', '.qnap.', 'nas.', '.local', 'diskstation'
+        ])
+        
+        if is_network:
+            # Network-optimized chunk sizes (smaller for better network performance)
+            if file_size < 10 * 1024 * 1024:      # Files < 10MB
+                return 256 * 1024                  # 256KB chunks
+            elif file_size < 100 * 1024 * 1024:   # Files < 100MB  
+                return 512 * 1024                  # 512KB chunks
+            else:                                  # Large files
+                return 1 * 1024 * 1024             # 1MB chunks
+        else:
+            # Local storage optimized chunk sizes (larger for max throughput)
+            if file_size < 10 * 1024 * 1024:      # Files < 10MB
+                return 1 * 1024 * 1024             # 1MB chunks
+            elif file_size < 100 * 1024 * 1024:   # Files < 100MB
+                return 4 * 1024 * 1024             # 4MB chunks  
+            else:                                  # Large files
+                return 8 * 1024 * 1024             # 8MB chunks
     
     def cancel(self) -> bool:
         """Cancel the current operation."""

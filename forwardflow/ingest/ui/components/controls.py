@@ -281,14 +281,59 @@ class TransferWorker(QObject):
                 self.transfer_failed.emit(error_msg)
     
     def _get_block_size_for_preset(self, preset):
-        """Get block size for preset - optimized for M2 Max performance"""
-        preset_sizes = {
-            'FAST': 32 * 1024 * 1024,      # 32MB for max speed
-            'Auto (recommended)': 32 * 1024 * 1024,  # 32MB for max speed  
-            'BALANCED': 16 * 1024 * 1024,   # 16MB balanced
-            'STRICT': 8 * 1024 * 1024       # 8MB for verification accuracy
-        }
-        return preset_sizes.get(preset, 32 * 1024 * 1024)  # Default to max performance
+        """Get block size for preset - optimized for M2 Max performance with network awareness"""
+        # Check if any destination is network-based for optimization
+        has_network_destination = False
+        if hasattr(self, 'destination_widgets') and self.destination_widgets:
+            for widget in self.destination_widgets:
+                dest_path = widget.get_destination()
+                if dest_path and self._is_network_destination(dest_path):
+                    has_network_destination = True
+                    break
+        
+        if has_network_destination:
+            # Network-optimized buffer sizes (smaller for better network performance)
+            network_preset_sizes = {
+                'FAST': 8 * 1024 * 1024,           # 8MB for fast network transfers
+                'Auto (recommended)': 4 * 1024 * 1024,  # 4MB for reliable network performance  
+                'BALANCED': 2 * 1024 * 1024,       # 2MB balanced for network
+                'STRICT': 1 * 1024 * 1024          # 1MB for network verification accuracy
+            }
+            return network_preset_sizes.get(preset, 4 * 1024 * 1024)  # Default network optimized
+        else:
+            # Local transfer optimized buffer sizes (original large sizes)
+            local_preset_sizes = {
+                'FAST': 32 * 1024 * 1024,      # 32MB for max local speed
+                'Auto (recommended)': 32 * 1024 * 1024,  # 32MB for max local speed  
+                'BALANCED': 16 * 1024 * 1024,   # 16MB balanced local
+                'STRICT': 8 * 1024 * 1024       # 8MB for local verification accuracy
+            }
+            return local_preset_sizes.get(preset, 32 * 1024 * 1024)  # Default to max performance
+    
+    def _is_network_destination(self, path):
+        """Detect if destination is network-based (NAS, SMB, network share)"""
+        if not path:
+            return False
+        
+        path = path.lower()
+        # Common network path patterns
+        network_indicators = [
+            '/volumes/',           # macOS network volumes
+            '\\\\',               # Windows UNC paths
+            '//',                 # UNC paths
+            'smb://',            # SMB protocol
+            'nfs://',            # NFS protocol
+            'afp://',            # Apple Filing Protocol
+            '.synology.',        # Synology NAS
+            '.qnap.',            # QNAP NAS
+            'nas.',              # Generic NAS
+            '.local',            # Local network domains
+            'diskstation',       # Synology DiskStation
+            'readynas',          # Netgear ReadyNAS
+            'mycloud',           # WD My Cloud
+        ]
+        
+        return any(indicator in path for indicator in network_indicators)
     
     def _count_source_files(self, source_path: str) -> int:
         """Count total files in source directory"""

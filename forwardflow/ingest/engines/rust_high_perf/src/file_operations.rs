@@ -602,21 +602,68 @@ impl FileOperationManager {
         })
     }
     
-    /// Calculate optimal buffer size based on file size
+    /// Calculate optimal buffer size based on file size and destination type
     pub fn calculate_optimal_buffer_size(&self, file_size: u64) -> usize {
-        const MIN_BUFFER_SIZE: usize = 64 * 1024; // 64KB
-        const MAX_BUFFER_SIZE: usize = 16 * 1024 * 1024; // 16MB
-        const TARGET_BUFFER_SIZE: usize = 4 * 1024 * 1024; // 4MB
+        // Default values optimized for local storage
+        const LOCAL_MIN_BUFFER_SIZE: usize = 1024 * 1024; // 1MB
+        const LOCAL_MAX_BUFFER_SIZE: usize = 16 * 1024 * 1024; // 16MB  
+        const LOCAL_TARGET_BUFFER_SIZE: usize = 4 * 1024 * 1024; // 4MB
+        
+        // Network-optimized values (smaller for better network performance)
+        const NETWORK_MIN_BUFFER_SIZE: usize = 256 * 1024; // 256KB
+        const NETWORK_MAX_BUFFER_SIZE: usize = 2 * 1024 * 1024; // 2MB
+        const NETWORK_TARGET_BUFFER_SIZE: usize = 1024 * 1024; // 1MB
+        
+        // For now, use local optimized values (network detection would need destination path)
+        // TODO: Add network detection when destination path is available
+        let (min_size, max_size, target_size) = (LOCAL_MIN_BUFFER_SIZE, LOCAL_MAX_BUFFER_SIZE, LOCAL_TARGET_BUFFER_SIZE);
         
         if file_size < 1024 * 1024 {
             // Small files: use smaller buffer
-            MIN_BUFFER_SIZE
+            min_size
         } else if file_size > 100 * 1024 * 1024 {
-            // Large files: use larger buffer
-            MAX_BUFFER_SIZE
+            // Large files: use larger buffer  
+            max_size
         } else {
             // Medium files: use target buffer size
-            TARGET_BUFFER_SIZE
+            target_size
+        }
+    }
+    
+    /// Calculate network-aware buffer size with destination path
+    pub fn calculate_network_aware_buffer_size(&self, file_size: u64, dest_path: &str) -> usize {
+        // Network destination detection
+        let dest_lower = dest_path.to_lowercase();
+        let is_network = dest_lower.contains("/volumes/") ||
+                        dest_lower.contains("\\\\") ||
+                        dest_lower.contains("//") ||
+                        dest_lower.contains("smb://") ||
+                        dest_lower.contains("nfs://") ||
+                        dest_lower.contains("afp://") ||
+                        dest_lower.contains(".synology.") ||
+                        dest_lower.contains(".qnap.") ||
+                        dest_lower.contains("nas.") ||
+                        dest_lower.contains(".local") ||
+                        dest_lower.contains("diskstation");
+        
+        if is_network {
+            // Network-optimized buffer sizes (smaller for better network performance)
+            if file_size < 10 * 1024 * 1024 {      // Files < 10MB
+                256 * 1024                          // 256KB chunks
+            } else if file_size < 100 * 1024 * 1024 {   // Files < 100MB  
+                512 * 1024                          // 512KB chunks
+            } else {                                // Large files
+                1024 * 1024                         // 1MB chunks
+            }
+        } else {
+            // Local storage optimized buffer sizes (larger for max throughput)  
+            if file_size < 10 * 1024 * 1024 {      // Files < 10MB
+                1024 * 1024                         // 1MB chunks
+            } else if file_size < 100 * 1024 * 1024 {   // Files < 100MB
+                4 * 1024 * 1024                     // 4MB chunks
+            } else {                                // Large files
+                8 * 1024 * 1024                     // 8MB chunks  
+            }
         }
     }
     
