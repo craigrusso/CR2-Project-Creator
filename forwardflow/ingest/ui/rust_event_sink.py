@@ -45,24 +45,36 @@ class RustEventSink(QObject):
     def _check_destination_completion(self, event_type: str, payload: dict) -> None:
         """Check if a destination has completed and trigger immediate report generation"""
         normalized_type = self._normalize_event_type(event_type)
+        dest_path = payload.get('dest_path', payload.get('destination_path', ''))
         
-        if normalized_type == 'dest.progress':
-            dest_path = payload.get('dest_path', '')
+        # Handle direct destination completion events
+        if normalized_type == 'dest.completed':
+            if dest_path and dest_path not in self._completed_destinations:
+                print(f"🎯 DESTINATION COMPLETED (direct): {dest_path} - Triggering immediate report generation")
+                self._trigger_completion_signal(dest_path)
+        
+        # Handle destination progress events that reach 100%
+        elif normalized_type == 'dest.progress':
             progress_percent = payload.get('progress_percent', 0)
             
             # Check if destination reached 100% completion
             if progress_percent >= 100.0 and dest_path and dest_path not in self._completed_destinations:
-                print(f"🎯 DESTINATION COMPLETED: {dest_path} - Triggering immediate report generation")
-                
-                # Mark as completed
-                self._completed_destinations.add(dest_path)
-                
-                # Emit custom signal for per-destination completion
-                if hasattr(self, 'destination_completed'):
-                    self.destination_completed.emit(dest_path)
-                else:
-                    # If signal doesn't exist, trigger report generation directly
-                    self._trigger_destination_report(dest_path)
+                print(f"🎯 DESTINATION COMPLETED (100% progress): {dest_path} - Triggering immediate report generation")
+                self._trigger_completion_signal(dest_path)
+    
+    def _trigger_completion_signal(self, dest_path: str) -> None:
+        """Trigger destination completion signal and mark as completed"""
+        # Mark as completed
+        self._completed_destinations.add(dest_path)
+        
+        # Emit custom signal for per-destination completion
+        if hasattr(self, 'destination_completed'):
+            self.destination_completed.emit(dest_path)
+            print(f"DEBUG: destination_completed signal emitted for {dest_path}")
+        else:
+            # If signal doesn't exist, trigger report generation directly
+            print(f"DEBUG: destination_completed signal not available, calling direct trigger")
+            self._trigger_destination_report(dest_path)
     
     def initialize_job(self, total_files: int, destinations: List[str]) -> None:
         """Initialize EventBridge for a new transfer job"""
@@ -82,6 +94,10 @@ class RustEventSink(QObject):
     
     def emit(self, event_type: str, payload: dict) -> None:
         """Handle events from Rust engine with thread-safe EventBridge routing"""
+        # Log all events for debugging
+        if 'dest' in event_type.lower() or 'destination' in event_type.lower():
+            print(f"🔍 RustEventSink.emit() DESTINATION EVENT: type='{event_type}', payload={payload}")
+        
         # Route all events through EventBridge (thread-safe)
         self.event_bridge.emit_event(event_type, payload)
         
@@ -116,6 +132,8 @@ class RustEventSink(QObject):
         # Destination events
         elif event_type in ['dest_progress', 'destination_progress']:
             return 'dest.progress'
+        elif event_type in ['dest.completed', 'dest_completed', 'destination_completed']:
+            return 'dest.completed'
         
         return event_type
     
@@ -124,6 +142,8 @@ class RustEventSink(QObject):
         filename = payload.get('filename', payload.get('file_id', 'unknown_file'))
         bytes_copied = payload.get('bytes_copied', 0)
         total_bytes = payload.get('total_bytes', 0)
+        
+        print(f"📝 _update_file_record: {filename} - {bytes_copied}/{total_bytes} bytes")
         
         # Initialize file record if needed
         if filename not in self._file_records:

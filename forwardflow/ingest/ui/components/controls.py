@@ -127,8 +127,11 @@ class TransferWorker(QObject):
                     print("DEBUG: ✓ *** DESTINATION CONNECTION ESTABLISHED ***")
                     
                     # Connect destination completion signal for immediate report generation
-                    self.event_sink.destination_completed.connect(self._handle_destination_completed)
-                    print("DEBUG: ✓ *** DESTINATION COMPLETION CONNECTION ESTABLISHED ***")
+                    if hasattr(self.root, 'control_section') and self.root.control_section:
+                        self.event_sink.destination_completed.connect(self.root.control_section._handle_destination_completed)
+                        print("DEBUG: ✓ *** DESTINATION COMPLETION CONNECTION ESTABLISHED ***")
+                    else:
+                        print("DEBUG: ✗ DESTINATION COMPLETION CONNECTION FAILED - control_section not available")
                 else:
                     print("DEBUG: ✗ *** DESTINATION CONNECTION FAILED - source_dest_section not available ***")
             except Exception as e:
@@ -1396,9 +1399,30 @@ class ControlSection(QWidget):
                 event_sink = self.root._rust_event_sink
                 stats = event_sink.get_comprehensive_stats()
                 
+                # DEBUG: Print what stats we're getting
+                print(f"🔍 REPORT DEBUG: Comprehensive stats received:")
+                print(f"  - Total files: {stats.get('total_files', 'N/A')}")
+                print(f"  - Total bytes: {stats.get('total_bytes', 'N/A')}")
+                print(f"  - Copied bytes: {stats.get('copied_bytes', 'N/A')}")
+                print(f"  - Files array length: {len(stats.get('files', []))}")
+                print(f"  - Destinations keys: {list(stats.get('destinations', {}).keys())}")
+                
+                # Print sample file records if available
+                files_data = stats.get('files', [])
+                if files_data:
+                    print(f"  - Sample file record: {files_data[0]}")
+                else:
+                    print(f"  - No file records found in stats!")
+                
                 # Filter data for this specific destination
                 dest_stats = stats.get('destinations', {}).get(dest_path, {})
                 dest_files = [f for f in stats.get('files', []) if f.get('dest_path') == dest_path]
+                
+                print(f"🔍 REPORT DEBUG: Filtered for destination '{dest_path}':")
+                print(f"  - Destination stats: {dest_stats}")
+                print(f"  - Filtered files count: {len(dest_files)}")
+                if dest_files:
+                    print(f"  - Sample filtered file: {dest_files[0]}")
                 
                 # Create job-like object for report generation
                 from types import SimpleNamespace
@@ -1406,7 +1430,11 @@ class ControlSection(QWidget):
                 job.id = getattr(self.root, 'current_job_id', f'dest_report_{int(time.time())}')
                 job.source_paths = getattr(self.root, 'current_source_path', [])  
                 job.destination_paths = [dest_path]  # Single destination
-                job.verification_method = verify_algorithm if 'verify_algorithm' in locals() else "xxhash64be"  # Use current algorithm
+                # Get verification algorithm from options section
+                verify_algorithm = "xxhash64be"  # Default
+                if hasattr(self.root, 'options_section') and self.root.options_section:
+                    verify_algorithm = self.root.options_section.get_verification_algorithm()
+                job.verification_method = verify_algorithm
                 
                 # Generate the report using existing method but for single destination
                 self._generate_completion_report(
