@@ -207,11 +207,81 @@ class PyEnhancedHighPerfTransferEngine:
             dest_bytes_copied[dest] = 0
             dest_files_completed[dest] = 0
         
-        # Copy files to each destination using manifest
+        # PARALLEL MULTI-DESTINATION PROCESSING - Process all destinations simultaneously
+        print(f"DEBUG: *** STARTING PARALLEL MULTI-DESTINATION PROCESSING ***")
+        print(f"DEBUG: {len(destinations)} destinations will process in parallel")
+        
+        # Emit initial dest.progress events for ALL destinations (sets UI status to "Ready")
         for dest_idx, dest in enumerate(destinations):
+            if hasattr(self, 'event_sink') and self.event_sink:
+                self.event_sink.emit('dest.progress', {
+                    'job_id': job_id,
+                    'dest_path': dest,
+                    'dest_index': dest_idx,
+                    'progress_percent': 0.0,
+                    'bytes_copied': 0,
+                    'total_bytes': dest_total_bytes[dest],
+                    'completed_files': 0,
+                    'total_files': dest_total_files[dest],
+                    'current_speed_mbps': 0.0,
+                    'peak_speed_mbps': 0.0,
+                    'elapsed_seconds': 0.0,
+                    'eta_seconds': 0.0
+                })
+                print(f"DEBUG: Emitted initial dest.progress for {dest} (index {dest_idx})")
+        
+        # Create and start parallel destination threads
+        import threading
+        import queue
+        
+        destination_threads = []
+        error_queue = queue.Queue()
+        
+        for dest_idx, dest in enumerate(destinations):
+            print(f"DEBUG: Creating thread for destination {dest_idx}: {dest}")
+            thread = threading.Thread(
+                target=self._copy_to_single_destination,
+                args=(dest_idx, dest, file_manifest, job_id, start_time, dest_bytes_copied, 
+                      dest_files_completed, dest_total_bytes, dest_total_files, error_queue),
+                name=f"Dest-{dest_idx}-{os.path.basename(dest)}"
+            )
+            destination_threads.append(thread)
+            thread.start()
+            print(f"DEBUG: Started thread {thread.name}")
+        
+        print(f"DEBUG: All {len(destination_threads)} destination threads started")
+        
+        # Monitor progress and wait for all destinations to complete
+        while any(thread.is_alive() for thread in destination_threads):
             if self.is_cancelled:
+                print("DEBUG: Transfer cancelled, stopping all destination threads")
+                # Note: In a real implementation, you'd want to signal threads to stop gracefully
                 break
-                
+            time.sleep(0.1)  # Brief pause to prevent busy waiting
+        
+        print(f"DEBUG: All destination threads completed")
+        
+        # Collect any errors from parallel processing
+        while not error_queue.empty():
+            try:
+                error = error_queue.get_nowait()
+                errors.append(error)
+                print(f"DEBUG: Collected error from parallel processing: {error}")
+            except queue.Empty:
+                break
+        
+        # Calculate final aggregate results from all destinations
+        for dest_idx, dest in enumerate(destinations):
+            aggregate_bytes_copied += dest_bytes_copied[dest]
+            if dest_idx == len(destinations) - 1:  # Count files only once (from last destination)
+                copied_files = dest_files_completed[dest]
+        
+        print(f"DEBUG: *** PARALLEL PROCESSING COMPLETE ***")
+        print(f"DEBUG: Total bytes copied: {aggregate_bytes_copied}")
+        print(f"DEBUG: Total files copied: {copied_files}")
+        
+        # Skip the old sequential processing loop - replaced with parallel version above
+        if False:  # Disable old sequential code
             for file_entry in file_manifest:
                 if self.is_cancelled:
                     break
@@ -317,6 +387,8 @@ class PyEnhancedHighPerfTransferEngine:
                         
                 except Exception as e:
                     errors.append(f"Error copying {file_path}: {str(e)}")
+        
+        # End of disabled old sequential processing code
         
         elapsed_time = time.time() - start_time
         
@@ -430,6 +502,139 @@ class PyEnhancedHighPerfTransferEngine:
         except Exception as e:
             print(f"Error copying file {source}: {e}")
             return False
+    
+    def _copy_to_single_destination(self, dest_idx: int, dest_path: str, file_manifest: list, 
+                                   job_id: str, start_time: float, dest_bytes_copied: dict,
+                                   dest_files_completed: dict, dest_total_bytes: dict, 
+                                   dest_total_files: dict, error_queue) -> None:
+        """
+        Copy all files to a single destination - runs in parallel thread for multi-destination transfers.
+        This method processes ALL files for ONE destination, running simultaneously with other destinations.
+        """
+        import time
+        import os
+        import threading
+        
+        thread_name = threading.current_thread().name
+        print(f"DEBUG: [{thread_name}] Starting destination processing: {dest_path}")
+        print(f"DEBUG: [{thread_name}] Processing {len(file_manifest)} files")
+        
+        try:
+            # Process each file for this specific destination
+            for file_idx, file_entry in enumerate(file_manifest):
+                if self.is_cancelled:
+                    print(f"DEBUG: [{thread_name}] Transfer cancelled, stopping")
+                    break
+                
+                # Handle pause/resume
+                while self.is_paused:
+                    time.sleep(0.1)
+                    if self.is_cancelled:
+                        print(f"DEBUG: [{thread_name}] Transfer cancelled during pause")
+                        break
+                
+                if self.is_cancelled:
+                    break
+                    
+                try:
+                    file_path = file_entry['full_path']
+                    rel_path = file_entry['rel_path']  
+                    file_size = file_entry['size']
+                    
+                    # Create destination path for this specific destination
+                    final_dest_path = os.path.join(dest_path, rel_path)
+                    
+                    # Ensure destination directory exists
+                    os.makedirs(os.path.dirname(final_dest_path), exist_ok=True)
+                    
+                    print(f"DEBUG: [{thread_name}] Copying file {file_idx+1}/{len(file_manifest)}: {os.path.basename(file_path)}")
+                    
+                    # Emit file.progress for this destination
+                    if hasattr(self, 'event_sink') and self.event_sink:
+                        self.event_sink.emit('file.progress', {
+                            'job_id': job_id,
+                            'filename': os.path.basename(file_path),
+                            'file_bytes': file_size,
+                            'file_bytes_copied': 0,
+                            'dest_index': dest_idx,
+                            'dest_path': dest_path,
+                            'transfer_state': 'IN_PROGRESS'
+                        })
+                    
+                    # Copy the file for this destination
+                    copied = self._copy_file_with_progress_stable(file_path, final_dest_path, file_size, job_id)
+                    
+                    if copied:
+                        # Update destination-specific counters (thread-safe since each thread has its own destination)
+                        dest_bytes_copied[dest_path] += file_size
+                        dest_files_completed[dest_path] += 1
+                        
+                        # Calculate destination-specific progress
+                        elapsed = time.time() - start_time
+                        current_speed = (dest_bytes_copied[dest_path] / (1024 * 1024)) / elapsed if elapsed > 0 else 0
+                        progress_percent = (dest_bytes_copied[dest_path] / dest_total_bytes[dest_path] * 100) if dest_total_bytes[dest_path] > 0 else 0
+                        eta = (dest_total_bytes[dest_path] - dest_bytes_copied[dest_path]) / (current_speed * 1024 * 1024) if current_speed > 0 else 0
+                        
+                        # Emit destination-specific progress update
+                        if hasattr(self, 'event_sink') and self.event_sink:
+                            self.event_sink.emit('dest.progress', {
+                                'job_id': job_id,
+                                'dest_path': dest_path,
+                                'dest_index': dest_idx,
+                                'progress_percent': progress_percent,
+                                'bytes_copied': dest_bytes_copied[dest_path],
+                                'total_bytes': dest_total_bytes[dest_path],
+                                'completed_files': dest_files_completed[dest_path],
+                                'total_files': dest_total_files[dest_path],
+                                'current_speed_mbps': current_speed,
+                                'peak_speed_mbps': current_speed,
+                                'elapsed_seconds': elapsed,
+                                'eta_seconds': eta
+                            })
+                        
+                        print(f"DEBUG: [{thread_name}] File completed: {os.path.basename(file_path)} - Destination progress: {progress_percent:.1f}%")
+                        
+                        # Emit file completion for this destination
+                        if hasattr(self, 'event_sink') and self.event_sink:
+                            self.event_sink.emit('file.complete', {
+                                'job_id': job_id,
+                                'filename': os.path.basename(file_path),
+                                'file_bytes': file_size,
+                                'dest_index': dest_idx,
+                                'dest_path': dest_path,
+                                'transfer_state': 'COMPLETED'
+                            })
+                        
+                        # Verify file integrity
+                        verification_result = self.verification_manager.verify_file_transfer(
+                            file_path, final_dest_path, "xxhash64"
+                        )
+                        if not verification_result.get("verification_passed", False):
+                            error_msg = f"Verification failed for {file_path} -> {dest_path}"
+                            error_queue.put(error_msg)
+                            print(f"DEBUG: [{thread_name}] {error_msg}")
+                    else:
+                        error_msg = f"Failed to copy {file_path} to {dest_path}"
+                        error_queue.put(error_msg)
+                        print(f"DEBUG: [{thread_name}] {error_msg}")
+                        
+                except Exception as e:
+                    error_msg = f"Error copying {file_path} to {dest_path}: {str(e)}"
+                    error_queue.put(error_msg)
+                    print(f"DEBUG: [{thread_name}] {error_msg}")
+            
+            # Destination processing complete
+            final_progress = (dest_bytes_copied[dest_path] / dest_total_bytes[dest_path] * 100) if dest_total_bytes[dest_path] > 0 else 100
+            print(f"DEBUG: [{thread_name}] Destination processing COMPLETE - Final progress: {final_progress:.1f}%")
+            print(f"DEBUG: [{thread_name}] Files completed: {dest_files_completed[dest_path]}/{dest_total_files[dest_path]}")
+            print(f"DEBUG: [{thread_name}] Bytes copied: {dest_bytes_copied[dest_path]}/{dest_total_bytes[dest_path]}")
+            
+        except Exception as e:
+            error_msg = f"Critical error in destination thread {dest_path}: {str(e)}"
+            error_queue.put(error_msg)
+            print(f"DEBUG: [{thread_name}] CRITICAL ERROR: {error_msg}")
+            import traceback
+            traceback.print_exc()
     
     def cancel(self) -> bool:
         """Cancel the current operation."""
