@@ -286,18 +286,16 @@ class ProgressSection(QWidget):
         # Add progress bar with normal layout
         progress_layout.addWidget(self.total_progress)
         
-        # Add substantial vertical spacing to clearly separate progress bar from stats
-        spacer = QWidget()
-        spacer.setFixedHeight(20)  # 20px separation to prevent overlap
-        progress_layout.addWidget(spacer)
+        # Close the progress frame here
+        layout.addWidget(progress_frame)
         
-        # Create a separate container for stats to prevent overlap
-        stats_container = QWidget()
-        stats_container.setMinimumHeight(80)  # Ensure sufficient height for two rows
-        stats_container.setStyleSheet("background: transparent; border: none;")
-        stats_container_layout = QVBoxLayout(stats_container)
+        # Create a separate CARD for stats to prevent overlap with progress bar title
+        stats_card = QFrame()
+        stats_card.setStyleSheet(CARD_FRAME_STYLE)
+        stats_card.setMinimumHeight(80)  # Ensure sufficient height for two rows
+        stats_container_layout = QVBoxLayout(stats_card)
         stats_container_layout.setSpacing(2)
-        stats_container_layout.setContentsMargins(0, 0, 0, 0)
+        stats_container_layout.setContentsMargins(12, 8, 12, 8)
         
         # Create compact, direct labels without container widgets (no card backgrounds)
         # Elapsed time
@@ -309,9 +307,12 @@ class ProgressSection(QWidget):
                 font-weight: 500;
                 text-align: center;
                 margin: 0;
-                padding: 2px;
-                background: transparent;
+                padding: 0;
+                background-color: transparent;
+                background: none;
                 border: none;
+                border-radius: 0;
+                qproperty-alignment: AlignCenter;
             }}
         """)
         elapsed_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -342,9 +343,12 @@ class ProgressSection(QWidget):
                 font-weight: 500;
                 text-align: center;
                 margin: 0;
-                padding: 2px;
-                background: transparent;
+                padding: 0;
+                background-color: transparent;
+                background: none;
                 border: none;
+                border-radius: 0;
+                qproperty-alignment: AlignCenter;
             }}
         """)
         eta_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -375,9 +379,12 @@ class ProgressSection(QWidget):
                 font-weight: 500;
                 text-align: center;
                 margin: 0;
-                padding: 2px;
-                background: transparent;
+                padding: 0;
+                background-color: transparent;
+                background: none;
                 border: none;
+                border-radius: 0;
+                qproperty-alignment: AlignCenter;
             }}
         """)
         speed_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -408,9 +415,12 @@ class ProgressSection(QWidget):
                 font-weight: 500;
                 text-align: center;
                 margin: 0;
-                padding: 2px;
-                background: transparent;
+                padding: 0;
+                background-color: transparent;
+                background: none;
                 border: none;
+                border-radius: 0;
+                qproperty-alignment: AlignCenter;
             }}
         """)
         avg_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -441,9 +451,12 @@ class ProgressSection(QWidget):
                 font-weight: 500;
                 text-align: center;
                 margin: 0;
-                padding: 2px;
-                background: transparent;
+                padding: 0;
+                background-color: transparent;
+                background: none;
                 border: none;
+                border-radius: 0;
+                qproperty-alignment: AlignCenter;
             }}
         """)
         peak_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -490,12 +503,8 @@ class ProgressSection(QWidget):
         stats_container_layout.addLayout(values_layout)
         stats_container_layout.addStretch()  # Push content to top
         
-        # Add the stats container to the progress frame
-        progress_layout.addWidget(stats_container)
-        
-
-        
-        layout.addWidget(progress_frame, 0)
+        # Add the separate stats card to main layout
+        layout.addWidget(stats_card)
         
         # Add spacing between progress and transfer status
         spacer = QWidget()
@@ -689,7 +698,7 @@ class ProgressSection(QWidget):
             traceback.print_exc()
     
     def handle_file_progress(self, payload):
-        """Handle file progress event - this is the key method for updating progress bars"""
+        """Handle file progress event - ONLY for logging and file tracking, NOT for main progress bar"""
         try:
             # Throttle file progress updates to prevent UI freezing
             current_time = time.time() * 1000  # Convert to milliseconds
@@ -710,39 +719,26 @@ class ProgressSection(QWidget):
             
             print(f"DEBUG: ProgressSection.handle_file_progress: {filename} - {bytes_copied}/{total_bytes} bytes ({progress_percent:.1f}%)")
             
-            # Update the main progress bar if we have valid data
-            if total_bytes > 0 and hasattr(self, 'total_progress'):
-                # Use the progress_percent from Rust engine directly
-                progress_percent_int = int(progress_percent)
-                self.total_progress.setValue(progress_percent_int)
-                self.total_progress.setFormat(f"{progress_percent_int}%")
-                print(f"DEBUG: Updated main progress bar to {progress_percent_int}%")
+            # ***** CRITICAL: DO NOT UPDATE MAIN PROGRESS BAR HERE! *****
+            # File-level progress should NEVER update the main progress bar
+            # Only job-level progress through handle_progress_update() should update the main progress bar
+            # This prevents the 0-100% per file jumping behavior
             
-            # Update the files count to show current file progress
-            if hasattr(self, 'files_count') and total_bytes > 0:
-                mb_copied = bytes_copied / (1024 * 1024)
-                mb_total = total_bytes / (1024 * 1024)
-                self.files_count.setText(f"{filename}: {mb_copied:.1f}/{mb_total:.1f} MB")
+            # Update the files count to show current file being processed (if available)
+            if hasattr(self, 'files_count') and filename != "Unknown":
+                # Show current filename being processed, but don't change the progress bar
+                current_text = self.files_count.text()
+                if "of" in current_text:
+                    # Keep the existing count, just show current file
+                    parts = current_text.split("of")
+                    if len(parts) == 2:
+                        count_part = parts[0].strip()
+                        total_part = parts[1].strip()
+                        self.files_count.setText(f"{count_part} of {total_part} (processing: {filename[:30]}{'...' if len(filename) > 30 else ''})")
+                        print(f"DEBUG: Updated files display to show current file: {filename}")
             
-            # Calculate current speed based on progress updates
-            # Since Rust engine doesn't provide speed, we'll calculate it from progress
-            if hasattr(self, 'current_speed_label'):
-                # For now, show progress percentage as speed indicator
-                # In a real implementation, you'd want to track time between updates
-                self.current_speed_label.setText(f"{progress_percent:.1f}%")
-            
-            # Update peak speed if current progress is higher
-            if hasattr(self, 'peak_speed_label'):
-                try:
-                    current_peak_text = self.peak_speed_label.text()
-                    if " %" in current_peak_text:
-                        current_peak = float(current_peak_text.split(' ')[0])
-                        if progress_percent > current_peak:
-                            self.peak_speed_label.setText(f"{progress_percent:.1f}%")
-                    else:
-                        self.peak_speed_label.setText(f"{progress_percent:.1f}%")
-                except (ValueError, IndexError):
-                    self.peak_speed_label.setText(f"{progress_percent:.1f}%")
+            # ***** DO NOT UPDATE PROGRESS BAR, SPEED, OR PEAK LABELS HERE *****
+            # Those should only come from job-level progress updates
             
         except Exception as e:
             print(f"DEBUG: Error in ProgressSection.handle_file_progress: {e}")
@@ -830,57 +826,147 @@ class ProgressSection(QWidget):
             traceback.print_exc()
     
     def handle_progress_update(self, payload):
-        """Handle simple progress updates from Rust engine"""
+        """Handle progress updates - ONLY from JobState for consistent progress bar behavior"""
         try:
-            # Throttle progress updates to prevent UI freezing
-            current_time = time.time() * 1000  # Convert to milliseconds
-            if not hasattr(self, '_last_progress_update'):
-                self._last_progress_update = 0
-                self._progress_throttle_ms = 100  # Update progress max every 100ms
+            print(f"DEBUG: ProgressSection.handle_progress_update called with: {payload}")
             
-            if current_time - self._last_progress_update < self._progress_throttle_ms:
-                return  # Skip this update to prevent UI flooding
-            self._last_progress_update = current_time
+            # Check if this is a JobState-based update (the ONLY supported path)
+            if 'progress_percent' in payload and 'total_target_bytes' in payload:
+                print(f"DEBUG: JobState-based progress update - using consistent percentage display")
+                self._handle_jobstate_percentage_update(payload)
+                return
             
-            print(f"DEBUG: Progress section received progress_update: {payload}")
-            
-            # Handle different payload formats from Rust engine
+            # Check if this is a legacy update that needs conversion
             if 'progress_percent' in payload:
-                # New format from Rust engine
-                percent = payload.get('progress_percent', 0)
-                files_completed = payload.get('completed_files', 0)
-                total_files = payload.get('total_files', 0)
-                elapsed_time = payload.get('elapsed_time', 0)
-                speed_mbps = payload.get('current_speed_mbps', 0)
-                filename = payload.get('filename', '')
-            else:
-                # Legacy format
-                percent = payload.get('percent', 0)
-                files_completed = payload.get('files_completed', 0)
-                total_files = payload.get('total_files', 0)
-                elapsed_time = payload.get('elapsed_time', 0)
-                speed_mbps = payload.get('speed_mbps', 0)
-                filename = payload.get('filename', '')
+                print(f"DEBUG: Legacy progress update - converting to consistent format")
+                self._handle_converted_legacy_update(payload)
+                return
+                
+            # Unknown payload format
+            print(f"WARNING: Unknown progress payload format: {list(payload.keys())}")
             
-            # Update progress bar
-            if hasattr(self, 'total_progress'):
-                self.total_progress.setValue(int(percent))
-                self.total_progress.setFormat(f"{int(percent)}%")
-                print(f"DEBUG: Updated progress bar to {int(percent)}%")
+        except Exception as e:
+            print(f"ERROR: ProgressSection.handle_progress_update failed: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _handle_jobstate_percentage_update(self, payload):
+        """Handle JobState progress updates using CONSISTENT 0-100 percentage display"""
+        try:
+            # Extract data from JobState payload
+            progress_percent = payload.get("progress_percent", 0.0)
+            completed_files = payload.get("completed_files", 0)
+            total_files = payload.get("total_files", 0)
+            current_speed = payload.get("current_speed_mbps", 0.0)
+            peak_speed = payload.get("peak_speed_mbps", 0.0)
+            elapsed = payload.get("elapsed_seconds", 0.0)
+            eta = payload.get("eta_seconds", 0.0)
             
-            # Update files count
-            if hasattr(self, 'files_count'):
-                if filename:
-                    self.files_count.setText(f"{filename}: {files_completed}/{total_files} files")
+            print(f"DEBUG: JobState progress: {progress_percent:.1f}% ({completed_files}/{total_files} files)")
+            
+            # Update progress bar with CONSISTENT 0-100 range (never switch to bytes)
+            if hasattr(self, 'total_progress') and self.total_progress:
+                # Always use percentage range 0-100 for consistency
+                self.total_progress.setRange(0, 100)
+                self.total_progress.setValue(int(progress_percent))
+                self.total_progress.setFormat(f"{int(progress_percent)}%")
+                print(f"DEBUG: Progress bar updated to {int(progress_percent)}% (0-100 range)")
+            
+            # Update other UI elements - pass bytes_copied for average speed calculation
+            bytes_copied = payload.get("bytes_copied", 0)
+            self._update_speed_labels(current_speed, peak_speed, elapsed, bytes_copied)
+            self._update_elapsed_label(elapsed)
+            self._update_files_count(completed_files, total_files)
+            self._update_eta_label(eta)
+            
+        except Exception as e:
+            print(f"ERROR: JobState percentage update failed: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _handle_converted_legacy_update(self, payload):
+        """Handle legacy progress updates converted to consistent format"""
+        try:
+            # Extract percentage from legacy payload
+            progress_percent = payload.get("progress_percent", 0.0)
+            completed_files = payload.get("completed_files", 0)
+            total_files = payload.get("total_files", 0)
+            current_speed = payload.get("current_speed_mbps", 0.0)
+            elapsed = payload.get("elapsed_time", 0.0)
+            
+            print(f"DEBUG: Legacy progress converted: {progress_percent:.1f}% ({completed_files}/{total_files} files)")
+            
+            # Update progress bar with CONSISTENT 0-100 range
+            if hasattr(self, 'total_progress') and self.total_progress:
+                self.total_progress.setRange(0, 100)
+                self.total_progress.setValue(int(progress_percent))
+                self.total_progress.setFormat(f"{int(progress_percent)}%")
+                print(f"DEBUG: Legacy progress bar updated to {int(progress_percent)}% (0-100 range)")
+            
+            # Update other UI elements (with fallbacks for legacy data)
+            bytes_copied = payload.get("bytes_copied", 0)
+            self._update_speed_labels(current_speed, 0.0, elapsed, bytes_copied)
+            self._update_files_count(completed_files, total_files)
+            self._update_eta_label(payload.get("eta_seconds", 0.0))
+            
+        except Exception as e:
+            print(f"ERROR: Legacy progress conversion failed: {e}")
+            import traceback
+            traceback.print_exc()
+    
+# OLD CONFLICTING METHODS REMOVED - replaced with consistent percentage-based approach
+    # These methods were causing progress bar range conflicts between byte-based and percentage-based displays
+    
+    def _update_speed_labels(self, current_speed, peak_speed, elapsed, bytes_copied=0):
+        """Update speed-related labels"""
+        try:
+            if hasattr(self, 'current_speed_label') and self.current_speed_label:
+                self.current_speed_label.setText(f"{current_speed:.0f} MB/s")
+                print(f"DEBUG: Updated current speed to {current_speed:.0f} MB/s")
+            
+            if hasattr(self, 'peak_speed_label') and self.peak_speed_label:
+                self.peak_speed_label.setText(f"{peak_speed:.0f} MB/s")
+                print(f"DEBUG: Updated peak speed to {peak_speed:.0f} MB/s")
+                
+            if hasattr(self, 'avg_speed_label') and self.avg_speed_label and elapsed > 0 and bytes_copied > 0:
+                # Calculate average speed from actual bytes_copied and elapsed time
+                avg_speed = (bytes_copied / (1024 * 1024)) / elapsed
+                self.avg_speed_label.setText(f"{avg_speed:.0f} MB/s")
+                print(f"DEBUG: Updated average speed to {avg_speed:.0f} MB/s (calculated from {bytes_copied} bytes in {elapsed:.1f}s)")
+                    
+        except Exception as e:
+            print(f"ERROR: Speed labels update failed: {e}")
+    
+    def _update_files_count(self, completed_files, total_files):
+        """Update files count label"""
+        try:
+            if hasattr(self, 'files_count') and self.files_count:
+                self.files_count.setText(f"{completed_files} of {total_files} files")
+                print(f"DEBUG: Updated files count to {completed_files}/{total_files}")
+        except Exception as e:
+            print(f"ERROR: Files count update failed: {e}")
+    
+    def _update_eta_label(self, eta_seconds):
+        """Update ETA label"""
+        try:
+            if hasattr(self, 'eta_label') and self.eta_label:
+                if eta_seconds > 0:
+                    eta_str = f"{int(eta_seconds//3600):02d}:{int((eta_seconds%3600)//60):02d}:{int(eta_seconds%60):02d}"
+                    self.eta_label.setText(eta_str)
                 else:
-                    self.files_count.setText(f"{files_completed} of {total_files} files")
-                print(f"DEBUG: Updated files count to {files_completed}/{total_files}")
-            
-            # Update elapsed time
-            if hasattr(self, 'elapsed_label'):
-                elapsed_str = f"{int(elapsed_time//3600):02d}:{int((elapsed_time%3600)//60):02d}:{int(elapsed_time%60):02d}"
+                    self.eta_label.setText("--:--:--")
+        except Exception as e:
+            print(f"ERROR: ETA label update failed: {e}")
+    
+    def _update_elapsed_label(self, elapsed_seconds):
+        """Update elapsed time label"""
+        try:
+            if hasattr(self, 'elapsed_label') and self.elapsed_label:
+                elapsed_str = f"{int(elapsed_seconds//3600):02d}:{int((elapsed_seconds%3600)//60):02d}:{int(elapsed_seconds%60):02d}"
                 self.elapsed_label.setText(elapsed_str)
                 print(f"DEBUG: Updated elapsed time to {elapsed_str}")
+        except Exception as e:
+            print(f"ERROR: Elapsed time label update failed: {e}")
             
             # Update speed
             if hasattr(self, 'current_speed_label'):
@@ -892,19 +978,25 @@ class ProgressSection(QWidget):
                 self.avg_speed_label.setText(f"{speed_mbps:.1f} MB/s")
                 print(f"DEBUG: Updated average speed to {speed_mbps:.1f} MB/s")
             
-            # Update peak speed
+            # Update peak speed - use peak from payload if available
             if hasattr(self, 'peak_speed_label'):
-                try:
-                    current_peak_text = self.peak_speed_label.text()
-                    if " MB/s" in current_peak_text:
-                        current_peak = float(current_peak_text.split(' ')[0])
-                        if speed_mbps > current_peak:
+                peak_speed = payload.get('peak_speed_mbps', speed_mbps)
+                if peak_speed > 0:
+                    self.peak_speed_label.setText(f"{peak_speed:.1f} MB/s")
+                    print(f"DEBUG: Updated peak speed to {peak_speed:.1f} MB/s")
+                else:
+                    # Fallback to local peak calculation if no peak in payload
+                    try:
+                        current_peak_text = self.peak_speed_label.text()
+                        if " MB/s" in current_peak_text:
+                            current_peak = float(current_peak_text.split(' ')[0])
+                            if speed_mbps > current_peak:
+                                self.peak_speed_label.setText(f"{speed_mbps:.1f} MB/s")
+                                print(f"DEBUG: Updated peak speed to {speed_mbps:.1f} MB/s (local calc)")
+                        else:
                             self.peak_speed_label.setText(f"{speed_mbps:.1f} MB/s")
-                            print(f"DEBUG: Updated peak speed to {speed_mbps:.1f} MB/s")
-                    else:
+                    except (ValueError, IndexError):
                         self.peak_speed_label.setText(f"{speed_mbps:.1f} MB/s")
-                except (ValueError, IndexError):
-                    self.peak_speed_label.setText(f"{speed_mbps:.1f} MB/s")
             
             # Calculate ETA
             bytes_copied = payload.get('bytes_copied', 0)
