@@ -135,7 +135,7 @@ class RustEventSink(QObject):
             return 'file.started'
         elif event_type in ['file.progress', 'file_progress', 'fileprogress']:
             return 'file.progress'
-        elif event_type in ['file.completed', 'file_completed', 'filecompleted']:
+        elif event_type in ['file.completed', 'file_completed', 'filecompleted', 'file.complete', 'file_complete', 'filecomplete']:
             return 'file.completed'
         
         # Job progress events  
@@ -154,38 +154,8 @@ class RustEventSink(QObject):
         
         return event_type
     
-    def _update_file_record(self, payload: dict) -> None:
-        """Update file records for reporting (legacy compatibility)"""
-        filename = payload.get('filename', payload.get('file_id', 'unknown_file'))
-        bytes_copied = payload.get('bytes_copied', 0)
-        total_bytes = payload.get('total_bytes', 0)
-        
-        print(f"📝 _update_file_record: {filename} - {bytes_copied}/{total_bytes} bytes")
-        
-        # Initialize file record if needed
-        if filename not in self._file_records:
-            self._file_records[filename] = {
-                'filename': filename,
-                'size': total_bytes,
-                'bytes_copied': 0,
-                'transfer_status': 'IN_PROGRESS',
-                'verification_status': 'PENDING',
-                'checksum_type': 'xxHash64',
-                'source_checksum': '',
-                'destination_checksum': '',
-                'transfer_speed': 0.0,
-                'transfer_duration': 0.0,
-                'start_time': time.time()
-            }
-        
-        # Update file record
-        file_record = self._file_records[filename]
-        file_record['bytes_copied'] = bytes_copied
-        
-        # Calculate transfer speed
-        elapsed = time.time() - file_record['start_time']
-        if elapsed > 0:
-            file_record['transfer_speed'] = bytes_copied / elapsed / (1024 * 1024)  # MB/s
+    # REMOVED: Duplicate _update_file_record method - less comprehensive than the one below
+    # The correct _update_file_record method is defined later with better progress tracking
     
     def _add_file_started(self, payload: dict) -> None:
         """Add file record when transfer starts"""
@@ -196,8 +166,8 @@ class RustEventSink(QObject):
                 'filename': filename,
                 'source_path': payload.get('source_path', ''),
                 'destination_path': payload.get('destination_path', ''),
-                'size': payload.get('total_bytes', payload.get('file_size', 0)),
-                'size_bytes': payload.get('total_bytes', payload.get('file_size', 0)),
+                'size': payload.get('file_bytes', payload.get('total_bytes', payload.get('file_size', 0))),
+                'size_bytes': payload.get('file_bytes', payload.get('total_bytes', payload.get('file_size', 0))),
                 'transfer_status': 'IN_PROGRESS',
                 'verification_status': 'PENDING',
                 'checksum_algorithm': 'xxHash64BE',
@@ -221,9 +191,16 @@ class RustEventSink(QObject):
         
         file_record = self._file_records[filename]
         
-        # Update progress information
-        if 'bytes_copied' in payload:
+        # Update progress information (CRITICAL FIX: Handle Rust engine field names)
+        if 'file_bytes_copied' in payload:
+            bytes_copied = payload['file_bytes_copied']
+            file_record['bytes_copied'] = bytes_copied  # CRITICAL FIX: Actually update bytes_copied field!
+            total_bytes = file_record['size']
+            if total_bytes > 0:
+                file_record['progress_percent'] = (bytes_copied / total_bytes) * 100.0
+        elif 'bytes_copied' in payload:  # Fallback for legacy format
             bytes_copied = payload['bytes_copied']
+            file_record['bytes_copied'] = bytes_copied
             total_bytes = file_record['size']
             if total_bytes > 0:
                 file_record['progress_percent'] = (bytes_copied / total_bytes) * 100.0
@@ -241,10 +218,19 @@ class RustEventSink(QObject):
             self._add_file_started(payload)
         
         file_record = self._file_records[filename]
+        
+        # CRITICAL FIX: Ensure bytes_copied is set to full file size for completed files
+        if 'file_bytes' in payload:
+            file_record['size'] = payload['file_bytes']
+            file_record['bytes_copied'] = payload['file_bytes']  # Full file copied
+        elif file_record.get('size', 0) > 0:
+            file_record['bytes_copied'] = file_record['size']  # Use existing size
+        
         file_record['transfer_status'] = 'COMPLETED'
         file_record['verification_status'] = 'PASS'  
         file_record['status'] = 'completed'  # This is the key field for DIT reports!
         file_record['transfer_duration_s'] = time.time() - file_record['start_time']
+        file_record['progress_percent'] = 100.0  # Explicitly set to 100% for completed files
         
         # Add hash information from payload if available
         if 'source_checksum' in payload:

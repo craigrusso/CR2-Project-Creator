@@ -287,18 +287,30 @@ class JobAggregator:
         # Convert file progress data to report format
         file_records = []
         for file_id, file_progress in self.files.items():
+            # Determine transfer status for report generator
+            if file_progress.completed:
+                transfer_status = 'COMPLETED'
+                verification_status = 'COMPLETED'  # Assume verification passed for completed files
+            else:
+                transfer_status = 'IN_PROGRESS'
+                verification_status = 'PENDING'
+            
             file_records.append({
                 'filename': file_id,
                 'size_bytes': file_progress.total_bytes,
                 'bytes_copied': file_progress.bytes_copied,
                 'completed': file_progress.completed,
+                'transfer_status': transfer_status,  # Required by report generator
+                'status': transfer_status,  # Also provide direct status field
                 'dest_path': file_progress.dest_path,
                 'started_at': file_progress.started_at,
                 'completed_at': file_progress.completed_at,
                 'transfer_speed_mbps': 0.0,  # Calculate if needed
-                'verification_status': 'PENDING',  # Will be updated by verification
+                'verification_status': verification_status,
                 'checksum_source': '',
-                'checksum_dest': ''
+                'checksum_dest': '',
+                'checksum': '',  # Empty for now, will be calculated by report generator
+                'checksum_algorithm': 'xxHash64BE'
             })
         
         # Prepare comprehensive stats

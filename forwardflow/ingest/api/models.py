@@ -49,6 +49,8 @@ class JobOptions:
     generate_verification_report: bool = True
     # NEW: Cloud source detection
     cloud_source: bool = False
+    # NEW: BLAST cache drive selection (optional)
+    blast_cache_drive: Optional[str] = None
 
 
 @dataclass

@@ -454,8 +454,19 @@ class SourceDestinationSection(QWidget):
         self.destination_widgets = []
         self.recent_sources = recent_sources or []
         self.recent_destinations = recent_destinations or []
+        
+        # Timer to periodically check destination availability
+        self.availability_timer = QTimer()
+        self.availability_timer.timeout.connect(self.refresh_destination_availability)
+        self.availability_timer.setSingleShot(False)
+        self.availability_timer.setInterval(30000)  # Check every 30 seconds
+        
         self.setup_ui()
         self.populate_recent_locations()
+        
+        # Start the availability checking timer
+        self.availability_timer.start()
+        print("DEBUG: Started destination availability checking timer (30s interval)")
         
     def setup_ui(self):
         """Setup the source and destination UI"""
@@ -658,11 +669,12 @@ class SourceDestinationSection(QWidget):
                 add_to_recent_locations(path, is_source=False)
                 print(f"DEBUG: Added destination {path} to recent locations")
                 
-                # Refresh dropdown with updated recent destinations
+                # Refresh dropdown with updated recent destinations and availability
                 _, updated_destinations = load_recent_locations()
                 self._updating_combo = True
                 self.dest_combo.clear()
                 self.dest_combo.addItems(updated_destinations)
+                self._update_destination_availability()
                 self._updating_combo = False
                 print(f"DEBUG: Refreshed destination dropdown with {len(updated_destinations)} recent destinations")
             except Exception as e:
@@ -757,10 +769,89 @@ class SourceDestinationSection(QWidget):
             self.src_combo.addItems(self.recent_sources)
             print(f"DEBUG: Populated source dropdown with {len(self.recent_sources)} recent sources")
         
-        # Populate destination dropdown with recent destinations
+        # Populate destination dropdown with recent destinations and availability status
         if self.recent_destinations:
             self._updating_combo = True
             self.dest_combo.addItems(self.recent_destinations)
+            self._update_destination_availability()
             self._updating_combo = False
             print(f"DEBUG: Populated destination dropdown with {len(self.recent_destinations)} recent destinations")
+    
+    def _update_destination_availability(self):
+        """Update destination dropdown to show availability status"""
+        import os
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtGui import QColor
+        
+        # Create a custom model to handle item styling
+        model = self.dest_combo.model()
+        
+        for i in range(self.dest_combo.count()):
+            item = model.item(i)
+            if item:
+                dest_path = self.dest_combo.itemText(i)
+                
+                # Check if destination is available
+                is_available = self._check_destination_availability(dest_path)
+                
+                if not is_available:
+                    # Grey out unavailable destinations
+                    item.setData(QColor(colors['secondary_text']), Qt.ItemDataRole.ForegroundRole)
+                    item.setData(f"⚠️ {dest_path} (Unavailable)", Qt.ItemDataRole.DisplayRole)
+                    # Make it unselectable
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable & ~Qt.ItemFlag.ItemIsEnabled)
+                else:
+                    # Ensure available destinations are properly styled
+                    item.setData(QColor(colors['text']), Qt.ItemDataRole.ForegroundRole)
+                    item.setData(dest_path, Qt.ItemDataRole.DisplayRole)
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
+                
+                print(f"DEBUG: Destination {dest_path} availability: {'✅' if is_available else '❌'}")
+    
+    def _check_destination_availability(self, dest_path: str) -> bool:
+        """Check if a destination path is currently available"""
+        import os
+        
+        try:
+            # Check if path exists and is accessible
+            if not dest_path or not dest_path.strip():
+                return False
+            
+            # Basic path validation
+            if not (dest_path.startswith('/') or (len(dest_path) > 1 and dest_path[1] == ':')):
+                return False
+            
+            # Check if path exists
+            if not os.path.exists(dest_path):
+                # For network shares, check if parent exists (mount point)
+                parent_path = os.path.dirname(dest_path)
+                if parent_path and os.path.exists(parent_path):
+                    # Parent exists but destination doesn't - this could be a missing subdirectory
+                    # which our engine can create, so mark as available
+                    return True
+                return False
+            
+            # Check if we can write to the destination
+            if not os.access(dest_path, os.W_OK):
+                return False
+            
+            return True
+            
+        except Exception as e:
+            print(f"DEBUG: Error checking destination availability for {dest_path}: {e}")
+            return False
+    
+    def refresh_destination_availability(self):
+        """Public method to refresh destination availability (can be called externally)"""
+        if hasattr(self, 'dest_combo') and self.dest_combo.count() > 0:
+            self._updating_combo = True
+            self._update_destination_availability()
+            self._updating_combo = False
+            print("DEBUG: Refreshed destination availability status")
+    
+    def cleanup(self):
+        """Cleanup method to stop timers when widget is destroyed"""
+        if hasattr(self, 'availability_timer') and self.availability_timer.isActive():
+            self.availability_timer.stop()
+            print("DEBUG: Stopped destination availability timer")
     

@@ -1,14 +1,14 @@
 """Options Section for Ingest Tab"""
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QSlider, QCheckBox
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QSlider, QCheckBox, QPushButton, QFileDialog
 )
 from PyQt6.QtCore import Qt
 
 try:
     from app.ui.color_scheme_pyqt import (
         colors, COMBOBOX_STYLE, GROUPBOX_STYLE, FIELD_LABEL_STYLE,
-        SLIDER_STYLE, ACCENT_VALUE_STYLE, SECTION_HEADER_STYLE
+        SLIDER_STYLE, ACCENT_VALUE_STYLE, SECTION_HEADER_STYLE, BUTTON_STYLE
     )
     from app.ui.custom_delegates import apply_hover_delegate
     STYLING_AVAILABLE = True
@@ -220,6 +220,67 @@ class OptionsSection(QWidget):
         
         transfer_settings_layout.addLayout(controls_row)
         
+        # BLAST Cache Drive Selection (optional workflow)
+        blast_row = QHBoxLayout()
+        blast_row.setSpacing(30)
+        blast_row.setContentsMargins(0, 10, 0, 0)  # Add some top margin
+        
+        # BLAST Cache Drive selection
+        blast_layout = QVBoxLayout()
+        blast_layout.setSpacing(5)
+        blast_label = QLabel("BLAST Cache Drive (Optional):")
+        blast_label.setStyleSheet(FIELD_LABEL_STYLE)
+        blast_label.setFixedHeight(18)
+        blast_label.setToolTip("Select a fast SSD for cache-and-distribute workflow.\nLeave empty for direct parallel copying.")
+        
+        blast_control_row = QHBoxLayout()
+        blast_control_row.setSpacing(8)
+        
+        # Display selected path or "None selected"
+        self.blast_cache_display = QLabel("None selected (Direct copying)")
+        self.blast_cache_display.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['secondary_text']};
+                background-color: {colors['card_bg']};
+                border: 1px solid {colors['border']};
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-size: 11px;
+            }}
+        """)
+        self.blast_cache_display.setFixedHeight(28)
+        self.blast_cache_display.setMinimumWidth(200)
+        
+        # Browse button for cache drive selection
+        self.blast_browse_button = QPushButton("Browse...")
+        self.blast_browse_button.setStyleSheet(BUTTON_STYLE)
+        self.blast_browse_button.setFixedHeight(28)
+        self.blast_browse_button.setFixedWidth(80)
+        self.blast_browse_button.clicked.connect(self._select_blast_cache_drive)
+        
+        # Clear button
+        self.blast_clear_button = QPushButton("Clear")
+        self.blast_clear_button.setStyleSheet(BUTTON_STYLE)
+        self.blast_clear_button.setFixedHeight(28)
+        self.blast_clear_button.setFixedWidth(60)
+        self.blast_clear_button.clicked.connect(self._clear_blast_cache_drive)
+        
+        blast_control_row.addWidget(self.blast_cache_display, 1)
+        blast_control_row.addWidget(self.blast_browse_button)
+        blast_control_row.addWidget(self.blast_clear_button)
+        
+        blast_layout.addWidget(blast_label)
+        blast_layout.addLayout(blast_control_row)
+        blast_row.addLayout(blast_layout, 1)
+        
+        # Add some spacing to balance the layout
+        blast_row.addStretch(2)
+        
+        transfer_settings_layout.addLayout(blast_row)
+        
+        # Store the selected cache drive path
+        self._blast_cache_path = None
+        
         # Add spacer to push everything to the top
         transfer_settings_layout.addStretch()
         
@@ -242,3 +303,35 @@ class OptionsSection(QWidget):
         }
         
         return algorithm_mapping.get(display_text, "xxhash64be")  # Default to Netflix standard
+    
+    def _select_blast_cache_drive(self):
+        """Open directory selector for BLAST cache drive"""
+        dialog = QFileDialog()
+        dialog.setFileMode(QFileDialog.FileMode.Directory)
+        dialog.setWindowTitle("Select BLAST Cache Drive")
+        dialog.setOption(QFileDialog.Option.ShowDirsOnly, True)
+        
+        if dialog.exec():
+            selected_dirs = dialog.selectedFiles()
+            if selected_dirs:
+                cache_path = selected_dirs[0]
+                self._blast_cache_path = cache_path
+                
+                # Update display with shortened path
+                import os
+                display_path = os.path.basename(cache_path) if cache_path else cache_path
+                self.blast_cache_display.setText(f"📦 {display_path}")
+                self.blast_cache_display.setToolTip(f"BLAST Cache: {cache_path}\n\nThis will enable cache-and-distribute workflow:\n• Copy from source to cache drive first\n• Then distribute to all destinations in parallel\n• Allows source removal during distribution")
+                
+                print(f"DEBUG: BLAST cache drive selected: {cache_path}")
+    
+    def _clear_blast_cache_drive(self):
+        """Clear BLAST cache drive selection"""
+        self._blast_cache_path = None
+        self.blast_cache_display.setText("None selected (Direct copying)")
+        self.blast_cache_display.setToolTip("Select a fast SSD for cache-and-distribute workflow.\nLeave empty for direct parallel copying.")
+        print("DEBUG: BLAST cache drive cleared - using direct copying mode")
+    
+    def get_blast_cache_drive(self) -> str:
+        """Get the selected BLAST cache drive path"""
+        return self._blast_cache_path

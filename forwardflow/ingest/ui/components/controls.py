@@ -171,68 +171,47 @@ class TransferWorker(QObject):
                 CopyJob = rust_high_perf_engine.CopyJob
                 print(f"DEBUG: Using CopyJob from: {getattr(rust_high_perf_engine, '__file__', 'system')}")
                 
-                copy_job = CopyJob()
-                copy_job.source_paths = [self.job.source_root]
-                copy_job.destination_paths = self.job.destination_roots
-                copy_job.job_id = self.job.job_id
-                # Optimize concurrency for M2 Max architecture (12 cores + GPU)
-                # Use all CPU cores plus additional workers for I/O operations
-                import os
-                cpu_count = os.cpu_count() or 8  # Fallback to 8 if cannot detect
+                # INTELLIGENT TRANSFER STRATEGY SELECTION
+                # Use standard high-performance parallel copying by default
+                # BLAST is only used when user specifically selects a cache drive
                 
-                # Dynamic concurrency based on system capabilities and transfer type
-                optimal_file_concurrency = min(self.job.options.per_file_concurrency, cpu_count * 2)
-                optimal_stream_concurrency = min(self.job.options.stream_concurrency, cpu_count)
+                destinations = self.job.destination_roots
+                print(f"DEBUG: 🚀 HIGH-PERFORMANCE ENGINE: Analyzing {len(destinations)} destinations")
                 
-                copy_job.files_in_flight = optimal_file_concurrency
-                copy_job.ranges_per_file = optimal_stream_concurrency
+                # Check if user has selected a BLAST cache drive (from UI controls)
+                blast_cache_drive = getattr(self.job.options, 'blast_cache_drive', None)
+                use_blast = blast_cache_drive is not None and blast_cache_drive != ""
                 
-                print(f"DEBUG: Optimized concurrency for M2 Max:")
-                print(f"  CPU cores detected: {cpu_count}")
-                print(f"  Files in flight: {optimal_file_concurrency} (up to {cpu_count * 2} for I/O overlap)")
-                print(f"  Ranges per file: {optimal_stream_concurrency} (up to {cpu_count} for CPU cores)")
-                print(f"  Total parallel operations: {optimal_file_concurrency * optimal_stream_concurrency}")
-                # Enable verification if any checksum algorithm is selected (not 'NONE' or empty)
-                copy_job.verify_integrity = (
-                    self.job.options.verify_algorithm and 
-                    self.job.options.verify_algorithm.lower() not in ['none', '', 'disabled']
-                )
-                # Map UI algorithm names to Rust engine names (FIXED: match get_verification_algorithm() output)
-                algorithm_mapping = {
-                    'xxhash64be': 'xxhash64',     # Netflix Standard
-                    'xxhash128': 'xxhash64',      # Use xxhash64 for xxhash128 for now
-                    'sha256': 'sha256',           # Secure
-                    'sha3': 'sha256',             # Use sha256 for sha-3 for now
-                    'md5': 'xxhash64'             # Use xxhash64 for md5 since it's disabled
-                }
-                rust_algorithm = algorithm_mapping.get(self.job.options.verify_algorithm, 'xxhash64')
-                copy_job.hash_algorithm = rust_algorithm
-                copy_job.generate_verification_report = self.job.options.generate_verification_report
-                copy_job.use_direct_io = True
-                copy_job.block_size = self._get_block_size_for_preset(self.job.options.preset)
-                
-                # DEBUG: Log verification settings
-                print(f"DEBUG: VERIFICATION SETTINGS:")
-                print(f"  UI algorithm selected: {self.job.options.verify_algorithm}")
-                print(f"  Mapped to Rust algorithm: {rust_algorithm}")
-                print(f"  verify_integrity: {copy_job.verify_integrity}")
-                if not copy_job.verify_integrity:
-                    print("  ❌ HASH CALCULATION DISABLED - Files will show 'Hash: pending'")
+                if use_blast:
+                    print(f"DEBUG: 💾 BLAST mode selected - cache drive: {blast_cache_drive}")
+                    print("DEBUG:   🔄 Workflow: Camera card → SSD cache → Multiple destinations")
+                    
+                    # Import BLAST engine for cache-and-distribute workflow
+                    BlastEngine = rust_high_perf_engine.BlastEngine
+                    blast_config = {
+                        'blast_cache_path': blast_cache_drive,
+                        'distribution_targets': destinations,
+                        'memory_buffer_mb': 512,
+                        'max_parallel_streams': len(destinations),
+                        'use_direct_io': True,
+                        'use_memory_mapping': True,
+                        'cache_chunk_size_mb': 64
+                    }
+                    blast_engine = BlastEngine(blast_config, self.event_sink)
+                    
                 else:
-                    print(f"  ✅ HASH CALCULATION ENABLED - Will calculate {rust_algorithm} hashes")
-                    print("  📝 Completed files should show real hash values in reports")
+                    print(f"DEBUG: 🔥 Standard high-performance mode - parallel copying to {len(destinations)} destination(s)")
+                    print("DEBUG:   ⚡ Direct source-to-destination copying with full parallelization")
+                    
+                    # Create standard CopyJob for high-performance direct copying
+                    copy_job = CopyJob()
+                    copy_job.source_paths = [self.job.source_root]
+                    copy_job.destination_paths = destinations
+                    copy_job.job_id = self.job.job_id
                 
-                # Log the actual configuration being used
-                print(f"DEBUG: CopyJob configured with:")
-                print(f"  files_in_flight: {copy_job.files_in_flight}")
-                print(f"  ranges_per_file: {copy_job.ranges_per_file}")
-                print(f"  use_direct_io: {copy_job.use_direct_io}")
-                print(f"  block_size: {copy_job.block_size}")
-                print(f"  hash_algorithm: {copy_job.hash_algorithm}")
-                
-                print(f"DEBUG: CopyJob object created for Rust engine")
-                
-                # Start the copy operation - this should be non-blocking
+                print("DEBUG: 🛠️  Starting high-performance transfer operation...")
+                print(f"DEBUG: Transfer mode: {'BLAST cache-and-distribute' if use_blast else 'Direct parallel copying'}")
+                print(f"DEBUG: Verification algorithm: {self.job.options.verify_algorithm}")
                 print("DEBUG: Starting Rust copy operation...")
                 
                 # ESTABLISH DESTINATION CONNECTIONS HERE - this code IS executed
@@ -246,26 +225,85 @@ class TransferWorker(QObject):
                 # Removed duplicate connection to avoid multiple signal emissions to the same handler.
                 print("DEBUG: destination_update connection already established - avoiding duplicate")
                 
-                # Start the copy operation in a separate thread to avoid blocking
+                # Execute the appropriate transfer strategy
                 import threading
+                
                 self.copy_result = None
                 self.copy_completed = False
-                self.copy_thread = None
                 
-                def run_copy():
+                def run_intelligent_copy():
                     try:
-                        print("DEBUG: Calling Rust engine copy_files...")
-                        self.copy_result = self.engine.copy_files(copy_job)
+                        if use_blast:
+                            # BLAST ENGINE: Cache-and-distribute workflow
+                            print("DEBUG: 🚀 Executing BLAST workflow - cache-and-distribute...")
+                            print("DEBUG:   Phase 1: 📖 Copy from camera card to SSD cache")
+                            print("DEBUG:   Phase 2: 🔄 Parallel distribution from cache to all destinations")
+                            
+                            # Get source files list
+                            import os
+                            source_files = []
+                            for root, dirs, files in os.walk(self.job.source_root):
+                                for file in files:
+                                    source_files.append(os.path.join(root, file))
+                            
+                            print(f"DEBUG: 📄 Found {len(source_files)} files to transfer via BLAST")
+                            
+                            # Execute BLAST transfer workflow
+                            self.copy_result = blast_engine.execute_blast_transfer(
+                                source_files,
+                                self.job.job_id
+                            )
+                            
+                            print("DEBUG: 🎉 BLAST workflow completed - camera card can be removed!")
+                            
+                        else:
+                            # STANDARD HIGH-PERFORMANCE COPYING: Direct parallel copy to all destinations
+                            print(f"DEBUG: 🔥 Executing high-performance direct copy to {len(destinations)} destinations...")
+                            
+                            # Configure copy job with verification settings
+                            import os
+                            cpu_count = os.cpu_count() or 8
+                            
+                            copy_job.files_in_flight = min(self.job.options.per_file_concurrency, cpu_count * 2)
+                            copy_job.ranges_per_file = min(self.job.options.stream_concurrency, cpu_count)
+                            
+                            # Enable verification if algorithm selected
+                            copy_job.verify_integrity = (
+                                self.job.options.verify_algorithm and 
+                                self.job.options.verify_algorithm.lower() not in ['none', '', 'disabled']
+                            )
+                            
+                            # Map algorithm names
+                            algorithm_mapping = {
+                                'xxhash64be': 'xxhash64',
+                                'xxhash128': 'xxhash64', 
+                                'sha256': 'sha256',
+                                'sha3': 'sha256',
+                                'md5': 'xxhash64'
+                            }
+                            rust_algorithm = algorithm_mapping.get(self.job.options.verify_algorithm, 'xxhash64')
+                            copy_job.hash_algorithm = rust_algorithm
+                            copy_job.generate_verification_report = self.job.options.generate_verification_report
+                            copy_job.use_direct_io = True
+                            copy_job.block_size = self._get_block_size_for_preset(self.job.options.preset)
+                            
+                            print(f"DEBUG: ⚡ Using parallel copying: {copy_job.files_in_flight} files, {copy_job.ranges_per_file} streams each")
+                            print(f"DEBUG: 🔐 Verification: {rust_algorithm if copy_job.verify_integrity else 'disabled'}")
+                            
+                            # Execute high-performance parallel copy to all destinations
+                            self.copy_result = self.engine.copy_files(copy_job)
+                            print(f"DEBUG: ✅ High-performance copy completed to {len(destinations)} destinations")
+                        
                         self.copy_completed = True
-                        print(f"DEBUG: Rust copy operation completed with stats: {self.copy_result}")
+                        
                     except Exception as e:
-                        print(f"DEBUG: Error in copy operation: {e}")
+                        print(f"DEBUG: ❌ Error in intelligent copy operation: {e}")
                         import traceback
                         traceback.print_exc()
                         self.copy_completed = True
                         self.copy_result = {'error': str(e)}
                 
-                self.copy_thread = threading.Thread(target=run_copy, daemon=True)
+                self.copy_thread = threading.Thread(target=run_intelligent_copy, daemon=True)
                 self.copy_thread.start()
                 
                 # Use a timer to periodically check for completion
@@ -526,12 +564,14 @@ class ControlSection(QWidget):
             per_file_concurrency = options_section.conc_slider.value()
             stream_concurrency = options_section.stream_slider.value()
             generate_report = options_section.report_checkbox.isChecked()
+            blast_cache_drive = options_section.get_blast_cache_drive()
             
             print(f"DEBUG: Verification Algorithm: {verify_algorithm}")
             print(f"DEBUG: Global Preset: {global_preset}")
             print(f"DEBUG: Per-file concurrency: {per_file_concurrency}")
             print(f"DEBUG: Stream concurrency: {stream_concurrency}")
             print(f"DEBUG: Generate report: {generate_report}")
+            print(f"DEBUG: BLAST cache drive: {blast_cache_drive}")
             
             # Import JobSpec and JobOptions
             print("DEBUG: Importing JobSpec and JobOptions...")
@@ -556,7 +596,8 @@ class ControlSection(QWidget):
                         verify_algorithm=verify_algorithm,  # Use industry-standard algorithm
                         verify_mode=verify_algorithm,       # Use algorithm as mode for compatibility
                         preset=global_preset,
-                        generate_verification_report=generate_report
+                        generate_verification_report=generate_report,
+                        blast_cache_drive=blast_cache_drive
                     )
                 )
                 print(f"DEBUG: Created JobSpec: {job}")
@@ -581,6 +622,10 @@ class ControlSection(QWidget):
             options_section.conc_slider.setEnabled(False)
             options_section.stream_slider.setEnabled(False)
             options_section.report_checkbox.setEnabled(False)
+            if hasattr(options_section, 'blast_browse_button'):
+                options_section.blast_browse_button.setEnabled(False)
+            if hasattr(options_section, 'blast_clear_button'):
+                options_section.blast_clear_button.setEnabled(False)
             print("DEBUG: Controls frozen")
             
             # Enable pause and cancel buttons
@@ -635,7 +680,9 @@ class ControlSection(QWidget):
             event_sink = getattr(self.root, '_rust_event_sink', None)
             if event_sink and hasattr(event_sink, 'get_comprehensive_stats'):
                 comprehensive_stats = event_sink.get_comprehensive_stats()
-                file_records = event_sink.get_file_records()
+                # CRITICAL FIX: Use file records that are already included in comprehensive_stats
+                # This ensures we get the JobAggregator file records with proper status fields
+                file_records = comprehensive_stats.get('files', [])
                 print(f"📊 Got stats for destination report: {comprehensive_stats.get('total_bytes', 0)} bytes, {len(file_records)} files")
             else:
                 # Fallback to basic stats if event sink not available
@@ -685,29 +732,30 @@ class ControlSection(QWidget):
         """Handle transfer completion - only generate reports for destinations without them"""
         print(f"DEBUG: Transfer completed with stats: {stats}")
         try:
-            # Clean up job state first to prevent contamination  
-            self._cleanup_job_state()
-            
             # Mark progress as completed with green styling
             if hasattr(self.root, 'progress_section') and self.root.progress_section:
                 self.root.progress_section.mark_transfer_completed()
             
-            # Only generate reports for destinations that don't already have them
+            # CRITICAL FIX: Generate reports BEFORE cleaning up job state
+            # This ensures the JobAggregator data is still available for reporting
             if hasattr(self.transfer_worker, 'job') and self.transfer_worker.job:
                 job_destinations = set(self.transfer_worker.job.destination_roots)
                 destinations_needing_reports = job_destinations - self._destinations_with_reports
                 
                 if destinations_needing_reports:
                     print(f"DEBUG: Generating completion reports for remaining destinations: {destinations_needing_reports}")
-                    self._generate_completion_report_for_destinations(
+                    # Generate report BEFORE cleanup so JobAggregator data is available
+                    self._generate_completion_report(
                         self.root, 
                         "completed", 
                         stats, 
-                        self.transfer_worker.job, 
-                        list(destinations_needing_reports)
+                        self.transfer_worker.job
                     )
                 else:
                     print("DEBUG: All destinations already have reports from per-destination generation - no duplicates needed")
+            
+            # Clean up job state AFTER report generation
+            self._cleanup_job_state()
             
             # Re-enable controls
             self.reenable_controls()
@@ -744,10 +792,8 @@ class ControlSection(QWidget):
         """Handle transfer cancellation - only generate reports for incomplete destinations"""
         print("DEBUG: Transfer cancelled - checking for incomplete destinations")
         try:
-            # Clean up job state first to prevent contamination
-            self._cleanup_job_state()
-            
-            # Only generate reports for destinations that don't already have them
+            # CRITICAL FIX: Generate reports BEFORE cleaning up job state
+            # This ensures the JobAggregator data is still available for reporting
             if hasattr(self.transfer_worker, 'job') and self.transfer_worker.job:
                 job_destinations = set(self.transfer_worker.job.destination_roots)
                 destinations_needing_reports = job_destinations - self._destinations_with_reports
@@ -755,16 +801,18 @@ class ControlSection(QWidget):
                 if destinations_needing_reports:
                     print(f"DEBUG: Generating cancel reports for incomplete destinations: {destinations_needing_reports}")
                     
-                    # Generate cancellation report ONLY for destinations that need reports
-                    self._generate_completion_report_for_destinations(
+                    # Generate report BEFORE cleanup so JobAggregator data is available
+                    self._generate_completion_report(
                         self.root, 
                         "cancelled", 
                         None, 
-                        self.transfer_worker.job, 
-                        list(destinations_needing_reports)
+                        self.transfer_worker.job
                     )
                 else:
                     print("DEBUG: All destinations already have reports - skipping duplicate generation")
+            
+            # Clean up job state AFTER report generation (FIXED: this was happening before!)
+            self._cleanup_job_state()
             
             # Re-enable controls
             self.reenable_controls()
@@ -776,6 +824,13 @@ class ControlSection(QWidget):
             print(f"DEBUG: Error handling transfer cancellation: {e}")
             import traceback
             traceback.print_exc()
+            # On error, ensure job data is reset properly
+            if hasattr(self.root, '_rust_event_sink') and self.root._rust_event_sink:
+                try:
+                    self.root._rust_event_sink.reset_for_new_job()
+                    print("DEBUG: Reset event sink after error in cancellation handling")
+                except Exception as reset_error:
+                    print(f"DEBUG: Error resetting event sink: {reset_error}")
             self.reenable_controls()
     
     def _cleanup_transfer_thread(self):
@@ -831,45 +886,6 @@ class ControlSection(QWidget):
         except Exception as e:
             print(f"DEBUG: Error during job state cleanup: {e}")
     
-    def _generate_completion_report_for_destinations(self, root, status, stats, job, target_destinations, error_message=None):
-        """Generate completion report only for specific destinations to prevent duplicates"""
-        print(f"DEBUG: Generating {status} reports for specific destinations: {target_destinations}")
-        
-        for dest_path in target_destinations:
-            try:
-                # Generate individual report for this destination
-                from ...utils.report_generator import TransferReportGenerator
-                report_gen = TransferReportGenerator()
-                
-                # Get stats for this specific destination
-                event_sink = getattr(root, '_rust_event_sink', None)
-                if event_sink and hasattr(event_sink, 'get_comprehensive_stats'):
-                    comprehensive_stats = event_sink.get_comprehensive_stats()
-                    file_records = event_sink.get_file_records()
-                else:
-                    comprehensive_stats = {'total_bytes': 0, 'copied_bytes': 0, 'total_files': 0}
-                    file_records = []
-                
-                # Generate comprehensive reports for this destination
-                generated_reports = report_gen.generate_comprehensive_reports(
-                    job_id=job.job_id,  # Use clean job ID - status will be in filename via report_generator
-                    status=status,
-                    source_path=job.source_root,
-                    destinations=[dest_path],  # Single destination
-                    stats=comprehensive_stats,
-                    file_records=file_records,
-                    error_message=error_message
-                )
-                
-                if generated_reports:
-                    print(f"✅ {status.title()} reports generated for destination {dest_path}: {len(generated_reports)} files")
-                    # Mark this destination as having a report
-                    self._destinations_with_reports.add(dest_path)
-                else:
-                    print(f"❌ Failed to generate {status} reports for destination {dest_path}")
-                    
-            except Exception as e:
-                print(f"❌ Error generating {status} report for destination {dest_path}: {e}")
 
     def _generate_completion_report(self, root, status, stats, job, error_message=None):
         """Generate comprehensive completion report with proper data merging"""
@@ -898,7 +914,9 @@ class ControlSection(QWidget):
             if event_sink and hasattr(event_sink, 'get_comprehensive_stats'):
                 try:
                     bridge_stats = event_sink.get_comprehensive_stats()
-                    bridge_file_records = event_sink.get_file_records()
+                    # CRITICAL FIX: Use file records that are already included in comprehensive_stats
+                    # This ensures we get the JobAggregator file records with proper status fields
+                    bridge_file_records = bridge_stats.get('files', [])
                     
                     print(f"DEBUG: EventBridge stats - total: {bridge_stats.get('total_bytes', 0)}, "
                           f"copied: {bridge_stats.get('copied_bytes', 0)}, "
@@ -1327,6 +1345,12 @@ class ControlSection(QWidget):
             if hasattr(options_section, 'report_checkbox'):
                 options_section.report_checkbox.setEnabled(True)
                 print("DEBUG: Re-enabled report checkbox")
+            if hasattr(options_section, 'blast_browse_button'):
+                options_section.blast_browse_button.setEnabled(True)
+                print("DEBUG: Re-enabled BLAST browse button")
+            if hasattr(options_section, 'blast_clear_button'):
+                options_section.blast_clear_button.setEnabled(True)
+                print("DEBUG: Re-enabled BLAST clear button")
         
         # Legacy attribute names for backward compatibility
         if hasattr(self.root, 'verify_mode_dropdown') and self.root.verify_mode_dropdown:

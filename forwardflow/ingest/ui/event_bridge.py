@@ -212,23 +212,35 @@ class EventBridge(QObject):
         # Process with JobAggregator if initialized
         if self.is_initialized and self.job_aggregator:
             try:
+                # CRITICAL FIX: Handle Rust engine event format correctly
                 file_id = payload.get('file_id', payload.get('filename', 'unknown'))
                 filename = payload.get('filename', file_id)
-                bytes_copied = payload.get('bytes_copied', 0)
-                total_bytes = payload.get('total_bytes', 0)
-                dest_path = payload.get('dest_path', payload.get('destination', ''))
                 
-                print(f"DEBUG: *** PAYLOAD ANALYSIS ***")
-                print(f"DEBUG: payload keys: {list(payload.keys())}")
-                print(f"DEBUG: file_id: '{file_id}'")
-                print(f"DEBUG: dest_path extracted: '{dest_path}'")
-                print(f"DEBUG: payload dest_path field: {payload.get('dest_path', 'MISSING')}")
-                print(f"DEBUG: payload destination field: {payload.get('destination', 'MISSING')}")
+                # Rust engine uses different field names than expected
+                bytes_copied = payload.get('file_bytes_copied', payload.get('bytes_copied', 0))
+                total_bytes = payload.get('file_bytes', payload.get('total_bytes', 0))
                 
-                # If no dest_path in payload, use the first available destination from JobAggregator
-                if not dest_path and self.job_aggregator and self.job_aggregator.destinations:
-                    dest_path = self.job_aggregator.destinations[0]
-                    print(f"DEBUG: Using fallback dest_path: '{dest_path}'")
+                # CRITICAL FIX: Map dest_index to actual destination path
+                dest_index = payload.get('dest_index', 0)
+                dest_path = ''
+                
+                if self.job_aggregator and self.job_aggregator.destinations:
+                    if 0 <= dest_index < len(self.job_aggregator.destinations):
+                        dest_path = self.job_aggregator.destinations[dest_index]
+                        print(f"DEBUG: Mapped dest_index {dest_index} to dest_path: '{dest_path}'")
+                    else:
+                        dest_path = self.job_aggregator.destinations[0]
+                        print(f"DEBUG: Invalid dest_index {dest_index}, using first destination: '{dest_path}'")
+                else:
+                    print(f"DEBUG: No JobAggregator destinations available - this will cause zeros in reporting!")
+                
+                # Also check for legacy dest_path fields as fallback
+                if not dest_path:
+                    dest_path = payload.get('dest_path', payload.get('destination', ''))
+                
+                print(f"DEBUG: *** FIXED PAYLOAD ANALYSIS ***")
+                print(f"DEBUG: file_id: '{file_id}', dest_index: {dest_index} -> dest_path: '{dest_path}'")
+                print(f"DEBUG: bytes_copied: {bytes_copied}, total_bytes: {total_bytes}")
                 
                 # Update JobAggregator and get snapshot
                 snapshot = self.job_aggregator.update_file_progress(
@@ -422,6 +434,90 @@ class EventBridge(QObject):
             
             print(f"DEBUG: Emitting destination update for {dest_path}: {dest_metrics.current_mb_s:.1f} MB/s, {dest_payload['progress_percent']:.1f}%")
             self.destination_update.emit(dest_payload)
+    
+    def _emit_progress_updates(self, snapshot: JobSnapshot) -> None:
+        """Emit progress updates from JobAggregator snapshot with throttling to prevent per-file updates"""
+        if not snapshot:
+            print("DEBUG: No snapshot available for progress updates")
+            return
+        
+        try:
+            # Throttle progress updates to prevent UI flooding from file.progress events
+            current_time = time.time()
+            progress_percent = snapshot.job_progress_percent
+            
+            # Update at most every 250ms OR when progress percentage changes significantly
+            should_update = False
+            if not hasattr(self, 'last_progress_emit_time'):
+                self.last_progress_emit_time = 0.0
+                self.last_progress_percent = 0.0
+                should_update = True
+            elif current_time - self.last_progress_emit_time >= 0.25:  # 250ms throttle
+                should_update = True
+            elif abs(progress_percent - self.last_progress_percent) >= 1.0:  # 1% change
+                should_update = True
+            
+            if not should_update:
+                return  # Skip this update to prevent per-file progress bar jumping
+            
+            # Update tracking variables
+            self.last_progress_emit_time = current_time
+            self.last_progress_percent = progress_percent
+            
+            # Emit main job progress update
+            job_payload = {
+                'progress_percent': snapshot.job_progress_percent,
+                'bytes_copied': snapshot.job_bytes_copied,
+                'total_bytes': snapshot.job_total_bytes,
+                'completed_files': snapshot.job_completed_files,
+                'total_files': snapshot.job_total_files,
+                'current_speed_mbps': snapshot.job_current_mb_s,
+                'peak_speed_mbps': snapshot.job_peak_mb_s,
+                'elapsed_seconds': snapshot.job_elapsed_seconds,
+                'eta_seconds': snapshot.job_eta_seconds
+            }
+            
+            print(f"DEBUG: Emitting throttled job progress update: {snapshot.job_progress_percent:.1f}%, {snapshot.job_current_mb_s:.1f} MB/s")
+            self.progress_update.emit(job_payload)
+            
+            # Emit per-destination updates (also throttled)
+            self._emit_destination_updates(snapshot)
+            
+        except Exception as e:
+            print(f"ERROR: Failed to emit progress updates: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def _emit_destination_updates(self, snapshot: JobSnapshot) -> None:
+        """Emit per-destination progress updates from JobAggregator snapshot"""
+        if not snapshot or not snapshot.destinations:
+            return
+        
+        try:
+            for dest_path, dest_metrics in snapshot.destinations.items():
+                dest_payload = {
+                    'dest_path': dest_path,
+                    'dest_index': 0,  # Use 0 for all destinations since index doesn't matter for UI
+                    'currentSpeedMiBps': dest_metrics.current_mb_s,
+                    'current_speed_mbps': dest_metrics.current_mb_s,
+                    'peakSpeedMiBps': dest_metrics.peak_mb_s,
+                    'peak_speed_mbps': dest_metrics.peak_mb_s,
+                    'progress_percent': (dest_metrics.bytes_copied / dest_metrics.total_bytes * 100) if dest_metrics.total_bytes > 0 else 0.0,
+                    'bytes_copied': dest_metrics.bytes_copied,
+                    'total_bytes': dest_metrics.total_bytes,
+                    'etaS': dest_metrics.eta_seconds,
+                    'eta_seconds': dest_metrics.eta_seconds,
+                    'completed_files': dest_metrics.completed_files,
+                    'total_files': dest_metrics.total_files
+                }
+                
+                print(f"DEBUG: Emitting destination update for {dest_path}: {dest_metrics.current_mb_s:.1f} MB/s, {dest_payload['progress_percent']:.1f}%")
+                self.destination_update.emit(dest_payload)
+                
+        except Exception as e:
+            print(f"ERROR: Failed to emit destination updates: {e}")
+            import traceback
+            traceback.print_exc()
     
     def get_event_statistics(self) -> Dict[str, Any]:
         """Get comprehensive event routing statistics"""
