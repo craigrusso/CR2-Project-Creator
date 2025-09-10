@@ -31,7 +31,10 @@ class TransferReportGenerator:
         """Generate a comprehensive job report"""
         
         timestamp = datetime.now().isoformat()
-        report_id = f"{job_id}_{int(time.time())}"
+        
+        # Clean job ID for filename generation - prevent nested concatenation
+        clean_job_id = self._extract_clean_job_id(job_id)
+        report_id = f"{clean_job_id}_{int(time.time())}"
         
         # Create the report structure
         report = {
@@ -109,19 +112,15 @@ class TransferReportGenerator:
                 transfer_status = record.get('transfer_status', 'UNKNOWN')
                 verification_status = record.get('verification_status', 'PENDING')
                 
-                # If transfer was cancelled before verification, mark as SKIPPED
-                if transfer_status == 'CANCELLED' and verification_status in ['PENDING', 'NOT_STARTED']:
-                    record['verification_status'] = 'SKIPPED'
+                # Clean status assignment - no legacy variations
+                if transfer_status == 'CANCELLED':
                     record['status'] = 'CANCELLED'
-                # If transfer completed but job was cancelled before verification
-                elif transfer_status == 'COMPLETED' and verification_status in ['PENDING', 'NOT_STARTED']:
-                    record['verification_status'] = 'SKIPPED'
-                    record['status'] = 'COMPLETED_UNVERIFIED'
-                # Only mark as FAILED if checksum verification actually failed
-                elif verification_status == 'FAILED':
+                elif transfer_status == 'COMPLETED':
+                    record['status'] = 'COMPLETED'
+                elif transfer_status == 'FAILED':
                     record['status'] = 'FAILED'
                 else:
-                    record['status'] = transfer_status
+                    record['status'] = 'IN_PROGRESS'
         
         # Generate report with "Cancelled" status
         return self.generate_job_report(
@@ -132,61 +131,8 @@ class TransferReportGenerator:
             engine_type=engine_type
         )
     
-    def generate_error_report(self,
-                                 copied_bytes: int,
-                                 total_bytes: int,
-                                 elapsed_time: float,
-                                 destinations: List[str],
-                                 file_records: Optional[List[Dict[str, Any]]] = None) -> str:
-        """Generate a report for cancelled transfers"""
-        
-        # Calculate file statistics from file_records if available
-        total_files = len(file_records) if file_records else 0
-        completed_files = sum(1 for record in file_records if record.get('status') == 'completed') if file_records else 0
-        cancelled_files = sum(1 for record in file_records if record.get('status') == 'cancelled') if file_records else 0
-        error_files = sum(1 for record in file_records if record.get('status') == 'error') if file_records else 0
-        
-        stats = {
-            "total_files": total_files,
-            "completed_files": completed_files,
-            "cancelled_files": cancelled_files,
-            "error_files": error_files,
-            "total_bytes": total_bytes,
-            "completed_bytes": copied_bytes,
-            "elapsed_time": elapsed_time,
-            "average_speed_mbps": (copied_bytes / (1024 * 1024)) / elapsed_time if elapsed_time > 0 else 0
-        }
-        
-        destination_details = {}
-        for dest_path in destinations:
-            destination_details[dest_path] = {
-                "transfer_type": "unknown",
-                "copied_bytes": copied_bytes,
-                "completed_files": 0,
-                "peak_speed_mbps": 0.0,
-                "average_speed_mbps": stats["average_speed_mbps"]
-            }
-        
-        # Get engine information from the engine manager
-        engine_type = "Unknown"
-        try:
-            from ..ui.engine_manager import get_engine_type
-            engine_type = get_engine_type()
-        except Exception:
-            pass
-        
-        # If no file records provided, generate them from the file system for DIT compliance
-        if not file_records and destinations:
-            file_records = self._generate_file_records_from_transfer(job_id, destinations[0])
-            
-        return self.generate_job_report(
-            job_id=job_id,
-            status="cancelled",
-            stats=stats,
-            destination_details=destination_details,
-            engine_type=engine_type,
-            file_records=file_records
-        )
+    # REMOVED: Duplicate generate_error_report method - was missing job_id parameter and causing override issues
+    # The correct generate_error_report method is defined later in the class with proper signature
     
     def generate_completed_report(self, 
                                  job_id: str,
@@ -199,9 +145,9 @@ class TransferReportGenerator:
         
         # Calculate file statistics from file_records if available
         total_files = len(file_records) if file_records else 0
-        completed_files = sum(1 for record in file_records if record.get('status') == 'completed') if file_records else 0
-        cancelled_files = sum(1 for record in file_records if record.get('status') == 'cancelled') if file_records else 0
-        error_files = sum(1 for record in file_records if record.get('status') == 'error') if file_records else 0
+        completed_files = sum(1 for record in file_records if record.get('status') == 'COMPLETED') if file_records else 0
+        cancelled_files = sum(1 for record in file_records if record.get('status') == 'CANCELLED') if file_records else 0
+        error_files = sum(1 for record in file_records if record.get('status') == 'FAILED') if file_records else 0
         
         stats = {
             "total_files": total_files,
@@ -323,7 +269,7 @@ class TransferReportGenerator:
                             'dest_path': str(file_path),   # Full destination path
                             'filename': file_path.name,
                             'size_bytes': stat.st_size,
-                            'status': 'completed',  # Assume completed if file exists
+                            'status': 'COMPLETED',  # Standard uppercase status
                             'transfer_time': 0.0,   # Not available from file system
                             'modification_time': stat.st_mtime,
                             'checksum': '',  # Will add if verification enabled
@@ -417,8 +363,22 @@ class TransferReportGenerator:
                 reports_dir = Path(dest_path) / "_CR2_CREATIVE_REPORTS"
                 reports_dir.mkdir(parents=True, exist_ok=True)
                 
-                # Generate base filename
-                base_filename = f"ingest_{timestamp}_{job_id}"
+                # Clean job ID extraction - prevent double concatenation
+                clean_job_id = self._extract_clean_job_id(job_id)
+                
+                # Generate base filename with clean job ID
+                dest_name = Path(dest_path).name.replace(" ", "_")  # Handle spaces in destination names
+                
+                # Include status in filename for cancelled/failed jobs
+                status_suffix = ""
+                if status.lower() in ["cancelled", "canceled", "failed", "error"]:
+                    status_suffix = f"_{status.lower()}"
+                
+                # Use clean job ID directly if it already has "ingest_" prefix, else add it
+                if clean_job_id.startswith("ingest_"):
+                    base_filename = f"{clean_job_id}{status_suffix}_{dest_name}"
+                else:
+                    base_filename = f"ingest_{timestamp}_{clean_job_id}{status_suffix}_{dest_name}"
                 
                 # Generate JSON report
                 json_path = self._generate_json_report(
@@ -458,7 +418,7 @@ class TransferReportGenerator:
         """Generate JSON format report"""
         # Calculate enhanced statistics for DIT-2025 compliance
         total_files = len(file_records) if file_records else stats.get("total_files", 0)
-        compliant_files = sum(1 for r in (file_records or []) if r.get('status', 'UNKNOWN') == 'completed')
+        compliant_files = sum(1 for r in (file_records or []) if r.get('status', 'UNKNOWN') == 'COMPLETED')
         compliance_rate = (compliant_files / total_files * 100) if total_files > 0 else 0
         
         report = {
@@ -551,16 +511,22 @@ class TransferReportGenerator:
                     size_mb = file_size / (1024 * 1024) if file_size > 0 else 0
                     checksum = record.get('source_checksum', record.get('checksum', ''))
                     
-                    # Simple status like Frame.io - no fake compliance language
-                    if transfer_status == 'completed':
-                        status_text = "✅ Completed & verified"
-                        hash_text = f"Hash: {checksum}" if checksum else "Hash: pending"
-                    elif transfer_status == 'failed':
+                    # Clean status handling - lean and direct
+                    if transfer_status == 'COMPLETED':
+                        status_text = "✅ Completed"
+                        hash_text = f"Hash: {checksum}"
+                    elif transfer_status == 'FAILED':
                         status_text = "❌ Failed"
                         hash_text = record.get('error_message', 'Transfer failed')
+                    elif transfer_status == 'CANCELLED':
+                        status_text = "⏭️  Cancelled"
+                        hash_text = f"Hash: {checksum}" if checksum else "Hash: not calculated"
+                    elif transfer_status == 'IN_PROGRESS':
+                        status_text = "🚀 In progress"
+                        hash_text = "Hash: calculating"
                     else:
-                        status_text = "🚀 Started"
-                        hash_text = "Hash: pending"
+                        status_text = "❓ Unknown"
+                        hash_text = "Hash: unknown"
                     
                     f.write(f"{status_text:<25} | {hash_text:<35} | {filename}\n")
             else:
@@ -620,4 +586,40 @@ class TransferReportGenerator:
                     serialized_record[key] = value
             serialized.append(serialized_record)
         return serialized
+
+    def _extract_clean_job_id(self, job_id: str) -> str:
+        """
+        Extract clean job ID by removing nested timestamps and destinations.
+        
+        Handles cases like:
+        - "ingest_20250910_113734_cancelled_TEST_TRANSFER 1" -> "ingest_20250910_113734"  
+        - "ingest_20250910_113751_dest_destination" -> "ingest_20250910_113751"
+        - "job_20250910_113734" -> "job_20250910_113734"
+        """
+        try:
+            # Remove common patterns that indicate modifications
+            clean_id = job_id
+            
+            # Remove "_cancelled_*" patterns
+            if "_cancelled_" in clean_id:
+                clean_id = clean_id.split("_cancelled_")[0]
+            
+            # Remove "_dest_*" patterns  
+            if "_dest_" in clean_id:
+                clean_id = clean_id.split("_dest_")[0]
+                
+            # Remove trailing destination names (anything after third underscore for ingest_ format)
+            if clean_id.startswith("ingest_"):
+                parts = clean_id.split("_")
+                if len(parts) >= 3:
+                    # Keep "ingest_YYYYMMDD_HHMMSS" format
+                    clean_id = "_".join(parts[:3])
+                    
+            print(f"DEBUG: Cleaned job ID: '{job_id}' -> '{clean_id}'")
+            return clean_id
+            
+        except Exception as e:
+            print(f"DEBUG: Failed to clean job ID '{job_id}': {e}")
+            # Fallback: use original job_id
+            return job_id
 

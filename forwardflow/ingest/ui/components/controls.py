@@ -197,13 +197,13 @@ class TransferWorker(QObject):
                     self.job.options.verify_algorithm and 
                     self.job.options.verify_algorithm.lower() not in ['none', '', 'disabled']
                 )
-                # Map UI algorithm names to Rust engine names
+                # Map UI algorithm names to Rust engine names (FIXED: match get_verification_algorithm() output)
                 algorithm_mapping = {
-                    'xxHash64BE': 'xxhash64',
-                    'xxHash128': 'xxhash64',  # Use xxhash64 for xxhash128 for now
-                    'SHA-256': 'sha256', 
-                    'SHA-3': 'sha256',  # Use sha256 for sha-3 for now
-                    'MD5': 'xxhash64'   # Use xxhash64 for md5 since it's disabled
+                    'xxhash64be': 'xxhash64',     # Netflix Standard
+                    'xxhash128': 'xxhash64',      # Use xxhash64 for xxhash128 for now
+                    'sha256': 'sha256',           # Secure
+                    'sha3': 'sha256',             # Use sha256 for sha-3 for now
+                    'md5': 'xxhash64'             # Use xxhash64 for md5 since it's disabled
                 }
                 rust_algorithm = algorithm_mapping.get(self.job.options.verify_algorithm, 'xxhash64')
                 copy_job.hash_algorithm = rust_algorithm
@@ -656,7 +656,7 @@ class ControlSection(QWidget):
             
             # Generate comprehensive reports (JSON, TXT, CSV) directly in destination's _CR2_CREATIVE_REPORTS/ folder
             generated_reports = report_gen.generate_comprehensive_reports(
-                job_id=f"{job_id}_dest_{os.path.basename(dest_path)}",
+                job_id=job_id,  # Use clean job ID - destination name will be added in report_generator
                 status="completed",
                 source_path=source_path,
                 destinations=[dest_path],  # Single destination for per-destination report
@@ -685,6 +685,9 @@ class ControlSection(QWidget):
         """Handle transfer completion - only generate reports for destinations without them"""
         print(f"DEBUG: Transfer completed with stats: {stats}")
         try:
+            # Clean up job state first to prevent contamination  
+            self._cleanup_job_state()
+            
             # Mark progress as completed with green styling
             if hasattr(self.root, 'progress_section') and self.root.progress_section:
                 self.root.progress_section.mark_transfer_completed()
@@ -741,6 +744,9 @@ class ControlSection(QWidget):
         """Handle transfer cancellation - only generate reports for incomplete destinations"""
         print("DEBUG: Transfer cancelled - checking for incomplete destinations")
         try:
+            # Clean up job state first to prevent contamination
+            self._cleanup_job_state()
+            
             # Only generate reports for destinations that don't already have them
             if hasattr(self.transfer_worker, 'job') and self.transfer_worker.job:
                 job_destinations = set(self.transfer_worker.job.destination_roots)
@@ -799,6 +805,32 @@ class ControlSection(QWidget):
         else:  # STRICT
             return 8 * 1024 * 1024   # 8MB blocks for accurate verification
     
+    def _cleanup_job_state(self):
+        """Clean up job state to prevent contamination between jobs"""
+        try:
+            # Clear job references
+            if hasattr(self.root, 'current_job'):
+                self.root.current_job = None
+            if hasattr(self.root, 'current_job_spec'):
+                self.root.current_job_spec = None  
+            if hasattr(self.root, 'current_job_id'):
+                self.root.current_job_id = None
+                
+            # Reset progress tracking state
+            self.root.active_files = 0
+            self.root.total_bytes = 0
+            self.root.copied_bytes = 0
+            self.root.job_start_time = None
+            
+            # Clear file widgets
+            if hasattr(self.root, 'file_widgets'):
+                self.root.file_widgets.clear()
+                
+            print("DEBUG: Job state cleanup completed")
+            
+        except Exception as e:
+            print(f"DEBUG: Error during job state cleanup: {e}")
+    
     def _generate_completion_report_for_destinations(self, root, status, stats, job, target_destinations, error_message=None):
         """Generate completion report only for specific destinations to prevent duplicates"""
         print(f"DEBUG: Generating {status} reports for specific destinations: {target_destinations}")
@@ -820,7 +852,7 @@ class ControlSection(QWidget):
                 
                 # Generate comprehensive reports for this destination
                 generated_reports = report_gen.generate_comprehensive_reports(
-                    job_id=f"{job.job_id}_cancelled_{os.path.basename(dest_path)}",
+                    job_id=job.job_id,  # Use clean job ID - status will be in filename via report_generator
                     status=status,
                     source_path=job.source_root,
                     destinations=[dest_path],  # Single destination
