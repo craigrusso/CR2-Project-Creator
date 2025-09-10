@@ -542,7 +542,7 @@ impl FileOperationManager {
         Ok(all_results)
     }
     
-    /// Copy files to multiple destinations with immediate cancellation support using threads
+    /// Copy files to multiple destinations with TRUE parallel processing using threads
     pub fn copy_to_multiple_destinations_with_cancellation_threaded(
         &self,
         source_files: &[PathBuf],
@@ -550,30 +550,105 @@ impl FileOperationManager {
         progress_callback: Option<Box<dyn Fn(usize, usize) + Send + Sync>>,
         cancelled: Arc<AtomicBool>,
     ) -> Result<Vec<FileOperationResult>> {
-        let mut all_results = Vec::new();
+        use std::thread;
+        use std::sync::mpsc;
         
+        println!("DEBUG: Starting PARALLEL copy to {} destinations", destination_paths.len());
+        
+        // Create channels for collecting results from parallel threads
+        let (tx, rx) = mpsc::channel();
+        let mut handles = Vec::new();
+        
+        // Create destination directories first
+        for dest_path in destination_paths {
+            let dest_dir = Path::new(dest_path);
+            create_dir_all_safe(dest_dir)?;
+        }
+        
+        // Spawn parallel threads for each destination
         for (dest_index, dest_path) in destination_paths.iter().enumerate() {
-            // Check for cancellation before processing each destination
-            if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                println!("DEBUG: Multiple destinations copy cancelled");
-                return Err(anyhow::anyhow!("Operation cancelled"));
+            let source_files = source_files.to_vec();
+            let dest_path = dest_path.clone();
+            let cancelled = Arc::clone(&cancelled);
+            let tx = tx.clone();
+            // Note: Progress callback per-thread would be complex, handle in main thread instead
+            
+            let handle = thread::spawn(move || {
+                println!("DEBUG: Thread {} starting copy to destination: {}", dest_index, dest_path);
+                
+                // Check for cancellation
+                if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                    println!("DEBUG: Thread {} cancelled before starting", dest_index);
+                    let _ = tx.send((dest_index, Err(anyhow::anyhow!("Operation cancelled"))));
+                    return;
+                }
+                
+                let dest_dir = Path::new(&dest_path);
+                let file_ops = Self::new(8 * 1024 * 1024, false, 4); // Create new instance for this thread
+                
+                // Copy files to this destination
+                let result = file_ops.copy_files_parallel_with_cancellation_threaded(
+                    &source_files,
+                    dest_dir,
+                    None,
+                    cancelled
+                );
+                
+                // Send result back to main thread
+                let _ = tx.send((dest_index, result));
+                
+                println!("DEBUG: Thread {} completed copy to destination: {}", dest_index, dest_path);
+            });
+            
+            handles.push(handle);
+        }
+        
+        // Drop the original sender so rx.recv() will eventually return Err when all threads finish
+        drop(tx);
+        
+        // Collect results from all threads
+        let mut all_results = Vec::new();
+        let mut completed_destinations = 0;
+        
+        while completed_destinations < destination_paths.len() {
+            match rx.recv() {
+                Ok((dest_index, result)) => {
+                    match result {
+                        Ok(mut results) => {
+                            println!("DEBUG: Destination {} completed successfully with {} files", dest_index, results.len());
+                            all_results.append(&mut results);
+                            
+                            // Call progress callback for completed destination
+                            if let Some(ref callback) = progress_callback {
+                                callback(completed_destinations + 1, destination_paths.len());
+                            }
+                        }
+                        Err(e) => {
+                            println!("DEBUG: Destination {} failed: {}", dest_index, e);
+                            return Err(e);
+                        }
+                    }
+                    completed_destinations += 1;
+                }
+                Err(_) => {
+                    // Channel closed, all threads finished
+                    break;
+                }
             }
             
-            let dest_dir = Path::new(dest_path);
-            
-            // Create destination directory if it doesn't exist
-            create_dir_all_safe(dest_dir)?;
-            
-            // Copy files to this destination with threaded cancellation support
-            let results = self.copy_files_parallel_with_cancellation_threaded(source_files, dest_dir, None, Arc::clone(&cancelled))?;
-            all_results.extend(results);
-            
-            // Call progress callback
-            if let Some(ref callback) = progress_callback {
-                callback(dest_index + 1, destination_paths.len());
+            // Check for cancellation
+            if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
+                println!("DEBUG: Main thread detected cancellation, waiting for threads to finish");
+                break;
             }
         }
         
+        // Wait for all threads to complete
+        for handle in handles {
+            let _ = handle.join();
+        }
+        
+        println!("DEBUG: All {} destination threads completed", destination_paths.len());
         Ok(all_results)
     }
     

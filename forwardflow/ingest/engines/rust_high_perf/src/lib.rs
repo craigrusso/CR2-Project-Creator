@@ -11,6 +11,10 @@ pub mod progress_tracking;
 pub mod cloud_detection;
 pub mod platform_helpers;
 pub mod event_system;
+pub mod event_hub_v2;
+pub mod strategy_engine;
+pub mod blast_engine;
+pub mod python_bindings;
 
 // Python module initialization
 use pyo3::prelude::*;
@@ -26,6 +30,11 @@ fn rust_high_perf_engine(_py: Python, m: &PyModule) -> PyResult<()> {
     progress_tracking::register_python_types(m)?;
     cloud_detection::register_python_types(m)?;
     event_system::register_python_types(m)?;
+    strategy_engine::register_python_types(m)?;
+    blast_engine::register_python_types(m)?;
+    
+    // Register the high-level Python bindings (TransferStrategyEngine, etc.)
+    python_bindings::register_python_types(m)?;
     
     Ok(())
 }

@@ -14,7 +14,8 @@ name = "rust_high_perf_engine"
 
 [dependencies]
 # Python bindings
-pyo3 = { version = "0.21", features = ["extension-module"] }
+pyo3 = { version = "0.20", features = ["extension-module"] }
+pyo3-asyncio = { version = "0.20", features = ["tokio-runtime"] }
 
 # Async runtime and I/O
 tokio = { version = "1.0", features = ["full"] }
@@ -58,9 +59,25 @@ num_cpus = "1.16"
 
 # Memory management
 bytes = "1.5"
+memmap2 = "0.9"
+
+# Advanced threading and channels
+crossbeam = "0.8"
+crossbeam-channel = "0.5"
+futures = "0.3"
+
+# High-performance data structures
+dashmap = "5.5"
+ahash = "0.8"
+
+# GPU acceleration (optional)
+# wgpu = { version = "0.18", optional = true }
 
 # Platform-specific features
 cfg-if = "1.0"
+
+# Testing utilities
+tempfile = "3.8"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3", features = ["winbase", "fileapi", "handleapi", "processthreadsapi"] }
@@ -73,8 +90,8 @@ core-foundation-sys = "0.8"
 libc = "0.2"
 
 [build-dependencies]
-pyo3 = { version = "0.21", features = ["extension-module"] }
-pyo3-build-config = "0.21"
+pyo3 = { version = "0.20", features = ["extension-module"] }
+pyo3-build-config = "0.20"
 
 [profile.release]
 opt-level = 3

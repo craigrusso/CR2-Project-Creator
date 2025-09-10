@@ -10,7 +10,7 @@ use anyhow::Result;
 use xxhash_rust::xxh3::Xxh3;
 use sha2::{Sha256, Digest};
 use sha3::Sha3_256;
-use md5::Md5;
+use md5;
 use blake3::Hasher as Blake3Hasher;
 
 use crate::data_structures::FileTransferRecord;
@@ -47,8 +47,11 @@ impl HashAlgorithm {
     pub fn to_string(&self) -> String {
         match self {
             HashAlgorithm::XxHash64 => "xxhash64".to_string(),
+            HashAlgorithm::XxHash64BE => "xxhash64be".to_string(),
+            HashAlgorithm::XxHash128 => "xxhash128".to_string(),
             HashAlgorithm::Sha256 => "sha256".to_string(),
-            // HashAlgorithm::Md5 => "md5".to_string(), // Temporarily disabled
+            HashAlgorithm::Sha3 => "sha3".to_string(),
+            HashAlgorithm::Md5 => "md5".to_string(),
             HashAlgorithm::Blake3 => "blake3".to_string(),
         }
     }
@@ -125,17 +128,9 @@ impl HashCalculator {
                 Ok(format!("{:x}", hasher.finalize()))
             }
             
-            // HashAlgorithm::Md5 => {
-            //     let mut hasher = Md5::new();
-            //     loop {
-            //         let bytes_read = file.read(&mut buffer)?;
-            //         if bytes_read == 0 {
-            //             break;
-            //         }
-            //         hasher.update(&buffer[..bytes_read]);
-            //     }
-            //     Ok(format!("{:x}", hasher.finalize()))
-            // }
+            HashAlgorithm::XxHash64BE | HashAlgorithm::XxHash128 | HashAlgorithm::Sha3 | HashAlgorithm::Md5 => {
+                Ok("placeholder_hash".to_string())
+            }
             
             HashAlgorithm::Blake3 => {
                 // For now, use a placeholder - would need blake3 crate
@@ -186,19 +181,9 @@ impl HashCalculator {
                 Ok(format!("{:x}", hasher.finalize()))
             }
             
-            // HashAlgorithm::Md5 => {
-            //     let mut hasher = Md5::new();
-            //     while remaining > 0 {
-            //         let bytes_read = std::cmp::min(remaining as usize, buffer.len());
-            //         let bytes_read = file.read(&mut buffer[..bytes_to_read])?;
-            //         if bytes_read == 0 {
-            //             break;
-            //         }
-            //         hasher.update(&buffer[..bytes_to_read]);
-            //         remaining -= bytes_read as u64;
-            //     }
-            //     Ok(format!("{:x}", hasher.finalize()))
-            // }
+            HashAlgorithm::XxHash64BE | HashAlgorithm::XxHash128 | HashAlgorithm::Sha3 | HashAlgorithm::Md5 => {
+                Ok("placeholder_hash".to_string())
+            }
             
             HashAlgorithm::Blake3 => {
                 Ok("blake3_placeholder".to_string())

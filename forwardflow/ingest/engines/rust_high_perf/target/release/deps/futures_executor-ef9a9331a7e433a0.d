@@ -1,0 +1,9 @@
+/Users/craigrusso/SynologyDrive/SCRIPTS/CLAUDE_PROJECT_CREATOR/FF_V1_1/forwardflow/ingest/engines/rust_high_perf/target/release/deps/futures_executor-ef9a9331a7e433a0.d: /Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.31/src/lib.rs /Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.31/src/local_pool.rs /Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.31/src/enter.rs
+
+/Users/craigrusso/SynologyDrive/SCRIPTS/CLAUDE_PROJECT_CREATOR/FF_V1_1/forwardflow/ingest/engines/rust_high_perf/target/release/deps/libfutures_executor-ef9a9331a7e433a0.rlib: /Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.31/src/lib.rs /Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.31/src/local_pool.rs /Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.31/src/enter.rs
+
+/Users/craigrusso/SynologyDrive/SCRIPTS/CLAUDE_PROJECT_CREATOR/FF_V1_1/forwardflow/ingest/engines/rust_high_perf/target/release/deps/libfutures_executor-ef9a9331a7e433a0.rmeta: /Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.31/src/lib.rs /Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.31/src/local_pool.rs /Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.31/src/enter.rs
+
+/Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.31/src/lib.rs:
+/Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.31/src/local_pool.rs:
+/Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-executor-0.3.31/src/enter.rs:
