@@ -70,8 +70,82 @@ class CopyStats:
         self.errors = []
         self.file_records = []
 
+class DestinationProcessor:
+    """Python wrapper for destination-specific event processing."""
+    
+    def __init__(self, destination_path, destination_index, job_id):
+        self.destination_path = destination_path
+        self.destination_index = destination_index
+        self.job_id = job_id
+        self.file_records = {}
+        self.stats = {
+            'total_files': 0,
+            'completed_files': 0,
+            'failed_files': 0,
+            'total_bytes': 0,
+            'copied_bytes': 0,
+            'verification_passed': 0,
+            'verification_failed': 0,
+            'start_time': None,
+            'end_time': None
+        }
+        print(f"Destination processor created for {destination_path} (index {destination_index})")
+    
+    def process_event(self, event_type, event_data):
+        """Process events for this destination."""
+        if event_type == 'file.complete':
+            self.handle_file_complete(event_data)
+        elif event_type == 'file.progress':
+            self.handle_file_progress(event_data)
+        elif event_type == 'file.error':
+            self.handle_file_error(event_data)
+    
+    def handle_file_complete(self, data):
+        """Handle file completion for this destination."""
+        if data.get('dest_path') == self.destination_path:
+            file_id = f"{data.get('filename')}_{data.get('dest_index')}"
+            
+            self.file_records[file_id] = {
+                'filename': data.get('filename'),
+                'file_size': data.get('file_bytes', 0),
+                'bytes_copied': data.get('file_bytes_copied', 0),
+                'dest_path': data.get('dest_path'),
+                'transfer_state': data.get('transfer_state', 'COMPLETED'),
+                'source_hash': data.get('source_hash'),
+                'dest_hash': data.get('dest_hash'),
+                'verification_passed': data.get('verification_passed'),
+                'hash_algorithm': data.get('hash_algorithm', 'xxhash64')
+            }
+            
+            self.stats['completed_files'] += 1
+            self.stats['copied_bytes'] += data.get('file_bytes', 0)
+            
+            print(f"Destination {self.destination_index}: Completed {data.get('filename')} ({data.get('file_bytes', 0)} bytes)")
+    
+    def handle_file_progress(self, data):
+        """Handle file progress for this destination."""
+        if data.get('dest_path') == self.destination_path:
+            # Update progress tracking
+            pass
+    
+    def handle_file_error(self, data):
+        """Handle file error for this destination."""
+        if data.get('dest_path') == self.destination_path:
+            self.stats['failed_files'] += 1
+            print(f"Destination {self.destination_index}: Error with {data.get('filename')}")
+    
+    def get_destination_report(self):
+        """Get comprehensive destination report."""
+        return {
+            'destination_path': self.destination_path,
+            'destination_index': self.destination_index,
+            'job_id': self.job_id,
+            'file_records': list(self.file_records.values()),
+            'stats': self.stats.copy()
+        }
+
 class PyEnhancedHighPerfTransferEngine:
-    """Rust enhanced high-performance transfer engine."""
+    """Rust enhanced high-performance transfer engine with destination processors."""
     
     def __init__(self):
         if rust_lib is None:
@@ -87,6 +161,55 @@ class PyEnhancedHighPerfTransferEngine:
         self.event_system = PyEventSystem()
         self.is_cancelled = False
         self.is_paused = False
+        
+        # NEW: Destination processors for parallel event handling
+        self.destination_processors = {}
+        self.event_sink = None
+    
+    def emit(self, event_type, event_data):
+        """Event sink method to route events to destination processors and UI."""
+        # CRITICAL: First emit to original event sink for UI updates and JobAggregator
+        if hasattr(self, '_original_event_sink') and self._original_event_sink:
+            try:
+                print(f"DEBUG: Emitting {event_type} to original event sink for JobAggregator")
+                self._original_event_sink.emit(event_type, event_data)
+                print(f"DEBUG: Successfully emitted {event_type} to JobAggregator")
+            except Exception as e:
+                print(f"DEBUG: CRITICAL ERROR - Failed to emit {event_type} to JobAggregator: {e}")
+                print(f"DEBUG: Event data: {event_data}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"DEBUG: CRITICAL - No original event sink available for {event_type}")
+            print(f"DEBUG: hasattr(_original_event_sink): {hasattr(self, '_original_event_sink')}")
+            if hasattr(self, '_original_event_sink'):
+                print(f"DEBUG: _original_event_sink value: {self._original_event_sink}")
+        
+        # Also route events to destination processors for detailed tracking
+        for dest_path, processor in self.destination_processors.items():
+            try:
+                processor.process_event(event_type, event_data)
+            except Exception as e:
+                print(f"DEBUG: Error processing event {event_type} for destination {dest_path}: {e}")
+    
+    def set_event_sink(self, event_sink):
+        """Set the original event sink for UI updates and replace our event_sink."""
+        self._original_event_sink = event_sink
+        # Make ourselves the event sink so we can intercept and route events
+        self.event_sink = self
+        print(f"DEBUG: Set original event sink: {type(event_sink).__name__}")
+        print(f"DEBUG: Engine event sink now routes to both destination processors and original sink")
+    
+    def get_destination_reports(self):
+        """Get reports from all destination processors."""
+        reports = []
+        for processor in self.destination_processors.values():
+            try:
+                report = processor.get_destination_report()
+                reports.append(report)
+            except Exception as e:
+                print(f"DEBUG: Error getting report from destination processor: {e}")
+        return reports
     
     def copy_files(self, job) -> Dict[str, Any]:
         """Copy files with JobManifest and stable progress tracking."""
@@ -168,6 +291,22 @@ class PyEnhancedHighPerfTransferEngine:
         
         print(f"DEBUG: JobManifest: {total_files} files, {total_bytes} bytes, "
               f"{destination_count} destinations, {total_target_bytes} target bytes")
+        
+        # NEW: Initialize destination processors for parallel event handling
+        self.destination_processors = {}
+        for dest_idx, dest in enumerate(destinations):
+            processor = DestinationProcessor(dest, dest_idx, job_id)
+            processor.stats['total_files'] = total_files
+            processor.stats['total_bytes'] = total_bytes
+            processor.stats['start_time'] = time.time()
+            self.destination_processors[dest] = processor
+            print(f"DEBUG: Initialized destination processor {dest_idx} for {dest}")
+        
+        # Set up event sink for routing events to destination processors  
+        # Keep reference to original event sink for UI updates
+        self._original_event_sink = getattr(self, 'event_sink', None)
+        # Make ourselves the event sink so we can intercept and route events
+        self.event_sink = self
         
         # Emit job.start event with immutable manifest
         if hasattr(self, 'event_sink') and self.event_sink:
@@ -464,7 +603,15 @@ class PyEnhancedHighPerfTransferEngine:
         # Use aggregate bytes copied for accurate reporting
         final_bytes_copied = aggregate_bytes_copied if aggregate_bytes_copied > 0 else total_bytes
         
-        # Generate comprehensive results
+        # NEW: Finalize destination processors and get comprehensive reports
+        destination_reports = []
+        for processor in self.destination_processors.values():
+            processor.stats['end_time'] = time.time()
+            report = processor.get_destination_report()
+            destination_reports.append(report)
+            print(f"DEBUG: Destination {report['destination_index']}: {report['stats']['completed_files']} files, {report['stats']['copied_bytes']} bytes")
+        
+        # Generate comprehensive results with destination processor reports
         result = {
             "status": "cancelled" if self.is_cancelled else "completed",
             "files_copied": copied_files,
@@ -482,9 +629,14 @@ class PyEnhancedHighPerfTransferEngine:
             "manifest_files": total_files,
             "manifest_total_bytes": total_bytes,
             "manifest_total_target_bytes": total_target_bytes,
-            "manifest_aggregate_bytes": aggregate_bytes_copied
+            "manifest_aggregate_bytes": aggregate_bytes_copied,
+            
+            # NEW: Comprehensive destination processor reports
+            "destination_reports": destination_reports,
+            "destination_processor_count": len(destination_reports)
         }
         
+        print(f"DEBUG: Transfer complete with {len(destination_reports)} destination processor reports")
         return result
     
     def _write_file_data(self, file_data: bytes, dest_path: str, dest_idx: int, dest: str, file_size: int, error_queue) -> None:

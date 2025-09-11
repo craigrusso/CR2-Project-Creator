@@ -6,6 +6,7 @@ Handles accurate multi-file progress tracking with thread-safe event routing
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer, QMetaObject, Qt, pyqtSlot
 from .event_bridge import EventBridge
 from .job_aggregator import JobSnapshot
+from ..utils.dit_data_collector import get_dit_collector
 from typing import Optional, List, Dict, Any
 import time
 
@@ -94,6 +95,25 @@ class RustEventSink(QObject):
     
     def emit(self, event_type: str, payload: dict) -> None:
         """Handle events from Rust engine with thread-safe EventBridge routing"""
+        # CRITICAL FIX: Route file.complete events to DIT data collector
+        if event_type == 'file.complete':
+            dit_collector = get_dit_collector()
+            dit_collector.handle_file_complete_event(payload)
+            print(f"🎯 DIT COLLECTOR: Captured file.complete event for {payload.get('filename', 'unknown')}")
+        
+        # CRITICAL FIX: Route job progress events to DIT collector for stats
+        elif event_type in ['job.progress', 'job_progress', 'progress_update']:
+            dit_collector = get_dit_collector()
+            dit_collector.update_job_stats({
+                'total_bytes': payload.get('total_bytes', 0),
+                'copied_bytes': payload.get('copied_bytes', payload.get('bytes_copied', 0)),
+                'total_files': payload.get('total_files', 0),
+                'completed_files': payload.get('completed_files', payload.get('files_completed', 0)),
+                'elapsed_time': payload.get('elapsed', payload.get('elapsed_time', 0)),
+                'current_speed': payload.get('speed_mbps', payload.get('speed', 0)),
+                'peak_speed': max(dit_collector.job_stats.get('peak_speed', 0), payload.get('speed_mbps', payload.get('speed', 0)))
+            })
+        
         # Log destination events for debugging
         if 'dest' in event_type.lower() or 'destination' in event_type.lower():
             print(f"🔍 RustEventSink.emit() DESTINATION EVENT: type='{event_type}', payload={payload}")

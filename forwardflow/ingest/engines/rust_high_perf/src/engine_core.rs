@@ -213,13 +213,22 @@ impl EnhancedHighPerfTransferEngine {
                     .unwrap_or("unknown")
                     .to_string();
                 
-                // Calculate real hashes if verification is enabled
+                // CRITICAL FIX: Always calculate hashes for DIT reports (professional requirement)
                 let source_file_path = &source_files[index];
                 let dest_file_path = std::path::Path::new(dest_path).join(&filename);
-                let (source_hash, dest_hash, verification_passed) = if job.verify_integrity {
-                    match self.calculate_file_hashes(source_file_path, &dest_file_path, &job.hash_algorithm) {
+                
+                // Always calculate hashes for DIT compliance, regardless of user verification settings
+                let hash_algorithm = if job.verify_integrity {
+                    job.hash_algorithm.clone()
+                } else {
+                    "xxhash64".to_string() // Default to xxhash64 for DIT reports
+                };
+                
+                let (source_hash, dest_hash, verification_passed) = {
+                    match self.calculate_file_hashes(source_file_path, &dest_file_path, &hash_algorithm) {
                         Ok((src, dst)) => {
                             let passed = src == dst;
+                            println!("DEBUG: Hash calculated for {}: source={}, dest={}, passed={}", filename, src, dst, passed);
                             (src, dst, passed)
                         },
                         Err(e) => {
@@ -227,8 +236,6 @@ impl EnhancedHighPerfTransferEngine {
                             ("hash_error".to_string(), "hash_error".to_string(), false)
                         }
                     }
-                } else {
-                    ("".to_string(), "".to_string(), true)
                 };
 
                 let file_record = FileTransferRecord {
@@ -246,9 +253,10 @@ impl EnhancedHighPerfTransferEngine {
                 };
                 file_records.push(file_record);
                 
-                // Emit file completed event with hash data
+                // CRITICAL FIX: Emit BOTH file.complete AND file.completed events for DIT report compatibility
                 if let Ok(event_system) = self.event_system.lock() {
                     if !source_hash.is_empty() {
+                        // Emit detailed file completed event with hash data
                         let _ = event_system.emit_file_completed_with_hash(
                             &filename,
                             source_file_path.to_str().unwrap_or(""),
@@ -257,8 +265,44 @@ impl EnhancedHighPerfTransferEngine {
                             &source_hash,
                             &dest_hash
                         );
+                        
+                        // CRITICAL: Also emit file.complete event for DIT report data collection
+                        let _ = event_system.emit_event("file.complete", Python::with_gil(|py| {
+                            let payload = pyo3::types::PyDict::new(py);
+                            let _ = payload.set_item("filename", &filename);
+                            let _ = payload.set_item("source_path", source_file_path.to_str().unwrap_or(""));
+                            let _ = payload.set_item("dest_path", dest_file_path.to_str().unwrap_or(""));
+                            let _ = payload.set_item("size_bytes", result.bytes_copied);
+                            let _ = payload.set_item("source_checksum", &source_hash);
+                            let _ = payload.set_item("destination_checksum", &dest_hash);
+                            let _ = payload.set_item("hash_algorithm", hash_algorithm);
+                            let _ = payload.set_item("verification_passed", verification_passed);
+                            let _ = payload.set_item("transfer_status", "COMPLETED");
+                            let _ = payload.set_item("status", "COMPLETED");
+                            payload.into_py(py)
+                        }));
+                        
+                        println!("DEBUG: 🎯 EMITTED file.complete EVENT for DIT report: {}", filename);
                     } else {
                         let _ = event_system.emit_file_completed(&filename, result.bytes_copied);
+                        
+                        // CRITICAL: Also emit file.complete event with calculated hashes
+                        let _ = event_system.emit_event("file.complete", Python::with_gil(|py| {
+                            let payload = pyo3::types::PyDict::new(py);
+                            let _ = payload.set_item("filename", &filename);
+                            let _ = payload.set_item("source_path", source_file_path.to_str().unwrap_or(""));
+                            let _ = payload.set_item("dest_path", dest_file_path.to_str().unwrap_or(""));
+                            let _ = payload.set_item("size_bytes", result.bytes_copied);
+                            let _ = payload.set_item("source_checksum", &source_hash);
+                            let _ = payload.set_item("destination_checksum", &dest_hash);
+                            let _ = payload.set_item("hash_algorithm", hash_algorithm);
+                            let _ = payload.set_item("verification_passed", verification_passed);
+                            let _ = payload.set_item("transfer_status", "COMPLETED");
+                            let _ = payload.set_item("status", "COMPLETED");
+                            payload.into_py(py)
+                        }));
+                        
+                        println!("DEBUG: 🎯 EMITTED file.complete EVENT (no hash) for DIT report: {}", filename);
                     }
                     
                     // Emit job progress event

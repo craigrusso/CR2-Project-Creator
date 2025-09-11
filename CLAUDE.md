@@ -149,3 +149,98 @@ Application fully migrated to PyQt6. All UI code uses PyQt6 imports and patterns
 
 ### Resource Paths
 Always use `get_resource_path()` from `app.constants` for file references to ensure PyInstaller compatibility.
+
+## Advanced Rust Engine Architecture
+
+### Event Processing System
+The Rust engine implements a sophisticated **parallel event processing architecture** designed for professional DIT workflows requiring maximum performance and reliability:
+
+#### Core Event System (`src/event_hub_v2.rs`)
+- **Multi-threaded Event Distribution**: 4 specialized handler threads (File, Destination, Job, BLAST)
+- **High-performance Channels**: Bounded channels with large buffers (50k file events, 10k destination events)
+- **Event Priority System**: Critical, High, Normal, Low priority routing
+- **Real-time Statistics**: Comprehensive performance monitoring and event tracking
+- **Nanosecond Precision**: High-resolution timestamps for accurate performance measurement
+
+#### Destination-Specific Processors (`src/destination_processors.rs`)
+**Critical Component**: Each destination gets its own dedicated processor running in parallel:
+
+- **Per-Destination State Tracking**: Individual file records, progress, and completion status
+- **GPU-Accelerated Hashing**: Parallel hash computation with Apple Silicon optimization
+- **Async Verification Pipeline**: Non-blocking verification using Tokio async runtime
+- **Comprehensive Reporting**: Detailed per-destination reports with file-level granularity
+- **Real-time Progress Updates**: Live statistics and ETA calculations per destination
+
+#### GPU Acceleration Support (`src/strategy_engine.rs`)
+- **Apple Silicon Detection**: Native M-series GPU detection with unified memory support
+- **Compute Pipelines**: Hash computation, memory optimization, and data transformation
+- **Intelligent Strategy Selection**: Automatic GPU vs CPU selection based on workload
+- **Multi-stream Processing**: Parallel GPU compute streams for maximum throughput
+
+#### BLAST Engine (`src/blast_engine.rs`)
+- **Ultra-fast Cache-first Transfer**: NVMe SSD staging for maximum speed
+- **Parallel Distribution**: Async workers distribute to final destinations simultaneously
+- **Phase-based Workflow**: Preparation → Cache Load → Distribution → Verification
+- **Event-driven Progress**: Real-time BLAST phase reporting and statistics
+
+### Transfer Strategy Intelligence
+The engine automatically selects optimal transfer strategies:
+
+1. **DirectCopy**: Single destination, maximum speed
+2. **MemoryStaging**: Multiple destinations, read-once-write-many
+3. **GpuAccelerated**: Large transfers with compute operations
+4. **BlastWorkflow**: Ultra-fast cache + parallel distribution
+5. **HybridMultiStrategy**: Mixed approaches per destination type
+
+### Verification and Integrity
+- **Multiple Hash Algorithms**: xxHash64, SHA256, Blake3, SHA3, MD5
+- **GPU-accelerated Hashing**: Parallel computation with caching
+- **Range-based Verification**: Partial file verification support
+- **Comprehensive Results**: File-level verification with timing metrics
+
+## Expected Application Behavior
+
+### Transfer Workflow
+1. **Strategy Analysis**: Intelligent destination analysis and strategy selection
+2. **Parallel Processors**: One processor per destination spins up automatically
+3. **GPU Acceleration**: Hash computation and verification offloaded to GPU when beneficial
+4. **Real-time Reporting**: Live progress updates with per-destination granularity
+5. **Comprehensive Reports**: Detailed JSON/CSV/TXT reports with all transfer metrics
+
+### Reporting System Requirements
+The reporting system **must** have access to:
+- **Per-destination file completion records** from destination processors
+- **GPU-accelerated hash verification results** with timing data
+- **Transfer performance metrics** including speeds, ETA, and completion status
+- **Comprehensive error handling** with file-level error tracking
+- **Industry-standard DIT compliance** with professional metadata
+
+### Performance Expectations
+- **Ultra-fast Transfers**: NVMe SSD optimization with multi-GB/s throughput
+- **Parallel Processing**: CPU cores + GPU compute units fully utilized
+- **Memory Efficiency**: Intelligent buffer management with unified memory support
+- **Real-time Updates**: Sub-second UI updates with nanosecond-precision timing
+- **Professional Reliability**: Zero data loss with comprehensive verification
+
+### Current Implementation Status
+✅ **Implemented**:
+- Advanced EventHub V2 with multi-threaded processing
+- GPU-accelerated strategy engine with Apple Silicon support
+- BLAST engine with parallel distribution
+- Comprehensive verification system
+- Destination-specific event processors (NEW)
+
+❌ **Integration Required**:
+- Connect destination processors to main transfer engine
+- Route events to per-destination processors
+- Integrate GPU hasher with verification pipeline
+- Update reporting system to use destination processor data
+- Ensure `file.complete` events populate destination processors
+
+### Architecture Goals
+This architecture achieves **professional DIT-grade performance** with:
+- **Maximum Throughput**: GPU + multi-core parallelization
+- **Zero Data Loss**: Comprehensive verification and error handling
+- **Real-time Monitoring**: Live progress with professional reporting
+- **Intelligent Optimization**: Automatic strategy selection and resource utilization
+- **Future-proof Design**: Extensible for new GPU architectures and transfer protocols

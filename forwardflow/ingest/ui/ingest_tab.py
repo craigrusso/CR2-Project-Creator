@@ -191,54 +191,10 @@ def build_ingest_tab():
                 root.elapsed_label.setText(elapsed_str)
     
     def update_stats():
-        """Update speed and progress stats less frequently to prevent UI blocking"""
-        if root.job_start_time and root.current_job and hasattr(root, 'copied_bytes') and hasattr(root, 'total_bytes'):
-            elapsed_seconds = time.time() - root.job_start_time
-            if elapsed_seconds > 0 and root.total_bytes > 0:
-                # Calculate current speed
-                current_speed = (root.copied_bytes / (1024 * 1024)) / elapsed_seconds
-                
-                # DO NOT UPDATE PROGRESS BAR HERE - causes per-file 0-100% resets!
-                # Progress bar is now updated ONLY by EventBridge job-level progress events
-                print("DEBUG: Skipping progress bar update in update_stats() - EventBridge handles this now")
-                
-                # Update current speed stat (only if it exists)
-                if hasattr(progress_section, 'current_speed_label') and progress_section.current_speed_label:
-                    progress_section.current_speed_label.setText(f"{current_speed:.0f} MB/s")
-                
-                # Calculate average speed (only if it exists)
-                if hasattr(progress_section, 'avg_speed_label') and progress_section.avg_speed_label:
-                    total_mb = root.total_bytes / (1024 * 1024)
-                    avg_speed = total_mb / elapsed_seconds
-                    progress_section.avg_speed_label.setText(f"{avg_speed:.0f} MB/s")
-                
-                # Update peak speed if current speed is higher (only if it exists)
-                if hasattr(progress_section, 'peak_speed_label') and progress_section.peak_speed_label:
-                    try:
-                        current_peak_text = progress_section.peak_speed_label.text()
-                        # Parse current peak value (format: "XXX MB/s" or "0 MB/s")
-                        if " MB/s" in current_peak_text:
-                            current_peak = float(current_peak_text.split(' ')[0])
-                            if current_speed > current_peak:
-                                progress_section.peak_speed_label.setText(f"{current_speed:.0f} MB/s")
-                        else:
-                            # If we can't parse, initialize with current speed
-                            progress_section.peak_speed_label.setText(f"{current_speed:.0f} MB/s")
-                    except (ValueError, IndexError):
-                        # If we can't parse the current peak, just set it
-                        progress_section.peak_speed_label.setText(f"{current_speed:.0f} MB/s")
-                
-                # Calculate ETA (only if it exists)
-                if hasattr(progress_section, 'eta_label') and progress_section.eta_label and current_speed > 0 and root.copied_bytes < root.total_bytes:
-                    remaining_bytes = root.total_bytes - root.copied_bytes
-                    eta_seconds = remaining_bytes / (current_speed * 1024 * 1024)
-                    if eta_seconds > 0:
-                        eta_str = f"{int(eta_seconds//3600):02d}:{int((eta_seconds%3600)//60):02d}:{int(eta_seconds%60):02d}"
-                        progress_section.eta_label.setText(eta_str)
-                    else:
-                        progress_section.eta_label.setText("--:--:--")
-                elif hasattr(progress_section, 'eta_label') and progress_section.eta_label:
-                    progress_section.eta_label.setText("--:--:--")
+        """Update ONLY elapsed time - all other stats are handled by event system"""
+        # CRITICAL FIX: Remove all speed/progress updates from timer to prevent conflicts
+        # Only update elapsed time which doesn't conflict with event-driven updates
+        pass  # All stats now handled by event system
     
 
     
@@ -365,7 +321,8 @@ def build_ingest_tab():
                         if event_type == "job.started":
                             progress_section.handle_job_started(payload)
                         elif event_type == "job.progress":
-                            progress_section.handle_job_progress(payload)
+                            # CRITICAL FIX: Use single progress update path to prevent blinking
+                            progress_section.handle_progress_update(payload)
                         elif event_type == "dest.progress":
                             source_dest_section.handle_destination_progress(payload)
                         elif event_type == "current.file":

@@ -85,6 +85,14 @@ class TransferWorker(QObject):
                 except Exception as e:
                     print(f"DEBUG: Failed to initialize JobAggregator: {e}")
                 
+                # CRITICAL FIX: Initialize DIT data collector for this job
+                try:
+                    from ...utils.dit_data_collector import reset_dit_collector
+                    reset_dit_collector(self.job.job_id)
+                    print(f"🎯 DIT Data Collector initialized for job: {self.job.job_id}")
+                except Exception as e:
+                    print(f"ERROR: Failed to initialize DIT data collector: {e}")
+                
                 # Event sink will connect directly to UI components, no need to re-emit through TransferWorker
                 print("DEBUG: Event sink will connect directly to UI components")
                 
@@ -273,13 +281,13 @@ class TransferWorker(QObject):
                                 self.job.options.verify_algorithm.lower() not in ['none', '', 'disabled']
                             )
                             
-                            # Map algorithm names
+                            # CRITICAL FIX: Map UI algorithm names to exact Rust enum variants
                             algorithm_mapping = {
-                                'xxhash64be': 'xxhash64',
-                                'xxhash128': 'xxhash64', 
-                                'sha256': 'sha256',
-                                'sha3': 'sha256',
-                                'md5': 'xxhash64'
+                                'xxhash64be': 'xxhash64',  # Maps to HashAlgorithm::XxHash64
+                                'xxhash128': 'xxhash128',  # Maps to HashAlgorithm::XxHash128
+                                'sha256': 'sha256',        # Maps to HashAlgorithm::Sha256
+                                'sha3': 'sha3',           # Maps to HashAlgorithm::Sha3
+                                'md5': 'md5'              # Maps to HashAlgorithm::Md5
                             }
                             rust_algorithm = algorithm_mapping.get(self.job.options.verify_algorithm, 'xxhash64')
                             copy_job.hash_algorithm = rust_algorithm
@@ -891,47 +899,62 @@ class ControlSection(QWidget):
         """Generate comprehensive completion report with proper data merging"""
         try:
             from ...utils.report_generator import TransferReportGenerator
+            from ...utils.dit_data_collector import get_dit_collector
             
             # Create report generator
             report_gen = TransferReportGenerator()
             
-            # Initialize comprehensive stats with fallback values
-            comprehensive_stats = {
-                'total_bytes': 0,
-                'copied_bytes': 0,
-                'duration': 0,
-                'avg_speed': 0,
-                'peak_speed': 0,
-                'total_files': 0,
-                'completed_files': 0,
-                'cancelled_files': 0,
-                'error_files': 0
-            }
-            file_records = []
+            # CRITICAL FIX: Use DIT data collector as primary source
+            dit_collector = get_dit_collector()
             
-            # Primary source: Get stats from EventBridge through Rust event sink
-            event_sink = getattr(root, '_rust_event_sink', None)
-            if event_sink and hasattr(event_sink, 'get_comprehensive_stats'):
-                try:
-                    bridge_stats = event_sink.get_comprehensive_stats()
-                    # CRITICAL FIX: Use file records that are already included in comprehensive_stats
-                    # This ensures we get the JobAggregator file records with proper status fields
-                    bridge_file_records = bridge_stats.get('files', [])
-                    
-                    print(f"DEBUG: EventBridge stats - total: {bridge_stats.get('total_bytes', 0)}, "
-                          f"copied: {bridge_stats.get('copied_bytes', 0)}, "
-                          f"duration: {bridge_stats.get('duration', 0)}")
-                    
-                    # Merge EventBridge stats (primary source)
-                    if bridge_stats.get('total_bytes', 0) > 0 or bridge_stats.get('copied_bytes', 0) > 0:
-                        comprehensive_stats.update(bridge_stats)
-                        file_records = bridge_file_records
-                        print(f"DEBUG: Using EventBridge data: {len(file_records)} file records")
-                    else:
-                        print("DEBUG: EventBridge stats are empty, will use engine stats as fallback")
+            # Initialize comprehensive stats with DIT collector data
+            comprehensive_stats = dit_collector.get_job_stats()
+            file_records = dit_collector.get_file_records()
+            
+            print(f"🎯 DIT COLLECTOR REPORT DATA:")
+            print(f"   File records: {len(file_records)}")
+            print(f"   Total bytes: {comprehensive_stats.get('total_bytes', 0)}")
+            print(f"   Completed files: {comprehensive_stats.get('completed_files', 0)}")
+            
+            # If DIT collector has no data, fall back to legacy sources
+            if not dit_collector.has_data():
+                print("DEBUG: DIT collector has no data, using legacy fallback sources")
+                
+                # Initialize fallback stats
+                comprehensive_stats = {
+                    'total_bytes': 0,
+                    'copied_bytes': 0,
+                    'duration': 0,
+                    'avg_speed': 0,
+                    'peak_speed': 0,
+                    'total_files': 0,
+                    'completed_files': 0,
+                    'cancelled_files': 0,
+                    'error_files': 0
+                }
+                file_records = []
+                
+                # Primary source: Get stats from EventBridge through Rust event sink
+                event_sink = getattr(root, '_rust_event_sink', None)
+                if event_sink and hasattr(event_sink, 'get_comprehensive_stats'):
+                    try:
+                        bridge_stats = event_sink.get_comprehensive_stats()
+                        bridge_file_records = bridge_stats.get('files', [])
                         
-                except Exception as e:
-                    print(f"DEBUG: Error accessing EventBridge stats: {e}")
+                        print(f"DEBUG: EventBridge stats - total: {bridge_stats.get('total_bytes', 0)}, "
+                              f"copied: {bridge_stats.get('copied_bytes', 0)}, "
+                              f"duration: {bridge_stats.get('duration', 0)}")
+                        
+                        # Merge EventBridge stats (primary source)
+                        if bridge_stats.get('total_bytes', 0) > 0 or bridge_stats.get('copied_bytes', 0) > 0:
+                            comprehensive_stats.update(bridge_stats)
+                            file_records = bridge_file_records
+                            print(f"DEBUG: Using EventBridge data: {len(file_records)} file records")
+                        else:
+                            print("DEBUG: EventBridge stats are empty, will use engine stats as fallback")
+                            
+                    except Exception as e:
+                        print(f"DEBUG: Error accessing EventBridge stats: {e}")
             
             # Secondary source: Engine stats (fallback or supplement)
             if hasattr(root, 'current_job') and root.current_job and hasattr(root.current_job, 'get_stats'):

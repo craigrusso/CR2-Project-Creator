@@ -56,3 +56,6 @@ dist/
 MAC BUILD/
 app_log.txt
 ICONS/ForwardFlow.psd
+
+# Rust build artifacts
+forwardflow/ingest/engines/rust_high_perf/target/

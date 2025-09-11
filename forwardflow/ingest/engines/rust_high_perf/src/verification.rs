@@ -32,11 +32,13 @@ pub enum HashAlgorithm {
 impl HashAlgorithm {
     pub fn from_string(s: &str) -> Self {
         match s.to_lowercase().as_str() {
-            "xxhash64" | "xxh3" => HashAlgorithm::XxHash64,
+            "xxhash64" | "xxhash64be" | "xxh3" => HashAlgorithm::XxHash64,
+            "xxhash128" => HashAlgorithm::XxHash128,
             "sha256" | "sha-256" => HashAlgorithm::Sha256,
-            // "md5" => HashAlgorithm::Md5, // Temporarily disabled
+            "sha3" | "sha-3" => HashAlgorithm::Sha3,
+            "md5" => HashAlgorithm::Md5,
             "blake3" => HashAlgorithm::Blake3,
-            _ => HashAlgorithm::XxHash64, // Default
+            _ => HashAlgorithm::XxHash64, // Default to xxHash64 for best performance
         }
     }
     
@@ -89,6 +91,7 @@ impl HashVerificationResult {
 }
 
 /// Hash calculator for different algorithms
+#[derive(Clone)]
 pub struct HashCalculator {
     algorithm: HashAlgorithm,
 }
@@ -104,16 +107,30 @@ impl HashCalculator {
         let mut buffer = vec![0u8; 64 * 1024]; // 64KB buffer
         
         match self.algorithm {
-            HashAlgorithm::XxHash64 => {
+            HashAlgorithm::XxHash64 | HashAlgorithm::XxHash64BE => {
+                // Use xxHash3 for both XxHash64 variants
                 let mut hasher = Xxh3::new();
                 loop {
                     let bytes_read = file.read(&mut buffer)?;
                     if bytes_read == 0 {
                         break;
                     }
-                    hasher.update(&buffer[..bytes_read]);
+                    hasher.write(&buffer[..bytes_read]);
                 }
                 Ok(format!("{:016x}", hasher.finish()))
+            }
+            
+            HashAlgorithm::XxHash128 => {
+                // Use xxHash3 with 128-bit output (using same as 64-bit for compatibility)
+                let mut hasher = Xxh3::new();
+                loop {
+                    let bytes_read = file.read(&mut buffer)?;
+                    if bytes_read == 0 {
+                        break;
+                    }
+                    hasher.write(&buffer[..bytes_read]);
+                }
+                Ok(format!("{:032x}", hasher.finish()))
             }
             
             HashAlgorithm::Sha256 => {
@@ -128,13 +145,40 @@ impl HashCalculator {
                 Ok(format!("{:x}", hasher.finalize()))
             }
             
-            HashAlgorithm::XxHash64BE | HashAlgorithm::XxHash128 | HashAlgorithm::Sha3 | HashAlgorithm::Md5 => {
-                Ok("placeholder_hash".to_string())
+            HashAlgorithm::Sha3 => {
+                let mut hasher = Sha3_256::new();
+                loop {
+                    let bytes_read = file.read(&mut buffer)?;
+                    if bytes_read == 0 {
+                        break;
+                    }
+                    hasher.update(&buffer[..bytes_read]);
+                }
+                Ok(format!("{:x}", hasher.finalize()))
+            }
+            
+            HashAlgorithm::Md5 => {
+                let mut hasher = md5::Context::new();
+                loop {
+                    let bytes_read = file.read(&mut buffer)?;
+                    if bytes_read == 0 {
+                        break;
+                    }
+                    hasher.consume(&buffer[..bytes_read]);
+                }
+                Ok(format!("{:x}", hasher.compute()))
             }
             
             HashAlgorithm::Blake3 => {
-                // For now, use a placeholder - would need blake3 crate
-                Ok("blake3_placeholder".to_string())
+                let mut hasher = Blake3Hasher::new();
+                loop {
+                    let bytes_read = file.read(&mut buffer)?;
+                    if bytes_read == 0 {
+                        break;
+                    }
+                    hasher.update(&buffer[..bytes_read]);
+                }
+                Ok(hasher.finalize().to_hex().to_string())
             }
         }
     }

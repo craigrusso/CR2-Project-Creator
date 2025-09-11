@@ -14,6 +14,7 @@ pub mod event_system;
 pub mod event_hub_v2;
 pub mod strategy_engine;
 pub mod blast_engine;
+pub mod destination_processors;
 pub mod python_bindings;
 
 // Python module initialization
@@ -32,6 +33,7 @@ fn rust_high_perf_engine(_py: Python, m: &PyModule) -> PyResult<()> {
     event_system::register_python_types(m)?;
     strategy_engine::register_python_types(m)?;
     blast_engine::register_python_types(m)?;
+    destination_processors::register_python_types(m)?;
     
     // Register the high-level Python bindings (TransferStrategyEngine, etc.)
     python_bindings::register_python_types(m)?;
