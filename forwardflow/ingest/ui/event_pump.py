@@ -200,16 +200,24 @@ class EventPumpManager(QObject):
         from ..utils.dit_data_collector import get_dit_collector
         dit_collector = get_dit_collector()
 
-        # Convert Rust event format to Python event format
+        # CRITICAL FIX: Convert Rust event format to DIT collector format
+        bytes_copied = payload.get('bytes_copied', 0)
         event_data = {
             'filename': payload.get('filename', ''),
             'source_path': payload.get('source_path', ''),
-            'destination_path': payload.get('dest_path', ''),
-            'bytes_copied': payload.get('bytes_copied', 0),
+            'dest_path': payload.get('dest_path', ''),
+            'destination_path': payload.get('dest_path', ''),  # DIT collector expects this
+            'bytes_copied': bytes_copied,
+            'size_bytes': bytes_copied,  # CRITICAL FIX: DIT collector expects 'size_bytes'
             'source_checksum': payload.get('source_checksum', ''),
             'destination_checksum': payload.get('dest_checksum', ''),
+            'hash_algorithm': 'xxhash64be',  # Default algorithm
             'verification_passed': payload.get('verification_passed', False),
+            'status': 'COMPLETED',
+            'transfer_status': 'COMPLETED',
         }
+
+        print(f"DEBUG: EventPump forwarding file.completed to DIT collector: {event_data.get('filename')} ({bytes_copied} bytes)")
         dit_collector.handle_file_complete_event(event_data)
 
     def _handle_dest_progress(self, payload: dict):

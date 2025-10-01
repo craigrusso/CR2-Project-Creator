@@ -336,20 +336,28 @@ class DestinationWidget(QFrame):
             
             # Extract values for smoothing
             eta_seconds = progress_payload.get('etaS', 0) or progress_payload.get('eta_seconds', 0)
-            
+
+            # CRITICAL FIX: Calculate ETA from progress and elapsed time if not provided
+            if eta_seconds == 0 and progress_percent > 0:
+                elapsed_time = progress_payload.get('elapsed_time', 0)
+                if elapsed_time > 0:
+                    # ETA = (elapsed / progress) * (100 - progress)
+                    eta_seconds = (elapsed_time / progress_percent) * (100.0 - progress_percent)
+                    print(f"DEBUG: Calculated ETA for {self.path}: {eta_seconds:.1f}s (elapsed: {elapsed_time:.1f}s, progress: {progress_percent:.1f}%)")
+
             current_time = time.time()
             time_delta = current_time - self.last_update_time
-            
+
             # Update target values for smooth interpolation
             self.target_values['progress'] = progress_percent
             self.target_values['current_speed'] = current_speed
-            
+
             # Peak speed should only increase (no smoothing for peaks)
             if peak_speed > self.current_values['peak_speed']:
                 self.current_values['peak_speed'] = peak_speed
                 self.target_values['peak_speed'] = peak_speed
                 self.peak_speed_label.setText(f"Peak: {peak_speed:.1f} MB/s")
-            
+
             self.target_values['eta_seconds'] = eta_seconds
             self.last_update_time = current_time
 
