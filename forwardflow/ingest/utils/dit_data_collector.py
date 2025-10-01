@@ -30,6 +30,7 @@ class DITDataCollector:
             self.job_id = job_id
             self.start_time = time.time()
             print(f"DEBUG: DITDataCollector reset for job: {job_id}")
+            print(f"🔍 DEBUG: Collector instance {id(self)} reset - file_records cleared")
     
     def handle_file_complete_event(self, payload: Dict[str, Any]):
         """Handle file.complete events from Rust engine"""
@@ -69,6 +70,7 @@ class DITDataCollector:
                 
                 self.file_records.append(file_record)
                 print(f"DEBUG: DITDataCollector captured file.complete: {filename} ({size_bytes} bytes)")
+                print(f"🔍 DEBUG: File added to collector instance {id(self)} - total records now: {len(self.file_records)}")
                 
             except Exception as e:
                 print(f"ERROR: DITDataCollector failed to handle file.complete event: {e}")
@@ -89,6 +91,11 @@ class DITDataCollector:
     def get_file_records(self) -> List[Dict[str, Any]]:
         """Get all collected file records"""
         with self.lock:
+            print(f"🔍 DEBUG: get_file_records() called - returning {len(self.file_records)} records")
+            print(f"🔍 DEBUG: Current job_id: {self.job_id}")
+            print(f"🔍 DEBUG: Collector instance ID: {id(self)}")
+            if self.file_records:
+                print(f"🔍 DEBUG: Sample record: {self.file_records[0].get('filename', 'unknown')}")
             return self.file_records.copy()
     
     def get_job_stats(self) -> Dict[str, Any]:
@@ -145,12 +152,13 @@ _collector_lock = threading.Lock()
 def get_dit_collector() -> DITDataCollector:
     """Get the global DIT data collector instance"""
     global _dit_collector
-    
+
     with _collector_lock:
         if _dit_collector is None:
             _dit_collector = DITDataCollector()
-            print("DEBUG: Created global DITDataCollector instance")
-        
+            print(f"DEBUG: Created global DITDataCollector instance {id(_dit_collector)}")
+
+        print(f"🔍 DEBUG: Returning DIT collector instance {id(_dit_collector)}")
         return _dit_collector
 
 

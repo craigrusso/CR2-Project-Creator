@@ -988,12 +988,14 @@ class ControlSection(QWidget):
             report_gen = TransferReportGenerator()
             
             # CRITICAL FIX: Use DIT data collector as primary source
+            print(f"🔍 DEBUG: About to get DIT collector for report generation...")
             dit_collector = get_dit_collector()
-            
+            print(f"🔍 DEBUG: Report generator got DIT collector instance {id(dit_collector)}")
+
             # Initialize comprehensive stats with DIT collector data
             comprehensive_stats = dit_collector.get_job_stats()
             file_records = dit_collector.get_file_records()
-            
+
             print(f"🎯 DIT COLLECTOR REPORT DATA:")
             print(f"   File records: {len(file_records)}")
             print(f"   Total bytes: {comprehensive_stats.get('total_bytes', 0)}")
