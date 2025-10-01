@@ -598,6 +598,33 @@ impl EnhancedHighPerfTransferEngine {
                         job_files_completed = job_files_completed.saturating_add(dest_count);
                         self.total_files_processed
                             .fetch_add(dest_count as u64, Ordering::Relaxed);
+
+                        // CRITICAL FIX: Emit FileCompleted events for each destination
+                        // This is needed for DIT report generation
+                        if let Ok(event_system) = event_system.lock() {
+                            let filename = source_files[file_index]
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or("unknown");
+                            let source_path = source_files[file_index].to_str().unwrap_or("");
+                            let bytes_copied = file_sizes[file_index];
+
+                            // Emit file completion event for EACH destination
+                            for dest_idx in 0..dest_count {
+                                let dest_path = job.destination_paths[dest_idx].clone();
+                                let rel_path = relative_paths[file_index].to_str().unwrap_or("");
+                                let full_dest_path = format!("{}/{}", dest_path, rel_path);
+
+                                let _ = event_system.emit_file_completed_with_hash(
+                                    filename,
+                                    source_path,
+                                    &full_dest_path,
+                                    bytes_copied,
+                                    "", // source_hash - will be filled if verification enabled
+                                    "", // dest_hash - will be filled if verification enabled
+                                );
+                            }
+                        }
                     }
                 }
 
