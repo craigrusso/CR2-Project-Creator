@@ -1,22 +1,21 @@
 //! File I/O operations and parallel processing
 
-use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write, BufReader, BufWriter};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
-use std::time::Instant;
-use std::thread;
-use std::sync::mpsc;
-use std::time::Duration;
 use anyhow::Result;
-use rayon::prelude::*;
-use walkdir::WalkDir;
 use pyo3::prelude::*;
+use rayon::prelude::*;
+use std::fs::{self, File, OpenOptions};
+use std::io::{BufReader, BufWriter, Read, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
+use std::time::Instant;
+use walkdir::WalkDir;
+
+use tracing::{debug, error, warn};
 
 use crate::data_structures::FileTransferRecord;
-use crate::platform_helpers::{get_disk_space, create_dir_all_safe, get_file_size};
-use crate::verification::{HashCalculator, HashAlgorithm};
+use crate::platform_helpers::{create_dir_all_safe, get_disk_space, get_file_size};
+use crate::verification::{HashAlgorithm, HashCalculator};
 
 /// File operation result
 #[derive(Debug, Clone)]
@@ -28,7 +27,12 @@ pub struct FileOperationResult {
 }
 
 impl FileOperationResult {
-    pub fn new(success: bool, bytes_copied: u64, error_message: Option<String>, operation_time_ms: u64) -> Self {
+    pub fn new(
+        success: bool,
+        bytes_copied: u64,
+        error_message: Option<String>,
+        operation_time_ms: u64,
+    ) -> Self {
         Self {
             success,
             bytes_copied,
@@ -55,22 +59,22 @@ impl FileOperationManager {
             .thread_name(|i| format!("forwardflow-worker-{}", i))
             .build_global()
             .unwrap_or_else(|e| {
-                eprintln!("Warning: Failed to configure optimal Rayon threadpool: {}", e);
+                warn!(error = %e, "Failed to configure optimal Rayon threadpool");
             });
-        
-        println!("DEBUG: Configured Rayon threadpool with {} threads for maximum M2 Max performance", optimal_threads);
-        
+
+        debug!(threads = optimal_threads, "Configured Rayon threadpool");
+
         Self {
             buffer_size,
             use_direct_io,
             parallel_workers,
         }
     }
-    
+
     /// Collect all files from source paths
     pub fn collect_files(&self, source_paths: &[String]) -> Result<Vec<PathBuf>> {
         let mut all_files = Vec::new();
-        
+
         for source_path in source_paths {
             let path = Path::new(source_path);
             if path.is_file() {
@@ -85,10 +89,10 @@ impl FileOperationManager {
                 }
             }
         }
-        
+
         Ok(all_files)
     }
-    
+
     /// Copy a single file with progress tracking
     pub fn copy_single_file(
         &self,
@@ -97,16 +101,16 @@ impl FileOperationManager {
         progress_callback: Option<Box<dyn Fn(u64, u64) + Send + Sync>>,
     ) -> Result<FileOperationResult> {
         let start_time = Instant::now();
-        
+
         // Ensure destination directory exists
         if let Some(parent) = destination_path.parent() {
             create_dir_all_safe(parent)?;
         }
-        
+
         // Check disk space
         let source_size = get_file_size(source_path)?;
         let disk_space = get_disk_space(destination_path.parent().unwrap_or(Path::new(".")))?;
-        
+
         if disk_space.available_bytes < source_size {
             return Err(anyhow::anyhow!(
                 "Insufficient disk space. Required: {} bytes, Available: {} bytes",
@@ -114,7 +118,7 @@ impl FileOperationManager {
                 disk_space.available_bytes
             ));
         }
-        
+
         // Open source and destination files
         let source_file = File::open(source_path)?;
         let destination_file = OpenOptions::new()
@@ -122,32 +126,32 @@ impl FileOperationManager {
             .create(true)
             .truncate(true)
             .open(destination_path)?;
-        
+
         let mut reader = BufReader::new(source_file);
         let mut writer = BufWriter::new(destination_file);
-        
+
         let mut buffer = vec![0u8; self.buffer_size];
         let mut total_copied = 0u64;
-        
+
         loop {
             let bytes_read = reader.read(&mut buffer)?;
             if bytes_read == 0 {
                 break;
             }
-            
+
             writer.write_all(&buffer[..bytes_read])?;
             total_copied += bytes_read as u64;
-            
+
             // Call progress callback if provided
             if let Some(ref callback) = progress_callback {
                 callback(total_copied, source_size);
             }
         }
-        
+
         writer.flush()?;
-        
+
         let operation_time = start_time.elapsed().as_millis() as u64;
-        
+
         Ok(FileOperationResult::new(
             true,
             total_copied,
@@ -155,7 +159,7 @@ impl FileOperationManager {
             operation_time,
         ))
     }
-    
+
     /// Copy a single file with cancellation support
     pub fn copy_single_file_with_cancellation(
         &self,
@@ -166,12 +170,12 @@ impl FileOperationManager {
     ) -> Result<FileOperationResult> {
         let start_time = std::time::Instant::now();
         let source_size = get_file_size(source_path)?;
-        
+
         // Create destination directory if it doesn't exist
         if let Some(parent) = destination_path.parent() {
             create_dir_all_safe(parent)?;
         }
-        
+
         // Open source and destination files
         let source_file = File::open(source_path)?;
         let destination_file = OpenOptions::new()
@@ -179,50 +183,50 @@ impl FileOperationManager {
             .create(true)
             .truncate(true)
             .open(destination_path)?;
-        
+
         let mut reader = BufReader::new(source_file);
         let mut writer = BufWriter::new(destination_file);
-        
+
         let mut buffer = vec![0u8; self.buffer_size];
         let mut total_copied = 0u64;
         let mut bytes_since_last_check = 0u64;
         const CANCELLATION_CHECK_INTERVAL: u64 = 64 * 1024; // Check every 64KB for faster response
-        
+
         loop {
             // Check for cancellation BEFORE reading
             if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                println!("DEBUG: File copy cancelled before read");
+                debug!("File copy cancelled before read");
                 return Err(anyhow::anyhow!("Operation cancelled"));
             }
-            
+
             let bytes_read = reader.read(&mut buffer)?;
             if bytes_read == 0 {
                 break;
             }
-            
+
             writer.write_all(&buffer[..bytes_read])?;
             total_copied += bytes_read as u64;
             bytes_since_last_check += bytes_read as u64;
-            
+
             // Check for cancellation every 64KB copied
             if bytes_since_last_check >= CANCELLATION_CHECK_INTERVAL {
                 if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                    println!("DEBUG: File copy cancelled during transfer");
+                    debug!("File copy cancelled during transfer");
                     return Err(anyhow::anyhow!("Operation cancelled"));
                 }
                 bytes_since_last_check = 0;
             }
-            
+
             // Call progress callback if provided
             if let Some(ref callback) = progress_callback {
                 callback(total_copied, source_size);
             }
         }
-        
+
         writer.flush()?;
-        
+
         let operation_time = start_time.elapsed().as_millis() as u64;
-        
+
         Ok(FileOperationResult::new(
             true,
             total_copied,
@@ -230,7 +234,7 @@ impl FileOperationManager {
             operation_time,
         ))
     }
-    
+
     /// Copy multiple files in parallel
     pub fn copy_files_parallel(
         &self,
@@ -242,40 +246,38 @@ impl FileOperationManager {
             .par_iter()
             .enumerate()
             .map(|(index, source_path)| {
-                let filename = source_path.file_name()
+                let filename = source_path
+                    .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("unknown");
-                
+
                 let destination_path = destination_dir.join(filename);
-                
+
                 let result = self.copy_single_file(source_path, &destination_path, None);
-                
+
                 // Call progress callback if provided
                 if let Some(ref callback) = progress_callback {
                     callback(index + 1, source_files.len());
                 }
-                
+
                 result
             })
             .collect();
-        
+
         // Convert results to proper format
         let mut final_results = Vec::new();
         for result in results {
             match result {
                 Ok(op_result) => final_results.push(op_result),
-                Err(e) => final_results.push(FileOperationResult::new(
-                    false,
-                    0,
-                    Some(e.to_string()),
-                    0,
-                )),
+                Err(e) => {
+                    final_results.push(FileOperationResult::new(false, 0, Some(e.to_string()), 0))
+                }
             }
         }
-        
+
         Ok(final_results)
     }
-    
+
     /// Copy multiple files in parallel with cancellation support
     pub fn copy_files_parallel_with_cancellation(
         &self,
@@ -285,34 +287,40 @@ impl FileOperationManager {
         cancelled: &AtomicBool,
     ) -> Result<Vec<FileOperationResult>> {
         let mut results = Vec::new();
-        
+
         for (index, source_path) in source_files.iter().enumerate() {
             // Check for cancellation before processing each file
             if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                println!("DEBUG: Copy operation cancelled during file processing");
+                debug!("Copy operation cancelled during file processing");
                 return Err(anyhow::anyhow!("Operation cancelled"));
             }
-            
-            let filename = source_path.file_name()
+
+            let filename = source_path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown");
-            
+
             let destination_path = destination_dir.join(filename);
-            
+
             // Copy single file with cancellation checks
-            let result = self.copy_single_file_with_cancellation(source_path, &destination_path, None, cancelled)?;
+            let result = self.copy_single_file_with_cancellation(
+                source_path,
+                &destination_path,
+                None,
+                cancelled,
+            )?;
             results.push(result);
-            
+
             // Call progress callback if provided
             if let Some(ref callback) = progress_callback {
                 callback(index + 1, source_files.len());
             }
         }
-        
+
         Ok(results)
     }
-    
-    /// Copy multiple files in parallel with immediate cancellation support using threads
+
+    /// Copy multiple files in parallel with immediate cancellation support using a bounded pool
     pub fn copy_files_parallel_with_cancellation_threaded(
         &self,
         source_files: &[PathBuf],
@@ -320,91 +328,56 @@ impl FileOperationManager {
         progress_callback: Option<Box<dyn Fn(usize, usize) + Send + Sync>>,
         cancelled: Arc<AtomicBool>,
     ) -> Result<Vec<FileOperationResult>> {
-        use std::thread;
-        use std::sync::mpsc;
-        use std::time::Duration;
-        
-        let (tx, rx) = mpsc::channel();
-        let mut handles = Vec::new();
-        let mut results = Vec::new();
-        
-        // Spawn a thread for each file copy operation
-        for (index, source_path) in source_files.iter().enumerate() {
-            // Check for cancellation before spawning thread
-            if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                println!("DEBUG: Copy operation cancelled before spawning threads");
-                return Err(anyhow::anyhow!("Operation cancelled"));
-            }
-            
-            let source_path = source_path.clone();
-            let dest_dir = destination_dir.to_path_buf();
-            let tx = tx.clone();
-            let cancelled = cancelled.clone();
-            
-            let handle = thread::spawn(move || {
-                let filename = source_path.file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("unknown");
-                
-                let destination_path = dest_dir.join(filename);
-                
-                // Copy single file with cancellation checks
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(anyhow::anyhow!("Operation cancelled"));
+        }
+
+        let dest_dir = Arc::new(destination_dir.to_path_buf());
+        let total_files = source_files.len();
+        let completed_counter = Arc::new(AtomicUsize::new(0));
+        let progress_cb: Option<Arc<dyn Fn(usize, usize) + Send + Sync>> =
+            progress_callback.map(Arc::from);
+
+        let results: Result<Vec<(usize, FileOperationResult)>> = source_files
+            .par_iter()
+            .enumerate()
+            .map(|(index, source_path)| {
+                if cancelled.load(Ordering::Relaxed) {
+                    return Err(anyhow::anyhow!("Operation cancelled"));
+                }
+
+                let filename = source_path
+                    .file_name()
+                    .map(|name| name.to_owned())
+                    .unwrap_or_default();
+                let destination_path = dest_dir.join(&filename);
+
                 let result = match Self::copy_single_file_with_cancellation_internal(
-                    &source_path, 
-                    &destination_path, 
-                    None, 
-                    &cancelled
+                    source_path.as_path(),
+                    destination_path.as_path(),
+                    None,
+                    &cancelled,
                 ) {
                     Ok(result) => result,
                     Err(e) => FileOperationResult::new(false, 0, Some(e.to_string()), 0),
                 };
-                
-                let _ = tx.send((index, result));
-            });
-            
-            handles.push(handle);
-        }
-        
-        // Collect results with cancellation checks
-        let mut completed = 0;
-        while completed < source_files.len() {
-            // Check for cancellation every 100ms
-            if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                println!("DEBUG: Copy operation cancelled during result collection");
-                return Err(anyhow::anyhow!("Operation cancelled"));
-            }
-            
-            match rx.recv_timeout(Duration::from_millis(100)) {
-                Ok((index, result)) => {
-                    results.push((index, result));
-                    completed += 1;
-                    
-                    // Call progress callback if provided
-                    if let Some(ref callback) = progress_callback {
-                        callback(completed, source_files.len());
-                    }
+
+                if let Some(cb) = progress_cb.as_ref() {
+                    let completed = completed_counter.fetch_add(1, Ordering::Relaxed) + 1;
+                    cb(completed, total_files);
                 }
-                Err(mpsc::RecvTimeoutError::Timeout) => {
-                    // Continue waiting
-                    continue;
-                }
-                Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    // All threads finished
-                    break;
-                }
-            }
-        }
-        
-        // Wait for all threads to finish
-        for handle in handles {
-            let _ = handle.join();
-        }
-        
-        // Sort results by index and extract FileOperationResult
+
+                Ok((index, result))
+            })
+            .collect();
+
+        let mut results = results?;
         results.sort_by_key(|(index, _)| *index);
         Ok(results.into_iter().map(|(_, result)| result).collect())
     }
-    
+
     /// Internal copy function for threaded operations
     fn copy_single_file_with_cancellation_internal(
         source_path: &Path,
@@ -414,12 +387,12 @@ impl FileOperationManager {
     ) -> Result<FileOperationResult> {
         let start_time = std::time::Instant::now();
         let source_size = get_file_size(source_path)?;
-        
+
         // Create destination directory if it doesn't exist
         if let Some(parent) = destination_path.parent() {
             create_dir_all_safe(parent)?;
         }
-        
+
         // Open source and destination files
         let source_file = File::open(source_path)?;
         let destination_file = OpenOptions::new()
@@ -427,50 +400,50 @@ impl FileOperationManager {
             .create(true)
             .truncate(true)
             .open(destination_path)?;
-        
+
         let mut reader = BufReader::new(source_file);
         let mut writer = BufWriter::new(destination_file);
-        
+
         let mut buffer = vec![0u8; 4 * 1024 * 1024]; // 4MB buffer
         let mut total_copied = 0u64;
         let mut bytes_since_last_check = 0u64;
         const CANCELLATION_CHECK_INTERVAL: u64 = 64 * 1024; // Check every 64KB for faster response
-        
+
         loop {
             // Check for cancellation BEFORE reading
             if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                println!("DEBUG: Internal file copy cancelled before read");
+                debug!("Internal file copy cancelled before read");
                 return Err(anyhow::anyhow!("Operation cancelled"));
             }
-            
+
             let bytes_read = reader.read(&mut buffer)?;
             if bytes_read == 0 {
                 break;
             }
-            
+
             writer.write_all(&buffer[..bytes_read])?;
             total_copied += bytes_read as u64;
             bytes_since_last_check += bytes_read as u64;
-            
+
             // Check for cancellation every 64KB copied
             if bytes_since_last_check >= CANCELLATION_CHECK_INTERVAL {
                 if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                    println!("DEBUG: Internal file copy cancelled during transfer");
+                    debug!("Internal file copy cancelled during transfer");
                     return Err(anyhow::anyhow!("Operation cancelled"));
                 }
                 bytes_since_last_check = 0;
             }
-            
+
             // Call progress callback if provided
             if let Some(ref callback) = progress_callback {
                 callback(total_copied, source_size);
             }
         }
-        
+
         writer.flush()?;
-        
+
         let operation_time = start_time.elapsed().as_millis() as u64;
-        
+
         Ok(FileOperationResult::new(
             true,
             total_copied,
@@ -478,7 +451,7 @@ impl FileOperationManager {
             operation_time,
         ))
     }
-    
+
     /// Copy files to multiple destinations
     pub fn copy_to_multiple_destinations(
         &self,
@@ -487,26 +460,26 @@ impl FileOperationManager {
         progress_callback: Option<Box<dyn Fn(usize, usize) + Send + Sync>>,
     ) -> Result<Vec<FileOperationResult>> {
         let mut all_results = Vec::new();
-        
+
         for (dest_index, dest_path) in destination_paths.iter().enumerate() {
             let dest_dir = Path::new(dest_path);
-            
+
             // Create destination directory if it doesn't exist
             create_dir_all_safe(dest_dir)?;
-            
+
             // Copy files to this destination
             let results = self.copy_files_parallel(source_files, dest_dir, None)?;
             all_results.extend(results);
-            
+
             // Call progress callback
             if let Some(ref callback) = progress_callback {
                 callback(dest_index + 1, destination_paths.len());
             }
         }
-        
+
         Ok(all_results)
     }
-    
+
     /// Copy files to multiple destinations with cancellation support
     pub fn copy_to_multiple_destinations_with_cancellation(
         &self,
@@ -516,32 +489,37 @@ impl FileOperationManager {
         cancelled: &AtomicBool,
     ) -> Result<Vec<FileOperationResult>> {
         let mut all_results = Vec::new();
-        
+
         for (dest_index, dest_path) in destination_paths.iter().enumerate() {
             // Check for cancellation before processing each destination
             if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                println!("DEBUG: Multiple destinations copy cancelled");
+                debug!("Multiple destinations copy cancelled");
                 return Err(anyhow::anyhow!("Operation cancelled"));
             }
-            
+
             let dest_dir = Path::new(dest_path);
-            
+
             // Create destination directory if it doesn't exist
             create_dir_all_safe(dest_dir)?;
-            
+
             // Copy files to this destination with cancellation support
-            let results = self.copy_files_parallel_with_cancellation(source_files, dest_dir, None, cancelled)?;
+            let results = self.copy_files_parallel_with_cancellation(
+                source_files,
+                dest_dir,
+                None,
+                cancelled,
+            )?;
             all_results.extend(results);
-            
+
             // Call progress callback
             if let Some(ref callback) = progress_callback {
                 callback(dest_index + 1, destination_paths.len());
             }
         }
-        
+
         Ok(all_results)
     }
-    
+
     /// Copy files to multiple destinations with TRUE parallel processing using threads
     pub fn copy_to_multiple_destinations_with_cancellation_threaded(
         &self,
@@ -550,21 +528,24 @@ impl FileOperationManager {
         progress_callback: Option<Box<dyn Fn(usize, usize) + Send + Sync>>,
         cancelled: Arc<AtomicBool>,
     ) -> Result<Vec<FileOperationResult>> {
-        use std::thread;
         use std::sync::mpsc;
-        
-        println!("DEBUG: Starting PARALLEL copy to {} destinations", destination_paths.len());
-        
+        use std::thread;
+
+        debug!(
+            destinations = destination_paths.len(),
+            "Starting parallel copy to destinations"
+        );
+
         // Create channels for collecting results from parallel threads
         let (tx, rx) = mpsc::channel();
         let mut handles = Vec::new();
-        
+
         // Create destination directories first
         for dest_path in destination_paths {
             let dest_dir = Path::new(dest_path);
             create_dir_all_safe(dest_dir)?;
         }
-        
+
         // Spawn parallel threads for each destination
         for (dest_index, dest_path) in destination_paths.iter().enumerate() {
             let source_files = source_files.to_vec();
@@ -572,59 +553,66 @@ impl FileOperationManager {
             let cancelled = Arc::clone(&cancelled);
             let tx = tx.clone();
             // Note: Progress callback per-thread would be complex, handle in main thread instead
-            
+
             let handle = thread::spawn(move || {
-                println!("DEBUG: Thread {} starting copy to destination: {}", dest_index, dest_path);
-                
+                debug!(thread = dest_index, destination = %dest_path, "Destination thread started");
+
                 // Check for cancellation
                 if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                    println!("DEBUG: Thread {} cancelled before starting", dest_index);
+                    debug!(
+                        thread = dest_index,
+                        "Destination thread cancelled before start"
+                    );
                     let _ = tx.send((dest_index, Err(anyhow::anyhow!("Operation cancelled"))));
                     return;
                 }
-                
+
                 let dest_dir = Path::new(&dest_path);
                 let file_ops = Self::new(8 * 1024 * 1024, false, 4); // Create new instance for this thread
-                
+
                 // Copy files to this destination
                 let result = file_ops.copy_files_parallel_with_cancellation_threaded(
                     &source_files,
                     dest_dir,
                     None,
-                    cancelled
+                    cancelled,
                 );
-                
+
                 // Send result back to main thread
                 let _ = tx.send((dest_index, result));
-                
-                println!("DEBUG: Thread {} completed copy to destination: {}", dest_index, dest_path);
+
+                debug!(thread = dest_index, destination = %dest_path, "Destination thread completed");
             });
-            
+
             handles.push(handle);
         }
-        
+
         // Drop the original sender so rx.recv() will eventually return Err when all threads finish
         drop(tx);
-        
+
         // Collect results from all threads
         let mut all_results = Vec::new();
         let mut completed_destinations = 0;
-        
+
         while completed_destinations < destination_paths.len() {
             match rx.recv() {
                 Ok((dest_index, result)) => {
                     match result {
                         Ok(mut results) => {
-                            println!("DEBUG: Destination {} completed successfully with {} files", dest_index, results.len());
+                            debug!(
+                                destination_index = dest_index,
+                                files = results.len(),
+                                "Destination copy completed"
+                            );
                             all_results.append(&mut results);
-                            
+
                             // Call progress callback for completed destination
                             if let Some(ref callback) = progress_callback {
                                 callback(completed_destinations + 1, destination_paths.len());
                             }
                         }
                         Err(e) => {
-                            println!("DEBUG: Destination {} failed: {}", dest_index, e);
+                            error!(destination_index = dest_index, error = %e, "Destination copy failed");
                             return Err(e);
                         }
                     }
@@ -635,23 +623,26 @@ impl FileOperationManager {
                     break;
                 }
             }
-            
+
             // Check for cancellation
             if cancelled.load(std::sync::atomic::Ordering::Relaxed) {
-                println!("DEBUG: Main thread detected cancellation, waiting for threads to finish");
+                debug!("Main thread detected cancellation, waiting for destination threads");
                 break;
             }
         }
-        
+
         // Wait for all threads to complete
         for handle in handles {
             let _ = handle.join();
         }
-        
-        println!("DEBUG: All {} destination threads completed", destination_paths.len());
+
+        debug!(
+            destinations = destination_paths.len(),
+            "All destination threads completed"
+        );
         Ok(all_results)
     }
-    
+
     /// Verify file integrity after copy
     pub fn verify_file_integrity(
         &self,
@@ -660,21 +651,22 @@ impl FileOperationManager {
         hash_algorithm: &str,
     ) -> Result<bool> {
         let calculator = HashCalculator::new(HashAlgorithm::from_string(hash_algorithm));
-        
+
         let source_hash = calculator.calculate_file_hash(source_path)?;
         let dest_hash = calculator.calculate_file_hash(destination_path)?;
-        
+
         Ok(source_hash == dest_hash)
     }
-    
+
     /// Get file information
     pub fn get_file_info(&self, file_path: &Path) -> Result<FileTransferRecord> {
         let metadata = fs::metadata(file_path)?;
-        let filename = file_path.file_name()
+        let filename = file_path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
             .to_string();
-        
+
         Ok(FileTransferRecord {
             source_path: file_path.to_string_lossy().to_string(),
             destination_path: String::new(), // Will be set during copy
@@ -689,78 +681,88 @@ impl FileOperationManager {
             verification_error: String::new(),
         })
     }
-    
+
     /// Calculate optimal buffer size based on file size and destination type
     pub fn calculate_optimal_buffer_size(&self, file_size: u64) -> usize {
         // Default values optimized for local storage
         const LOCAL_MIN_BUFFER_SIZE: usize = 1024 * 1024; // 1MB
-        const LOCAL_MAX_BUFFER_SIZE: usize = 16 * 1024 * 1024; // 16MB  
+        const LOCAL_MAX_BUFFER_SIZE: usize = 16 * 1024 * 1024; // 16MB
         const LOCAL_TARGET_BUFFER_SIZE: usize = 4 * 1024 * 1024; // 4MB
-        
+
         // Network-optimized values (smaller for better network performance)
         const NETWORK_MIN_BUFFER_SIZE: usize = 256 * 1024; // 256KB
         const NETWORK_MAX_BUFFER_SIZE: usize = 2 * 1024 * 1024; // 2MB
         const NETWORK_TARGET_BUFFER_SIZE: usize = 1024 * 1024; // 1MB
-        
+
         // For now, use local optimized values (network detection would need destination path)
         // TODO: Add network detection when destination path is available
-        let (min_size, max_size, target_size) = (LOCAL_MIN_BUFFER_SIZE, LOCAL_MAX_BUFFER_SIZE, LOCAL_TARGET_BUFFER_SIZE);
-        
+        let (min_size, max_size, target_size) = (
+            LOCAL_MIN_BUFFER_SIZE,
+            LOCAL_MAX_BUFFER_SIZE,
+            LOCAL_TARGET_BUFFER_SIZE,
+        );
+
         if file_size < 1024 * 1024 {
             // Small files: use smaller buffer
             min_size
         } else if file_size > 100 * 1024 * 1024 {
-            // Large files: use larger buffer  
+            // Large files: use larger buffer
             max_size
         } else {
             // Medium files: use target buffer size
             target_size
         }
     }
-    
+
     /// Calculate network-aware buffer size with destination path
     pub fn calculate_network_aware_buffer_size(&self, file_size: u64, dest_path: &str) -> usize {
         // Network destination detection
         let dest_lower = dest_path.to_lowercase();
-        let is_network = dest_lower.contains("/volumes/") ||
-                        dest_lower.contains("\\\\") ||
-                        dest_lower.contains("//") ||
-                        dest_lower.contains("smb://") ||
-                        dest_lower.contains("nfs://") ||
-                        dest_lower.contains("afp://") ||
-                        dest_lower.contains(".synology.") ||
-                        dest_lower.contains(".qnap.") ||
-                        dest_lower.contains("nas.") ||
-                        dest_lower.contains(".local") ||
-                        dest_lower.contains("diskstation");
-        
+        let is_network = dest_lower.contains("/volumes/")
+            || dest_lower.contains("\\\\")
+            || dest_lower.contains("//")
+            || dest_lower.contains("smb://")
+            || dest_lower.contains("nfs://")
+            || dest_lower.contains("afp://")
+            || dest_lower.contains(".synology.")
+            || dest_lower.contains(".qnap.")
+            || dest_lower.contains("nas.")
+            || dest_lower.contains(".local")
+            || dest_lower.contains("diskstation");
+
         if is_network {
             // Network-optimized buffer sizes (smaller for better network performance)
-            if file_size < 10 * 1024 * 1024 {      // Files < 10MB
-                256 * 1024                          // 256KB chunks
-            } else if file_size < 100 * 1024 * 1024 {   // Files < 100MB  
-                512 * 1024                          // 512KB chunks
-            } else {                                // Large files
-                1024 * 1024                         // 1MB chunks
+            if file_size < 10 * 1024 * 1024 {
+                // Files < 10MB
+                256 * 1024 // 256KB chunks
+            } else if file_size < 100 * 1024 * 1024 {
+                // Files < 100MB
+                512 * 1024 // 512KB chunks
+            } else {
+                // Large files
+                1024 * 1024 // 1MB chunks
             }
         } else {
-            // Local storage optimized buffer sizes (larger for max throughput)  
-            if file_size < 10 * 1024 * 1024 {      // Files < 10MB
-                1024 * 1024                         // 1MB chunks
-            } else if file_size < 100 * 1024 * 1024 {   // Files < 100MB
-                4 * 1024 * 1024                     // 4MB chunks
-            } else {                                // Large files
-                8 * 1024 * 1024                     // 8MB chunks  
+            // Local storage optimized buffer sizes (larger for max throughput)
+            if file_size < 10 * 1024 * 1024 {
+                // Files < 10MB
+                1024 * 1024 // 1MB chunks
+            } else if file_size < 100 * 1024 * 1024 {
+                // Files < 100MB
+                4 * 1024 * 1024 // 4MB chunks
+            } else {
+                // Large files
+                8 * 1024 * 1024 // 8MB chunks
             }
         }
     }
-    
+
     /// Get file transfer statistics
     pub fn get_transfer_stats(&self, results: &[FileOperationResult]) -> (u64, usize, usize) {
         let total_bytes: u64 = results.iter().map(|r| r.bytes_copied).sum();
         let successful_operations = results.iter().filter(|r| r.success).count();
         let failed_operations = results.iter().filter(|r| !r.success).count();
-        
+
         (total_bytes, successful_operations, failed_operations)
     }
 }
@@ -776,24 +778,66 @@ impl PyFileOperationManager {
     #[new]
     fn new(buffer_size: usize, use_direct_io: bool, parallel_workers: usize) -> Self {
         Self {
-            inner: Arc::new(FileOperationManager::new(buffer_size, use_direct_io, parallel_workers)),
+            inner: Arc::new(FileOperationManager::new(
+                buffer_size,
+                use_direct_io,
+                parallel_workers,
+            )),
         }
     }
-    
+
     fn collect_files(&self, source_paths: Vec<String>) -> PyResult<Vec<String>> {
         match self.inner.collect_files(&source_paths) {
-            Ok(files) => Ok(files.into_iter().map(|p| p.to_string_lossy().to_string()).collect()),
+            Ok(files) => Ok(files
+                .into_iter()
+                .map(|p| p.to_string_lossy().to_string())
+                .collect()),
             Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e.to_string())),
         }
     }
-    
-    fn copy_single_file(&self, source_path: String, destination_path: String) -> PyResult<PyObject> {
+
+    fn copy_single_file(
+        &self,
+        source_path: String,
+        destination_path: String,
+    ) -> PyResult<PyObject> {
         let source_path = Path::new(&source_path);
         let destination_path = Path::new(&destination_path);
-        
-        match self.inner.copy_single_file(source_path, destination_path, None) {
-            Ok(result) => {
-                Python::with_gil(|py| {
+
+        match self
+            .inner
+            .copy_single_file(source_path, destination_path, None)
+        {
+            Ok(result) => Python::with_gil(|py| {
+                let py_result = pyo3::types::PyDict::new(py);
+                py_result.set_item("success", result.success)?;
+                py_result.set_item("bytes_copied", result.bytes_copied)?;
+                if let Some(error) = result.error_message {
+                    py_result.set_item("error_message", error)?;
+                }
+                py_result.set_item("operation_time_ms", result.operation_time_ms)?;
+
+                Ok(py_result.into_py(py))
+            }),
+            Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e.to_string())),
+        }
+    }
+
+    fn copy_files_parallel(
+        &self,
+        source_files: Vec<String>,
+        destination_dir: String,
+    ) -> PyResult<Vec<PyObject>> {
+        let source_paths: Vec<PathBuf> = source_files.into_iter().map(PathBuf::from).collect();
+        let dest_dir = Path::new(&destination_dir);
+
+        match self
+            .inner
+            .copy_files_parallel(&source_paths, dest_dir, None)
+        {
+            Ok(results) => Python::with_gil(|py| {
+                let mut py_results = Vec::new();
+                for result in results {
                     let py_result = pyo3::types::PyDict::new(py);
                     py_result.set_item("success", result.success)?;
                     py_result.set_item("bytes_copied", result.bytes_copied)?;
@@ -801,49 +845,32 @@ impl PyFileOperationManager {
                         py_result.set_item("error_message", error)?;
                     }
                     py_result.set_item("operation_time_ms", result.operation_time_ms)?;
-                    
-                    Ok(py_result.into_py(py))
-                })
-            },
+                    py_results.push(py_result.into_py(py));
+                }
+                Ok(py_results)
+            }),
             Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e.to_string())),
         }
     }
-    
-    fn copy_files_parallel(&self, source_files: Vec<String>, destination_dir: String) -> PyResult<Vec<PyObject>> {
-        let source_paths: Vec<PathBuf> = source_files.into_iter().map(PathBuf::from).collect();
-        let dest_dir = Path::new(&destination_dir);
-        
-        match self.inner.copy_files_parallel(&source_paths, dest_dir, None) {
-            Ok(results) => {
-                Python::with_gil(|py| {
-                    let mut py_results = Vec::new();
-                    for result in results {
-                        let py_result = pyo3::types::PyDict::new(py);
-                        py_result.set_item("success", result.success)?;
-                        py_result.set_item("bytes_copied", result.bytes_copied)?;
-                        if let Some(error) = result.error_message {
-                            py_result.set_item("error_message", error)?;
-                        }
-                        py_result.set_item("operation_time_ms", result.operation_time_ms)?;
-                        py_results.push(py_result.into_py(py));
-                    }
-                    Ok(py_results)
-                })
-            },
-            Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e.to_string())),
-        }
-    }
-    
-    fn verify_file_integrity(&self, source_path: String, destination_path: String, hash_algorithm: String) -> PyResult<bool> {
+
+    fn verify_file_integrity(
+        &self,
+        source_path: String,
+        destination_path: String,
+        hash_algorithm: String,
+    ) -> PyResult<bool> {
         let source_path = Path::new(&source_path);
         let destination_path = Path::new(&destination_path);
-        
-        match self.inner.verify_file_integrity(source_path, destination_path, &hash_algorithm) {
+
+        match self
+            .inner
+            .verify_file_integrity(source_path, destination_path, &hash_algorithm)
+        {
             Ok(result) => Ok(result),
             Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e.to_string())),
         }
     }
-    
+
     fn get_file_info(&self, file_path: String) -> PyResult<FileTransferRecord> {
         let file_path = Path::new(&file_path);
         match self.inner.get_file_info(file_path) {

@@ -772,14 +772,21 @@ class ProgressSection(QWidget):
                 self.total_progress.setRange(0, 100)
                 self.total_progress.setValue(int(progress_percent))
                 self.total_progress.setFormat(f"{int(progress_percent)}%")
+                # CRITICAL FIX: Force Qt to repaint immediately
+                self.total_progress.update()
+                self.total_progress.repaint()
                 print(f"DEBUG: Progress bar updated to {int(progress_percent)}% (0-100 range)")
-            
+
             # Update other UI elements - pass bytes_copied for average speed calculation
             bytes_copied = payload.get("bytes_copied", 0)
             self._update_speed_labels(current_speed, peak_speed, elapsed, bytes_copied)
             self._update_elapsed_label(elapsed)
             self._update_files_count(completed_files, total_files)
             self._update_eta_label(eta)
+
+            # CRITICAL FIX: Force entire section to repaint
+            self.update()
+            self.repaint()
             
         except Exception as e:
             print(f"ERROR: JobState percentage update failed: {e}")
@@ -789,27 +796,43 @@ class ProgressSection(QWidget):
     def _handle_converted_legacy_update(self, payload):
         """Handle legacy progress updates converted to consistent format"""
         try:
-            # Extract percentage from legacy payload
+            # CRITICAL FIX: Use correct field names from event pump payload
             progress_percent = payload.get("progress_percent", 0.0)
-            completed_files = payload.get("completed_files", 0)
+            # Event pump sends 'files_completed' not 'completed_files'
+            files_completed = payload.get("files_completed", 0)
             total_files = payload.get("total_files", 0)
-            current_speed = payload.get("current_speed_mbps", 0.0)
-            elapsed = payload.get("elapsed_time", 0.0)
-            
-            print(f"DEBUG: Legacy progress converted: {progress_percent:.1f}% ({completed_files}/{total_files} files)")
-            
+            # Event pump sends 'current_speed_mbps' and 'speed_mbps'
+            current_speed = payload.get("current_speed_mbps", payload.get("speed_mbps", 0.0))
+            peak_speed = payload.get("peak_speed_mbps", 0.0)
+            # Event pump sends 'elapsed_s' not 'elapsed_time'
+            elapsed = payload.get("elapsed_s", payload.get("elapsed_time", 0.0))
+            # Calculate ETA from elapsed and progress if not provided
+            eta_seconds = payload.get("eta_seconds", 0.0)
+            if eta_seconds == 0.0 and progress_percent > 0:
+                eta_seconds = (elapsed / progress_percent * 100.0) - elapsed
+
+            print(f"DEBUG: Event pump progress: {progress_percent:.1f}% ({files_completed}/{total_files} files, {current_speed:.1f} MB/s, elapsed: {elapsed:.1f}s)")
+
             # Update progress bar with CONSISTENT 0-100 range
             if hasattr(self, 'total_progress') and self.total_progress:
                 self.total_progress.setRange(0, 100)
                 self.total_progress.setValue(int(progress_percent))
                 self.total_progress.setFormat(f"{int(progress_percent)}%")
-                print(f"DEBUG: Legacy progress bar updated to {int(progress_percent)}% (0-100 range)")
-            
-            # Update other UI elements (with fallbacks for legacy data)
+                # CRITICAL FIX: Force Qt to repaint immediately
+                self.total_progress.update()
+                self.total_progress.repaint()
+                print(f"DEBUG: Progress bar updated to {int(progress_percent)}% (0-100 range)")
+
+            # Update other UI elements with correct field names
             bytes_copied = payload.get("bytes_copied", 0)
-            self._update_speed_labels(current_speed, 0.0, elapsed, bytes_copied)
-            self._update_files_count(completed_files, total_files)
-            self._update_eta_label(payload.get("eta_seconds", 0.0))
+            self._update_speed_labels(current_speed, peak_speed, elapsed, bytes_copied)
+            self._update_elapsed_label(elapsed)
+            self._update_files_count(files_completed, total_files)
+            self._update_eta_label(eta_seconds)
+
+            # CRITICAL FIX: Force entire section to repaint
+            self.update()
+            self.repaint()
             
         except Exception as e:
             print(f"ERROR: Legacy progress conversion failed: {e}")

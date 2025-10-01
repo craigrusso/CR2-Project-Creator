@@ -3,9 +3,12 @@ Rust High Performance Engine Module
 This module loads the real Rust engine - NO FALLBACK ENGINE
 """
 
-import os
+import logging
 import sys
 from pathlib import Path
+
+
+logger = logging.getLogger(__name__)
 
 # Add the current directory to Python path
 current_dir = Path(__file__).parent
@@ -16,11 +19,10 @@ try:
     # Import the Rust engine loader
     from .rust_engine_loader import get_engine
     
-    print("DEBUG: Successfully imported real Rust engine via loader")
-    
+    logger.debug("Successfully imported real Rust engine via loader")
+
 except ImportError as e:
-    print(f"ERROR: Failed to import real Rust engine: {e}")
-    print("ERROR: Rust engine is REQUIRED - NO FALLBACK ENGINE")
+    logger.error("Failed to import real Rust engine: %s", e)
     raise RuntimeError(f"Rust engine is REQUIRED and failed to load: {e}")
 
 # Export the engine getter function

@@ -25,15 +25,11 @@ def get_engine(sink=None):
                 # Create REAL Rust engine instance directly
                 _engine_instance = rust_high_perf_engine.PyEnhancedHighPerfTransferEngine()
                 print("DEBUG: Created REAL PyEnhancedHighPerfTransferEngine instance")
-                
-                # Use the Rust event sink wrapper if no sink provided
-                if sink is None:
-                    from .rust_event_sink import RustEventSink
-                    sink = RustEventSink()
-                
-                # Set the event sink
-                _engine_instance.set_event_sink(sink)
-                print("DEBUG: Real Rust engine created successfully with event sink")
+
+                # REMOVED: set_event_sink - causes GIL deadlock
+                # Event pump architecture is used instead (see controls.py)
+                # The event pump is initialized when transfer starts, not during engine creation
+                print("DEBUG: Real Rust engine created successfully (event pump will be initialized on transfer start)")
                 
             except Exception as e:
                 print(f"ERROR: Failed to create Rust engine: {e}")

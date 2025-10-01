@@ -1,297 +1,150 @@
-"""
-Python wrapper for the Rust high-performance engine.
+"""Thin compatibility wrapper around the compiled Rust transfer engine."""
 
-This wrapper provides a clean interface to the Rust engine while handling
-Python-specific conversions and error handling.
-"""
+from __future__ import annotations
 
-import os
-import sys
-import threading
-import time
-from typing import Dict, Any, Optional, Callable
-from pathlib import Path
+from importlib import import_module
+from typing import Any, Callable, Dict
 
-try:
-    from PyQt6 import QtCore
+try:  # Optional PyQt6 support for queued signal delivery
+    from PyQt6 import QtCore  # type: ignore
+
     HAS_QT = True
-    print("DEBUG: Using PyQt6 for Rust engine wrapper")
-except Exception as e:
-    print(f"DEBUG: PyQt6 not available: {e}")
+except Exception:  # pragma: no cover - Qt is optional at runtime
+    QtCore = None  # type: ignore
     HAS_QT = False
 
-# Import the Rust engine module - use the COMPILED library installed system-wide
-# We need to avoid importing the local stub module that shadows the compiled library
-import sys
-import importlib
-
-# Temporarily remove this directory from sys.path to avoid importing the local stub
-current_dir = os.path.dirname(__file__)
-if current_dir in sys.path:
-    sys.path.remove(current_dir)
 
 try:
-    # Force import from system-wide installation, not local stub
-    if 'rust_high_perf_engine' in sys.modules:
-        del sys.modules['rust_high_perf_engine']  # Clear any cached import
-    
-    # Import the REAL compiled Rust library from system packages
-    import rust_high_perf_engine
-    print(f"DEBUG: Successfully imported compiled Rust engine from: {getattr(rust_high_perf_engine, '__file__', 'unknown')}")
-    
-    # Import the actual PyO3 classes from the compiled library
-    PyEnhancedHighPerfTransferEngine = rust_high_perf_engine.PyEnhancedHighPerfTransferEngine
-    CopyJob = rust_high_perf_engine.CopyJob  
-    CopyStats = rust_high_perf_engine.CopyStats
-    
-    print("DEBUG: Successfully imported all classes from compiled Rust engine")
-    print(f"DEBUG: PyEnhancedHighPerfTransferEngine: {PyEnhancedHighPerfTransferEngine}")
-    print(f"DEBUG: CopyJob: {CopyJob}")
-    print(f"DEBUG: CopyStats: {CopyStats}")
-    
-except ImportError as e:
-    print(f"ERROR: Failed to import compiled Rust engine: {e}")
-    # Restore the current directory to path for fallback
-    if current_dir not in sys.path:
-        sys.path.insert(0, current_dir)
-    
-    # Last resort - try the stub module
-    try:
-        from .rust_high_perf_engine import (
-            PyEnhancedHighPerfTransferEngine,
-            CopyJob,
-            CopyStats
-        )
-        print("WARNING: Using stub Rust engine - performance will be severely limited!")
-    except ImportError as e2:
-        print(f"CRITICAL ERROR: No Rust engine available: {e2}")
-        raise e
-
-finally:
-    # Restore current directory to path if it was removed
-    if current_dir not in sys.path:
-        sys.path.insert(0, current_dir)
+    _rust_mod = import_module("forwardflow.ingest.engines.rust_high_perf.rust_high_perf_engine")
+except ImportError as exc:  # pragma: no cover - surfaced during startup
+    raise RuntimeError("Compiled rust_high_perf_engine module is not available") from exc
 
 
-class _QtEmitter(QtCore.QObject if HAS_QT else object):
-    """Qt emitter for marshaling events to the main thread"""
+PyEnhancedHighPerfTransferEngine = _rust_mod.PyEnhancedHighPerfTransferEngine
+CopyJob = _rust_mod.CopyJob
+CopyStats = _rust_mod.CopyStats
+
+
+class _QtEmitter(QtCore.QObject if HAS_QT else object):  # type: ignore[misc]
+    """Marshals Rust callbacks onto the Qt main thread when PyQt6 is present."""
+
     if HAS_QT:
-        # Define signal as class attribute
-        signal = QtCore.pyqtSignal(str, dict)  # (event_type, payload)
+        signal = QtCore.pyqtSignal(str, dict)  # type: ignore[attr-defined]
 
         def __init__(self, sink: Callable[[str, Dict[str, Any]], None]):
             super().__init__()
             self._sink = sink
-            # Connect signal to our handler
-            self.signal.connect(self._handle_signal)
-        
-        def _handle_signal(self, event_type, payload):
-            """Handle the signal and call the sink"""
-            try:
-                self._sink(event_type, payload)
-            except Exception as e:
-                print(f"DEBUG: Error in signal handler: {e}")
-        
-        def emit(self, event_type, payload):
-            """Emit the signal"""
-            try:
-                self.signal.emit(event_type, payload)
-            except Exception as e:
-                print(f"DEBUG: Error emitting signal: {e}")
+            # CRITICAL: Use Qt.QueuedConnection for thread-safe cross-thread signal delivery
+            self.signal.connect(self._on_signal, QtCore.Qt.ConnectionType.QueuedConnection)  # type: ignore[attr-defined]
+
+        def _on_signal(self, event_type: str, payload: Dict[str, Any]) -> None:
+            """Called on Qt main thread to deliver event to sink"""
+            self._sink(event_type, payload)
+
+        def emit(self, event_type: str, payload: Dict[str, Any]) -> None:
+            """Emit signal - Qt automatically marshals to main thread via QueuedConnection"""
+            # Qt signals with QueuedConnection are thread-safe - they automatically 
+            # marshal the call to the receiver's thread (main thread in our case)
+            self.signal.emit(event_type, payload)  # type: ignore[attr-defined]
+
     else:
-        # Fallback: direct call (non-Qt)
-        def __init__(self, sink):
+        def __init__(self, sink: Callable[[str, Dict[str, Any]], None]):
             self._sink = sink
-        def emit(self, event_type, payload):
+
+        def emit(self, event_type: str, payload: Dict[str, Any]) -> None:
             self._sink(event_type, payload)
 
 
 class RustHighPerfEngineWrapper:
-    """
-    Python wrapper for the Rust high-performance transfer engine.
-    
-    This class provides a clean interface to the Rust engine while handling
-    Python-specific conversions and maintaining compatibility with the existing
-    engine interface.
-    """
-    
-    def __init__(self):
-        """Initialize the Rust engine wrapper."""
-        try:
-            self.rust_engine = PyEnhancedHighPerfTransferEngine()
-            self._normalizer = self._default_normalizer()
-            self._qt_sink = None
-            print("DEBUG: Rust engine wrapper initialized successfully")
-        except Exception as e:
-            print(f"ERROR: Failed to initialize Rust engine: {e}")
-            raise
-    
-    def _default_normalizer(self):
-        """Map Rust -> UI: event name & keys; adjust to your UI schema here."""
-        def normalize(event_type: str, payload: Dict[str, Any]):
-            # Example maps job_progress -> progress_update, snake_case -> camelCase
-            et = {"job_progress": "progress_update"}.get(event_type, event_type)
-            pl = dict(payload)
+    """Python-side façade that normalises events and return values."""
 
-            # Key renames snake_case -> camelCase
-            mapping = {
-                "bytes_copied": "bytesCopied",
-                "total_bytes": "totalBytes",
-                "files_completed": "completedFiles",
-                "total_files": "totalFiles",
-                "elapsed_s": "elapsedS",
-                "speed_mib_s": "avgSpeedMiBps",
-                "current_speed_mib_s": "currentSpeedMiBps",
-                "peak_speed_mib_s": "peakSpeedMiBps",
-                "file_id": "fileId",
-                "dest_path": "destPath",
-            }
-            for k_src, k_dst in mapping.items():
-                if k_src in pl:
-                    pl[k_dst] = pl.pop(k_src)
+    def __init__(self) -> None:
+        self._engine = PyEnhancedHighPerfTransferEngine()
+        self._normalise_event = self._build_normaliser()
+        self._qt_bridge: _QtEmitter | None = None
 
-            return et, pl
-        return normalize
-    
+    @staticmethod
+    def _build_normaliser() -> Callable[[str, Dict[str, Any]], tuple[str, Dict[str, Any]]]:
+        rename = {
+            "job_progress": "progress_update",
+            "bytes_copied": "bytesCopied",
+            "total_bytes": "totalBytes",
+            "files_completed": "completedFiles",
+            "total_files": "totalFiles",
+            "elapsed_s": "elapsedS",
+            "speed_mib_s": "avgSpeedMiBps",
+            "current_speed_mib_s": "currentSpeedMiBps",
+            "peak_speed_mib_s": "peakSpeedMiBps",
+            "dest_path": "destPath",
+        }
+
+        def normalise(event_type: str, payload: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+            mapped_type = rename.get(event_type, event_type)
+            mapped_payload = {rename.get(k, k): v for k, v in payload.items()}
+            return mapped_type, mapped_payload
+
+        return normalise
+
+    def get_event_queue_handle(self):
+        """Get event queue handle for GIL-free event pump architecture"""
+        return self._engine.get_event_queue_handle()
+
     def set_event_sink(self, sink: Callable[[str, Dict[str, Any]], None]) -> None:
-        """
-        Set the event sink for receiving engine events.
-        This marshals into the Qt main thread if PyQt is present.
-        
-        Args:
-            sink: Event sink object that will receive engine events
-        """
-        try:
-            # Use direct call approach to avoid Qt signal issues
-            def rust_handler(event_type: str, payload: dict):
-                try:
-                    et, pl = self._normalizer(event_type, payload)
-                    sink(et, pl)
-                except Exception as e:
-                    print(f"DEBUG: Error in event handler: {e}")
+        """DEPRECATED: Use get_event_queue_handle() + event pump instead (prevents GIL deadlock)"""
+        def handle(event_type: str, payload: Dict[str, Any]) -> None:
+            mapped_type, mapped_payload = self._normalise_event(event_type, payload)
+            sink(mapped_type, mapped_payload)
 
-            self.rust_engine.set_event_sink(rust_handler)
-            print("DEBUG: Rust event sink set successfully")
-        except Exception as e:
-            print(f"DEBUG: Error setting Rust event sink: {e}")
-            import traceback
-            traceback.print_exc()
-    
-    def copy_files(self, rust_job) -> Dict[str, Any]:
-        """
-        Call into Rust engine, but always return a plain dict with normalized names.
-        
-        Args:
-            rust_job: CopyJob object for the Rust engine
-            
-        Returns:
-            Dictionary containing copy results and statistics with normalized names
-        """
-        try:
-            print(f"DEBUG: Rust engine copy_files called with job: {rust_job}")
-            
-            # Pass the CopyJob object to the Rust engine
-            result = self.rust_engine.copy_files(rust_job)  # PyO3 CopyStats
-            
-            print(f"DEBUG: Rust engine returned: {result}")
-            
-            # Map PyO3 attrs -> dict the UI layer expects
-            return {
-                "jobId": getattr(result, "job_id", ""),
-                "startTime": getattr(result, "start_time", 0.0),
-                "endTime": getattr(result, "end_time", 0.0),
-                "totalFiles": getattr(result, "total_files", 0),
-                "completedFiles": getattr(result, "copied_files", getattr(result, "completed_files", 0)),
-                "totalBytes": getattr(result, "total_bytes", 0),
-                "completedBytes": getattr(result, "copied_bytes", getattr(result, "completed_bytes", 0)),
-                # Use MiB/s consistently
-                "avgSpeedMiBps": getattr(result, "speed_mbps", getattr(result, "speed_mib_s", 0.0)),
-                "dataMiBps": getattr(result, "data_mbps", getattr(result, "data_mib_s", 0.0)),
-                "dataElapsedS": getattr(result, "data_elapsed_s", 0.0),
-                "errors": list(getattr(result, "errors", [])),
-                "fileRecords": list(getattr(result, "files", getattr(result, "file_records", []))),
-            }
-            
-        except Exception as e:
-            print(f"ERROR: Rust engine copy_files failed: {e}")
-            import traceback
-            traceback.print_exc()
-            return {
-                'status': 'error',
-                'error': f'Rust engine error: {str(e)}',
-                'files_copied': 0,
-                'bytes_copied': 0,
-                'errors': [str(e)]
-            }
-    
+        if HAS_QT and isinstance(sink, QtCore.QObject):  # type: ignore[truthy-function]
+            self._qt_bridge = _QtEmitter(handle)
+            self._engine.set_event_sink(self._qt_bridge.emit)
+        else:
+            self._qt_bridge = None
+            self._engine.set_event_sink(handle)
+
+    def copy_files(self, job: Any) -> Dict[str, Any]:
+        result = self._engine.copy_files(job)
+        return {
+            "jobId": getattr(result, "job_id", ""),
+            "startTime": getattr(result, "start_time", 0.0),
+            "endTime": getattr(result, "end_time", 0.0),
+            "totalFiles": getattr(result, "total_files", 0),
+            "completedFiles": getattr(result, "copied_files", getattr(result, "completed_files", 0)),
+            "totalBytes": getattr(result, "total_bytes", 0),
+            "completedBytes": getattr(result, "copied_bytes", getattr(result, "completed_bytes", 0)),
+            "avgSpeedMiBps": getattr(result, "speed_mib_s", getattr(result, "speed_mbps", 0.0)),
+            "dataMiBps": getattr(result, "data_mib_s", getattr(result, "data_mbps", 0.0)),
+            "dataElapsedS": getattr(result, "data_elapsed_s", 0.0),
+            "errors": list(getattr(result, "errors", [])),
+            "fileRecords": list(getattr(result, "files", getattr(result, "file_records", []))),
+        }
+
     def cancel(self) -> None:
-        """Cancel the current operation."""
-        try:
-            self.rust_engine.cancel()
-            print("DEBUG: Rust engine cancel called")
-        except Exception as e:
-            print(f"ERROR: Rust engine cancel failed: {e}")
-    
+        self._engine.cancel()
+
     def pause(self) -> None:
-        """Pause the current operation."""
-        try:
-            self.rust_engine.pause()
-            print("DEBUG: Rust engine pause called")
-        except Exception as e:
-            print(f"ERROR: Rust engine pause failed: {e}")
-    
+        self._engine.pause()
+
     def resume(self) -> None:
-        """Resume the current operation."""
-        try:
-            self.rust_engine.resume()
-            print("DEBUG: Rust engine resume called")
-        except Exception as e:
-            print(f"ERROR: Rust engine resume failed: {e}")
-    
+        self._engine.resume()
+
     def is_cancelled(self) -> bool:
-        """Check if the operation is cancelled."""
-        try:
-            return self.rust_engine.is_cancelled()
-        except Exception as e:
-            print(f"ERROR: Rust engine is_cancelled failed: {e}")
-            return False
-    
+        return self._engine.is_cancelled()
+
     def is_paused(self) -> bool:
-        """Check if the operation is paused."""
-        try:
-            return self.rust_engine.is_paused()
-        except Exception as e:
-            print(f"ERROR: Rust engine is_paused failed: {e}")
-            return False
-    
+        return self._engine.is_paused()
+
     def get_enhanced_stats(self) -> Dict[str, Any]:
-        """Get enhanced statistics with normalized names."""
-        try:
-            stats = self.rust_engine.get_enhanced_stats()
-            # Ensure MiB/s names and camelCase:
-            mapping = {
-                "bytes_copied": "bytesCopied",
-                "total_bytes": "totalBytes",
-                "files_completed": "completedFiles",
-                "total_files": "totalFiles",
-                "elapsed_s": "elapsedS",
-                "speed_mib_s": "avgSpeedMiBps",
-            }
-            out = {}
-            for k, v in stats.items():
-                out[mapping.get(k, k)] = v
-            return out
-        except Exception as e:
-            print(f"ERROR: Rust engine get_enhanced_stats failed: {e}")
-            return {
-                'total_files': 0,
-                'completed_files': 0,
-                'total_bytes': 0,
-                'completed_bytes': 0,
-                'avgSpeedMiBps': 0.0,
-                'file_records': []
-            }
-    
+        stats = self._engine.get_enhanced_stats()
+        mapping = {
+            "bytes_copied": "bytesCopied",
+            "total_bytes": "totalBytes",
+            "files_completed": "completedFiles",
+            "total_files": "totalFiles",
+            "elapsed_s": "elapsedS",
+            "speed_mib_s": "avgSpeedMiBps",
+        }
+        return {mapping.get(key, key): value for key, value in stats.items()}
+
     def get_progress(self) -> Dict[str, Any]:
-        """Get current progress information (legacy method)."""
         return self.get_enhanced_stats()

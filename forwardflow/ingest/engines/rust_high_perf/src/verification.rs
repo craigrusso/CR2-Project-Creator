@@ -1,17 +1,17 @@
 //! Hash verification and integrity checking
 
+use anyhow::Result;
+use blake3::Hasher as Blake3Hasher;
+use md5;
+use sha2::{Digest, Sha256};
+use sha3::Sha3_256;
 use std::collections::HashMap;
 use std::fs::File;
+use std::hash::Hasher;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::hash::Hasher;
-use anyhow::Result;
 use xxhash_rust::xxh3::Xxh3;
-use sha2::{Sha256, Digest};
-use sha3::Sha3_256;
-use md5;
-use blake3::Hasher as Blake3Hasher;
 
 use crate::data_structures::FileTransferRecord;
 use pyo3::prelude::*;
@@ -41,11 +41,11 @@ impl HashAlgorithm {
             _ => HashAlgorithm::XxHash64, // Default to xxHash64 for best performance
         }
     }
-    
+
     pub fn parse(s: &str) -> Result<Self, String> {
         Ok(Self::from_string(s))
     }
-    
+
     pub fn to_string(&self) -> String {
         match self {
             HashAlgorithm::XxHash64 => "xxhash64".to_string(),
@@ -100,12 +100,12 @@ impl HashCalculator {
     pub fn new(algorithm: HashAlgorithm) -> Self {
         Self { algorithm }
     }
-    
+
     /// Calculate hash for a file
     pub fn calculate_file_hash(&self, file_path: &Path) -> Result<String> {
         let mut file = File::open(file_path)?;
         let mut buffer = vec![0u8; 64 * 1024]; // 64KB buffer
-        
+
         match self.algorithm {
             HashAlgorithm::XxHash64 | HashAlgorithm::XxHash64BE => {
                 // Use xxHash3 for both XxHash64 variants
@@ -119,7 +119,7 @@ impl HashCalculator {
                 }
                 Ok(format!("{:016x}", hasher.finish()))
             }
-            
+
             HashAlgorithm::XxHash128 => {
                 // Use xxHash3 with 128-bit output (using same as 64-bit for compatibility)
                 let mut hasher = Xxh3::new();
@@ -132,7 +132,7 @@ impl HashCalculator {
                 }
                 Ok(format!("{:032x}", hasher.finish()))
             }
-            
+
             HashAlgorithm::Sha256 => {
                 let mut hasher = Sha256::new();
                 loop {
@@ -144,7 +144,7 @@ impl HashCalculator {
                 }
                 Ok(format!("{:x}", hasher.finalize()))
             }
-            
+
             HashAlgorithm::Sha3 => {
                 let mut hasher = Sha3_256::new();
                 loop {
@@ -156,7 +156,7 @@ impl HashCalculator {
                 }
                 Ok(format!("{:x}", hasher.finalize()))
             }
-            
+
             HashAlgorithm::Md5 => {
                 let mut hasher = md5::Context::new();
                 loop {
@@ -168,7 +168,7 @@ impl HashCalculator {
                 }
                 Ok(format!("{:x}", hasher.compute()))
             }
-            
+
             HashAlgorithm::Blake3 => {
                 let mut hasher = Blake3Hasher::new();
                 loop {
@@ -182,7 +182,7 @@ impl HashCalculator {
             }
         }
     }
-    
+
     /// Calculate hash for a specific range of a file
     pub fn calculate_file_range_hash(
         &self,
@@ -192,10 +192,10 @@ impl HashCalculator {
     ) -> Result<String> {
         let mut file = File::open(file_path)?;
         file.seek(SeekFrom::Start(start_offset))?;
-        
+
         let mut buffer = vec![0u8; 64 * 1024]; // 64KB buffer
         let mut remaining = length;
-        
+
         match self.algorithm {
             HashAlgorithm::XxHash64 => {
                 let mut hasher = Xxh3::new();
@@ -210,7 +210,7 @@ impl HashCalculator {
                 }
                 Ok(format!("{:016x}", hasher.finish()))
             }
-            
+
             HashAlgorithm::Sha256 => {
                 let mut hasher = Sha256::new();
                 while remaining > 0 {
@@ -224,14 +224,13 @@ impl HashCalculator {
                 }
                 Ok(format!("{:x}", hasher.finalize()))
             }
-            
-            HashAlgorithm::XxHash64BE | HashAlgorithm::XxHash128 | HashAlgorithm::Sha3 | HashAlgorithm::Md5 => {
-                Ok("placeholder_hash".to_string())
-            }
-            
-            HashAlgorithm::Blake3 => {
-                Ok("blake3_placeholder".to_string())
-            }
+
+            HashAlgorithm::XxHash64BE
+            | HashAlgorithm::XxHash128
+            | HashAlgorithm::Sha3
+            | HashAlgorithm::Md5 => Ok("placeholder_hash".to_string()),
+
+            HashAlgorithm::Blake3 => Ok("blake3_placeholder".to_string()),
         }
     }
 }
@@ -249,7 +248,7 @@ impl VerificationManager {
             hash_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
-    
+
     /// Verify a single file transfer
     pub fn verify_file_transfer(
         &self,
@@ -258,7 +257,7 @@ impl VerificationManager {
         algorithm: HashAlgorithm,
     ) -> Result<HashVerificationResult> {
         let start_time = std::time::Instant::now();
-        
+
         // Check cache first
         let cache_key = format!("{}:{}", source_path.display(), algorithm.to_string());
         if let Ok(cache) = self.hash_cache.lock() {
@@ -266,7 +265,7 @@ impl VerificationManager {
                 // Verify destination against cached source hash
                 let dest_hash = self.calculate_destination_hash(destination_path, &algorithm)?;
                 let verification_passed = cached_hash == &dest_hash;
-                
+
                 let result = HashVerificationResult::new(
                     algorithm.clone(),
                     cached_hash.clone(),
@@ -275,27 +274,27 @@ impl VerificationManager {
                     None,
                     start_time.elapsed().as_millis() as u64,
                 );
-                
+
                 return Ok(result);
             }
         }
-        
+
         // Calculate hashes
         let source_hash = self.calculate_source_hash(source_path, &algorithm)?;
         let dest_hash = self.calculate_destination_hash(destination_path, &algorithm)?;
-        
+
         let verification_passed = source_hash == dest_hash;
         let error_message = if !verification_passed {
             Some("Hash mismatch detected".to_string())
         } else {
             None
         };
-        
+
         // Cache the source hash
         if let Ok(mut cache) = self.hash_cache.lock() {
             cache.insert(cache_key, source_hash.clone());
         }
-        
+
         let result = HashVerificationResult::new(
             algorithm,
             source_hash,
@@ -304,29 +303,37 @@ impl VerificationManager {
             error_message,
             start_time.elapsed().as_millis() as u64,
         );
-        
+
         Ok(result)
     }
-    
+
     /// Calculate source file hash
-    fn calculate_source_hash(&self, source_path: &Path, algorithm: &HashAlgorithm) -> Result<String> {
+    fn calculate_source_hash(
+        &self,
+        source_path: &Path,
+        algorithm: &HashAlgorithm,
+    ) -> Result<String> {
         let calculator = HashCalculator::new(algorithm.clone());
         calculator.calculate_file_hash(source_path)
     }
-    
+
     /// Calculate destination file hash
-    fn calculate_destination_hash(&self, destination_path: &Path, algorithm: &HashAlgorithm) -> Result<String> {
+    fn calculate_destination_hash(
+        &self,
+        destination_path: &Path,
+        algorithm: &HashAlgorithm,
+    ) -> Result<String> {
         let calculator = HashCalculator::new(algorithm.clone());
         calculator.calculate_file_hash(destination_path)
     }
-    
+
     /// Add a verification record
     pub fn add_verification_record(&self, record: FileTransferRecord) {
         if let Ok(mut records) = self.verification_records.lock() {
             records.push(record);
         }
     }
-    
+
     /// Get all verification records
     pub fn get_verification_records(&self) -> Vec<FileTransferRecord> {
         if let Ok(records) = self.verification_records.lock() {
@@ -335,14 +342,14 @@ impl VerificationManager {
             Vec::new()
         }
     }
-    
+
     /// Clear verification cache
     pub fn clear_cache(&self) {
         if let Ok(mut cache) = self.hash_cache.lock() {
             cache.clear();
         }
     }
-    
+
     /// Get cache statistics
     pub fn get_cache_stats(&self) -> (usize, usize) {
         if let Ok(cache) = self.hash_cache.lock() {
@@ -367,7 +374,7 @@ impl PyVerificationManager {
             inner: Arc::new(VerificationManager::new()),
         }
     }
-    
+
     fn verify_file_transfer(
         &self,
         source_path: String,
@@ -377,31 +384,32 @@ impl PyVerificationManager {
         let source_path = std::path::Path::new(&source_path);
         let destination_path = std::path::Path::new(&destination_path);
         let algorithm = HashAlgorithm::from_string(&algorithm);
-        
-        match self.inner.verify_file_transfer(source_path, destination_path, algorithm) {
-            Ok(result) => {
-                Python::with_gil(|py| {
-                    let py_result = pyo3::types::PyDict::new(py);
-                    py_result.set_item("algorithm", result.algorithm.to_string())?;
-                    py_result.set_item("source_hash", result.source_hash)?;
-                    py_result.set_item("destination_hash", result.destination_hash)?;
-                    py_result.set_item("verification_passed", result.verification_passed)?;
-                    if let Some(error) = result.error_message {
-                        py_result.set_item("error_message", error)?;
-                    }
-                    py_result.set_item("verification_time_ms", result.verification_time_ms)?;
-                    
-                    Ok(py_result.into_py(py))
-                })
-            },
+
+        match self
+            .inner
+            .verify_file_transfer(source_path, destination_path, algorithm)
+        {
+            Ok(result) => Python::with_gil(|py| {
+                let py_result = pyo3::types::PyDict::new(py);
+                py_result.set_item("algorithm", result.algorithm.to_string())?;
+                py_result.set_item("source_hash", result.source_hash)?;
+                py_result.set_item("destination_hash", result.destination_hash)?;
+                py_result.set_item("verification_passed", result.verification_passed)?;
+                if let Some(error) = result.error_message {
+                    py_result.set_item("error_message", error)?;
+                }
+                py_result.set_item("verification_time_ms", result.verification_time_ms)?;
+
+                Ok(py_result.into_py(py))
+            }),
             Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e.to_string())),
         }
     }
-    
+
     fn clear_cache(&self) {
         self.inner.clear_cache();
     }
-    
+
     fn get_cache_stats(&self) -> PyResult<(usize, usize)> {
         Ok(self.inner.get_cache_stats())
     }

@@ -1,0 +1,13 @@
+[build]
+rustflags = [
+    "-L", "/Library/Frameworks/Python.framework/Versions/3.12/lib",
+    "-l", "python3.12",
+    "-C", "link-arg=-Wl,-rpath,@loader_path",
+]
+
+[env]
+LDFLAGS = "-L/Library/Frameworks/Python.framework/Versions/3.12/lib -lpython3.12"
+CPPFLAGS = "-I/Library/Frameworks/Python.framework/Versions/3.12/include/python3.12"
+LIBRARY_PATH = "/Library/Frameworks/Python.framework/Versions/3.12/lib"
+DYLD_FALLBACK_LIBRARY_PATH = "/Library/Frameworks/Python.framework/Versions/3.12/lib"
+PYO3_PYTHON = "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3"

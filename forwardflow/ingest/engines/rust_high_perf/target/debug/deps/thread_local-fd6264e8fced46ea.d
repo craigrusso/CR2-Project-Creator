@@ -1,8 +1,0 @@
-/Users/craigrusso/SynologyDrive/SCRIPTS/CLAUDE_PROJECT_CREATOR/FF_V1_1/forwardflow/ingest/engines/rust_high_perf/target/debug/deps/thread_local-fd6264e8fced46ea.d: /Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/lib.rs /Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/cached.rs /Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/thread_id.rs /Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/unreachable.rs
-
-/Users/craigrusso/SynologyDrive/SCRIPTS/CLAUDE_PROJECT_CREATOR/FF_V1_1/forwardflow/ingest/engines/rust_high_perf/target/debug/deps/libthread_local-fd6264e8fced46ea.rmeta: /Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/lib.rs /Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/cached.rs /Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/thread_id.rs /Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/unreachable.rs
-
-/Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/lib.rs:
-/Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/cached.rs:
-/Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/thread_id.rs:
-/Users/craigrusso/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thread_local-1.1.9/src/unreachable.rs:

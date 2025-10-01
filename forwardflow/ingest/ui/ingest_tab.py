@@ -172,15 +172,17 @@ def build_ingest_tab():
     root.vm = vm
     print("DEBUG: VM attached to root widget")
     
-    # Timer for updating elapsed time display
-    root.time_update_timer = QTimer()
-    root.time_update_timer.timeout.connect(lambda: update_elapsed_time())
-    root.time_update_timer.start(1000)  # Update every second
-    
-    # Timer for updating stats more frequently
-    root.stats_update_timer = QTimer()
-    root.stats_update_timer.timeout.connect(lambda: update_stats())
-    root.stats_update_timer.start(100)  # Update every 100ms for real-time responsiveness
+    # DISABLED: Timers cause GIL deadlock with Rust worker thread
+    # Use event-driven updates from event pump instead
+    # root.time_update_timer = QTimer()
+    # root.time_update_timer.timeout.connect(lambda: update_elapsed_time())
+    # root.time_update_timer.start(1000)  # Update every second
+
+    # DISABLED: Timers cause GIL deadlock with Rust worker thread
+    # Use event-driven updates from event pump instead
+    # root.stats_update_timer = QTimer()
+    # root.stats_update_timer.timeout.connect(lambda: update_stats())
+    # root.stats_update_timer.start(100)  # Update every 100ms for real-time responsiveness
     
     def update_elapsed_time():
         """Update elapsed time display every second"""
@@ -227,10 +229,12 @@ def build_ingest_tab():
             super().__init__()
             print("DEBUG: QtSink.__init__ called")
             self.pending_events = []
-            self._timer = QTimer()
-            self._timer.timeout.connect(self._process_pending_events)
-            self._timer.start(100)  # Process events every 100ms to prevent UI flooding
-            print(f"DEBUG: QtSink timer started with interval 100ms")
+            # DISABLED: Timer causes GIL deadlock with Rust worker thread
+            # Event pump handles all event processing now
+            # self._timer = QTimer()
+            # self._timer.timeout.connect(self._process_pending_events)
+            # self._timer.start(100)  # Process events every 100ms to prevent UI flooding
+            # print(f"DEBUG: QtSink timer started with interval 100ms")
             self._lock = threading.Lock()  # Add thread safety
             self._widgets_valid = True  # Track if widgets are still valid
             self._processing = False  # Prevent re-entrant processing

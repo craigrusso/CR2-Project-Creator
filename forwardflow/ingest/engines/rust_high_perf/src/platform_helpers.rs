@@ -1,9 +1,9 @@
 //! Cross-platform utilities and helpers
 
-use std::path::{Path, PathBuf};
-use std::fs;
-use std::os::unix::fs::{PermissionsExt, MetadataExt};
 use anyhow::Result;
+use std::fs;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::path::{Path, PathBuf};
 
 cfg_if::cfg_if! {
     if #[cfg(target_os = "windows")] {
@@ -34,11 +34,11 @@ impl DiskSpaceInfo {
             free_bytes: free,
         }
     }
-    
+
     pub fn used_bytes(&self) -> u64 {
         self.total_bytes.saturating_sub(self.available_bytes)
     }
-    
+
     pub fn usage_percent(&self) -> f64 {
         if self.total_bytes > 0 {
             (self.used_bytes() as f64 / self.total_bytes as f64) * 100.0
@@ -66,14 +66,17 @@ pub fn get_disk_space(path: &Path) -> Result<DiskSpaceInfo> {
 #[cfg(target_os = "windows")]
 fn get_disk_space_windows(path: &Path) -> Result<DiskSpaceInfo> {
     use std::ptr;
-    
+
     let path_str = path.to_string_lossy();
-    let wide_path: Vec<u16> = OsStr::new(&path_str).encode_wide().chain(std::iter::once(0)).collect();
-    
+    let wide_path: Vec<u16> = OsStr::new(&path_str)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
     let mut free_bytes_available: i64 = 0;
     let mut total_number_of_bytes: i64 = 0;
     let mut total_number_of_free_bytes: i64 = 0;
-    
+
     let result = unsafe {
         GetDiskFreeSpaceExW(
             wide_path.as_ptr(),
@@ -82,7 +85,7 @@ fn get_disk_space_windows(path: &Path) -> Result<DiskSpaceInfo> {
             &mut total_number_of_free_bytes as *mut _ as *mut _,
         )
     };
-    
+
     if result != 0 {
         Ok(DiskSpaceInfo::new(
             total_number_of_bytes as u64,
@@ -111,7 +114,7 @@ fn get_disk_space_linux(path: &Path) -> Result<DiskSpaceInfo> {
 fn get_disk_space_generic(path: &Path) -> Result<DiskSpaceInfo> {
     // Generic implementation using std::fs
     let metadata = fs::metadata(path)?;
-    
+
     // This is a simplified implementation - in practice, we'd need
     // platform-specific calls to get accurate disk space information
     Ok(DiskSpaceInfo::new(
@@ -124,31 +127,31 @@ fn get_disk_space_generic(path: &Path) -> Result<DiskSpaceInfo> {
 /// Check if a path is a cloud storage location
 pub fn is_cloud_storage(path: &Path) -> bool {
     let path_str = path.to_string_lossy().to_lowercase();
-    
+
     // Common cloud storage patterns
-    path_str.contains("onedrive") ||
-    path_str.contains("dropbox") ||
-    path_str.contains("google drive") ||
-    path_str.contains("icloud") ||
-    path_str.contains("box") ||
-    path_str.contains("mega") ||
-    path_str.contains("pcloud") ||
-    path_str.contains("sync.com") ||
-    path_str.contains("tresorit") ||
-    path_str.contains("spideroak")
+    path_str.contains("onedrive")
+        || path_str.contains("dropbox")
+        || path_str.contains("google drive")
+        || path_str.contains("icloud")
+        || path_str.contains("box")
+        || path_str.contains("mega")
+        || path_str.contains("pcloud")
+        || path_str.contains("sync.com")
+        || path_str.contains("tresorit")
+        || path_str.contains("spideroak")
 }
 
 /// Get the root path of a cloud storage location
 pub fn get_cloud_root(path: &Path) -> Option<PathBuf> {
     let mut current = path;
-    
+
     while let Some(parent) = current.parent() {
         if is_cloud_storage(parent) {
             return Some(parent.to_path_buf());
         }
         current = parent;
     }
-    
+
     None
 }
 
@@ -255,7 +258,7 @@ pub fn is_regular_file(path: &Path) -> bool {
 pub fn get_file_permissions_string(path: &Path) -> Result<String> {
     let metadata = fs::metadata(path)?;
     let permissions = metadata.permissions();
-    
+
     // Simplified permission string - in practice, we'd parse the actual permissions
     Ok("rw-r--r--".to_string())
 }
@@ -286,7 +289,7 @@ pub fn paths_point_to_same_file(path1: &Path, path2: &Path) -> bool {
         let dev2 = metadata2.dev();
         let ino1 = metadata1.ino();
         let ino2 = metadata2.ino();
-        
+
         return dev1 == dev2 && ino1 == ino2;
     }
     false

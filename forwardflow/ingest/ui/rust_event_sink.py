@@ -36,10 +36,11 @@ class RustEventSink(QObject):
         self._completed_destinations = set()  # Track which destinations are complete
         self._last_destination_check = {}     # Track destination progress for completion detection
         
-        # Thread-safe timer for periodic updates
-        self.update_timer = QTimer()
-        self.update_timer.setSingleShot(False)
-        self.update_timer.timeout.connect(self._periodic_update)
+        # DISABLED: Update timer removed - causes GIL deadlock with event pump
+        # The event pump architecture replaces timer-based polling
+        # self.update_timer = QTimer()
+        # self.update_timer.setSingleShot(False)
+        # self.update_timer.timeout.connect(self._periodic_update)
         
         print("DEBUG: Professional RustEventSink with EventBridge initialized")
     
@@ -81,16 +82,18 @@ class RustEventSink(QObject):
         """Initialize EventBridge for a new transfer job"""
         # Direct initialization - we're already in the main thread
         self.event_bridge.initialize_job(total_files, destinations)
-        
+
         # Clear file records and destination completion tracking
         self._file_records.clear()
         self._completed_destinations.clear()
         self._last_destination_check.clear()
-        
-        # Start periodic update timer
-        if not self.update_timer.isActive():
-            self.update_timer.start(1000)  # Update every 1 second
-        
+
+        # CRITICAL FIX: DO NOT START TIMER - it causes GIL deadlock
+        # The timer tries to acquire GIL from main thread while worker thread holds it
+        # Rust events come directly, no polling needed
+        # if not self.update_timer.isActive():
+        #     self.update_timer.start(1000)
+
         print(f"DEBUG: EventBridge initialized for {total_files} files to {destinations}")
     
     def emit(self, event_type: str, payload: dict) -> None:
@@ -313,16 +316,20 @@ class RustEventSink(QObject):
         return bridge_stats
     
     def start_safe_timers(self) -> None:
-        """Start timers safely from main thread"""
-        if not self.update_timer.isActive():
-            self.update_timer.start(1000)
+        """Start timers safely from main thread - DISABLED for GIL-free architecture"""
+        # DISABLED: Update timer causes GIL deadlock
+        # if not self.update_timer.isActive():
+        #     self.update_timer.start(1000)
+        pass
     
     @pyqtSlot()
     def _stop_timers_on_ui_thread(self):
-        """Stop timers on UI thread - thread-safe"""
-        if self.update_timer.isActive():
-            self.update_timer.stop()
-            print("DEBUG: RustEventSink update timer stopped on UI thread")
+        """Stop timers on UI thread - DISABLED for GIL-free architecture"""
+        # DISABLED: Update timer no longer exists
+        # if self.update_timer.isActive():
+        #     self.update_timer.stop()
+        #     print("DEBUG: RustEventSink update timer stopped on UI thread")
+        pass
     
     def stop_safe_timers(self) -> None:
         """Stop timers safely from any thread"""

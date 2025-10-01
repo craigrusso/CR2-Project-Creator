@@ -44,10 +44,11 @@ class DestinationWidget(QFrame):
             'eta_seconds': 0.0
         }
         
-        # Smoothing timer for gradual updates (60 FPS for smooth animation)
-        self.smooth_timer = QTimer()
-        self.smooth_timer.timeout.connect(self._smooth_update)
-        self.smooth_timer.setInterval(16)  # ~60 FPS (16.67ms)
+        # DISABLED: Smoothing timer causes GIL deadlock with Rust worker thread
+        # Updates now come directly from event pump
+        # self.smooth_timer = QTimer()
+        # self.smooth_timer.timeout.connect(self._smooth_update)
+        # self.smooth_timer.setInterval(16)  # ~60 FPS (16.67ms)
         
         # Animation parameters
         self.animation_speed = 0.15  # Interpolation factor (0.1 = slower, 0.3 = faster)
@@ -278,9 +279,9 @@ class DestinationWidget(QFrame):
         self.eta_label = eta_label
         self.status_label = status_label
         
-        # Start smoothing timer
-        self.smooth_timer.start()
-        print(f"DEBUG: Started smoothing timer for destination {self.path}")
+        # DISABLED: Smoothing timer causes GIL deadlock
+        # self.smooth_timer.start()
+        # print(f"DEBUG: Started smoothing timer for destination {self.path}")
         
     def remove_self(self):
         """Remove this destination widget"""
@@ -351,26 +352,31 @@ class DestinationWidget(QFrame):
             
             self.target_values['eta_seconds'] = eta_seconds
             self.last_update_time = current_time
-            
+
+            # CRITICAL FIX: Update current values immediately (no smoothing) to avoid GIL deadlock from QTimer
+            self.current_values['progress'] = progress_percent
+            self.current_values['current_speed'] = current_speed
+            self.current_values['eta_seconds'] = eta_seconds
+
             # Immediate updates for status changes
             if progress_percent >= 100:
                 self.status_label.setText("Completed")
                 self.status_label.setStyleSheet("color: #10b981; font-weight: bold;")
-                # Stop smoothing timer for completed destinations
-                if self.smooth_timer.isActive():
-                    self.smooth_timer.stop()
                 # Set final values immediately
                 self.current_values['progress'] = 100.0
-                self._update_ui_elements()
             elif progress_percent > 0:
                 self.status_label.setText("Transferring")
                 self.status_label.setStyleSheet("color: #3b82f6; font-weight: bold;")
-                # Ensure smoothing timer is running
-                if not self.smooth_timer.isActive():
-                    self.smooth_timer.start()
             else:
                 self.status_label.setText("Ready")
-            
+
+            # CRITICAL FIX: Manually update UI elements and force repaint (no QTimer)
+            self._update_ui_elements()
+
+            # CRITICAL FIX: Force Qt to repaint immediately
+            self.update()  # Schedule repaint
+            self.repaint()  # Force immediate repaint
+
             print(f"DEBUG: Updated target values for destination {dest_path}: progress={progress_percent:.1f}%, speed={current_speed:.1f}MB/s")
             
         except Exception as e:
@@ -456,17 +462,19 @@ class SourceDestinationSection(QWidget):
         self.recent_destinations = recent_destinations or []
         
         # Timer to periodically check destination availability
-        self.availability_timer = QTimer()
-        self.availability_timer.timeout.connect(self.refresh_destination_availability)
-        self.availability_timer.setSingleShot(False)
-        self.availability_timer.setInterval(30000)  # Check every 30 seconds
+        # DISABLED: Availability timer causes GIL deadlock with Rust worker thread
+        # Destination availability checked on-demand only
+        # self.availability_timer = QTimer()
+        # self.availability_timer.timeout.connect(self.refresh_destination_availability)
+        # self.availability_timer.setSingleShot(False)
+        # self.availability_timer.setInterval(30000)  # Check every 30 seconds
         
         self.setup_ui()
         self.populate_recent_locations()
         
-        # Start the availability checking timer
-        self.availability_timer.start()
-        print("DEBUG: Started destination availability checking timer (30s interval)")
+        # DISABLED: Availability timer causes GIL deadlock
+        # self.availability_timer.start()
+        # print("DEBUG: Started destination availability checking timer (30s interval)")
         
     def setup_ui(self):
         """Setup the source and destination UI"""
@@ -624,16 +632,20 @@ class SourceDestinationSection(QWidget):
         if self._updating_combo or index < 0:
             return
         
-        # Get the selected text
+        # Get the selected text and clean it (remove warning indicators)
         selected_text = self.dest_combo.itemText(index).strip()
         
+        # CRITICAL FIX: Clean the path to remove warning emojis and status text
+        # This handles cases where user selects from dropdown that has formatted text
+        clean_path = selected_text.replace("⚠️ ", "").replace(" (Unavailable)", "").strip()
+        
         # Only auto-add if it's a valid path and not already added
-        if (selected_text and selected_text != self.dest_combo.placeholderText() and
-            selected_text not in [widget.path for widget in self.destination_widgets]):
+        if (clean_path and clean_path != self.dest_combo.placeholderText() and
+            clean_path not in [widget.path for widget in self.destination_widgets]):
             
-            print(f"DEBUG: Auto-adding destination from dropdown selection: {selected_text}")
+            print(f"DEBUG: Auto-adding destination from dropdown selection: {clean_path}")
             # Auto-add the destination
-            self.add_destination(selected_text)
+            self.add_destination(clean_path)
             
             # Clear the combo box after adding
             self._updating_combo = True
@@ -789,24 +801,33 @@ class SourceDestinationSection(QWidget):
         for i in range(self.dest_combo.count()):
             item = model.item(i)
             if item:
-                dest_path = self.dest_combo.itemText(i)
+                # CRITICAL FIX: Always get the clean path from UserRole (original path)
+                # If UserRole not set, clean the current display text and store it
+                original_path = item.data(Qt.ItemDataRole.UserRole)
+                if not original_path:
+                    # First time - store the original clean path
+                    display_text = self.dest_combo.itemText(i)
+                    original_path = display_text.replace("⚠️ ", "").replace(" (Unavailable)", "").strip()
+                    item.setData(original_path, Qt.ItemDataRole.UserRole)
                 
-                # Check if destination is available
-                is_available = self._check_destination_availability(dest_path)
+                # Check if destination is available using the ORIGINAL clean path
+                is_available = self._check_destination_availability(original_path)
                 
                 if not is_available:
                     # Grey out unavailable destinations
                     item.setData(QColor(colors['secondary_text']), Qt.ItemDataRole.ForegroundRole)
-                    item.setData(f"⚠️ {dest_path} (Unavailable)", Qt.ItemDataRole.DisplayRole)
+                    # Set display text with warning (always clean, no duplicates)
+                    item.setData(f"⚠️ {original_path} (Unavailable)", Qt.ItemDataRole.DisplayRole)
                     # Make it unselectable
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable & ~Qt.ItemFlag.ItemIsEnabled)
                 else:
                     # Ensure available destinations are properly styled
                     item.setData(QColor(colors['text']), Qt.ItemDataRole.ForegroundRole)
-                    item.setData(dest_path, Qt.ItemDataRole.DisplayRole)
+                    # Use the clean original path for display
+                    item.setData(original_path, Qt.ItemDataRole.DisplayRole)
                     item.setFlags(item.flags() | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
                 
-                print(f"DEBUG: Destination {dest_path} availability: {'✅' if is_available else '❌'}")
+                print(f"DEBUG: Destination {original_path} availability: {'✅' if is_available else '❌'}")
     
     def _check_destination_availability(self, dest_path: str) -> bool:
         """Check if a destination path is currently available"""

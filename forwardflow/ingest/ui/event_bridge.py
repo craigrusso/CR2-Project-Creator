@@ -62,10 +62,11 @@ class EventBridge(QObject):
         self.progress_throttle_interval = 0.5  # Emit job progress max every 500ms
         self.progress_percent_threshold = 1.0  # Only emit if progress changed by at least 1%
         
-        # Thread-safe timer management
-        self.buffer_timer = QTimer()
-        self.buffer_timer.setSingleShot(True)
-        self.buffer_timer.timeout.connect(self._flush_expired_buffer)
+        # DISABLED: Buffer timer removed - causes GIL deadlock with event pump
+        # The event pump architecture replaces timer-based polling
+        # self.buffer_timer = QTimer()
+        # self.buffer_timer.setSingleShot(True)
+        # self.buffer_timer.timeout.connect(self._flush_expired_buffer)
         
         # Comprehensive event routing
         self.event_router = EventRouter()
@@ -201,11 +202,11 @@ class EventBridge(QObject):
                 payload=payload.copy()
             )
             self.event_buffer.append(buffered_event)
-            
-            # Start buffer timeout timer (thread-safe)
-            if not self.buffer_timer.isActive():
-                self.buffer_timer.start(self.buffer_timeout_ms)
-            
+
+            # DISABLED: Buffer timer removed - causes GIL deadlock with event pump
+            # if not self.buffer_timer.isActive():
+            #     self.buffer_timer.start(self.buffer_timeout_ms)
+
             print(f"DEBUG: Event {event_type} buffered (JobAggregator not ready)")
             return
         
@@ -349,8 +350,8 @@ class EventBridge(QObject):
             except Exception as e:
                 print(f"ERROR: Processing buffered event failed: {e}")
         
-        # Stop buffer timer since we've processed everything (thread-safe)
-        self._stop_timer_safely('buffer_timer')
+        # DISABLED: Buffer timer no longer exists
+        # self._stop_timer_safely('buffer_timer')
         
         print(f"DEBUG: Processed {processed_count} buffered events with event router")
     
@@ -579,11 +580,13 @@ class EventBridge(QObject):
     
     @pyqtSlot(str)
     def _stop_timer_on_ui_thread(self, timer_name: str):
-        """Thread-safe timer stop method - must run on UI thread"""
-        timer = getattr(self, timer_name, None)
-        if timer and hasattr(timer, 'isActive') and timer.isActive():
-            timer.stop()
-            print(f"DEBUG: Stopped {timer_name} on UI thread")
+        """Thread-safe timer stop method - DISABLED for GIL-free architecture"""
+        # DISABLED: Timers no longer exist
+        # timer = getattr(self, timer_name, None)
+        # if timer and hasattr(timer, 'isActive') and timer.isActive():
+        #     timer.stop()
+        #     print(f"DEBUG: Stopped {timer_name} on UI thread")
+        pass
     
     def _stop_timer_safely(self, timer_name: str):
         """Stop timer safely from any thread"""
@@ -599,8 +602,8 @@ class EventBridge(QObject):
     
     def reset_for_new_job(self) -> None:
         """Reset EventBridge for a new transfer job"""
-        # Stop any running timers (thread-safe)
-        self._stop_timer_safely('buffer_timer')
+        # DISABLED: Buffer timer no longer exists
+        # self._stop_timer_safely('buffer_timer')
         
         # Clear state
         self.event_buffer.clear()

@@ -91,7 +91,7 @@ impl CopyStats {
     pub fn duration(&self) -> f64 {
         self.end_time - self.start_time
     }
-    
+
     pub fn success_rate(&self) -> f64 {
         if self.total_files > 0 {
             (self.copied_files as f64 * 100.0) / self.total_files as f64
@@ -342,18 +342,18 @@ impl ProgressGate {
             last_ns: HashMap::new(),
         }
     }
-    
+
     pub fn now_ns() -> u64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos() as u64
     }
-    
+
     pub fn should_emit(&mut self, key: &str, interval_ns: u64) -> bool {
         let now = Self::now_ns();
         let last = self.last_ns.get(key).copied().unwrap_or(0);
-        
+
         if now - last >= interval_ns {
             self.last_ns.insert(key.to_string(), now);
             true
@@ -422,7 +422,7 @@ impl JobManifest {
     fn new() -> Self {
         Self::default()
     }
-    
+
     pub fn calculate_target_bytes(&mut self) {
         self.total_target_bytes = self.total_bytes * (self.destination_count as u128);
     }

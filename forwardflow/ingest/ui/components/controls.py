@@ -31,13 +31,22 @@ class TransferWorker(QObject):
     transfer_failed = pyqtSignal(str)
     transfer_cancelled = pyqtSignal()
     
-    def __init__(self, job, root):
+    def __init__(self, job, root, event_sink):
         super().__init__()
         self.job = job
         self.root = root
         self.engine = None
-        self.event_sink = None
         self._cancelled = False
+
+        # CRITICAL FIX: Receive RustEventSink created on main thread (NOT worker thread)
+        # QObjects MUST be created on the thread where they'll receive signals (main thread)
+        self.event_sink = event_sink
+        print("DEBUG: ✅ RustEventSink received from main thread (correct thread for Qt signals)")
+
+        # NOTE: Event connections are already established on main thread in ControlSection.on_start()
+        # This prevents Qt threading violations when connecting signals across threads
+        print("DEBUG: Event connections already established on main thread - worker ready")
+    
         
     def run_transfer(self):
         """Run the transfer operation in the worker thread"""
@@ -71,10 +80,9 @@ class TransferWorker(QObject):
                 print(f"DEBUG: {engine_type} engine retrieved: {self.engine}")
                 
                 # Store Rust event sink reference in root for report generation
-                from ..rust_event_sink import RustEventSink
-                self.event_sink = RustEventSink()
+                # (event_sink already created on main thread in __init__)
                 self.root._rust_event_sink = self.event_sink
-                print("DEBUG: Rust event sink stored in root for report generation")
+                print("DEBUG: Rust event sink (created on main thread) stored in root for report generation")
                 
                 # Initialize JobAggregator with job details
                 try:
@@ -87,14 +95,18 @@ class TransferWorker(QObject):
                 
                 # CRITICAL FIX: Initialize DIT data collector for this job
                 try:
+                    print("DEBUG: About to initialize DIT data collector...")
                     from ...utils.dit_data_collector import reset_dit_collector
                     reset_dit_collector(self.job.job_id)
                     print(f"🎯 DIT Data Collector initialized for job: {self.job.job_id}")
                 except Exception as e:
                     print(f"ERROR: Failed to initialize DIT data collector: {e}")
+                    import traceback
+                    traceback.print_exc()
                 
                 # Event sink will connect directly to UI components, no need to re-emit through TransferWorker
                 print("DEBUG: Event sink will connect directly to UI components")
+                print("DEBUG: About to exit inner try block...")
                 
             except Exception as e:
                 print(f"DEBUG: Failed to get engine: {e}")
@@ -102,59 +114,10 @@ class TransferWorker(QObject):
             
             print(f"DEBUG: {engine_type} engine is being used")
             
-            # DEBUG: Check root object and its attributes
-            print(f"DEBUG: COMPREHENSIVE ROOT CHECK:")
-            print(f"DEBUG: self.root type: {type(self.root)}")
-            print(f"DEBUG: self.root attributes: {dir(self.root)}")
-            print(f"DEBUG: hasattr(self.root, 'progress_section'): {hasattr(self.root, 'progress_section')}")
-            print(f"DEBUG: hasattr(self.root, 'source_dest_section'): {hasattr(self.root, 'source_dest_section')}")
-            
-            # Connect Rust event sink to progress section for simple UI updates
-            try:
-                if hasattr(self.root, 'progress_section') and self.root.progress_section:
-                    self.event_sink.progress_update.connect(self.root.progress_section.handle_progress_update)
-                    print("DEBUG: ✓ Rust event sink connected to progress section for simple updates")
-                else:
-                    print(f"DEBUG: ✗ Progress section not available - hasattr: {hasattr(self.root, 'progress_section')}")
-                    if hasattr(self.root, 'progress_section'):
-                        print(f"DEBUG: ✗ progress_section is None: {self.root.progress_section is None}")
-            except Exception as e:
-                print(f"DEBUG: ✗ Error connecting to progress section: {e}")
-            
-            # NOTE: progress_update should ONLY go to progress_section for main progress bar updates.
-            # Destination cards should receive destination_update signals specifically.
-            # Removed incorrect connection that was causing progress bar conflicts.
-            print("DEBUG: progress_update signals are correctly routed only to progress_section")
-            
-            # Connect destination-specific progress updates to source/destination section
-            try:
-                print(f"DEBUG: Checking destination_update connection...")
-                if hasattr(self.root, 'source_dest_section') and self.root.source_dest_section:
-                    print(f"DEBUG: Connecting event_sink.destination_update to {self.root.source_dest_section}.handle_destination_progress")
-                    self.event_sink.destination_update.connect(self.root.source_dest_section.handle_destination_progress)
-                    print("DEBUG: ✓ *** DESTINATION CONNECTION ESTABLISHED ***")
-                    
-                    # Connect destination completion signal for immediate report generation
-                    if hasattr(self.root, 'control_section') and self.root.control_section:
-                        self.event_sink.destination_completed.connect(self.root.control_section._handle_destination_completed)
-                        print("DEBUG: ✓ *** DESTINATION COMPLETION CONNECTION ESTABLISHED ***")
-                        
-                        # CRITICAL: Also connect to the _check_destination_completion method to ensure it processes dest.completed events
-                        # This ensures the EventBridge properly handles destination completion events from Rust
-                        print("DEBUG: Setting up destination completion processing in EventBridge")
-                    else:
-                        print("DEBUG: ✗ DESTINATION COMPLETION CONNECTION FAILED - control_section not available")
-                else:
-                    print("DEBUG: ✗ *** DESTINATION CONNECTION FAILED - source_dest_section not available ***")
-            except Exception as e:
-                print(f"DEBUG: ✗ Error establishing destination connection: {e}")
-                import traceback
-                traceback.print_exc()
-            
-            # Set the event sink on the engine
-            if hasattr(self.engine, 'set_event_sink'):
-                self.engine.set_event_sink(self.event_sink)
-                print("DEBUG: Event sink set on engine")
+            # NOTE: Event pump is initialized on MAIN THREAD in on_start() method
+            # This prevents Qt signal connection failures when connecting across threads
+            # Event pump is already running and will receive events from Rust engine
+            print("DEBUG: Event pump initialized on main thread - worker can safely emit to queue")
             
             # Store the engine reference and job spec
             self.root.current_job = self.engine
@@ -311,14 +274,35 @@ class TransferWorker(QObject):
                         self.copy_completed = True
                         self.copy_result = {'error': str(e)}
                 
-                self.copy_thread = threading.Thread(target=run_intelligent_copy, daemon=True)
-                self.copy_thread.start()
+                # CRITICAL FIX: Don't use QTimer on worker thread - it requires an event loop
+                # Just run the copy directly - Rust engine will emit events as it progresses
+                print("DEBUG: Running copy operation directly (no nested threading or timers)")
+                run_intelligent_copy()
                 
-                # Use a timer to periodically check for completion
-                from PyQt6.QtCore import QTimer
-                self.copy_timer = QTimer()
-                self.copy_timer.timeout.connect(self._check_copy_progress)
-                self.copy_timer.start(100)  # Check every 100ms
+                # Handle completion immediately after copy finishes
+                if self.copy_result and 'error' not in self.copy_result:
+                    # Store the engine stats in root for report generation
+                    self.root.engine_stats = self.copy_result
+                    print(f"DEBUG: Engine stats stored in root: {self.copy_result}")
+
+                    # Stop event pump (cleanup)
+                    if hasattr(self, 'event_pump'):
+                        print("DEBUG: Stopping event pump...")
+                        self.event_pump.stop_pump()
+                        print("DEBUG: ✅ Event pump stopped")
+
+                    # Emit completion signal
+                    self.transfer_completed.emit(self.copy_result)
+                else:
+                    # Stop event pump (cleanup on error)
+                    if hasattr(self, 'event_pump'):
+                        print("DEBUG: Stopping event pump (error path)...")
+                        self.event_pump.stop_pump()
+
+                    # Handle error
+                    error_msg = self.copy_result.get('error', 'Unknown error') if self.copy_result else 'Copy operation failed'
+                    print(f"DEBUG: Copy operation failed: {error_msg}")
+                    self.transfer_failed.emit(error_msg)
                 
             except Exception as e:
                 print(f"DEBUG: Error in copy operation: {e}")
@@ -337,10 +321,6 @@ class TransferWorker(QObject):
         print("DEBUG: Transfer worker received cancel request")
         self._cancelled = True
         
-        # Stop the copy timer
-        if hasattr(self, 'copy_timer'):
-            self.copy_timer.stop()
-        
         # Cancel the engine
         if self.engine and hasattr(self.engine, 'cancel'):
             try:
@@ -354,27 +334,6 @@ class TransferWorker(QObject):
         self.copy_result = {'error': 'Transfer cancelled by user'}
         
         self.transfer_cancelled.emit()
-    
-    def _check_copy_progress(self):
-        """Check if the copy operation has completed"""
-        if hasattr(self, 'copy_completed') and self.copy_completed:
-            # Stop the timer
-            if hasattr(self, 'copy_timer'):
-                self.copy_timer.stop()
-            
-            # Handle completion
-            if self.copy_result and 'error' not in self.copy_result:
-                # Store the engine stats in root for report generation
-                self.root.engine_stats = self.copy_result
-                print(f"DEBUG: Engine stats stored in root: {self.copy_result}")
-                
-                # Emit completion signal
-                self.transfer_completed.emit(self.copy_result)
-            else:
-                # Handle error
-                error_msg = self.copy_result.get('error', 'Unknown error') if self.copy_result else 'Copy operation failed'
-                print(f"DEBUG: Copy operation failed: {error_msg}")
-                self.transfer_failed.emit(error_msg)
     
     def _get_block_size_for_preset(self, preset):
         """Get block size for preset - optimized for M2 Max performance with network awareness"""
@@ -643,28 +602,101 @@ class ControlSection(QWidget):
             
             # Start the job using QThread for proper UI responsiveness
             print("DEBUG: Starting job using QThread...")
-            
-            # Create transfer worker and thread
-            self.transfer_worker = TransferWorker(job, root)
+
+            # CRITICAL FIX: Create RustEventSink on MAIN THREAD before worker thread starts
+            # QObjects MUST be created on the thread where they'll receive signals (main Qt thread)
+            print("DEBUG: 🔧 Creating RustEventSink on MAIN THREAD (Qt event loop thread)")
+            from ..rust_event_sink import RustEventSink
+            event_sink = RustEventSink()
+            print("DEBUG: ✅ RustEventSink created on main thread successfully")
+
+            # CRITICAL FIX: Connect event sink signals on MAIN THREAD before worker starts
+            # Qt requires signal connections to be made on the same thread as the QObject
+            print("DEBUG: 🔧 Connecting event sink signals on MAIN THREAD")
+            try:
+                # Connect Rust event sink to progress section for UI updates
+                if hasattr(root, 'progress_section') and root.progress_section:
+                    event_sink.progress_update.connect(root.progress_section.handle_progress_update)
+                    print("DEBUG: ✅ Event sink → progress section connected")
+
+                # Connect destination-specific progress updates to source/destination section
+                if hasattr(root, 'source_dest_section') and root.source_dest_section:
+                    event_sink.destination_update.connect(root.source_dest_section.handle_destination_progress)
+                    print("DEBUG: ✅ Event sink → destination section connected")
+
+                    # Connect destination completion signal to control section
+                    event_sink.destination_completed.connect(self.handle_destination_completed)
+                    print("DEBUG: ✅ Event sink → destination completion connected")
+
+            except Exception as e:
+                print(f"DEBUG: ❌ Error connecting event sink signals: {e}")
+                import traceback
+                traceback.print_exc()
+
+            # CRITICAL FIX: Initialize event pump on MAIN THREAD (prevents Qt signal connection failures)
+            # Event pump must be created and connected on main thread before worker starts
+            print("DEBUG: 🔧 Initializing event pump on MAIN THREAD")
+            from ..event_pump import EventPumpManager
+
+            # Get engine instance to access event queue
+            from ..engine_manager import get_engine
+            engine = get_engine()
+
+            # Check if engine has event queue handle (new GIL-free architecture)
+            if hasattr(engine, 'get_event_queue_handle'):
+                print("DEBUG: Getting event queue handle from Rust engine...")
+                queue_handle = engine.get_event_queue_handle()
+                print("DEBUG: ✅ Event queue handle obtained")
+
+                # Create event pump manager
+                self.event_pump = EventPumpManager()
+
+                # Connect event pump signals to UI handlers (MUST happen on main thread)
+                print("DEBUG: 🔧 Connecting event pump signals on MAIN THREAD")
+                try:
+                    self.event_pump.progress_update.connect(root.progress_section.handle_progress_update)
+                    print("DEBUG: ✅ Event pump → progress section connected")
+
+                    self.event_pump.destination_update.connect(root.source_dest_section.handle_destination_progress)
+                    print("DEBUG: ✅ Event pump → destination section connected")
+
+                    self.event_pump.destination_completed.connect(self.handle_destination_completed)
+                    print("DEBUG: ✅ Event pump → destination completion connected")
+
+                    # CRITICAL FIX: Connect file completed events to DIT collector
+                    self.event_pump.file_completed.connect(self._handle_file_completed_for_dit)
+                    print("DEBUG: ✅ Event pump → DIT collector connected")
+                except Exception as e:
+                    print(f"DEBUG: ❌ Error connecting event pump signals: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+                # Start the pump (background thread polls queue and emits signals)
+                self.event_pump.start_pump(queue_handle)
+                print("DEBUG: ✅ Event pump started on MAIN THREAD - NO GIL DEADLOCK!")
+            else:
+                print("DEBUG: ⚠️ Engine doesn't have get_event_queue_handle - event pump disabled")
+
+            # Create transfer worker and thread (AFTER event sink is created and connected)
+            print("DEBUG: 🔧 Creating TransferWorker with pre-connected event sink")
+            self.transfer_worker = TransferWorker(job, root, event_sink)
             self.transfer_thread = QThread()
-            
+
             # Move worker to thread
             self.transfer_worker.moveToThread(self.transfer_thread)
-            
-            # Connect signals
+            print("DEBUG: ✅ Worker moved to QThread")
+
+            # Connect worker signals (these are fine to connect here - worker is QObject on worker thread)
             self.transfer_thread.started.connect(self.transfer_worker.run_transfer)
             self.transfer_worker.progress_update.connect(self._handle_progress_update)
             self.transfer_worker.transfer_completed.connect(self._handle_transfer_completed)
             self.transfer_worker.transfer_failed.connect(self._handle_transfer_failed)
             self.transfer_worker.transfer_cancelled.connect(self._handle_transfer_cancelled)
-            
-            # Progress updates are handled directly in run_transfer via event_sink connection
-            # No need to duplicate connection here since TransferWorker just re-emits the same signal
-            print("DEBUG: Progress updates will be connected directly via event_sink in run_transfer")
-            
+            print("DEBUG: ✅ Worker signals connected")
+
             # Start the thread
             self.transfer_thread.start()
-            print("DEBUG: Transfer thread started")
+            print("DEBUG: ✅ Transfer thread started - Rust engine will emit events to main thread")
             
         except Exception as e:
             print(f"DEBUG: Error in on_start: {e}")
@@ -675,6 +707,57 @@ class ControlSection(QWidget):
     def _handle_progress_update(self, payload):
         """Handle progress updates from transfer worker (currently unused since direct connections are used)"""
         print(f"DEBUG: TransferWorker progress update received (should not happen with direct connections): {payload}")
+
+    def _handle_file_completed_for_dit(self, payload):
+        """Handle file completed events and record in DIT collector"""
+        try:
+            print(f"DEBUG: 📝 File completed event received for DIT: {payload}")
+
+            # Extract file information from payload (matching Rust event format)
+            filename = payload.get('filename', '')
+            source_path = payload.get('source_path', '')
+            dest_path = payload.get('dest_path', '')
+            bytes_copied = payload.get('bytes_copied', 0)
+            # CRITICAL FIX: Rust emits 'source_checksum', not 'source_hash'
+            source_checksum = payload.get('source_checksum', '')
+            dest_checksum = payload.get('dest_checksum', payload.get('destination_checksum', ''))
+            verification_passed = payload.get('verification_passed', False)
+
+            # Get current job ID
+            job_id = getattr(self.root, 'current_job_id', 'unknown')
+
+            # CRITICAL FIX: Store file record in DIT collector for report generation
+            # Access the event sink's DIT collector to store file records
+            if hasattr(self.root, '_rust_event_sink') and self.root._rust_event_sink:
+                event_sink = self.root._rust_event_sink
+                if hasattr(event_sink, '_dit_collector'):
+                    dit_collector = event_sink._dit_collector
+                    # Record file completion in DIT collector
+                    file_record = {
+                        'filename': filename,
+                        'source_path': source_path,
+                        'destination_path': dest_path,
+                        'file_size': bytes_copied,
+                        'source_checksum': source_checksum,
+                        'destination_checksum': dest_checksum,
+                        'verification_passed': verification_passed,
+                        'status': 'completed'
+                    }
+                    dit_collector.record_file(job_id, file_record)
+                    print(f"DEBUG: ✅ File recorded in DIT collector: {filename} ({bytes_copied} bytes, hash: {source_checksum[:16] if source_checksum else 'none'}...)")
+                else:
+                    print(f"DEBUG: ⚠️ Event sink has no DIT collector attribute")
+            else:
+                print(f"DEBUG: ⚠️ No event sink available for DIT data collection")
+
+        except Exception as e:
+            print(f"ERROR: Failed to record file in DIT collector: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def handle_destination_completed(self, dest_path: str):
+        """Handle destination completion signal from event sink"""
+        self._handle_destination_completed(dest_path)
     
     def _handle_destination_completed(self, dest_path: str):
         """Handle individual destination completion for immediate DIT report generation"""
