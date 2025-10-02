@@ -1,0 +1,361 @@
+#!/usr/bin/env python3
+"""
+Real-time DIT Report Writer for Transfer Operations
+Writes report data incrementally as each file completes - industry standard for professional DIT workflows
+"""
+
+import json
+import os
+import time
+import csv
+import threading
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Any, Optional
+
+
+class RealtimeReportWriter:
+    """
+    Professional real-time report writer that updates reports as each file completes.
+    This ensures data is never lost and reports are always current.
+    """
+
+    def __init__(self, job_id: str, source_path: str, destinations: List[str]):
+        """Initialize real-time report writer for a transfer job"""
+        self.job_id = job_id
+        self.source_path = source_path
+        self.destinations = destinations
+        self.start_time = time.time()
+        self.lock = threading.Lock()
+
+        # Create report files immediately
+        self.report_paths = self._initialize_report_files()
+
+        # Track statistics
+        self.stats = {
+            'total_files': 0,
+            'completed_files': 0,
+            'failed_files': 0,
+            'total_bytes': 0,
+            'completed_bytes': 0,
+            'current_speed_mbps': 0,
+            'peak_speed_mbps': 0
+        }
+
+        print(f"📝 Real-time report writer initialized for job: {job_id}")
+        print(f"📁 Report files created in {len(self.report_paths)} destinations")
+
+    def _initialize_report_files(self) -> Dict[str, Dict[str, str]]:
+        """Create initial report files in each destination"""
+        report_paths = {}
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        for dest_path in self.destinations:
+            try:
+                # Create _CR2_CREATIVE_REPORTS directory
+                reports_dir = Path(dest_path) / "_CR2_CREATIVE_REPORTS"
+                reports_dir.mkdir(parents=True, exist_ok=True)
+
+                # Generate base filename
+                dest_name = Path(dest_path).name.replace(" ", "_")
+                base_filename = f"ingest_{timestamp}_{dest_name}"
+
+                # Initialize JSON report
+                json_path = reports_dir / f"{base_filename}.json"
+                self._init_json_report(json_path)
+
+                # Initialize CSV report
+                csv_path = reports_dir / f"{base_filename}_files.csv"
+                self._init_csv_report(csv_path)
+
+                # Initialize TXT report
+                txt_path = reports_dir / f"{base_filename}.txt"
+                self._init_txt_report(txt_path)
+
+                report_paths[dest_path] = {
+                    'json': str(json_path),
+                    'csv': str(csv_path),
+                    'txt': str(txt_path)
+                }
+
+                print(f"✅ Report files initialized for: {dest_path}")
+
+            except Exception as e:
+                print(f"❌ Failed to initialize reports for {dest_path}: {e}")
+
+        return report_paths
+
+    def _init_json_report(self, path: Path):
+        """Initialize JSON report structure"""
+        report = {
+            "job_id": self.job_id,
+            "status": "IN_PROGRESS",
+            "generated": datetime.now().isoformat(),
+            "last_updated": datetime.now().isoformat(),
+            "source_path": str(self.source_path),
+            "destination": str(path.parent.parent),
+            "stats": self.stats.copy(),
+            "files": [],
+            "metadata": {
+                "report_version": "2.1",
+                "dit_standard_version": "2025.1",
+                "generator": "ForwardFlow Real-time Engine",
+                "realtime": True,
+                "checksum_algorithm": "xxHash64BE"
+            }
+        }
+
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(report, f, indent=2)
+
+    def _init_csv_report(self, path: Path):
+        """Initialize CSV report with headers"""
+        with open(path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                'timestamp', 'filename', 'source_path', 'dest_path',
+                'size_bytes', 'status', 'source_checksum', 'dest_checksum',
+                'hash_algorithm', 'verification_passed', 'transfer_time_s'
+            ])
+
+    def _init_txt_report(self, path: Path):
+        """Initialize human-readable TXT report"""
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write("ForwardFlow Real-time Transfer Report\n")
+            f.write(f"Job ID: {self.job_id}\n")
+            f.write(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Source: {self.source_path}\n")
+            f.write(f"Destination: {path.parent.parent}\n")
+            f.write("=" * 80 + "\n\n")
+            f.write("STATUS | HASH | FILENAME\n")
+            f.write("-" * 80 + "\n")
+
+    def add_file_completion(self, file_data: Dict[str, Any]):
+        """
+        Add a file completion record to all report formats in real-time.
+        This is called immediately when each file completes.
+        """
+        print(f"📝📝📝 REALTIME_WRITER: add_file_completion() CALLED with data: {file_data}")
+
+        with self.lock:
+            try:
+                # Extract file information
+                filename = file_data.get('filename', 'unknown')
+                source_path = file_data.get('source_path', '')
+                dest_path = file_data.get('dest_path', '')
+                size_bytes = file_data.get('size_bytes', file_data.get('bytes_copied', 0))
+                source_checksum = file_data.get('source_checksum', '')
+                dest_checksum = file_data.get('dest_checksum', file_data.get('destination_checksum', ''))
+                hash_algorithm = file_data.get('hash_algorithm', 'unknown')
+                verification_passed = file_data.get('verification_passed', False)
+                status = file_data.get('status', 'COMPLETED')
+
+                print(f"📝📝📝 REALTIME_WRITER: Extracted - file={filename}, hash={source_checksum[:16] if source_checksum else 'NONE'}, dest={dest_path}")
+
+                # Update statistics
+                self.stats['completed_files'] += 1
+                if status == 'COMPLETED':
+                    self.stats['completed_bytes'] += size_bytes
+                elif status == 'FAILED':
+                    self.stats['failed_files'] += 1
+
+                # Calculate transfer time
+                transfer_time = time.time() - self.start_time
+
+                # Determine which destination this file belongs to
+                dest_key = None
+                for dest in self.destinations:
+                    if dest_path.startswith(dest):
+                        dest_key = dest
+                        break
+
+                if not dest_key or dest_key not in self.report_paths:
+                    print(f"⚠️ No report path found for destination: {dest_path}")
+                    return
+
+                paths = self.report_paths[dest_key]
+                print(f"📝📝📝 REALTIME_WRITER: Report paths for {dest_key}: {paths}")
+
+                # Update JSON report
+                print(f"📝📝📝 REALTIME_WRITER: Updating JSON report: {paths['json']}")
+                self._update_json_report(paths['json'], file_data)
+
+                # Append to CSV report
+                print(f"📝📝📝 REALTIME_WRITER: Appending to CSV report: {paths['csv']}")
+                self._append_csv_record(paths['csv'], {
+                    'timestamp': datetime.now().isoformat(),
+                    'filename': filename,
+                    'source_path': source_path,
+                    'dest_path': dest_path,
+                    'size_bytes': size_bytes,
+                    'status': status,
+                    'source_checksum': source_checksum,
+                    'dest_checksum': dest_checksum,
+                    'hash_algorithm': hash_algorithm,
+                    'verification_passed': verification_passed,
+                    'transfer_time_s': transfer_time
+                })
+
+                # Append to TXT report
+                self._append_txt_record(paths['txt'], filename, status, source_checksum, hash_algorithm)
+
+                print(f"✅ Report updated for: {filename} ({status})")
+
+            except Exception as e:
+                print(f"❌ Error updating report for file completion: {e}")
+                import traceback
+                traceback.print_exc()
+
+    def _update_json_report(self, path: str, file_data: Dict[str, Any]):
+        """Update JSON report with new file record"""
+        try:
+            # Read existing report
+            with open(path, 'r', encoding='utf-8') as f:
+                report = json.load(f)
+
+            # Add file record
+            report['files'].append(file_data)
+
+            # Update statistics
+            report['stats'] = self.stats.copy()
+            report['last_updated'] = datetime.now().isoformat()
+
+            # Calculate elapsed time and speed
+            elapsed = time.time() - self.start_time
+            if elapsed > 0 and self.stats['completed_bytes'] > 0:
+                avg_speed_mbps = (self.stats['completed_bytes'] / (1024 * 1024)) / elapsed
+                report['stats']['average_speed_mbps'] = avg_speed_mbps
+
+            # Write updated report
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(report, f, indent=2)
+
+        except Exception as e:
+            print(f"❌ Error updating JSON report: {e}")
+
+    def _append_csv_record(self, path: str, record: Dict[str, Any]):
+        """Append a record to CSV report"""
+        try:
+            with open(path, 'a', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    record['timestamp'],
+                    record['filename'],
+                    record['source_path'],
+                    record['dest_path'],
+                    record['size_bytes'],
+                    record['status'],
+                    record['source_checksum'],
+                    record['dest_checksum'],
+                    record['hash_algorithm'],
+                    record['verification_passed'],
+                    record['transfer_time_s']
+                ])
+        except Exception as e:
+            print(f"❌ Error appending to CSV report: {e}")
+
+    def _append_txt_record(self, path: str, filename: str, status: str, checksum: str, algorithm: str):
+        """Append a record to human-readable TXT report"""
+        try:
+            # Format status
+            if status == 'COMPLETED':
+                status_icon = "✅"
+            elif status == 'FAILED':
+                status_icon = "❌"
+            else:
+                status_icon = "⏭️"
+
+            # Format hash
+            if checksum:
+                hash_display = f"{algorithm}: {checksum[:16]}..."
+            else:
+                hash_display = "No hash"
+
+            with open(path, 'a', encoding='utf-8') as f:
+                f.write(f"{status_icon} {status:<10} | {hash_display:<30} | {filename}\n")
+
+        except Exception as e:
+            print(f"❌ Error appending to TXT report: {e}")
+
+    def update_job_stats(self, stats: Dict[str, Any]):
+        """Update job-level statistics"""
+        with self.lock:
+            self.stats.update(stats)
+
+    def finalize_reports(self, final_status: str = "COMPLETED", error_message: str = None):
+        """Finalize all reports with final status and statistics"""
+        with self.lock:
+            for dest_path, paths in self.report_paths.items():
+                try:
+                    # Update JSON with final status
+                    with open(paths['json'], 'r', encoding='utf-8') as f:
+                        report = json.load(f)
+
+                    report['status'] = final_status
+                    report['completed'] = datetime.now().isoformat()
+                    report['stats'] = self.stats.copy()
+
+                    if error_message:
+                        report['error_message'] = error_message
+
+                    # Calculate final statistics
+                    elapsed = time.time() - self.start_time
+                    report['stats']['duration_seconds'] = elapsed
+
+                    if elapsed > 0 and self.stats['completed_bytes'] > 0:
+                        avg_speed_mbps = (self.stats['completed_bytes'] / (1024 * 1024)) / elapsed
+                        report['stats']['average_speed_mbps'] = avg_speed_mbps
+
+                    with open(paths['json'], 'w', encoding='utf-8') as f:
+                        json.dump(report, f, indent=2)
+
+                    # Add summary to TXT report
+                    with open(paths['txt'], 'a', encoding='utf-8') as f:
+                        f.write("\n" + "=" * 80 + "\n")
+                        f.write(f"Transfer {final_status} at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                        f.write(f"Total files: {self.stats['completed_files']}/{self.stats['total_files']}\n")
+                        f.write(f"Total size: {self.stats['completed_bytes'] / (1024**3):.2f} GB\n")
+                        f.write(f"Duration: {elapsed:.1f} seconds\n")
+                        if self.stats['completed_bytes'] > 0:
+                            avg_speed = (self.stats['completed_bytes'] / (1024 * 1024)) / elapsed
+                            f.write(f"Average speed: {avg_speed:.1f} MB/s\n")
+
+                    print(f"✅ Reports finalized for: {dest_path}")
+
+                except Exception as e:
+                    print(f"❌ Error finalizing reports for {dest_path}: {e}")
+
+
+# Global instance management
+_realtime_writer = None
+_writer_lock = threading.Lock()
+
+
+def get_realtime_writer() -> Optional[RealtimeReportWriter]:
+    """Get the current real-time report writer instance"""
+    global _realtime_writer
+    return _realtime_writer
+
+
+def start_realtime_reporting(job_id: str, source_path: str, destinations: List[str]) -> RealtimeReportWriter:
+    """Start a new real-time reporting session"""
+    global _realtime_writer
+
+    with _writer_lock:
+        # Close previous writer if exists
+        if _realtime_writer:
+            _realtime_writer.finalize_reports("INTERRUPTED")
+
+        # Create new writer
+        _realtime_writer = RealtimeReportWriter(job_id, source_path, destinations)
+        return _realtime_writer
+
+
+def stop_realtime_reporting(final_status: str = "COMPLETED", error_message: str = None):
+    """Stop real-time reporting and finalize reports"""
+    global _realtime_writer
+
+    with _writer_lock:
+        if _realtime_writer:
+            _realtime_writer.finalize_reports(final_status, error_message)
+            _realtime_writer = None

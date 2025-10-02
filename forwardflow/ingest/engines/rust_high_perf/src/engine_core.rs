@@ -112,6 +112,10 @@ impl EnhancedHighPerfTransferEngine {
 
     /// Main method to copy files
     pub fn copy_files(&self, job: &CopyJob) -> Result<CopyStats> {
+        // DEBUG: Log at the very start to verify this code path executes
+        let _ = std::fs::write("/tmp/rust_engine_debug.log",
+            format!("🚀 ENGINE START: copy_files() called for job: {}\n", job.job_id));
+
         let start_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -348,73 +352,19 @@ impl EnhancedHighPerfTransferEngine {
                     tracker.add_file_record(file_record.clone());
                 }
 
-                // CRITICAL FIX: Emit BOTH file.complete AND file.completed events for DIT report compatibility
                 if let Ok(event_system) = self.event_system.lock() {
-                    if !source_hash.is_empty() {
-                        // Emit detailed file completed event with hash data
-                        let _ = event_system.emit_file_completed_with_hash(
-                            &filename,
-                            source_file_path.to_str().unwrap_or(""),
-                            dest_file_path.to_str().unwrap_or(""),
-                            result.bytes_copied,
-                            &source_hash,
-                            &dest_hash,
-                        );
-
-                        // CRITICAL: Also emit file.complete event for DIT report data collection
-                        let _ = event_system.emit_event(
-                            "file.complete",
-                            Python::with_gil(|py| {
-                                let payload = pyo3::types::PyDict::new(py);
-                                let _ = payload.set_item("filename", &filename);
-                                let _ = payload.set_item(
-                                    "source_path",
-                                    source_file_path.to_str().unwrap_or(""),
-                                );
-                                let _ = payload
-                                    .set_item("dest_path", dest_file_path.to_str().unwrap_or(""));
-                                let _ = payload.set_item("size_bytes", result.bytes_copied);
-                                let _ = payload.set_item("source_checksum", &source_hash);
-                                let _ = payload.set_item("destination_checksum", &dest_hash);
-                                let _ = payload.set_item("hash_algorithm", hash_algorithm);
-                                let _ =
-                                    payload.set_item("verification_passed", verification_passed);
-                                let _ = payload.set_item("transfer_status", "COMPLETED");
-                                let _ = payload.set_item("status", "COMPLETED");
-                                payload.into_py(py)
-                            }),
-                        );
-
-                        debug!(filename = %filename, "Emitted file.complete event with hash");
-                    } else {
-                        let _ = event_system.emit_file_completed(&filename, result.bytes_copied);
-
-                        // CRITICAL: Also emit file.complete event with calculated hashes
-                        let _ = event_system.emit_event(
-                            "file.complete",
-                            Python::with_gil(|py| {
-                                let payload = pyo3::types::PyDict::new(py);
-                                let _ = payload.set_item("filename", &filename);
-                                let _ = payload.set_item(
-                                    "source_path",
-                                    source_file_path.to_str().unwrap_or(""),
-                                );
-                                let _ = payload
-                                    .set_item("dest_path", dest_file_path.to_str().unwrap_or(""));
-                                let _ = payload.set_item("size_bytes", result.bytes_copied);
-                                let _ = payload.set_item("source_checksum", &source_hash);
-                                let _ = payload.set_item("destination_checksum", &dest_hash);
-                                let _ = payload.set_item("hash_algorithm", hash_algorithm);
-                                let _ =
-                                    payload.set_item("verification_passed", verification_passed);
-                                let _ = payload.set_item("transfer_status", "COMPLETED");
-                                let _ = payload.set_item("status", "COMPLETED");
-                                payload.into_py(py)
-                            }),
-                        );
-
-                        debug!(filename = %filename, "Emitted file.complete event without hash");
-                    }
+                    let _ = event_system.emit_file_completed_with_hash(
+                        &filename,
+                        source_file_path.to_str().unwrap_or(""),
+                        dest_file_path.to_str().unwrap_or(""),
+                        0,
+                        result.bytes_copied,
+                        &source_hash,
+                        &dest_hash,
+                        &hash_algorithm,
+                        verification_passed,
+                    );
+                    debug!(filename = %filename, "Queued file.completed event with hashes");
 
                     // Emit job progress event
                     let elapsed = SystemTime::now()
@@ -499,22 +449,16 @@ impl EnhancedHighPerfTransferEngine {
 
             // Emit as both dest_progress at 100% and explicit dest.completed event
             let _ = event_system.emit_dest_progress(&dest_completion);
-            let _ = event_system.emit_event(
-                "dest.completed",
-                Python::with_gil(|py| {
-                    let payload = pyo3::types::PyDict::new(py);
-                    let _ = payload.set_item("dest_path", &dest_path);
-                    let _ = payload.set_item("dest_index", 0);
-                    let _ = payload.set_item("completed_files", completed_files);
-                    let _ = payload.set_item("total_files", total_files);
-                    let _ = payload.set_item(
-                        "bytes_copied",
-                        self.total_bytes_transferred
-                            .load(std::sync::atomic::Ordering::Relaxed),
-                    );
-                    let _ = payload.set_item("total_bytes", total_bytes);
-                    payload.into_py(py)
-                }),
+            let elapsed = (now_secs() - start_time).max(0.0);
+            let _ = event_system.emit_dest_completed(
+                0,
+                dest_path,
+                self.total_bytes_transferred
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                total_bytes,
+                completed_files,
+                total_files,
+                elapsed,
             );
 
             println!("DEBUG: 🎯 EMITTED dest.completed EVENT for {}", dest_path);
@@ -577,6 +521,7 @@ impl EnhancedHighPerfTransferEngine {
             relative_paths,
             &job.destination_paths,
             hash_algorithm.clone(),
+            Arc::clone(&self.event_system),
             |progress| {
                 if cancelled.load(Ordering::Relaxed) {
                     return true;
@@ -599,32 +544,9 @@ impl EnhancedHighPerfTransferEngine {
                         self.total_files_processed
                             .fetch_add(dest_count as u64, Ordering::Relaxed);
 
-                        // CRITICAL FIX: Emit FileCompleted events for each destination
-                        // This is needed for DIT report generation
-                        if let Ok(event_system) = event_system.lock() {
-                            let filename = source_files[file_index]
-                                .file_name()
-                                .and_then(|n| n.to_str())
-                                .unwrap_or("unknown");
-                            let source_path = source_files[file_index].to_str().unwrap_or("");
-                            let bytes_copied = file_sizes[file_index];
-
-                            // Emit file completion event for EACH destination
-                            for dest_idx in 0..dest_count {
-                                let dest_path = job.destination_paths[dest_idx].clone();
-                                let rel_path = relative_paths[file_index].to_str().unwrap_or("");
-                                let full_dest_path = format!("{}/{}", dest_path, rel_path);
-
-                                let _ = event_system.emit_file_completed_with_hash(
-                                    filename,
-                                    source_path,
-                                    &full_dest_path,
-                                    bytes_copied,
-                                    "", // source_hash - will be filled if verification enabled
-                                    "", // dest_hash - will be filled if verification enabled
-                                );
-                            }
-                        }
+                        // NOTE: File completion events with hashes will be emitted later
+                        // after the entire batch completes and hashes are computed
+                        // See lines ~796-822 for the proper emission with hash values
                     }
                 }
 
@@ -675,14 +597,29 @@ impl EnhancedHighPerfTransferEngine {
             },
         )?;
 
+        // DEBUG: Log after multi_engine.copy() returns
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/rust_engine_debug.log")
+            .and_then(|mut f| std::io::Write::write_all(&mut f,
+                format!("✅ multi_engine.copy() returned {} outcomes\n", outcomes.len()).as_bytes()));
+
         let mut dest_bytes = vec![0u64; dest_count];
         let mut dest_files = vec![0usize; dest_count];
 
-        for outcome in outcomes {
-            if self.is_cancelled() {
-                break;
-            }
+        // CRITICAL: Process all completed outcomes even if cancelled
+        // This ensures file.complete events with hashes are emitted for files that finished
 
+        // DEBUG: Log to file since eprintln() is swallowed by GUI
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/rust_engine_debug.log")
+            .and_then(|mut f| std::io::Write::write_all(&mut f,
+                format!("🔄 ENGINE_CORE: About to process {} outcomes\n", outcomes.len()).as_bytes()));
+
+        for outcome in outcomes {
             let source_path_str = outcome.source_path.to_string_lossy().to_string();
             let source_hash = outcome.source_hash.clone();
 
@@ -772,7 +709,16 @@ impl EnhancedHighPerfTransferEngine {
                     );
                 }
 
+                // DEBUG: Append to log file
+                let _ = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open("/tmp/rust_engine_debug.log")
+                    .and_then(|mut f| std::io::Write::write_all(&mut f,
+                        format!("🔥 About to emit FileCompleted for: {}\n", record.filename).as_bytes()));
+
                 if let Ok(event_system) = self.event_system.lock() {
+
                     let mut dest_progress = DestProgressPayload::default();
                     dest_progress.dest_index = dest.dest_index;
                     dest_progress.dest_path = dest.dest_path.clone();
@@ -791,29 +737,21 @@ impl EnhancedHighPerfTransferEngine {
                         &record.filename,
                         &source_path_str,
                         &dest_path_str,
+                        dest.dest_index,
                         dest.bytes_written,
                         &source_hash,
                         &dest_hash,
+                        &hash_name,
+                        verification_passed,
                     );
 
-                    let hash_label = hash_name.clone();
-                    let verification_flag = verification_passed;
-                    let _ = event_system.emit_event(
-                        "file.complete",
-                        Python::with_gil(|py| {
-                            let payload = pyo3::types::PyDict::new(py);
-                            let _ = payload.set_item("filename", &record.filename);
-                            let _ = payload.set_item("source_path", &record.source_path);
-                            let _ = payload.set_item("dest_path", &record.destination_path);
-                            let _ = payload.set_item("dest_index", dest.dest_index);
-                            let _ = payload.set_item("size_bytes", dest.bytes_written);
-                            let _ = payload.set_item("source_checksum", &source_hash);
-                            let _ = payload.set_item("destination_checksum", &dest_hash);
-                            let _ = payload.set_item("hash_algorithm", &hash_label);
-                            let _ = payload.set_item("verification_passed", verification_flag);
-                            payload.into_py(py)
-                        }),
-                    );
+                    // DEBUG: Log successful emission
+                    let _ = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open("/tmp/rust_engine_debug.log")
+                        .and_then(|mut f| std::io::Write::write_all(&mut f,
+                            format!("✅ FileCompleted emitted for: {} (hash: {})\n", record.filename, source_hash).as_bytes()));
 
                     self.emit_job_progress_locked(
                         &event_system,
@@ -821,6 +759,8 @@ impl EnhancedHighPerfTransferEngine {
                         total_target_bytes,
                         total_files * dest_count,
                     );
+                } else {
+                    eprintln!("❌❌❌ ENGINE_CORE: FAILED TO LOCK event_system for file: {}", record.filename);
                 }
 
                 file_records.push(record);
@@ -839,18 +779,15 @@ impl EnhancedHighPerfTransferEngine {
                 dest_completion.total_bytes = total_bytes;
 
                 let _ = event_system.emit_dest_progress(&dest_completion);
-                let _ = event_system.emit_event(
-                    "dest.completed",
-                    Python::with_gil(|py| {
-                        let payload = pyo3::types::PyDict::new(py);
-                        let _ = payload.set_item("dest_path", dest_path);
-                        let _ = payload.set_item("dest_index", dest_index);
-                        let _ = payload.set_item("completed_files", dest_files[dest_index]);
-                        let _ = payload.set_item("total_files", total_files);
-                        let _ = payload.set_item("bytes_copied", dest_bytes[dest_index]);
-                        let _ = payload.set_item("total_bytes", total_bytes);
-                        payload.into_py(py)
-                    }),
+                let elapsed = (now_secs() - start_time).max(0.0);
+                let _ = event_system.emit_dest_completed(
+                    dest_index,
+                    dest_path,
+                    dest_bytes[dest_index],
+                    total_bytes,
+                    dest_files[dest_index],
+                    total_files,
+                    elapsed,
                 );
 
                 debug!(dest = %dest_path, index = dest_index, "Emitted destination completion");

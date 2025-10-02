@@ -3,7 +3,7 @@ use std::hash::Hasher;
 use std::io::{BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Instant;
 
@@ -12,6 +12,7 @@ use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use sha2::Digest as Sha2Digest;
 use sha3::Digest as Sha3Digest;
 
+use crate::event_system::EventSystem;
 use crate::verification::HashAlgorithm;
 
 const DEFAULT_CHUNK_SIZE: usize = 8 * 1024 * 1024; // 8 MiB
@@ -61,6 +62,7 @@ impl MultiDestCopyEngine {
         relative_paths: &[PathBuf],
         destination_paths: &[String],
         hash_algorithm: HashAlgorithm,
+        event_system: Arc<Mutex<EventSystem>>,
         mut progress_cb: F,
     ) -> Result<Vec<MultiDestFileOutcome>>
     where
@@ -105,6 +107,7 @@ impl MultiDestCopyEngine {
         let mut chunk_buffer = vec![0u8; self.chunk_size];
 
         for (idx, source_path) in source_files.iter().enumerate() {
+            // Check for cancellation before starting new file
             if self.cancelled.load(Ordering::Relaxed) {
                 break;
             }
@@ -130,13 +133,13 @@ impl MultiDestCopyEngine {
                     .context("failed to dispatch StartFile command")?;
             }
 
-            loop {
-                if self.cancelled.load(Ordering::Relaxed) {
-                    break;
-                }
+            let mut file_completed = false;
+            let mut was_cancelled = false;
 
+            loop {
                 let bytes_read = source_reader.read(&mut chunk_buffer)?;
                 if bytes_read == 0 {
+                    file_completed = true;
                     break;
                 }
 
@@ -145,17 +148,7 @@ impl MultiDestCopyEngine {
                 owned_chunk.extend_from_slice(&chunk_buffer[..bytes_read]);
                 let shared_chunk = Arc::new(owned_chunk);
 
-                if progress_cb(ChunkProgress {
-                    file_index: idx,
-                    chunk_bytes: bytes_read as u64,
-                }) || self.cancelled.load(Ordering::Relaxed)
-                {
-                    for sender in &worker_senders {
-                        let _ = sender.send(WorkerCommand::FinishFile);
-                    }
-                    return Err(anyhow::anyhow!("Operation cancelled"));
-                }
-
+                // Send chunk BEFORE checking cancellation
                 for sender in &worker_senders {
                     sender
                         .send(WorkerCommand::Chunk {
@@ -163,38 +156,102 @@ impl MultiDestCopyEngine {
                         })
                         .context("failed to dispatch chunk to destination worker")?;
                 }
+
+                // Check for cancellation AFTER sending chunk
+                if progress_cb(ChunkProgress {
+                    file_index: idx,
+                    chunk_bytes: bytes_read as u64,
+                }) || self.cancelled.load(Ordering::Relaxed)
+                {
+                    was_cancelled = true;
+                    break;
+                }
             }
 
+            // Always finish the file to keep workers in sync
             for sender in &worker_senders {
-                sender
-                    .send(WorkerCommand::FinishFile)
-                    .context("failed to dispatch FinishFile command")?;
+                let _ = sender.send(WorkerCommand::FinishFile);
             }
 
             let mut destination_results = Vec::with_capacity(dest_count);
             for _ in 0..dest_count {
-                let result = result_rx
-                    .recv()
-                    .context("destination worker dropped without sending result")?;
-                destination_results.push(DestinationOutcome {
-                    dest_index: result.dest_index,
-                    dest_path: result.dest_path,
-                    relative_path: result.relative_path,
-                    bytes_written: result.bytes_written,
-                    dest_hash: result.dest_hash,
-                    duration_ms: result.duration_ms,
-                    error: result.error,
-                });
+                if let Ok(result) = result_rx.recv() {
+                    destination_results.push(DestinationOutcome {
+                        dest_index: result.dest_index,
+                        dest_path: result.dest_path,
+                        relative_path: result.relative_path,
+                        bytes_written: result.bytes_written,
+                        dest_hash: result.dest_hash,
+                        duration_ms: result.duration_ms,
+                        error: result.error,
+                    });
+                }
             }
 
-            let source_hash = source_hasher.finish();
-            outcomes.push(MultiDestFileOutcome {
-                source_path: source_path.clone(),
-                relative_path,
-                file_size,
-                source_hash,
-                destinations: destination_results,
-            });
+            // Only add outcome if file completed successfully (not cancelled mid-file)
+            if file_completed {
+                let source_hash = source_hasher.finish();
+                let source_hash_hex = source_hash.clone();
+
+                // CRITICAL FIX: Emit FileCompleted events IMMEDIATELY for real-time DIT reporting
+                // Don't wait until all files finish - emit as each completes
+                let _ = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open("/tmp/rust_engine_debug.log")
+                    .and_then(|mut f| std::io::Write::write_all(&mut f,
+                        format!("🎉 File completed: {} - emitting events for {} destinations\n",
+                            relative_path.display(), destination_results.len()).as_bytes()));
+
+                if let Ok(event_sys) = event_system.lock() {
+                    for dest in &destination_results {
+                        let filename = relative_path.file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("unknown");
+
+                        let full_dest_path = std::path::Path::new(&dest.dest_path).join(&dest.relative_path);
+                        let dest_path_str = full_dest_path.to_string_lossy().to_string();
+                        let source_path_str = source_path.to_string_lossy().to_string();
+
+                        let dest_hash_hex = dest.dest_hash.clone().unwrap_or_default();
+                        let verification_passed = dest.error.is_none() && !dest_hash_hex.is_empty();
+
+                        let _ = event_sys.emit_file_completed_with_hash(
+                            filename,
+                            &source_path_str,
+                            &dest_path_str,
+                            dest.dest_index,
+                            dest.bytes_written,
+                            &source_hash_hex,
+                            &dest_hash_hex,
+                            &hash_algorithm.to_string(),
+                            verification_passed,
+                        );
+
+                        let _ = std::fs::OpenOptions::new()
+                            .create(true)
+                            .append(true)
+                            .open("/tmp/rust_engine_debug.log")
+                            .and_then(|mut f| std::io::Write::write_all(&mut f,
+                                format!("  ✅ Emitted FileCompleted for dest {}: {}\n", dest.dest_index, filename).as_bytes()));
+                    }
+                }
+
+                outcomes.push(MultiDestFileOutcome {
+                    source_path: source_path.clone(),
+                    relative_path,
+                    file_size,
+                    source_hash,
+                    destinations: destination_results,
+                });
+            } else {
+                eprintln!("⚠️  MULTI_DEST: File {} was cancelled mid-copy - NO hash", relative_path.display());
+            }
+
+            // Break if cancelled during this file
+            if was_cancelled {
+                break;
+            }
         }
 
         drop(worker_senders);

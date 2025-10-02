@@ -67,6 +67,10 @@ class EventPumpThread(QThread):
                 for event_json in events_json:
                     try:
                         event = json.loads(event_json)
+                        # DEBUG: Log EVERY event type we receive
+                        event_type = list(event.keys())[0] if event else "UNKNOWN"
+                        if event_type == "FileCompleted":
+                            print(f"🚨🚨🚨 EVENT PUMP: FileCompleted DETECTED in queue! Event: {event}")
                         self._route_event(event)
                     except json.JSONDecodeError as e:
                         print(f"DEBUG: Failed to parse event JSON: {e}")
@@ -103,7 +107,10 @@ class EventPumpThread(QThread):
         elif event_type == "FileProgress":
             self.file_progress.emit(payload)
         elif event_type == "FileCompleted":
+            print(f"🔔🔔🔔 EVENT_PUMP THREAD: FileCompleted event detected - filename={payload.get('filename', 'unknown')}")
+            print(f"🔔🔔🔔 EVENT_PUMP THREAD: About to emit file_completed signal with payload: {payload}")
             self.file_completed.emit(payload)
+            print(f"🔔🔔🔔 EVENT_PUMP THREAD: file_completed signal EMITTED successfully")
         elif event_type == "DestProgress":
             self.dest_progress.emit(payload)
         elif event_type == "DestCompleted":
@@ -196,29 +203,44 @@ class EventPumpManager(QObject):
 
     def _handle_file_completed(self, payload: dict):
         """Handle file completed events for DIT data collection"""
+        print(f"🔍🔍🔍 EVENT_PUMP MANAGER: _handle_file_completed() called with payload: {payload}")
+
         # Forward to DIT collector (matches existing event format)
         from ..utils.dit_data_collector import get_dit_collector
         dit_collector = get_dit_collector()
+        print(f"🔍🔍🔍 EVENT_PUMP MANAGER: Got DIT collector: {dit_collector}")
 
         # CRITICAL FIX: Convert Rust event format to DIT collector format
-        bytes_copied = payload.get('bytes_copied', 0)
+        bytes_copied = payload.get('bytes_copied', payload.get('size_bytes', 0))
+
+        # Extract hash data - Rust sends these fields from emit_file_completed_with_hash
+        source_checksum = payload.get('source_checksum', '')
+        dest_checksum = payload.get('dest_checksum', payload.get('destination_checksum', ''))
+        hash_algorithm = payload.get('hash_algorithm', 'unknown')
+
+        # Log hash presence for debugging
+        has_hash = bool(source_checksum)
+        print(f"🔍 EventPump: FileCompleted event - file={payload.get('filename', 'unknown')} hash={source_checksum[:16] if has_hash else 'NONE'}... algo={hash_algorithm}")
+
         event_data = {
             'filename': payload.get('filename', ''),
             'source_path': payload.get('source_path', ''),
             'dest_path': payload.get('dest_path', ''),
-            'destination_path': payload.get('dest_path', ''),  # DIT collector expects this
+            'destination_path': payload.get('dest_path', ''),  # DIT collector expects this alias
+            'dest_index': payload.get('dest_index', 0),
             'bytes_copied': bytes_copied,
-            'size_bytes': bytes_copied,  # CRITICAL FIX: DIT collector expects 'size_bytes'
-            'source_checksum': payload.get('source_checksum', ''),
-            'destination_checksum': payload.get('dest_checksum', ''),
-            'hash_algorithm': 'xxhash64be',  # Default algorithm
+            'size_bytes': bytes_copied,  # DIT collector aggregates using this field
+            'source_checksum': source_checksum,
+            'destination_checksum': dest_checksum,
+            'hash_algorithm': hash_algorithm,
             'verification_passed': payload.get('verification_passed', False),
-            'status': 'COMPLETED',
-            'transfer_status': 'COMPLETED',
+            'status': payload.get('status', 'COMPLETED'),
+            'transfer_status': payload.get('status', 'COMPLETED'),
         }
 
-        print(f"DEBUG: EventPump forwarding file.completed to DIT collector: {event_data.get('filename')} ({bytes_copied} bytes)")
+        print(f"🔍🔍🔍 EVENT_PUMP MANAGER: About to forward to DIT collector: {event_data.get('filename')}")
         dit_collector.handle_file_complete_event(event_data)
+        print(f"🔍🔍🔍 EVENT_PUMP MANAGER: DIT collector called successfully")
 
     def _handle_dest_progress(self, payload: dict):
         """Handle destination progress events"""

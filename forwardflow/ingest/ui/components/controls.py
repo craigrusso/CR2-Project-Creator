@@ -93,17 +93,10 @@ class TransferWorker(QObject):
                 except Exception as e:
                     print(f"DEBUG: Failed to initialize JobAggregator: {e}")
                 
-                # CRITICAL FIX: Initialize DIT data collector for this job
-                try:
-                    print("DEBUG: About to initialize DIT data collector...")
-                    from ...utils.dit_data_collector import reset_dit_collector
-                    reset_dit_collector(self.job.job_id)
-                    print(f"🎯 DIT Data Collector initialized for job: {self.job.job_id}")
-                except Exception as e:
-                    print(f"ERROR: Failed to initialize DIT data collector: {e}")
-                    import traceback
-                    traceback.print_exc()
-                
+                # NOTE: DIT collector and real-time writer are now initialized on MAIN THREAD
+                # This prevents race condition where file completion events arrive before initialization
+                # See on_start() method for initialization code
+
                 # Event sink will connect directly to UI components, no need to re-emit through TransferWorker
                 print("DEBUG: Event sink will connect directly to UI components")
                 print("DEBUG: About to exit inner try block...")
@@ -280,7 +273,13 @@ class TransferWorker(QObject):
                 run_intelligent_copy()
                 
                 # Handle completion immediately after copy finishes
-                if self.copy_result and 'error' not in self.copy_result:
+                # CRITICAL FIX: copy_result is a CopyStats object, not a dict - use hasattr
+                has_error = False
+                if self.copy_result:
+                    if hasattr(self.copy_result, 'error'):
+                        has_error = bool(self.copy_result.error)
+
+                if self.copy_result and not has_error:
                     # Store the engine stats in root for report generation
                     self.root.engine_stats = self.copy_result
                     print(f"DEBUG: Engine stats stored in root: {self.copy_result}")
@@ -291,8 +290,16 @@ class TransferWorker(QObject):
                         self.event_pump.stop_pump()
                         print("DEBUG: ✅ Event pump stopped")
 
-                    # Emit completion signal
-                    self.transfer_completed.emit(self.copy_result)
+                    # Emit completion signal (convert CopyStats to dict)
+                    result_dict = {
+                        'total_bytes': getattr(self.copy_result, 'total_bytes', 0),
+                        'bytes_transferred': getattr(self.copy_result, 'bytes_transferred', 0),
+                        'total_files': getattr(self.copy_result, 'total_files', 0),
+                        'files_completed': getattr(self.copy_result, 'files_completed', 0),
+                        'duration': getattr(self.copy_result, 'duration', 0),
+                        'status': 'completed'
+                    }
+                    self.transfer_completed.emit(result_dict)
                 else:
                     # Stop event pump (cleanup on error)
                     if hasattr(self, 'event_pump'):
@@ -320,7 +327,7 @@ class TransferWorker(QObject):
         """Cancel the current transfer operation"""
         print("DEBUG: Transfer worker received cancel request")
         self._cancelled = True
-        
+
         # Cancel the engine
         if self.engine and hasattr(self.engine, 'cancel'):
             try:
@@ -328,11 +335,14 @@ class TransferWorker(QObject):
                 print("DEBUG: Engine cancelled successfully")
             except Exception as e:
                 print(f"DEBUG: Error cancelling engine: {e}")
-        
+
+        # Note: Event pump will be stopped by ControlSection._handle_transfer_cancelled
+        # to ensure all events are properly processed before report generation
+
         # Mark as completed with cancellation
         self.copy_completed = True
         self.copy_result = {'error': 'Transfer cancelled by user'}
-        
+
         self.transfer_cancelled.emit()
     
     def _get_block_size_for_preset(self, preset):
@@ -666,6 +676,7 @@ class ControlSection(QWidget):
                     # CRITICAL FIX: Connect file completed events to DIT collector
                     self.event_pump.file_completed.connect(self._handle_file_completed_for_dit)
                     print("DEBUG: ✅ Event pump → DIT collector connected")
+                    print(f"DEBUG: 🎯 Signal connected: event_pump.file_completed → controls._handle_file_completed_for_dit")
                 except Exception as e:
                     print(f"DEBUG: ❌ Error connecting event pump signals: {e}")
                     import traceback
@@ -676,6 +687,31 @@ class ControlSection(QWidget):
                 print("DEBUG: ✅ Event pump started on MAIN THREAD - NO GIL DEADLOCK!")
             else:
                 print("DEBUG: ⚠️ Engine doesn't have get_event_queue_handle - event pump disabled")
+
+            # CRITICAL: Initialize real-time report writer on MAIN THREAD before worker starts
+            # This prevents race condition where events arrive before initialization completes
+            print("DEBUG: 📊 Initializing real-time report writer on MAIN THREAD...")
+            try:
+                from ...utils.realtime_report_writer import start_realtime_reporting
+                from ...utils.dit_data_collector import reset_dit_collector
+
+                # Initialize DIT collector for this job
+                reset_dit_collector(job.job_id)
+                print(f"🎯 DIT collector initialized for job: {job.job_id}")
+
+                # Initialize real-time writer
+                realtime_writer = start_realtime_reporting(
+                    job.job_id,
+                    job.source_root,
+                    job.destination_roots
+                )
+                root.realtime_writer = realtime_writer
+                print(f"📊 Real-time report writer initialized for job: {job.job_id}")
+                print("DEBUG: ✅ Real-time writer ready to receive file completion events")
+            except Exception as e:
+                print(f"ERROR: Failed to initialize real-time reporting: {e}")
+                import traceback
+                traceback.print_exc()
 
             # Create transfer worker and thread (AFTER event sink is created and connected)
             print("DEBUG: 🔧 Creating TransferWorker with pre-connected event sink")
@@ -709,9 +745,10 @@ class ControlSection(QWidget):
         print(f"DEBUG: TransferWorker progress update received (should not happen with direct connections): {payload}")
 
     def _handle_file_completed_for_dit(self, payload):
-        """Handle file completed events and record in DIT collector"""
+        """Handle file completed events and update real-time report + DIT collector"""
         try:
-            print(f"DEBUG: 📝 File completed event received for DIT: {payload}")
+            print(f"🎯🎯🎯 CONTROLS: _handle_file_completed_for_dit() CALLED!")
+            print(f"🎯🎯🎯 CONTROLS: Payload received: {payload}")
 
             # Extract file information from payload (matching Rust event format)
             filename = payload.get('filename', '')
@@ -723,32 +760,46 @@ class ControlSection(QWidget):
             dest_checksum = payload.get('dest_checksum', payload.get('destination_checksum', ''))
             verification_passed = payload.get('verification_passed', False)
 
-            # Get current job ID
-            job_id = getattr(self.root, 'current_job_id', 'unknown')
+            print(f"🎯🎯🎯 CONTROLS: Extracted data - file={filename}, hash={source_checksum[:16] if source_checksum else 'NONE'}")
 
-            # CRITICAL FIX: Store file record in DIT collector for report generation
-            # Access the event sink's DIT collector to store file records
-            if hasattr(self.root, '_rust_event_sink') and self.root._rust_event_sink:
-                event_sink = self.root._rust_event_sink
-                if hasattr(event_sink, '_dit_collector'):
-                    dit_collector = event_sink._dit_collector
-                    # Record file completion in DIT collector
-                    file_record = {
-                        'filename': filename,
-                        'source_path': source_path,
-                        'destination_path': dest_path,
-                        'file_size': bytes_copied,
-                        'source_checksum': source_checksum,
-                        'destination_checksum': dest_checksum,
-                        'verification_passed': verification_passed,
-                        'status': 'completed'
-                    }
-                    dit_collector.record_file(job_id, file_record)
-                    print(f"DEBUG: ✅ File recorded in DIT collector: {filename} ({bytes_copied} bytes, hash: {source_checksum[:16] if source_checksum else 'none'}...)")
-                else:
-                    print(f"DEBUG: ⚠️ Event sink has no DIT collector attribute")
+            file_record = {
+                'filename': filename,
+                'source_path': source_path,
+                'destination_path': dest_path,
+                'dest_path': dest_path,
+                'dest_index': payload.get('dest_index', 0),
+                'file_size': bytes_copied,
+                'size_bytes': bytes_copied,
+                'source_checksum': source_checksum,
+                'destination_checksum': dest_checksum,
+                'hash_algorithm': payload.get('hash_algorithm', 'unknown'),
+                'verification_passed': verification_passed,
+                'status': payload.get('status', 'COMPLETED'),
+                'transfer_status': payload.get('status', 'COMPLETED'),
+            }
+
+            # CRITICAL: Update real-time report IMMEDIATELY - Industry standard approach
+            # This ensures we never lose data even if the system crashes
+            print(f"🎯🎯🎯 CONTROLS: About to get real-time writer...")
+            from ...utils.realtime_report_writer import get_realtime_writer
+            writer = get_realtime_writer()
+            print(f"🎯🎯🎯 CONTROLS: Real-time writer = {writer}")
+
+            if writer:
+                print(f"🎯🎯🎯 CONTROLS: Calling writer.add_file_completion()...")
+                writer.add_file_completion(file_record)
+                print(f"🎯🎯🎯 CONTROLS: ✅ Real-time report updated for: {filename}")
             else:
-                print(f"DEBUG: ⚠️ No event sink available for DIT data collection")
+                print(f"🎯🎯🎯 CONTROLS: ❌❌❌ WARNING: No real-time report writer available!")
+
+            # Also store in DIT collector for legacy compatibility
+            print(f"🎯🎯🎯 CONTROLS: Getting DIT collector...")
+            from ...utils.dit_data_collector import get_dit_collector
+            dit_collector = get_dit_collector()
+            print(f"🎯🎯🎯 CONTROLS: DIT collector = {dit_collector}")
+            print(f"🎯🎯🎯 CONTROLS: Calling DIT collector.handle_file_complete_event()...")
+            dit_collector.handle_file_complete_event(file_record)
+            print(f"🎯🎯🎯 CONTROLS: ✅ File recorded in DIT collector: {filename} ({bytes_copied} bytes, hash: {source_checksum[:16] if source_checksum else 'none'}...)")
 
         except Exception as e:
             print(f"ERROR: Failed to record file in DIT collector: {e}")
@@ -823,10 +874,19 @@ class ControlSection(QWidget):
         """Handle transfer completion - only generate reports for destinations without them"""
         print(f"DEBUG: Transfer completed with stats: {stats}")
         try:
+            # INDUSTRY STANDARD: Finalize real-time reports with COMPLETED status
+            # The reports already have all file records with hashes
+            try:
+                from ...utils.realtime_report_writer import stop_realtime_reporting
+                stop_realtime_reporting(final_status="COMPLETED")
+                print("DEBUG: ✅ Real-time reports finalized with COMPLETED status")
+            except Exception as e:
+                print(f"DEBUG: Error finalizing real-time reports: {e}")
+
             # Mark progress as completed with green styling
             if hasattr(self.root, 'progress_section') and self.root.progress_section:
                 self.root.progress_section.mark_transfer_completed()
-            
+
             # CRITICAL FIX: Generate reports BEFORE cleaning up job state
             # This ensures the JobAggregator data is still available for reporting
             if hasattr(self.transfer_worker, 'job') and self.transfer_worker.job:
@@ -883,33 +943,70 @@ class ControlSection(QWidget):
         """Handle transfer cancellation - only generate reports for incomplete destinations"""
         print("DEBUG: Transfer cancelled - checking for incomplete destinations")
         try:
-            # CRITICAL FIX: Generate reports BEFORE cleaning up job state
-            # This ensures the JobAggregator data is still available for reporting
+            # CRITICAL FIX: Wait for transfer thread to finish BEFORE generating reports
+            # This ensures all file completion events have been emitted and processed
+            print("DEBUG: Waiting for transfer thread to finish processing...")
+            if self.transfer_thread and self.transfer_thread.isRunning():
+                self.transfer_thread.quit()
+                if self.transfer_thread.wait(5000):  # Wait up to 5 seconds
+                    print("DEBUG: Transfer thread finished gracefully")
+                else:
+                    print("DEBUG: Transfer thread timeout - force terminating")
+                    self.transfer_thread.terminate()
+                    self.transfer_thread.wait(1000)
+
+            # CRITICAL FIX: Stop event pump and ensure all events are processed
+            # The event pump must be stopped to flush all remaining events before report generation
+            if hasattr(self, 'event_pump') and self.event_pump:
+                print("DEBUG: Stopping event pump to flush all remaining events...")
+                self.event_pump.stop_pump()
+                print("DEBUG: Event pump stopped - all events should be processed")
+
+            # CRITICAL: Give Qt event loop time to process final signals
+            # The event pump may have emitted signals just before stopping
+            print("DEBUG: Waiting for Qt event loop to process final signals...")
+            from PyQt6.QtCore import QThread, QCoreApplication
+            QCoreApplication.processEvents()  # Process any pending Qt events
+            QThread.msleep(100)  # Small delay to ensure everything settles
+
+            # INDUSTRY STANDARD: Finalize real-time reports
+            # The reports already contain all completed files with hashes
+            try:
+                from ...utils.realtime_report_writer import stop_realtime_reporting
+                stop_realtime_reporting(final_status="CANCELLED")
+                print("DEBUG: ✅ Real-time reports finalized with CANCELLED status")
+            except Exception as e:
+                print(f"DEBUG: Error finalizing real-time reports: {e}")
+
+            # Now generate reports with complete data
+            # This ensures the JobAggregator and DIT collector have all file completion data
             if hasattr(self.transfer_worker, 'job') and self.transfer_worker.job:
                 job_destinations = set(self.transfer_worker.job.destination_roots)
                 destinations_needing_reports = job_destinations - self._destinations_with_reports
-                
+
                 if destinations_needing_reports:
                     print(f"DEBUG: Generating cancel reports for incomplete destinations: {destinations_needing_reports}")
-                    
+
                     # Generate report BEFORE cleanup so JobAggregator data is available
                     self._generate_completion_report(
-                        self.root, 
-                        "cancelled", 
-                        None, 
+                        self.root,
+                        "cancelled",
+                        None,
                         self.transfer_worker.job
                     )
                 else:
                     print("DEBUG: All destinations already have reports - skipping duplicate generation")
-            
+
             # Clean up job state AFTER report generation (FIXED: this was happening before!)
             self._cleanup_job_state()
-            
+
             # Re-enable controls
             self.reenable_controls()
-            
-            # Clean up thread
-            self._cleanup_transfer_thread()
+
+            # Clean up thread references (already stopped above)
+            self.transfer_worker = None
+            self.transfer_thread = None
+            print("DEBUG: Transfer thread cleaned up")
             
         except Exception as e:
             print(f"DEBUG: Error handling transfer cancellation: {e}")
@@ -954,26 +1051,35 @@ class ControlSection(QWidget):
     def _cleanup_job_state(self):
         """Clean up job state to prevent contamination between jobs"""
         try:
+            # CRITICAL FIX: Reset Rust engine cancelled flag for next transfer
+            if hasattr(self.root, 'current_job') and self.root.current_job:
+                try:
+                    if hasattr(self.root.current_job, 'reset'):
+                        self.root.current_job.reset()
+                        print("DEBUG: ✅ Rust engine reset - ready for next transfer")
+                except Exception as e:
+                    print(f"DEBUG: Error resetting Rust engine: {e}")
+
             # Clear job references
             if hasattr(self.root, 'current_job'):
                 self.root.current_job = None
             if hasattr(self.root, 'current_job_spec'):
-                self.root.current_job_spec = None  
+                self.root.current_job_spec = None
             if hasattr(self.root, 'current_job_id'):
                 self.root.current_job_id = None
-                
+
             # Reset progress tracking state
             self.root.active_files = 0
             self.root.total_bytes = 0
             self.root.copied_bytes = 0
             self.root.job_start_time = None
-            
+
             # Clear file widgets
             if hasattr(self.root, 'file_widgets'):
                 self.root.file_widgets.clear()
-                
+
             print("DEBUG: Job state cleanup completed")
-            
+
         except Exception as e:
             print(f"DEBUG: Error during job state cleanup: {e}")
     
@@ -1185,7 +1291,15 @@ class ControlSection(QWidget):
                 if engine_stats:
                     # Handle CopyStats object (has attributes) vs dictionary
                     if hasattr(engine_stats, 'total_bytes'):
-                        # CopyStats object
+                        # CopyStats object - safely get errors
+                        errors = getattr(engine_stats, 'errors', None)
+                        error_count = 0
+                        if errors:
+                            if hasattr(errors, '__len__'):  # Check if iterable
+                                error_count = len(errors)
+                            elif isinstance(errors, (int, float)):
+                                error_count = int(errors)
+
                         stats = {
                             "total_bytes": getattr(engine_stats, 'total_bytes', 0),
                             "copied_bytes": getattr(engine_stats, 'copied_bytes', 0),
@@ -1194,7 +1308,7 @@ class ControlSection(QWidget):
                             "total_files": getattr(engine_stats, 'total_files', 0),
                             "completed_files": getattr(engine_stats, 'copied_files', 0),
                             "cancelled_files": 0,
-                            "error_files": len(getattr(engine_stats, 'errors', [])),
+                            "error_files": error_count,
                             "files": getattr(engine_stats, 'file_records', [])
                         }
                     else:
