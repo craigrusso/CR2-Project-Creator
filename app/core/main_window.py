@@ -131,9 +131,24 @@ class ForwardFlowApp(QMainWindow):
         self.right_layout = QVBoxLayout(self.right_panel)
         self.right_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Create tab widget
+        # Create tab widget with tabs at bottom
         self.tab_widget = QTabWidget()
+        self.tab_widget.setTabPosition(QTabWidget.TabPosition.South)  # Tabs at bottom
         self.right_layout.addWidget(self.tab_widget)
+
+        # Create status message widget for tab bar corner (left side of bottom tabs)
+        self.tab_status_widget = QWidget()
+        self.tab_status_widget.setFixedWidth(300)  # Limit width so it doesn't span whole bar
+        self.tab_status_layout = QHBoxLayout(self.tab_status_widget)
+        self.tab_status_layout.setContentsMargins(10, 0, 10, 0)
+        self.tab_status_layout.setSpacing(0)
+
+        self.tab_status_label = QLabel("")
+        self.tab_status_label.setStyleSheet(f"color: {APP_COLORS['text']}; font-size: 12px;")
+        self.tab_status_layout.addWidget(self.tab_status_label)
+
+        # Add status widget to BOTTOM LEFT corner (since tabs are at South position)
+        self.tab_widget.setCornerWidget(self.tab_status_widget, Qt.Corner.BottomLeftCorner)
         
         # Create Templates tab
         # Create the template gallery
@@ -241,29 +256,30 @@ class ForwardFlowApp(QMainWindow):
             self.template_gallery.refresh()
     
     def show_status_message(self, message, message_type="info", duration=5000):
-        """Show a status message in the status bar"""
-        if not hasattr(self, 'statusBar'):
+        """Show a status message in the tab bar corner widget"""
+        if not hasattr(self, 'tab_status_label'):
             return
-            
-        status_bar = self.statusBar()
+
+        # Set message text
+        self.tab_status_label.setText(message)
+
+        # Apply color based on message type
         if message_type == "error":
-            status_bar.setStyleSheet(f"color: {APP_COLORS['error']};")
+            self.tab_status_label.setStyleSheet(f"color: {APP_COLORS['error']}; font-size: 12px;")
         elif message_type == "success":
-            status_bar.setStyleSheet(f"color: {APP_COLORS['success']};")
+            self.tab_status_label.setStyleSheet(f"color: {APP_COLORS['success']}; font-size: 12px;")
         else:
-            status_bar.setStyleSheet(f"color: {APP_COLORS['text']};")
-        
-        status_bar.showMessage(message, duration)
-        
-        # Reset status bar after duration
+            self.tab_status_label.setStyleSheet(f"color: {APP_COLORS['text']}; font-size: 12px;")
+
+        # Reset status message after duration
         self.status_message_timer.stop()
         self.status_message_timer.start(duration)
     
     def _reset_status_bar(self):
         """Reset status bar to default state"""
-        if hasattr(self, 'statusBar'):
-            self.statusBar().clearMessage()
-            self.statusBar().setStyleSheet("")
+        if hasattr(self, 'tab_status_label'):
+            self.tab_status_label.setText("")
+            self.tab_status_label.setStyleSheet(f"color: {APP_COLORS['text']}; font-size: 12px;")
         self.status_message_timer.stop()
     
     def show_error(self, message):

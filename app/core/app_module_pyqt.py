@@ -58,6 +58,145 @@ from app.dialogs.info_dialogs import show_about, show_tutorial  # Changed from s
 from app.onboarding.slideshow import TutorialSlideshow  # Changed from SlideshowDialog
 from app.ui.ui_utils import get_styled_app_name
 
+
+class ForwardFlowStatusBar(QStatusBar):
+    """Custom status bar with a dedicated left-aligned message channel."""
+
+    def __init__(self, color_palette, parent=None):
+        super().__init__(parent)
+        self.setObjectName("ForwardFlowStatusBar")
+        self.setSizeGripEnabled(False)
+
+        self._colors = color_palette
+        self._current_message = ""
+
+        # Base appearance – thin divider line and consistent height (taller to accommodate tabs)
+        border_color = color_palette.get('border', '#3C3C3C')
+        background_color = color_palette.get('card_bg', '#252526')  # Use card_bg for tab channel
+        self.setStyleSheet(f"""
+            QStatusBar#ForwardFlowStatusBar {{
+                background-color: {background_color};
+                border-top: 1px solid {border_color};
+                padding: 0px;
+                margin: 0px;
+                min-height: 50px;
+                max-height: 50px;
+            }}
+            QStatusBar#ForwardFlowStatusBar::item {{
+                border: none;
+            }}
+        """)
+
+        # Dedicated message container on the left - expanding to use all space up to tabs
+        self.message_container = QWidget(self)
+        self.message_container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.message_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.message_container.setObjectName("statusMessageContainer")
+
+        container_layout = QHBoxLayout(self.message_container)
+        container_layout.setContentsMargins(10, 0, 10, 0)
+        container_layout.setSpacing(0)
+
+        self.message_label = QLabel(" ", self.message_container)
+        self.message_label.setObjectName("statusMessageLabel")
+        self.message_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        self.message_label.setWordWrap(True)  # Allow wrapping for long messages
+        container_layout.addWidget(self.message_label)
+        container_layout.addStretch()  # Push content to the left
+
+        self.addPermanentWidget(self.message_container, 1)  # Stretch factor 1 to expand
+
+        # Timer used for auto-clearing messages
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self.clearMessage)
+
+        self._set_neutral_style()
+
+    # --- Qt API compatibility -------------------------------------------------
+
+    def showMessage(self, message, timeout=0, *args, **kwargs):  # noqa: D401 (Qt override)
+        """Display a styled message while preserving QStatusBar behaviour."""
+        message_type = kwargs.pop("message_type", None)
+        if args:
+            # Support optional positional message_type for backwards compatibility
+            message_type = args[0]
+
+        if message_type is None:
+            message_type = "info"
+
+        self._timer.stop()
+        self._current_message = message or ""
+
+        if not self._current_message:
+            self.clearMessage()
+            return
+
+        self._apply_message_style(message_type)
+        self.message_label.setText(self._current_message)
+
+        if timeout and timeout > 0:
+            self._timer.start(timeout)
+
+        self.messageChanged.emit(self._current_message)
+
+    def clearMessage(self):  # noqa: D401 (Qt override)
+        """Clear the current message and restore neutral styling."""
+        self._timer.stop()
+        self._current_message = ""
+        self._set_neutral_style()
+        self.message_label.setText(" ")
+        self.messageChanged.emit("")
+
+    def currentMessage(self):  # noqa: D401 (Qt override)
+        """Return the text currently shown in the status bar message channel."""
+        return self._current_message
+
+    # --- Helpers --------------------------------------------------------------
+
+    @property
+    def message_timer(self):
+        """Expose the auto-clear timer for compatibility with legacy helpers."""
+        return self._timer
+
+    def _set_neutral_style(self):
+        """Apply the default transparent styling to the message channel."""
+        neutral_text = self._colors.get('text_subtle', '#B0B0B0')
+        bg_color = self._colors.get('bg', '#1E1E1E')  # Use darker bg color
+        self.message_container.setStyleSheet(
+            f"background-color: {bg_color}; "
+            "border: none; "
+            "padding: 0px;"
+        )
+        self.message_label.setStyleSheet(f"color: {neutral_text}; font-weight: 500;")
+
+    def _apply_message_style(self, message_type):
+        """Apply styling for success/info/error messages."""
+        bg_color, text_color = self._status_message_colors(message_type)
+
+        # Container fills with message color, label has white text
+        self.message_container.setStyleSheet(
+            f"background-color: {bg_color}; "
+            f"border: none; "
+            f"padding: 8px 12px;"
+        )
+        self.message_label.setStyleSheet(f"color: {text_color}; font-weight: 600; background-color: transparent;")
+
+    def _status_message_colors(self, message_type):
+        palette = {
+            "success": (self._colors.get("success", "#4CAF50"), "#FFFFFF"),
+            "error": (self._colors.get("error", "#D64550"), "#FFFFFF"),
+            "warning": (self._colors.get("warning", "#FFC107"), "#1F1F1F"),
+            "info": (self._colors.get("accent", "#2C4F76"), "#FFFFFF"),
+        }
+        return palette.get(message_type, palette["info"])
+
+    def _status_message_border_color(self, background_color):
+        qcolor = QColor(background_color)
+        if not qcolor.isValid():
+            return "#000000"
+        return qcolor.darker(150).name()
+
 # --- Worker for background update check ---
 class UpdateWorker(QObject):
     """Worker thread for checking updates in the background."""
@@ -186,8 +325,7 @@ class ForwardFlowApp(QMainWindow):
         print("DEBUG: Initializing ProjectBuilder...")
         self.project_builder = ProjectBuilder(self.template_manager)
         print("DEBUG: ProjectBuilder initialized")
-        self.status_message_timer = QTimer()
-        self.status_message_timer.timeout.connect(self._reset_status_bar)
+        self.status_message_timer = None  # Will be assigned after status bar initialization
         
         # Batch project creation results
         self.batch_results = None
@@ -273,41 +411,22 @@ class ForwardFlowApp(QMainWindow):
         print("DEBUG: Menu bar created")
         
         print("DEBUG: Creating status bar...")
-        # Create status bar with bottom tabs
-        self.status_bar = QStatusBar()
+        # Create custom status bar with dedicated message channel
+        self.status_bar = ForwardFlowStatusBar(colors, self)
         self.setStatusBar(self.status_bar)
-        
-        # Add status message on the left
-        self.status_message = QLabel("")
-        self.status_bar.addWidget(self.status_message)
-        
-        # Add bottom tabs centered in status bar
+
+        # Maintain compatibility references used throughout the codebase
+        self.status_message = self.status_bar.message_label
+        self.status_message_timer = self.status_bar.message_timer
+        if self.status_message_timer:
+            self.status_message_timer.timeout.connect(self._reset_status_bar)
+
+        # Add bottom tabs styled via the global theme for inverted rounding
         self.bottom_tab_widget = QTabWidget()
-        self.bottom_tab_widget.setMaximumHeight(30)
-        self.bottom_tab_widget.setStyleSheet("""
-            QTabWidget::pane {
-                border: none;
-                background: transparent;
-            }
-            QTabBar::tab {
-                background-color: #383838;
-                color: #CCCCCC;
-                padding: 4px 12px;
-                margin: 0px 2px;
-                border: 1px solid #2C4F76;
-                border-top: none;
-                border-radius: 0px 0px 4px 4px;
-                min-width: 80px;
-            }
-            QTabBar::tab:selected {
-                background-color: #2C4F76;
-                color: white;
-                border-color: #2C4F76;
-            }
-            QTabBar::tab:hover:!selected {
-                background-color: #454545;
-            }
-        """)
+        self.bottom_tab_widget.setTabPosition(QTabWidget.TabPosition.South)
+        self.bottom_tab_widget.setFixedHeight(50)  # Match status bar height exactly
+        # Disable the tab bar's base (line drawn under tabs)
+        self.bottom_tab_widget.tabBar().setDrawBase(False)
         
         # Add Templates tab (default)
         self.templates_tab = QWidget()
@@ -320,30 +439,21 @@ class ForwardFlowApp(QMainWindow):
         # Connect tab changes to switch content
         self.bottom_tab_widget.currentChanged.connect(self._on_tab_changed)
         
-        # Center the bottom tabs in the status bar
-        # First add the status message on the left
-        self.status_bar.addWidget(self.status_message)
-        
-        # Add a stretch to push tabs to center
-        self.status_bar.addPermanentWidget(QLabel(""), 1)  # Stretch factor 1
-        
-        # Add the bottom tabs in the center
+        # To center tabs to the WINDOW (not just available space):
+        # Message container has stretch=1 on the left
+        # We need: left spacer (stretch=0.5) + tabs + right spacer (stretch=0.5)
+        # This way the tabs are centered relative to the full window width
+
+        left_spacer = QWidget()
+        left_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.status_bar.addPermanentWidget(left_spacer, 0)  # No stretch - will be compressed by message container
+
         self.status_bar.addPermanentWidget(self.bottom_tab_widget)
-        
-        # Add another stretch to balance the centering
-        self.status_bar.addPermanentWidget(QLabel(""), 1)  # Stretch factor 1
-        
-        # Configure status bar for proper text display
-        self.status_bar.setStyleSheet("""
-            QStatusBar { 
-                padding-left: 8px; 
-                min-height: 30px;
-            }
-            QStatusBar::item {
-                border: none;
-                padding-left: 8px;
-            }
-        """)
+
+        right_spacer = QWidget()
+        right_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.status_bar.addPermanentWidget(right_spacer, 1)  # Stretch=1 to balance message container
+
         print("DEBUG: Status bar with bottom tabs created")
         
         print("DEBUG: Setting minimum window size...")
@@ -1602,61 +1712,16 @@ class ForwardFlowApp(QMainWindow):
         pass
     
     def show_status_message(self, message, message_type="info", duration=5000):
-        """Show a status message in the status bar"""
-        # Stop any existing timer
-        self.status_message_timer.stop()
-        
-        # Set message style based on type
-        base_style = """
-            QStatusBar { 
-                padding-left: 8px; 
-                min-height: 24px;
-            }
-            QStatusBar::item {
-                border: none;
-                padding-left: 8px;
-            }
-        """
-        
-        if message_type == "success":
-            style = base_style + f"QStatusBar {{ background-color: {colors['success']}; color: {colors['success_text']}; }}"
-        elif message_type == "error":
-            style = base_style + f"QStatusBar {{ background-color: {colors['error']}; color: white; }}"
-        elif message_type == "warning":
-            style = base_style + f"QStatusBar {{ background-color: {colors['warning']}; color: black; }}"
-        else:  # info
-            style = base_style + f"QStatusBar {{ background-color: {colors['accent']}; color: white; }}"
-        
-        # Set status bar message and style
-        self.status_bar.setStyleSheet(style)
-        self.status_bar.showMessage(message)
-        
-        # Start timer to clear message after duration
-        if duration > 0:
-            self.status_message_timer.start(duration)
-    
+        """Display a styled status message in the left channel."""
+        if not self.status_bar:
+            return
+        # Delegate to the custom status bar which manages styling and timers
+        self.status_bar.showMessage(message, duration, message_type=message_type)
+
     def _reset_status_bar(self):
-        """Reset the status bar to its default state"""
-        # Stop the timer
-        self.status_message_timer.stop()
-        
-        # Clear message and reset style
-        self.status_bar.clearMessage()
-        
-        # Reset to default style while maintaining proper padding
-        base_style = """
-            QStatusBar { 
-                padding-left: 8px; 
-                min-height: 24px;
-                background-color: """ + colors['card_bg'] + """; 
-                color: """ + colors['text'] + """;
-            }
-            QStatusBar::item {
-                border: none;
-                padding-left: 8px;
-            }
-        """
-        self.status_bar.setStyleSheet(base_style)
+        """Reset the status bar to its neutral state."""
+        if self.status_bar:
+            self.status_bar.clearMessage()
     
     def handle_update_available(self, version_info):
         """Displays a message box when an update is found."""

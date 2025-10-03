@@ -69,12 +69,17 @@ class OptionsSection(QWidget):
         header_layout.addWidget(self.report_checkbox)
         layout.addLayout(header_layout)
 
-        # Global Preset (full width, vertical)
+        # Preset and Checksum side-by-side to save vertical space
+        settings_row = QHBoxLayout()
+        settings_row.setSpacing(8)
+
+        # Preset column (left)
+        preset_layout = QVBoxLayout()
+        preset_layout.setSpacing(4)
         preset_label = QLabel("Preset:")
         preset_label.setStyleSheet(FIELD_LABEL_STYLE)
         preset_label.setMinimumHeight(18)
         preset_label.setMaximumHeight(18)
-        layout.addWidget(preset_label)
 
         self.preset_combo = QComboBox()
         self.preset_combo.addItems([
@@ -92,14 +97,16 @@ class OptionsSection(QWidget):
         except Exception as e:
             print(f"DEBUG: Failed to apply hover delegate to preset_combo: {e}")
 
-        layout.addWidget(self.preset_combo)
+        preset_layout.addWidget(preset_label)
+        preset_layout.addWidget(self.preset_combo)
 
-        # Checksum Algorithm (full width, vertical)
+        # Checksum column (right)
+        checksum_layout = QVBoxLayout()
+        checksum_layout.setSpacing(4)
         verify_label = QLabel("Checksum:")
         verify_label.setStyleSheet(FIELD_LABEL_STYLE)
         verify_label.setMinimumHeight(18)
         verify_label.setMaximumHeight(18)
-        layout.addWidget(verify_label)
 
         self.verify_combo = QComboBox()
         self.verify_combo.addItems([
@@ -118,7 +125,13 @@ class OptionsSection(QWidget):
         except Exception as e:
             print(f"DEBUG: Failed to apply hover delegate to verify_combo: {e}")
 
-        layout.addWidget(self.verify_combo)
+        checksum_layout.addWidget(verify_label)
+        checksum_layout.addWidget(self.verify_combo)
+
+        # Add both columns to row (equal widths)
+        settings_row.addLayout(preset_layout, 1)
+        settings_row.addLayout(checksum_layout, 1)
+        layout.addLayout(settings_row)
 
         # Collapsible Advanced Settings
         advanced_toggle = QPushButton("▶ Advanced")

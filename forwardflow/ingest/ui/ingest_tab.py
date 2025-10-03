@@ -40,6 +40,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QScrollArea,
     QCheckBox,
+    QSplitter,
 )
 
 from .ingest_vm import IngestViewModel
@@ -205,20 +206,7 @@ def build_ingest_tab():
         # Only update elapsed time which doesn't conflict with event-driven updates
         pass  # All stats now handled by event system
 
-    # Title row - left side "Turbo Transfer", right side stays empty for now
-    title_row = QHBoxLayout()
-    title_row.setSpacing(0)
-    title_row.setContentsMargins(5, 5, 5, 5)
-
-    title = QLabel("Turbo Transfer")
-    title.setStyleSheet(HEADER_LABEL_STYLE)
-    title.setMinimumHeight(32)
-    title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-
-    title_row.addWidget(title, 30)  # Left side 30%
-    title_row.addStretch(70)  # Right side 70% (destinations will align here)
-
-    layout.addLayout(title_row)
+    # REMOVED: "Turbo Transfer" title - sections now expand to top
 
     # Create the refactored components
     print("DEBUG: Creating SourceDestinationSection...")
@@ -233,15 +221,15 @@ def build_ingest_tab():
     print("DEBUG: Creating ProgressSection...")
     progress_section = ProgressSection(root)
 
-    # Two-column layout: Left (settings + progress), Right (destinations ONLY)
-    main_content = QHBoxLayout()
-    main_content.setSpacing(0)
-    main_content.setContentsMargins(5, 0, 5, 5)  # Minimal margins like Templates
+    # Two-column layout with splitter: Left (settings + progress), Right (destinations ONLY)
+    main_splitter = QSplitter(Qt.Orientation.Horizontal)
+    main_splitter.setHandleWidth(6)  # Match templates page splitter width
 
-    # LEFT COLUMN: Source, Settings, Controls, and Progress
-    left_column = QVBoxLayout()
+    # LEFT COLUMN: Source, Settings, Controls, and Progress (in widget for splitter)
+    left_widget = QWidget()
+    left_column = QVBoxLayout(left_widget)
     left_column.setSpacing(8)
-    left_column.setContentsMargins(0, 0, 6, 0)  # Small right margin for gap
+    left_column.setContentsMargins(5, 5, 3, 5)  # Padding: left=5, top=5, right=3 (splitter), bottom=5
 
     # Source selection (left column)
     left_column.addWidget(source_dest_section.get_source_widget())
@@ -255,22 +243,27 @@ def build_ingest_tab():
     # Progress section (left column) - moved from bottom
     left_column.addWidget(progress_section)
 
-    # Add stretch to push everything to top
-    left_column.addStretch()
-
-    # RIGHT COLUMN: Destinations ONLY (full height)
-    right_column = QVBoxLayout()
+    # RIGHT COLUMN: Destinations ONLY (in widget for splitter)
+    right_widget = QWidget()
+    right_column = QVBoxLayout(right_widget)
     right_column.setSpacing(0)
-    right_column.setContentsMargins(0, 0, 0, 0)
+    right_column.setContentsMargins(3, 5, 5, 5)  # Padding: left=3 (splitter), top=5, right=5, bottom=5
 
     # Destinations (right column - takes full right side)
-    right_column.addWidget(source_dest_section.get_destinations_widget(), 1)  # Stretch to fill
+    destinations_widget = source_dest_section.get_destinations_widget()
+    destinations_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+    right_column.addWidget(destinations_widget, 1)  # Stretch to fill ALL vertical space
 
-    # Add columns to main content (30% left for controls+progress, 70% right for destinations)
-    main_content.addLayout(left_column, 30)
-    main_content.addLayout(right_column, 70)
+    # Add widgets to splitter - left panel fixed width, destination expands on resize
+    main_splitter.addWidget(left_widget)
+    main_splitter.addWidget(right_widget)
+    main_splitter.setSizes([350, 950])  # Initial: 350px left (compact), rest for destinations
+    main_splitter.setCollapsible(0, False)  # Don't allow collapsing left panel
+    main_splitter.setCollapsible(1, False)  # Don't allow collapsing right panel
+    main_splitter.setStretchFactor(0, 0)  # Left panel doesn't stretch
+    main_splitter.setStretchFactor(1, 1)  # Right panel (destinations) gets all extra space
 
-    layout.addLayout(main_content, 1)  # Main content gets all space
+    layout.addWidget(main_splitter, 1)  # Main splitter gets all space
     
     # Store references to components for access from event handlers
     root.source_dest_section = source_dest_section

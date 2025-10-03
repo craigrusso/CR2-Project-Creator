@@ -254,10 +254,16 @@ def configure_styles(app):
             selection-color: {colors['secondary_text']};
         }}
         
+        /* Hide built-in QStatusBar - using tab bar corner widget instead */
         QStatusBar {{
-            background-color: {colors['card_bg']};
-            color: {colors['text']};
-            border-top: 1px solid {colors['border']};
+            max-height: 0px;
+            min-height: 0px;
+            border: none;
+            background-color: transparent;
+        }}
+
+        QStatusBar::item {{
+            border: none;
         }}
         
         /* Scroll bars - critical for macOS */
@@ -300,32 +306,50 @@ def configure_styles(app):
             width: 0px;
         }}
         
-        /* Tab widget styling */
+        /* Tab widget styling - tabs at BOTTOM with rounded BOTTOM corners */
         QTabWidget::pane {{
-            border: 1px solid {colors['border']};
-            background-color: {colors['bg']};
+            border: none;
+            background-color: transparent;
+            bottom: 0px;  /* For South tabs, bottom controls the gap above tabs */
+            margin: 0px;
+            padding: 0px;
         }}
-        
+
+        /* QTabBar positioned at bottom (South) - eliminate all spacing */
+        QTabBar {{
+            background-color: {colors['card_bg']};  /* Solid background to fill area and hide lines */
+            padding: 0px;
+            margin: 0px;
+            border: none;
+        }}
+
+        /* Tabs at bottom with rounded BOTTOM edges (upside-down tabs) */
         QTabBar::tab {{
             background-color: {colors['card_bg']};
             color: {colors['text']};
-            border: 1px solid {colors['border']};
-            border-bottom: none;
-            padding: 5px 10px;
-            border-top-left-radius: 4px;
-            border-top-right-radius: 4px;
+            border: none;
+            padding: 8px 20px 8px 20px;
+            margin: 0px 4px 4px 0px;  /* No top margin, 4px bottom margin for rounded corners */
+            border-bottom-left-radius: 8px;
+            border-bottom-right-radius: 8px;
+            min-width: 80px;
         }}
-        
+
         QTabBar::tab:selected {{
-            background-color: {colors['bg']};
-            border-bottom: none;
-            border-left: 1px solid {colors['border']};
-            border-top: 2px solid {colors['accent']};
-            border-right: 1px solid {colors['border']};
+            background-color: {colors['accent']};
+            color: white;
+            font-weight: 600;
         }}
-        
+
         QTabBar::tab:!selected {{
-            margin-top: 2px;
+            background-color: #383838;  /* Lighter than card_bg so tab shape is visible */
+            color: {colors['secondary_text']};
+            margin-bottom: 6px;  /* Slightly more bottom margin for depth */
+        }}
+
+        QTabBar::tab:hover:!selected {{
+            background-color: {colors['hover_bg']};
+            color: {colors['text']};
         }}
         
         /* Direct and focused styling for combo box popup items */

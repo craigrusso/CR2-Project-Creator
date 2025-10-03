@@ -547,18 +547,16 @@ class SourceDestinationSection(QWidget):
         container = QWidget()
         container_layout = QVBoxLayout(container)
         container_layout.setSpacing(6)
-        container_layout.setContentsMargins(0, 5, 0, 0)  # Top margin to align with title row
+        container_layout.setContentsMargins(0, 0, 0, 0)  # No margins
 
-        # Destinations header (OUTSIDE the card - no border)
+        # Destinations header - aligned with this column's content
         dest_header = QHBoxLayout()
         dest_header.setSpacing(8)
 
         dest_label = QLabel("Destinations:")
         dest_label.setStyleSheet(FIELD_LABEL_STYLE)
-        dest_label.setMinimumHeight(32)  # Match title height for alignment
-        dest_label.setMaximumHeight(32)
-        dest_label.setMinimumWidth(100)  # Wide enough for "Destinations:"
-        dest_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        dest_label.setMinimumHeight(18)
+        dest_label.setMaximumHeight(18)
 
         self.add_dest_btn = QPushButton("+ Add")
         self.add_dest_btn.setObjectName("add_dest_btn")
@@ -570,7 +568,7 @@ class SourceDestinationSection(QWidget):
         dest_header.addWidget(dest_label)
         dest_header.addStretch()
         dest_header.addWidget(self.add_dest_btn)
-        container_layout.addLayout(dest_header)
+        container_layout.addLayout(dest_header, 0)
 
         # Destinations dropdown (outside card)
         self.dest_combo = QComboBox()
@@ -588,7 +586,7 @@ class SourceDestinationSection(QWidget):
         self.dest_combo.currentIndexChanged.connect(self.on_destination_index_changed)
         self._updating_combo = False
 
-        container_layout.addWidget(self.dest_combo)
+        container_layout.addWidget(self.dest_combo, 0)  # No stretch - fixed size
 
         # Destinations list in bordered card (only the list has border)
         dest_frame = QFrame()
