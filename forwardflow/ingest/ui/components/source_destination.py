@@ -63,14 +63,14 @@ class DestinationWidget(QFrame):
             QFrame {{
                 background-color: {colors['card_bg']};
                 border: 1px solid {colors['border']};
-                border-radius: 3px;
-                padding: 5px;
+                border-radius: 4px;
+                padding: 6px;
             }}
         """)
-        
+
         layout = QVBoxLayout(self)
-        layout.setSpacing(6)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(4)
+        layout.setContentsMargins(6, 6, 6, 6)
         
         # Top row: path and controls
         top_row = QHBoxLayout()
@@ -485,134 +485,153 @@ class SourceDestinationSection(QWidget):
         # print("DEBUG: Started destination availability checking timer (30s interval)")
         
     def setup_ui(self):
-        """Setup the source and destination UI"""
+        """Setup the source and destination UI - now split into separate widgets"""
         layout = QVBoxLayout(self)
-        layout.setSpacing(8)
+        layout.setSpacing(0)
         layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Title at the very top with minimal margin
-        title = QLabel("Turbo Transfer")
-        title.setStyleSheet(HEADER_LABEL_STYLE)
-        title.setMinimumHeight(28)  # Use minimum height instead of fixed
-        title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        title.setContentsMargins(10, 2, 10, 2)
-        layout.addWidget(title)
-        
-        # Paths section
-        paths_layout = QVBoxLayout()
-        paths_layout.setSpacing(8)
-        paths_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Source section - inline layout
-        src_layout = QHBoxLayout()
-        src_layout.setSpacing(10)
+
+        # Create source widget (for left column)
+        self._source_widget = self._create_source_widget()
+
+        # Create destinations widget (for right column)
+        self._destinations_widget = self._create_destinations_widget()
+
+        # Don't add to layout - these will be accessed via getter methods
+
+    def _create_source_widget(self):
+        """Create the source selection widget for left column"""
+        source_widget = QWidget()
+
+        src_layout = QVBoxLayout(source_widget)
+        src_layout.setSpacing(6)
         src_layout.setContentsMargins(0, 0, 0, 0)
-        
+
+        # Source label
         src_label = QLabel("Source:")
         src_label.setStyleSheet(FIELD_LABEL_STYLE)
-        src_label.setFixedHeight(38)
-        src_label.setFixedWidth(60)
-        src_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        
+        src_label.setMinimumHeight(18)
+        src_label.setMaximumHeight(18)
+        src_layout.addWidget(src_label)
+
+        # Source selection row
+        src_row = QHBoxLayout()
+        src_row.setSpacing(6)
+
         self.src_combo = QComboBox()
         self.src_combo.setEditable(True)
         self.src_combo.setStyleSheet(COMBOBOX_STYLE)
         self.src_combo.setPlaceholderText("Select source folder...")
-        self.src_combo.setFixedHeight(38)
-        self.src_combo.setMinimumHeight(38)
-        self.src_combo.setMaximumHeight(38)
-        
-        # Apply hover delegate for proper hover effects and clickable area
+        self.src_combo.setFixedHeight(40)
+
         try:
             apply_hover_delegate(self.src_combo)
-            print("DEBUG: Applied hover delegate to src_combo")
         except Exception as e:
             print(f"DEBUG: Failed to apply hover delegate to src_combo: {e}")
-        
+
         self.src_btn = QPushButton("Browse...")
         self.src_btn.setObjectName("src_btn")
         self.src_btn.setStyleSheet(BUTTON_STYLE)
-        self.src_btn.setFixedHeight(38)
-        self.src_btn.setFixedWidth(110)
-        
-        src_layout.addWidget(src_label)
-        src_layout.addWidget(self.src_combo, 1)
-        src_layout.addWidget(self.src_btn)
-        
-        paths_layout.addLayout(src_layout)
-        
-        # Destinations section with pinned header and scrollable content
-        dest_frame = QFrame()
-        dest_frame.setStyleSheet(CARD_FRAME_STYLE)
-        dest_layout = QVBoxLayout(dest_frame)
-        dest_layout.setSpacing(8)
-        dest_layout.setContentsMargins(12, 12, 12, 12)
-        
-        # Destinations header (pinned to top)
+        self.src_btn.setFixedHeight(40)
+        self.src_btn.setFixedWidth(90)
+        self.src_btn.clicked.connect(self._browse_for_source)
+
+        src_row.addWidget(self.src_combo, 1)
+        src_row.addWidget(self.src_btn)
+        src_layout.addLayout(src_row)
+
+        return source_widget
+
+    def _create_destinations_widget(self):
+        """Create the destinations widget for right column"""
+        # Container widget (no border)
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setSpacing(6)
+        container_layout.setContentsMargins(0, 5, 0, 0)  # Top margin to align with title row
+
+        # Destinations header (OUTSIDE the card - no border)
         dest_header = QHBoxLayout()
-        dest_header.setSpacing(10)
-        dest_header.setContentsMargins(0, 0, 0, 0)
+        dest_header.setSpacing(8)
+
         dest_label = QLabel("Destinations:")
         dest_label.setStyleSheet(FIELD_LABEL_STYLE)
-        dest_label.setFixedHeight(25)
-        
-        # Destinations dropdown - automatically adds destinations when selected
+        dest_label.setMinimumHeight(32)  # Match title height for alignment
+        dest_label.setMaximumHeight(32)
+        dest_label.setMinimumWidth(100)  # Wide enough for "Destinations:"
+        dest_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        self.add_dest_btn = QPushButton("+ Add")
+        self.add_dest_btn.setObjectName("add_dest_btn")
+        self.add_dest_btn.setStyleSheet(BUTTON_STYLE)
+        self.add_dest_btn.setFixedHeight(32)
+        self.add_dest_btn.setFixedWidth(80)
+        self.add_dest_btn.clicked.connect(self.add_destination)
+
+        dest_header.addWidget(dest_label)
+        dest_header.addStretch()
+        dest_header.addWidget(self.add_dest_btn)
+        container_layout.addLayout(dest_header)
+
+        # Destinations dropdown (outside card)
         self.dest_combo = QComboBox()
         self.dest_combo.setEditable(True)
         self.dest_combo.setStyleSheet(COMBOBOX_STYLE)
-        self.dest_combo.setPlaceholderText("Select destination folder...")
-        self.dest_combo.setFixedHeight(38)
-        self.dest_combo.setMinimumHeight(38)
-        self.dest_combo.setMaximumHeight(38)
-        
-        # Apply hover delegate for proper hover effects and clickable area
+        self.dest_combo.setPlaceholderText("Type or select...")
+        self.dest_combo.setFixedHeight(32)
+
         try:
             apply_hover_delegate(self.dest_combo)
-            print("DEBUG: Applied hover delegate to dest_combo")
         except Exception as e:
             print(f"DEBUG: Failed to apply hover delegate to dest_combo: {e}")
-        
-        # Connect dropdown selection to handle both text changes and index changes
+
         self.dest_combo.currentTextChanged.connect(self.on_destination_text_changed)
         self.dest_combo.currentIndexChanged.connect(self.on_destination_index_changed)
-        # Track if we're programmatically updating the combo
         self._updating_combo = False
-        
-        self.add_dest_btn = QPushButton("+ Add Destination")
-        self.add_dest_btn.setObjectName("add_dest_btn")
-        self.add_dest_btn.setStyleSheet(BUTTON_STYLE)
-        self.add_dest_btn.setFixedHeight(38)
-        self.add_dest_btn.setFixedWidth(150)
-        
-        dest_header.addWidget(dest_label)
-        dest_header.addWidget(self.dest_combo, 1)
-        dest_header.addWidget(self.add_dest_btn)
-        dest_layout.addLayout(dest_header, 0)
-        
-        # Connect button signals
-        self.add_dest_btn.clicked.connect(self.add_destination)
-        self.src_btn.clicked.connect(self._browse_for_source)
-        
-        # Destinations list (scrollable with expandable height)
+
+        container_layout.addWidget(self.dest_combo)
+
+        # Destinations list in bordered card (only the list has border)
+        dest_frame = QFrame()
+        dest_frame.setStyleSheet(f"""
+            QFrame {{
+                background-color: {colors['card_bg']};
+                border: 1px solid {colors['border']};
+                border-radius: 6px;
+            }}
+        """)
+
+        dest_frame_layout = QVBoxLayout(dest_frame)
+        dest_frame_layout.setSpacing(0)
+        dest_frame_layout.setContentsMargins(8, 8, 8, 8)
+
+        # Destinations list (scrollable - no height limit, fills available space)
         dest_scroll = QScrollArea()
         dest_scroll.setWidgetResizable(True)
-        dest_scroll.setMinimumHeight(150)  # Reduced minimum height to prevent clipping
-        # Remove maximum height constraint to allow full expansion
         dest_scroll.setStyleSheet(SCROLL_AREA_STYLE)
         dest_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         dest_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        
+        # No setMinimumHeight - let it expand to fill parent
+
         self.dest_container = QWidget()
         self.dest_container_layout = QVBoxLayout(self.dest_container)
-        self.dest_container_layout.setSpacing(4)
-        self.dest_container_layout.setContentsMargins(6, 6, 6, 6)
+        self.dest_container_layout.setSpacing(6)
+        self.dest_container_layout.setContentsMargins(2, 2, 2, 2)
         self.dest_container_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        
+
         dest_scroll.setWidget(self.dest_container)
-        dest_layout.addWidget(dest_scroll, 1)
-        
-        paths_layout.addWidget(dest_frame, 1)
-        layout.addLayout(paths_layout, 1)
+        dest_frame_layout.addWidget(dest_scroll)
+
+        container_layout.addWidget(dest_frame, 1)  # Stretch to fill
+
+        return container
+
+    def get_source_widget(self):
+        """Get the source selection widget for left column"""
+        return self._source_widget
+
+    def get_destinations_widget(self):
+        """Get the destinations widget for right column"""
+        return self._destinations_widget
         
     def on_destination_text_changed(self, text):
         """Handle destination text changes - only auto-add when typed manually"""

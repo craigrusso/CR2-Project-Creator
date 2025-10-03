@@ -78,8 +78,8 @@ BUTTON_STYLE = f"""
         background-color: {colors['card_bg']};
         color: {colors['text']};
         border: 1px solid {colors['border']};
-        padding: 5px 10px;
-        border-radius: 3px;
+        padding: 6px 12px;
+        border-radius: 6px;
     }}
     QPushButton:hover {{
         background-color: {colors['hover_bg']};
@@ -96,8 +96,8 @@ ACCENT_BUTTON_STYLE = f"""
         background-color: {colors['accent']};
         color: white;
         border: none;
-        padding: 5px 10px;
-        border-radius: 3px;
+        padding: 6px 12px;
+        border-radius: 6px;
     }}
     QPushButton:hover {{
         background-color: {colors['accent_hover']};
@@ -113,8 +113,8 @@ DANGER_BUTTON_STYLE = f"""
         background-color: #902A2A !important;
         color: white !important;
         border: 1px solid #732121 !important;
-        padding: 5px 10px !important;
-        border-radius: 3px !important;
+        padding: 6px 12px !important;
+        border-radius: 6px !important;
     }}
     QWidget#ingest_tab QPushButton#cancel_btn:hover {{
         background-color: #A33030 !important;
@@ -248,9 +248,9 @@ COMBOBOX_STYLE = f"""
         background-color: {colors['card_bg']};
         color: {colors['text']};
         border: 1px solid {colors['border']};
-        padding: 5px 25px 5px 5px;  /* Right padding for arrow */
-        border-radius: 3px;
-        min-height: 22px;
+        padding: 6px 28px 6px 8px;  /* Right padding for arrow */
+        border-radius: 6px;
+        min-height: 24px;
     }}
     
     /* Main combobox hover */

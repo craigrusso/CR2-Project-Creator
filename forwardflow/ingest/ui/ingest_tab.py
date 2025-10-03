@@ -138,6 +138,13 @@ def build_ingest_tab():
     # Create the main widget
     root = QWidget()
     root.setObjectName("ingest_tab")
+    # Remove tab pane padding (Templates has no padding)
+    root.setStyleSheet("""
+        QWidget#ingest_tab {
+            margin: 0px;
+            padding: 0px;
+        }
+    """)
     
     # Initialize file tracking
     root.file_widgets = {}
@@ -155,23 +162,23 @@ def build_ingest_tab():
     # Load recent locations
     recent_sources, recent_destinations = load_recent_locations()
     
-    # Main layout
+    # Main layout - two-column design (ZERO padding like templates tab)
     layout = QVBoxLayout(root)
-    layout.setContentsMargins(0, 0, 0, 0)  # No margins - title goes to very top
-    layout.setSpacing(6)  # Further reduced spacing between sections
-    
+    layout.setContentsMargins(0, 0, 0, 0)  # NO padding - match templates
+    layout.setSpacing(0)
+
     # Set minimum dimensions to prevent UI collapse and ensure full visibility
-    root.setMinimumWidth(1000)  # Increased minimum width for better layout
-    root.setMinimumHeight(700)  # Reduced minimum height to fit in smaller windows
-    
+    root.setMinimumWidth(1100)  # Wider for two-column layout
+    root.setMinimumHeight(700)
+
     print("DEBUG: Creating IngestViewModel...")
     vm = IngestViewModel()
     print("DEBUG: IngestViewModel created successfully")
-    
+
     # Make vm accessible to the widget
     root.vm = vm
     print("DEBUG: VM attached to root widget")
-    
+
     # DISABLED: Timers cause GIL deadlock with Rust worker thread
     # Use event-driven updates from event pump instead
     # root.time_update_timer = QTimer()
@@ -183,7 +190,7 @@ def build_ingest_tab():
     # root.stats_update_timer = QTimer()
     # root.stats_update_timer.timeout.connect(lambda: update_stats())
     # root.stats_update_timer.start(100)  # Update every 100ms for real-time responsiveness
-    
+
     def update_elapsed_time():
         """Update elapsed time display every second"""
         if root.job_start_time and root.current_job:
@@ -191,31 +198,79 @@ def build_ingest_tab():
             elapsed_str = f"{int(elapsed_seconds//3600):02d}:{int((elapsed_seconds%3600)//60):02d}:{int(elapsed_seconds%60):02d}"
             if hasattr(root, 'elapsed_label') and root.elapsed_label:
                 root.elapsed_label.setText(elapsed_str)
-    
+
     def update_stats():
         """Update ONLY elapsed time - all other stats are handled by event system"""
         # CRITICAL FIX: Remove all speed/progress updates from timer to prevent conflicts
         # Only update elapsed time which doesn't conflict with event-driven updates
         pass  # All stats now handled by event system
-    
 
-    
+    # Title row - left side "Turbo Transfer", right side stays empty for now
+    title_row = QHBoxLayout()
+    title_row.setSpacing(0)
+    title_row.setContentsMargins(5, 5, 5, 5)
+
+    title = QLabel("Turbo Transfer")
+    title.setStyleSheet(HEADER_LABEL_STYLE)
+    title.setMinimumHeight(32)
+    title.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+    title_row.addWidget(title, 30)  # Left side 30%
+    title_row.addStretch(70)  # Right side 70% (destinations will align here)
+
+    layout.addLayout(title_row)
+
     # Create the refactored components
     print("DEBUG: Creating SourceDestinationSection...")
     source_dest_section = SourceDestinationSection(root, recent_sources, recent_destinations)
-    layout.addWidget(source_dest_section, 1)  # Add stretch - allow expansion for destinations
-    
+
     print("DEBUG: Creating OptionsSection...")
     options_section = OptionsSection(root)
-    layout.addWidget(options_section, 0)  # No stretch - keep fixed size
-    
+
     print("DEBUG: Creating ControlSection...")
     control_section = ControlSection(root)
-    layout.addWidget(control_section, 0)  # No stretch - keep fixed size
-    
+
     print("DEBUG: Creating ProgressSection...")
     progress_section = ProgressSection(root)
-    layout.addWidget(progress_section, 0)  # No stretch - keep fixed size
+
+    # Two-column layout: Left (settings + progress), Right (destinations ONLY)
+    main_content = QHBoxLayout()
+    main_content.setSpacing(0)
+    main_content.setContentsMargins(5, 0, 5, 5)  # Minimal margins like Templates
+
+    # LEFT COLUMN: Source, Settings, Controls, and Progress
+    left_column = QVBoxLayout()
+    left_column.setSpacing(8)
+    left_column.setContentsMargins(0, 0, 6, 0)  # Small right margin for gap
+
+    # Source selection (left column)
+    left_column.addWidget(source_dest_section.get_source_widget())
+
+    # Settings (left column)
+    left_column.addWidget(options_section)
+
+    # Controls (left column)
+    left_column.addWidget(control_section)
+
+    # Progress section (left column) - moved from bottom
+    left_column.addWidget(progress_section)
+
+    # Add stretch to push everything to top
+    left_column.addStretch()
+
+    # RIGHT COLUMN: Destinations ONLY (full height)
+    right_column = QVBoxLayout()
+    right_column.setSpacing(0)
+    right_column.setContentsMargins(0, 0, 0, 0)
+
+    # Destinations (right column - takes full right side)
+    right_column.addWidget(source_dest_section.get_destinations_widget(), 1)  # Stretch to fill
+
+    # Add columns to main content (30% left for controls+progress, 70% right for destinations)
+    main_content.addLayout(left_column, 30)
+    main_content.addLayout(right_column, 70)
+
+    layout.addLayout(main_content, 1)  # Main content gets all space
     
     # Store references to components for access from event handlers
     root.source_dest_section = source_dest_section
