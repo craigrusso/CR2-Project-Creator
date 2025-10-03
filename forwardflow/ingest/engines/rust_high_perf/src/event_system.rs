@@ -117,18 +117,62 @@ impl EventSystem {
         filename: &str,
         source_path: &str,
         dest_path: &str,
+        dest_index: usize,
         bytes: u64,
         source_hash: &str,
         dest_hash: &str,
+        hash_algorithm: &str,
+        verification_passed: bool,
     ) -> PyResult<()> {
+        let status = if verification_passed { "COMPLETED" } else { "FAILED" };
+
+        // DEBUG: Log file completion event emission
+        eprintln!("🔔 EVENT: Emitting FileCompleted for {} - hash: {}... algo: {}",
+                  filename,
+                  if source_hash.len() > 16 { &source_hash[..16] } else { source_hash },
+                  hash_algorithm);
+
         let event = TransferEvent::FileCompleted {
             filename: filename.to_string(),
             source_path: source_path.to_string(),
             dest_path: dest_path.to_string(),
+            dest_index,
             bytes_copied: bytes,
             source_checksum: source_hash.to_string(),
             dest_checksum: dest_hash.to_string(),
-            verification_passed: source_hash == dest_hash,
+            hash_algorithm: hash_algorithm.to_string(),
+            verification_passed,
+            status: status.to_string(),
+        };
+
+        let result = self.event_queue.send(event);
+        if result.is_ok() {
+            eprintln!("✅ EVENT: FileCompleted queued successfully for {}", filename);
+        } else {
+            eprintln!("❌ EVENT: Failed to queue FileCompleted for {}", filename);
+        }
+        result.map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))
+    }
+
+    /// Emit destination completed event (NO GIL NEEDED)
+    pub fn emit_dest_completed(
+        &self,
+        dest_index: usize,
+        dest_path: &str,
+        bytes_copied: u64,
+        total_bytes: u64,
+        completed_files: usize,
+        total_files: usize,
+        elapsed_time: f64,
+    ) -> PyResult<()> {
+        let event = TransferEvent::DestCompleted {
+            dest_index,
+            dest_path: dest_path.to_string(),
+            bytes_copied,
+            total_bytes,
+            completed_files,
+            total_files,
+            elapsed_time,
         };
 
         self.event_queue
@@ -142,10 +186,13 @@ impl EventSystem {
             filename: filename.to_string(),
             source_path: String::new(),
             dest_path: String::new(),
+            dest_index: 0,
             bytes_copied: bytes,
             source_checksum: String::new(),
             dest_checksum: String::new(),
+            hash_algorithm: "unknown".to_string(),
             verification_passed: true,
+            status: "COMPLETED".to_string(),
         };
 
         self.event_queue
@@ -201,10 +248,17 @@ impl EventSystem {
             filename: record.filename.clone(),
             source_path: record.source_path.clone(),
             dest_path: record.destination_path.clone(),
+            dest_index: 0,
             bytes_copied: record.file_size,
             source_checksum: record.checksum_source.clone(),
             dest_checksum: record.checksum_destination.clone(),
+            hash_algorithm: "unknown".to_string(),
             verification_passed: record.verification_passed,
+            status: if record.verification_passed {
+                "COMPLETED".to_string()
+            } else {
+                "FAILED".to_string()
+            },
         };
 
         self.event_queue

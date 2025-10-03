@@ -246,6 +246,8 @@ class RustEventSink(QObject):
         if 'file_bytes' in payload:
             file_record['size'] = payload['file_bytes']
             file_record['bytes_copied'] = payload['file_bytes']  # Full file copied
+        elif 'bytes_copied' in payload:
+            file_record['bytes_copied'] = payload['bytes_copied']
         elif file_record.get('size', 0) > 0:
             file_record['bytes_copied'] = file_record['size']  # Use existing size
         
@@ -260,6 +262,8 @@ class RustEventSink(QObject):
             file_record['source_checksum'] = payload['source_checksum']
         if 'destination_checksum' in payload:
             file_record['destination_checksum'] = payload['destination_checksum']
+        if 'dest_checksum' in payload:
+            file_record['destination_checksum'] = payload['dest_checksum']
         if 'checksum' in payload:
             file_record['source_checksum'] = payload['checksum']
             file_record['destination_checksum'] = payload['checksum']
@@ -273,7 +277,13 @@ class RustEventSink(QObject):
             file_record['hash_algorithm'] = payload['hash_algorithm']
         if 'verification_passed' in payload:
             file_record['verification_status'] = 'PASS' if payload['verification_passed'] else 'FAIL'
-            
+        if 'status' in payload:
+            status_value = payload['status']
+            file_record['transfer_status'] = status_value.upper()
+            file_record['status'] = status_value.lower()
+        if 'dest_index' in payload:
+            file_record['dest_index'] = payload['dest_index']
+
         # Debug hash capture
         hash_info = f"source: {file_record.get('source_checksum', 'N/A')}, dest: {file_record.get('destination_checksum', 'N/A')}"
         print(f"DEBUG: Hash captured for {filename}: {hash_info}")

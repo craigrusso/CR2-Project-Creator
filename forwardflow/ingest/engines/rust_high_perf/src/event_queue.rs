@@ -54,10 +54,13 @@ pub enum TransferEvent {
         filename: String,
         source_path: String,
         dest_path: String,
+        dest_index: usize,
         bytes_copied: u64,
         source_checksum: String,
         dest_checksum: String,
+        hash_algorithm: String,
         verification_passed: bool,
+        status: String,
     },
 
     /// Destination progress update
@@ -77,8 +80,12 @@ pub enum TransferEvent {
 
     /// Destination completed
     DestCompleted {
+        dest_index: usize,
         dest_path: String,
+        bytes_copied: u64,
         total_bytes: u64,
+        completed_files: usize,
+        total_files: usize,
         elapsed_time: f64,
     },
 

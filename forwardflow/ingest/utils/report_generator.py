@@ -510,17 +510,27 @@ class TransferReportGenerator:
                     file_size = record.get('size', record.get('size_bytes', 0))
                     size_mb = file_size / (1024 * 1024) if file_size > 0 else 0
                     checksum = record.get('source_checksum', record.get('checksum', ''))
-                    
+                    hash_algorithm = record.get('hash_algorithm', 'unknown')
+                    hash_label = hash_algorithm.upper() if hash_algorithm else 'UNKNOWN'
+
                     # Clean status handling - lean and direct
                     if transfer_status == 'COMPLETED':
                         status_text = "✅ Completed"
-                        hash_text = f"Hash: {checksum}"
+                        hash_text = (
+                            f"{hash_label}: {checksum}"
+                            if checksum
+                            else "Hash: not calculated"
+                        )
                     elif transfer_status == 'FAILED':
                         status_text = "❌ Failed"
                         hash_text = record.get('error_message', 'Transfer failed')
                     elif transfer_status == 'CANCELLED':
                         status_text = "⏭️  Cancelled"
-                        hash_text = f"Hash: {checksum}" if checksum else "Hash: not calculated"
+                        hash_text = (
+                            f"{hash_label}: {checksum}"
+                            if checksum
+                            else "Hash: not calculated"
+                        )
                     elif transfer_status == 'IN_PROGRESS':
                         status_text = "🚀 In progress"
                         hash_text = "Hash: calculating"
@@ -622,4 +632,3 @@ class TransferReportGenerator:
             print(f"DEBUG: Failed to clean job ID '{job_id}': {e}")
             # Fallback: use original job_id
             return job_id
-
