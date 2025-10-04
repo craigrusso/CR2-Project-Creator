@@ -718,6 +718,16 @@ class ControlSection(QWidget):
             else:
                 print("DEBUG: ⚠️ Engine doesn't have get_event_queue_handle - event pump disabled")
 
+            # CRITICAL: Stop any old realtime writer from previous job FIRST
+            # This ensures we don't have stale references
+            print("DEBUG: 🧹 Cleaning up old realtime writer from previous job...")
+            try:
+                from ...utils.realtime_report_writer import stop_realtime_reporting
+                stop_realtime_reporting("RESET")
+                print("DEBUG: ✅ Old realtime writer stopped")
+            except Exception as e:
+                print(f"DEBUG: Note: No old realtime writer to stop: {e}")
+
             # CRITICAL: Initialize real-time report writer on MAIN THREAD before worker starts
             # This prevents race condition where events arrive before initialization completes
             print("DEBUG: 📊 Initializing real-time report writer on MAIN THREAD...")
@@ -737,6 +747,9 @@ class ControlSection(QWidget):
                 )
                 root.realtime_writer = realtime_writer
                 print(f"📊 Real-time report writer initialized for job: {job.job_id}")
+                print(f"📊 Writer object ID: {id(realtime_writer)}")
+                print(f"📊 Writer destinations: {realtime_writer.destinations}")
+                print(f"📊 Writer report_paths keys: {list(realtime_writer.report_paths.keys())}")
                 print("DEBUG: ✅ Real-time writer ready to receive file completion events")
             except Exception as e:
                 print(f"ERROR: Failed to initialize real-time reporting: {e}")
