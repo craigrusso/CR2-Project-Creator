@@ -363,7 +363,13 @@ def configure_styles(app):
             background-color: {colors['hover_bg']};
             color: {colors['text']};
         }}
-        
+
+        /* Status bar - match card_bg for cohesive footer */
+        QStatusBar {{
+            background-color: {colors['card_bg']};
+            border: none;
+        }}
+
         /* Direct and focused styling for combo box popup items */
         QComboBox QAbstractItemView::item:hover {{
             background-color: {colors['accent']};
