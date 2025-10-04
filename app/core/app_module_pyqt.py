@@ -168,7 +168,7 @@ class ForwardFlowStatusBar(QStatusBar):
     def _set_neutral_style(self):
         """Apply the default transparent styling to the message channel."""
         neutral_text = self._colors.get('text_subtle', '#B0B0B0')
-        bg_color = self._colors.get('bg', '#1E1E1E')  # Use darker bg color
+        bg_color = self._colors.get('card_bg', '#252526')  # Match footer tab area
         self.message_container.setStyleSheet(
             f"background-color: {bg_color}; "
             "border: none; "
