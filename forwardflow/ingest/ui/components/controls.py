@@ -1409,10 +1409,70 @@ class ControlSection(QWidget):
             self.reenable_controls()
     
     def on_pause(self, root):
-        """Handle pause button click"""
+        """Handle pause button click - toggle between pause and resume"""
         print("DEBUG: Pause button clicked")
-        # Implementation will be added here
-        pass
+
+        try:
+            # Check if we have an active transfer
+            if not hasattr(root, 'current_job') or not root.current_job:
+                print("DEBUG: No active transfer to pause")
+                return
+
+            engine = root.current_job
+
+            # Check current pause state
+            is_paused = False
+            try:
+                if hasattr(engine, 'is_paused'):
+                    is_paused = engine.is_paused()
+            except Exception as e:
+                print(f"DEBUG: Error checking pause state: {e}")
+
+            if is_paused:
+                # Resume the transfer
+                print("DEBUG: Resuming transfer...")
+                try:
+                    if hasattr(engine, 'resume'):
+                        engine.resume()
+                        self.pause_btn.setText("Pause")
+                        print("DEBUG: Transfer resumed")
+
+                        # Update UI to show transfer is active again
+                        if hasattr(root, 'progress_section') and root.progress_section:
+                            if hasattr(root.progress_section, 'total_progress'):
+                                # Don't change progress value, just ensure it's visible
+                                root.progress_section.total_progress.update()
+                    else:
+                        print("DEBUG: Engine does not support resume")
+                except Exception as e:
+                    print(f"DEBUG: Error resuming transfer: {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                # Pause the transfer
+                print("DEBUG: Pausing transfer...")
+                try:
+                    if hasattr(engine, 'pause'):
+                        engine.pause()
+                        self.pause_btn.setText("Resume")
+                        print("DEBUG: Transfer paused")
+
+                        # Update UI to show transfer is paused
+                        if hasattr(root, 'progress_section') and root.progress_section:
+                            if hasattr(root.progress_section, 'total_progress'):
+                                current_value = root.progress_section.total_progress.value()
+                                root.progress_section.total_progress.setFormat(f"{current_value}% (Paused)")
+                    else:
+                        print("DEBUG: Engine does not support pause")
+                except Exception as e:
+                    print(f"DEBUG: Error pausing transfer: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+        except Exception as e:
+            print(f"DEBUG: Error in pause handler: {e}")
+            import traceback
+            traceback.print_exc()
     
     def on_cancel(self, root):
         """Handle cancel button click - immediately stop transfer and show writing report"""
@@ -1531,14 +1591,15 @@ class ControlSection(QWidget):
         # Re-enable transfer buttons
         self.start_btn.setEnabled(True)
         self.pause_btn.setEnabled(False)
+        self.pause_btn.setText("Pause")  # Reset text from "Resume" if it was paused
         self.cancel_btn.setEnabled(False)
         
         # Re-enable ALL controls that get disabled during transfer start
         # This fixes the post-cancel UI bug where dropdowns become unresponsive
         
         # Re-enable source/destination section controls
-        if hasattr(self.root, 'src_dest_section') and self.root.src_dest_section:
-            source_dest_section = self.root.src_dest_section
+        if hasattr(self.root, 'source_dest_section') and self.root.source_dest_section:
+            source_dest_section = self.root.source_dest_section
             if hasattr(source_dest_section, 'src_combo'):
                 source_dest_section.src_combo.setEnabled(True)
                 print("DEBUG: Re-enabled source combo")
@@ -1703,9 +1764,9 @@ class ControlSection(QWidget):
             print("DEBUG: Reset all progress section labels and health indicators")
         
         # Reset destination cards to Ready state
-        if hasattr(self.root, 'src_dest_section') and self.root.src_dest_section:
-            if hasattr(self.root.src_dest_section, 'destination_widgets'):
-                for dest_widget in self.root.src_dest_section.destination_widgets:
+        if hasattr(self.root, 'source_dest_section') and self.root.source_dest_section:
+            if hasattr(self.root.source_dest_section, 'destination_widgets'):
+                for dest_widget in self.root.source_dest_section.destination_widgets:
                     if hasattr(dest_widget, 'status_label'):
                         dest_widget.status_label.setText("Ready")
                         dest_widget.status_label.setStyleSheet("color: #64748b;")
