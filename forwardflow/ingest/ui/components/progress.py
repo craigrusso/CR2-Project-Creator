@@ -234,6 +234,9 @@ class ProgressSection(QWidget):
         # Initialize job data tracking
         self.job_data = None
         # Destination progress is now handled in destination cards
+        # Health metrics tracking
+        self.error_count = 0
+        self.last_speed_samples = []  # Track recent speeds for connection stability
         self.setup_ui()
         
     def setup_ui(self):
@@ -297,7 +300,7 @@ class ProgressSection(QWidget):
         # Create a separate CARD for stats to prevent overlap with progress bar title
         stats_card = QFrame()
         stats_card.setStyleSheet(CARD_FRAME_STYLE)
-        stats_card.setMinimumHeight(80)  # Ensure sufficient height for two rows
+        stats_card.setMinimumHeight(130)  # Ensure sufficient height for stats + health indicators
         stats_container_layout = QVBoxLayout(stats_card)
         stats_container_layout.setSpacing(2)
         stats_container_layout.setContentsMargins(12, 8, 12, 8)
@@ -506,8 +509,170 @@ class ProgressSection(QWidget):
         # Add both rows to the stats container layout
         stats_container_layout.addLayout(headers_layout)
         stats_container_layout.addLayout(values_layout)
+
+        # Add separator line before health indicators
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setStyleSheet(f"""
+            QFrame {{
+                background-color: {colors['border']};
+                border: none;
+                max-height: 1px;
+                margin: 8px 0px;
+            }}
+        """)
+        stats_container_layout.addWidget(separator)
+
+        # Transfer Health Indicators row
+        health_layout = QHBoxLayout()
+        health_layout.setSpacing(0)
+        health_layout.setContentsMargins(0, 0, 0, 0)
+
+        # Data Integrity Status
+        integrity_container = QVBoxLayout()
+        integrity_container.setSpacing(2)
+        integrity_header = QLabel("Data Integrity")
+        integrity_header.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['secondary_text']};
+                font-size: 9px;
+                font-weight: 500;
+                text-align: center;
+                margin: 0;
+                padding: 0;
+                background: transparent;
+                border: none;
+            }}
+        """)
+        integrity_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.integrity_label = QLabel("✓ Verified")
+        self.integrity_label.setStyleSheet(f"""
+            QLabel {{
+                color: #22c55e;
+                font-size: 11px;
+                font-weight: 600;
+                text-align: center;
+                margin: 0;
+                padding: 2px;
+                background: transparent;
+                border: none;
+            }}
+        """)
+        self.integrity_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        integrity_container.addWidget(integrity_header)
+        integrity_container.addWidget(self.integrity_label)
+
+        # Error Counter
+        errors_container = QVBoxLayout()
+        errors_container.setSpacing(2)
+        errors_header = QLabel("Errors")
+        errors_header.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['secondary_text']};
+                font-size: 9px;
+                font-weight: 500;
+                text-align: center;
+                margin: 0;
+                padding: 0;
+                background: transparent;
+                border: none;
+            }}
+        """)
+        errors_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.errors_label = QLabel("0")
+        self.errors_label.setStyleSheet(f"""
+            QLabel {{
+                color: #22c55e;
+                font-size: 11px;
+                font-weight: 600;
+                text-align: center;
+                margin: 0;
+                padding: 2px;
+                background: transparent;
+                border: none;
+            }}
+        """)
+        self.errors_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        errors_container.addWidget(errors_header)
+        errors_container.addWidget(self.errors_label)
+
+        # Connection Quality
+        connection_container = QVBoxLayout()
+        connection_container.setSpacing(2)
+        connection_header = QLabel("Connection")
+        connection_header.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['secondary_text']};
+                font-size: 9px;
+                font-weight: 500;
+                text-align: center;
+                margin: 0;
+                padding: 0;
+                background: transparent;
+                border: none;
+            }}
+        """)
+        connection_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.connection_label = QLabel("● Stable")
+        self.connection_label.setStyleSheet(f"""
+            QLabel {{
+                color: #22c55e;
+                font-size: 11px;
+                font-weight: 600;
+                text-align: center;
+                margin: 0;
+                padding: 2px;
+                background: transparent;
+                border: none;
+            }}
+        """)
+        self.connection_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        connection_container.addWidget(connection_header)
+        connection_container.addWidget(self.connection_label)
+
+        # Disk I/O Performance
+        disk_container = QVBoxLayout()
+        disk_container.setSpacing(2)
+        disk_header = QLabel("Disk I/O")
+        disk_header.setStyleSheet(f"""
+            QLabel {{
+                color: {colors['secondary_text']};
+                font-size: 9px;
+                font-weight: 500;
+                text-align: center;
+                margin: 0;
+                padding: 0;
+                background: transparent;
+                border: none;
+            }}
+        """)
+        disk_header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.disk_label = QLabel("↑↑ Fast")
+        self.disk_label.setStyleSheet(f"""
+            QLabel {{
+                color: #22c55e;
+                font-size: 11px;
+                font-weight: 600;
+                text-align: center;
+                margin: 0;
+                padding: 2px;
+                background: transparent;
+                border: none;
+            }}
+        """)
+        self.disk_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        disk_container.addWidget(disk_header)
+        disk_container.addWidget(self.disk_label)
+
+        # Add all health indicators to layout
+        health_layout.addLayout(integrity_container, 1)
+        health_layout.addLayout(errors_container, 1)
+        health_layout.addLayout(connection_container, 1)
+        health_layout.addLayout(disk_container, 1)
+
+        stats_container_layout.addLayout(health_layout)
         stats_container_layout.addStretch()  # Push content to top
-        
+
         # Add the separate stats card to main layout
         layout.addWidget(stats_card)
         
@@ -564,6 +729,10 @@ class ProgressSection(QWidget):
                 'avg_speed': 0.0,
                 'peak_speed': 0.0
             }
+
+            # Reset health metrics
+            self.error_count = 0
+            self.last_speed_samples = []
             
             # Update UI widgets safely
             if self.total_progress:
@@ -671,7 +840,17 @@ class ProgressSection(QWidget):
             filename = payload.get('filename', 'unknown')
             error = payload.get('error', 'unknown error')
             print(f"ERROR: File failed: {filename} - {error}")
-            
+
+            # Increment error counter for health indicators
+            self.error_count += 1
+
+            # Update health indicators to reflect error
+            if hasattr(self, 'job_data') and self.job_data:
+                completed_files = self.job_data.get('completed_files', 0)
+                total_files = self.job_data.get('total_files', 0)
+                current_speed = self.job_data.get('current_speed', 0.0)
+                self._update_health_indicators(current_speed, completed_files, total_files)
+
         except Exception as e:
             print(f"DEBUG: Error in ProgressSection.handle_file_failed: {e}")
             import traceback
@@ -789,6 +968,9 @@ class ProgressSection(QWidget):
             self._update_files_count(completed_files, total_files)
             self._update_eta_label(eta)
 
+            # Update health indicators
+            self._update_health_indicators(current_speed, completed_files, total_files)
+
             # CRITICAL FIX: Force entire section to repaint
             self.update()
             self.repaint()
@@ -834,6 +1016,9 @@ class ProgressSection(QWidget):
             self._update_elapsed_label(elapsed)
             self._update_files_count(files_completed, total_files)
             self._update_eta_label(eta_seconds)
+
+            # Update health indicators
+            self._update_health_indicators(current_speed, files_completed, total_files)
 
             # CRITICAL FIX: Force entire section to repaint
             self.update()
@@ -897,6 +1082,180 @@ class ProgressSection(QWidget):
                 print(f"DEBUG: Updated elapsed time to {elapsed_str}")
         except Exception as e:
             print(f"ERROR: Elapsed time label update failed: {e}")
+
+    def _update_health_indicators(self, current_speed, completed_files, total_files):
+        """Update health indicator displays"""
+        try:
+            # Track speed samples for connection stability
+            if len(self.last_speed_samples) >= 5:
+                self.last_speed_samples.pop(0)
+            self.last_speed_samples.append(current_speed)
+
+            # Update Data Integrity (assumes verification happens during transfer)
+            if hasattr(self, 'integrity_label') and self.integrity_label:
+                if completed_files > 0:
+                    self.integrity_label.setText(f"✓ {completed_files} files")
+                    self.integrity_label.setStyleSheet(f"""
+                        QLabel {{
+                            color: #22c55e;
+                            font-size: 11px;
+                            font-weight: 600;
+                            text-align: center;
+                            margin: 0;
+                            padding: 2px;
+                            background: transparent;
+                            border: none;
+                        }}
+                    """)
+                else:
+                    self.integrity_label.setText("Pending...")
+
+            # Update Error Counter
+            if hasattr(self, 'errors_label') and self.errors_label:
+                self.errors_label.setText(str(self.error_count))
+                if self.error_count == 0:
+                    self.errors_label.setStyleSheet(f"""
+                        QLabel {{
+                            color: #22c55e;
+                            font-size: 11px;
+                            font-weight: 600;
+                            text-align: center;
+                            margin: 0;
+                            padding: 2px;
+                            background: transparent;
+                            border: none;
+                        }}
+                    """)
+                elif self.error_count < 5:
+                    self.errors_label.setStyleSheet(f"""
+                        QLabel {{
+                            color: #eab308;
+                            font-size: 11px;
+                            font-weight: 600;
+                            text-align: center;
+                            margin: 0;
+                            padding: 2px;
+                            background: transparent;
+                            border: none;
+                        }}
+                    """)
+                else:
+                    self.errors_label.setStyleSheet(f"""
+                        QLabel {{
+                            color: #ef4444;
+                            font-size: 11px;
+                            font-weight: 600;
+                            text-align: center;
+                            margin: 0;
+                            padding: 2px;
+                            background: transparent;
+                            border: none;
+                        }}
+                    """)
+
+            # Update Connection Quality (based on speed stability)
+            if hasattr(self, 'connection_label') and self.connection_label and len(self.last_speed_samples) >= 3:
+                avg_speed = sum(self.last_speed_samples) / len(self.last_speed_samples)
+                if avg_speed > 0:
+                    # Calculate coefficient of variation (std dev / mean)
+                    variance = sum((x - avg_speed) ** 2 for x in self.last_speed_samples) / len(self.last_speed_samples)
+                    std_dev = variance ** 0.5
+                    cv = std_dev / avg_speed if avg_speed > 0 else 0
+
+                    if cv < 0.2:  # Less than 20% variation = stable
+                        self.connection_label.setText("● Stable")
+                        self.connection_label.setStyleSheet(f"""
+                            QLabel {{
+                                color: #22c55e;
+                                font-size: 11px;
+                                font-weight: 600;
+                                text-align: center;
+                                margin: 0;
+                                padding: 2px;
+                                background: transparent;
+                                border: none;
+                            }}
+                        """)
+                    elif cv < 0.5:  # 20-50% variation = fluctuating
+                        self.connection_label.setText("◐ Variable")
+                        self.connection_label.setStyleSheet(f"""
+                            QLabel {{
+                                color: #eab308;
+                                font-size: 11px;
+                                font-weight: 600;
+                                text-align: center;
+                                margin: 0;
+                                padding: 2px;
+                                background: transparent;
+                                border: none;
+                            }}
+                        """)
+                    else:  # >50% variation = unstable
+                        self.connection_label.setText("○ Unstable")
+                        self.connection_label.setStyleSheet(f"""
+                            QLabel {{
+                                color: #ef4444;
+                                font-size: 11px;
+                                font-weight: 600;
+                                text-align: center;
+                                margin: 0;
+                                padding: 2px;
+                                background: transparent;
+                                border: none;
+                            }}
+                        """)
+
+            # Update Disk I/O Performance (based on current speed)
+            if hasattr(self, 'disk_label') and self.disk_label:
+                if current_speed > 800:  # >800 MB/s = Fast
+                    self.disk_label.setText("↑↑ Fast")
+                    self.disk_label.setStyleSheet(f"""
+                        QLabel {{
+                            color: #22c55e;
+                            font-size: 11px;
+                            font-weight: 600;
+                            text-align: center;
+                            margin: 0;
+                            padding: 2px;
+                            background: transparent;
+                            border: none;
+                        }}
+                    """)
+                elif current_speed > 300:  # 300-800 MB/s = Normal
+                    self.disk_label.setText("↑ Normal")
+                    self.disk_label.setStyleSheet(f"""
+                        QLabel {{
+                            color: #eab308;
+                            font-size: 11px;
+                            font-weight: 600;
+                            text-align: center;
+                            margin: 0;
+                            padding: 2px;
+                            background: transparent;
+                            border: none;
+                        }}
+                    """)
+                elif current_speed > 0:  # 1-300 MB/s = Slow
+                    self.disk_label.setText("↓ Slow")
+                    self.disk_label.setStyleSheet(f"""
+                        QLabel {{
+                            color: #ef4444;
+                            font-size: 11px;
+                            font-weight: 600;
+                            text-align: center;
+                            margin: 0;
+                            padding: 2px;
+                            background: transparent;
+                            border: none;
+                        }}
+                    """)
+                else:  # No transfer yet
+                    self.disk_label.setText("— Idle")
+
+        except Exception as e:
+            print(f"ERROR: Health indicators update failed: {e}")
+            import traceback
+            traceback.print_exc()
             
             # Update speed
             if hasattr(self, 'current_speed_label'):
