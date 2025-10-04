@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                            QStatusBar, QFrame, QSplitter, QScrollArea, QSizePolicy,
                            QApplication, QGroupBox, QListView, QTextEdit, QLayout, QGridLayout,
                            QWIDGETSIZE_MAX, QCheckBox, QDateEdit, QSpinBox, QToolButton,
-                           QStackedWidget, QTabWidget)
+                           QStackedWidget, QTabBar)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize, QEvent, QModelIndex, QPoint, QUrl, QMimeData, QSettings, QObject, QThread, QDate, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QIcon, QFont, QPalette, QColor, QPainter, QPen, QBrush, QPixmap, QDesktopServices, QCursor, QDragEnterEvent, QDropEvent, QFontMetrics, QStandardItemModel, QStandardItem, QAction, QTextCharFormat
 
@@ -66,6 +66,9 @@ class ForwardFlowStatusBar(QStatusBar):
         super().__init__(parent)
         self.setObjectName("ForwardFlowStatusBar")
         self.setSizeGripEnabled(False)
+        self.setContentsMargins(0, 0, 0, 0)
+        if self.layout():
+            self.layout().setContentsMargins(0, 0, 0, 0)
 
         self._colors = color_palette
         self._current_message = ""
@@ -76,7 +79,7 @@ class ForwardFlowStatusBar(QStatusBar):
         self.setStyleSheet(f"""
             QStatusBar#ForwardFlowStatusBar {{
                 background-color: {background_color};
-                border-top: 1px solid {border_color};
+                border: none;
                 padding: 0px;
                 margin: 0px;
                 min-height: 50px;
@@ -90,8 +93,10 @@ class ForwardFlowStatusBar(QStatusBar):
         # Dedicated message container on the left - expanding to use all space up to tabs
         self.message_container = QWidget(self)
         self.message_container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.message_container.setAutoFillBackground(False)
         self.message_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.message_container.setObjectName("statusMessageContainer")
+        self.message_container.setStyleSheet("background-color: transparent; border: none;")
 
         container_layout = QHBoxLayout(self.message_container)
         container_layout.setContentsMargins(10, 0, 10, 0)
@@ -99,6 +104,7 @@ class ForwardFlowStatusBar(QStatusBar):
 
         self.message_label = QLabel(" ", self.message_container)
         self.message_label.setObjectName("statusMessageLabel")
+        self.message_label.setStyleSheet("background-color: transparent; border: none;")
         self.message_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
         self.message_label.setWordWrap(True)  # Allow wrapping for long messages
         container_layout.addWidget(self.message_label)
@@ -401,9 +407,11 @@ class ForwardFlowApp(QMainWindow):
         # Create central widget and layout
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
+        # Remove any gap between central widget and status bar
+        self.setStyleSheet("QMainWindow { padding: 0px; margin: 0px; } QMainWindow::separator { width: 0px; height: 0px; }")
         self.main_layout = QVBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(10, 10, 10, 10)
-        self.main_layout.setSpacing(10)
+        self.main_layout.setContentsMargins(10, 10, 10, 0)  # No bottom margin - flush with tabs
+        self.main_layout.setSpacing(0)  # No spacing between widgets
         
         print("DEBUG: Creating menu bar...")
         # Create menu bar
@@ -422,35 +430,54 @@ class ForwardFlowApp(QMainWindow):
             self.status_message_timer.timeout.connect(self._reset_status_bar)
 
         # Add bottom tabs styled via the global theme for inverted rounding
-        self.bottom_tab_widget = QTabWidget()
-        self.bottom_tab_widget.setTabPosition(QTabWidget.TabPosition.South)
-        self.bottom_tab_widget.setFixedHeight(50)  # Match status bar height exactly
-        # Disable the tab bar's base (line drawn under tabs)
-        self.bottom_tab_widget.tabBar().setDrawBase(False)
-        
-        # Add Templates tab (default)
-        self.templates_tab = QWidget()
-        self.bottom_tab_widget.addTab(self.templates_tab, "Templates")
-        
-        # Add Transfer tab
+        self.bottom_tab_container = QWidget()
+        self.bottom_tab_container.setObjectName("FooterTabContainer")
+        self.bottom_tab_container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.bottom_tab_container.setStyleSheet("background-color: transparent;")
+        tab_container_layout = QHBoxLayout(self.bottom_tab_container)
+        tab_container_layout.setContentsMargins(0, 0, 0, 0)
+        tab_container_layout.setSpacing(0)
+
+        self.bottom_tab_bar = QTabBar()
+        self.bottom_tab_bar.setObjectName("FooterTabBar")
+        self.bottom_tab_bar.setDrawBase(False)
+        self.bottom_tab_bar.setExpanding(False)
+        self.bottom_tab_bar.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.bottom_tab_bar.setElideMode(Qt.TextElideMode.ElideNone)
+        self.bottom_tab_bar.setUsesScrollButtons(False)
+        self.bottom_tab_bar.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
+        self.bottom_tab_bar.setContentsMargins(0, 0, 0, 0)
+
+        # Maintain attribute names for any legacy consumers
+        self.bottom_tab_widget = self.bottom_tab_bar
+        self.templates_tab = QWidget()  # Placeholder widgets retained for compatibility
         self.transfer_tab = QWidget()
-        self.bottom_tab_widget.addTab(self.transfer_tab, "Transfer")
-        
-        # Connect tab changes to switch content
-        self.bottom_tab_widget.currentChanged.connect(self._on_tab_changed)
-        
+
+        self.bottom_tab_bar.addTab("Templates")
+        self.bottom_tab_bar.addTab("Transfer")
+        self.bottom_tab_bar.setCurrentIndex(0)
+        self.bottom_tab_bar.currentChanged.connect(self._on_tab_changed)
+
+        tab_container_layout.addStretch()
+        tab_container_layout.addWidget(self.bottom_tab_bar)
+        tab_container_layout.addStretch()
+
         # To center tabs to the WINDOW (not just available space):
         # Message container has stretch=1 on the left
         # We need: left spacer (stretch=0.5) + tabs + right spacer (stretch=0.5)
         # This way the tabs are centered relative to the full window width
 
         left_spacer = QWidget()
+        left_spacer.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        left_spacer.setStyleSheet("background-color: transparent;")
         left_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.status_bar.addPermanentWidget(left_spacer, 0)  # No stretch - will be compressed by message container
 
-        self.status_bar.addPermanentWidget(self.bottom_tab_widget)
+        self.status_bar.addPermanentWidget(self.bottom_tab_container)
 
         right_spacer = QWidget()
+        right_spacer.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        right_spacer.setStyleSheet("background-color: transparent;")
         right_spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         self.status_bar.addPermanentWidget(right_spacer, 1)  # Stretch=1 to balance message container
 
@@ -1246,7 +1273,7 @@ class ForwardFlowApp(QMainWindow):
         # Transfer UI container
         self.transfer_ui_container = QWidget()
         transfer_ui_layout = QVBoxLayout(self.transfer_ui_container)
-        transfer_ui_layout.setContentsMargins(20, 20, 20, 20)
+        transfer_ui_layout.setContentsMargins(20, 20, 20, 0)  # No bottom margin - flush with tabs
         
         # Check if ingest module is enabled before trying to import
         # Debug: Try to import ingest module step by step

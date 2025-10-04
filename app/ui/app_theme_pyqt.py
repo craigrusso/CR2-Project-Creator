@@ -315,12 +315,16 @@ def configure_styles(app):
             padding: 0px;
         }}
 
-        /* QTabBar positioned at bottom (South) - eliminate all spacing */
+        /* QTabBar positioned at bottom (South) - eliminate all spacing, align to top */
         QTabBar {{
-            background-color: {colors['card_bg']};  /* Solid background to fill area and hide lines */
+            background-color: transparent;
             padding: 0px;
             margin: 0px;
             border: none;
+        }}
+        
+        QTabBar::tab-bar {{
+            alignment: top;
         }}
 
         /* Tabs at bottom with rounded BOTTOM edges (upside-down tabs) */
@@ -329,10 +333,18 @@ def configure_styles(app):
             color: {colors['text']};
             border: none;
             padding: 8px 20px 8px 20px;
-            margin: 0px 4px 4px 0px;  /* No top margin, 4px bottom margin for rounded corners */
+            margin: 0px 8px 0px 8px;
             border-bottom-left-radius: 8px;
             border-bottom-right-radius: 8px;
             min-width: 80px;
+        }}
+
+        QTabBar::tab:first {{
+            margin-left: 0px;
+        }}
+
+        QTabBar::tab:last {{
+            margin-right: 0px;
         }}
 
         QTabBar::tab:selected {{
@@ -344,7 +356,7 @@ def configure_styles(app):
         QTabBar::tab:!selected {{
             background-color: #383838;  /* Lighter than card_bg so tab shape is visible */
             color: {colors['secondary_text']};
-            margin-bottom: 6px;  /* Slightly more bottom margin for depth */
+            margin-bottom: 0px;
         }}
 
         QTabBar::tab:hover:!selected {{
@@ -451,6 +463,13 @@ def configure_styles(app):
             background-color: {colors['bg']};
             border: 1px solid {colors['secondary_text']};
             background-image: radial-gradient({colors['secondary_text']} 0px, {colors['secondary_text']} 4px, transparent 5px);
+        }}
+        
+        /* QStackedWidget - remove all margins to sit flush */
+        QStackedWidget {{
+            margin: 0px;
+            padding: 0px;
+            border: none;
         }}
     """)
 
