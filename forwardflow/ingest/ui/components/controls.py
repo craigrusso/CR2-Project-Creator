@@ -427,13 +427,16 @@ class ControlSection(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setup_ui()
-        
+
         # Transfer worker and thread
         self.transfer_worker = None
         self.transfer_thread = None
-        
+
         # Track destinations that already have reports to prevent duplicates
         self._destinations_with_reports = set()
+
+        # Track cleanup state to prevent duplicate cleanup calls
+        self._cleanup_in_progress = False
         
     def setup_ui(self):
         """Setup the control buttons UI"""
@@ -587,6 +590,9 @@ class ControlSection(QWidget):
             # Store job reference
             root.current_job = job
             print(f"DEBUG: Job stored in root.current_job: {root.current_job}")
+
+            # Reset cleanup flag for new transfer
+            self._cleanup_in_progress = False
 
             # CRITICAL: Clean up old event pump and connections from previous job
             # This prevents duplicate signal connections and stale event handlers
@@ -897,6 +903,13 @@ class ControlSection(QWidget):
     def _handle_transfer_completed(self, stats):
         """Handle transfer completion - only generate reports for destinations without them"""
         print(f"DEBUG: Transfer completed with stats: {stats}")
+
+        # Prevent duplicate cleanup if already in progress
+        if self._cleanup_in_progress:
+            print("DEBUG: Cleanup already in progress - skipping duplicate completion handler")
+            return
+        self._cleanup_in_progress = True
+
         try:
             # INDUSTRY STANDARD: Finalize real-time reports with COMPLETED status
             # The reports already have all file records with hashes
@@ -966,6 +979,13 @@ class ControlSection(QWidget):
     def _handle_transfer_cancelled(self):
         """Handle transfer cancellation - only generate reports for incomplete destinations"""
         print("DEBUG: Transfer cancelled - checking for incomplete destinations")
+
+        # Prevent duplicate cleanup if already in progress
+        if self._cleanup_in_progress:
+            print("DEBUG: Cleanup already in progress - skipping duplicate cancellation handler")
+            return
+        self._cleanup_in_progress = True
+
         try:
             # CRITICAL FIX: Wait for transfer thread to finish BEFORE generating reports
             # This ensures all file completion events have been emitted and processed
@@ -1539,15 +1559,11 @@ class ControlSection(QWidget):
                     print(f"DEBUG: Error cancelling Rust engine: {e}")
                     import traceback
                     traceback.print_exc()
-            
-            # CRITICAL FIX: Re-enable controls immediately after cancellation
-            # This prevents the app from freezing
-            print("DEBUG: Re-enabling controls immediately after cancellation")
-            self.reenable_controls()
-            
-            # NOTE: Report generation is handled by _handle_transfer_cancelled() when the transfer worker 
-            # emits the cancelled signal. No need for duplicate report generation here.
-            print("DEBUG: Report generation will be handled by _handle_transfer_cancelled() - no duplicate calls needed")
+
+            # NOTE: reenable_controls() and report generation are handled by _handle_transfer_cancelled()
+            # when the transfer worker emits the cancelled signal.
+            # DO NOT call reenable_controls() here - it will be called by the proper handler.
+            print("DEBUG: Waiting for transfer worker to emit cancelled signal and trigger cleanup...")
             
         except Exception as e:
             print(f"DEBUG: Error in on_cancel: {e}")
