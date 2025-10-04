@@ -410,7 +410,7 @@ class ForwardFlowApp(QMainWindow):
         # Remove any gap between central widget and status bar
         self.setStyleSheet("QMainWindow { padding: 0px; margin: 0px; } QMainWindow::separator { width: 0px; height: 0px; }")
         self.main_layout = QVBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(10, 10, 10, 0)  # No bottom margin - flush with tabs
+        self.main_layout.setContentsMargins(10, 10, 10, 10)  # Small bottom margin for footer spacing
         self.main_layout.setSpacing(0)  # No spacing between widgets
         
         print("DEBUG: Creating menu bar...")
