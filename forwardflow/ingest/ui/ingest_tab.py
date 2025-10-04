@@ -263,6 +263,10 @@ def build_ingest_tab():
     main_splitter.setStretchFactor(0, 0)  # Left panel doesn't stretch
     main_splitter.setStretchFactor(1, 1)  # Right panel (destinations) gets all extra space
 
+    # Set minimum widths to allow splitter to move left significantly
+    left_widget.setMinimumWidth(200)  # Allow left to shrink to 200px for more destination space
+    right_widget.setMinimumWidth(400)  # Destinations need at least 400px to be usable
+
     layout.addWidget(main_splitter, 1)  # Main splitter gets all space
     
     # Store references to components for access from event handlers

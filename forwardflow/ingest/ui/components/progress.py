@@ -285,10 +285,15 @@ class ProgressSection(QWidget):
         
         # Add progress bar with normal layout
         progress_layout.addWidget(self.total_progress)
-        
+
         # Close the progress frame here
         layout.addWidget(progress_frame)
-        
+
+        # Add spacing between progress bar and stats card
+        spacer = QWidget()
+        spacer.setFixedHeight(8)  # 8px spacing for visual separation
+        layout.addWidget(spacer)
+
         # Create a separate CARD for stats to prevent overlap with progress bar title
         stats_card = QFrame()
         stats_card.setStyleSheet(CARD_FRAME_STYLE)
