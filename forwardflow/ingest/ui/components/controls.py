@@ -682,11 +682,29 @@ class ControlSection(QWidget):
             from ..engine_manager import get_engine
             engine = get_engine()
 
+            # CRITICAL FIX: Reset engine state from previous transfer
+            # The engine is a singleton that persists across transfers
+            print("DEBUG: 🔄 Resetting Rust engine state from previous transfer...")
+            if hasattr(engine, 'reset'):
+                engine.reset()
+                print("DEBUG: ✅ Rust engine state reset")
+            else:
+                print("DEBUG: ⚠️  No reset method - engine may have stale state")
+
             # Check if engine has event queue handle (new GIL-free architecture)
             if hasattr(engine, 'get_event_queue_handle'):
                 print("DEBUG: Getting event queue handle from Rust engine...")
                 queue_handle = engine.get_event_queue_handle()
                 print("DEBUG: ✅ Event queue handle obtained")
+
+                # CRITICAL FIX: Drain old events from previous transfer
+                # The engine singleton's event queue may contain stale events
+                print("DEBUG: 🧹 Draining old events from event queue...")
+                if hasattr(queue_handle, 'drain_all'):
+                    drained_events = queue_handle.drain_all()
+                    print(f"DEBUG: ✅ Drained {len(drained_events)} old events from queue")
+                else:
+                    print("DEBUG: ⚠️  No drain_all method - queue may have stale events")
 
                 # Create event pump manager
                 self.event_pump = EventPumpManager()

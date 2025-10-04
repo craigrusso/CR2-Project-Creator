@@ -24,7 +24,8 @@ class RealtimeReportWriter:
         """Initialize real-time report writer for a transfer job"""
         self.job_id = job_id
         self.source_path = source_path
-        self.destinations = destinations
+        # Store destination roots as plain strings for readability/debug output
+        self.destinations = [str(dest).strip() for dest in destinations]
         self.start_time = time.time()
         self.lock = threading.Lock()
 
@@ -52,12 +53,15 @@ class RealtimeReportWriter:
 
         for dest_path in self.destinations:
             try:
+                original_dest = str(dest_path)
+                normalized_dest = self._normalize_path(original_dest)
+
                 # Create _CR2_CREATIVE_REPORTS directory
-                reports_dir = Path(dest_path) / "_CR2_CREATIVE_REPORTS"
+                reports_dir = Path(original_dest) / "_CR2_CREATIVE_REPORTS"
                 reports_dir.mkdir(parents=True, exist_ok=True)
 
                 # Generate base filename
-                dest_name = Path(dest_path).name.replace(" ", "_")
+                dest_name = Path(original_dest).name.replace(" ", "_")
                 base_filename = f"ingest_{timestamp}_{dest_name}"
 
                 # Initialize JSON report
@@ -72,13 +76,14 @@ class RealtimeReportWriter:
                 txt_path = reports_dir / f"{base_filename}.txt"
                 self._init_txt_report(txt_path)
 
-                report_paths[dest_path] = {
+                report_paths[normalized_dest] = {
                     'json': str(json_path),
                     'csv': str(csv_path),
-                    'txt': str(txt_path)
+                    'txt': str(txt_path),
+                    'root_path': original_dest
                 }
 
-                print(f"✅ Report files initialized for: {dest_path}")
+                print(f"✅ Report files initialized for: {original_dest}")
 
             except Exception as e:
                 print(f"❌ Failed to initialize reports for {dest_path}: {e}")
@@ -158,23 +163,24 @@ class RealtimeReportWriter:
                     self.stats['completed_bytes'] += size_bytes
                 elif status == 'FAILED':
                     self.stats['failed_files'] += 1
+                # Ensure total_files never lags behind completed count
+                if self.stats['completed_files'] > self.stats.get('total_files', 0):
+                    self.stats['total_files'] = self.stats['completed_files']
 
                 # Calculate transfer time
                 transfer_time = time.time() - self.start_time
 
                 # Determine which destination this file belongs to
-                dest_key = None
-                for dest in self.destinations:
-                    if dest_path.startswith(dest):
-                        dest_key = dest
-                        break
+                normalized_dest_path = self._normalize_path(dest_path)
+                dest_key = self._get_destination_key(normalized_dest_path)
 
-                if not dest_key or dest_key not in self.report_paths:
+                if not dest_key:
                     print(f"⚠️ No report path found for destination: {dest_path}")
                     return
 
                 paths = self.report_paths[dest_key]
-                print(f"📝📝📝 REALTIME_WRITER: Report paths for {dest_key}: {paths}")
+                display_dest = paths.get('root_path', dest_key)
+                print(f"📝📝📝 REALTIME_WRITER: Report paths for {display_dest}: {paths}")
 
                 # Update JSON report
                 print(f"📝📝📝 REALTIME_WRITER: Updating JSON report: {paths['json']}")
@@ -287,6 +293,7 @@ class RealtimeReportWriter:
         with self.lock:
             for dest_path, paths in self.report_paths.items():
                 try:
+                    display_dest = paths.get('root_path', dest_path)
                     # Update JSON with final status
                     with open(paths['json'], 'r', encoding='utf-8') as f:
                         report = json.load(f)
@@ -320,10 +327,58 @@ class RealtimeReportWriter:
                             avg_speed = (self.stats['completed_bytes'] / (1024 * 1024)) / elapsed
                             f.write(f"Average speed: {avg_speed:.1f} MB/s\n")
 
-                    print(f"✅ Reports finalized for: {dest_path}")
+                    print(f"✅ Reports finalized for: {display_dest}")
 
                 except Exception as e:
                     print(f"❌ Error finalizing reports for {dest_path}: {e}")
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_path(path: Any) -> str:
+        """Return a normalized absolute path string for reliable comparisons."""
+        try:
+            path_obj = Path(path).expanduser()
+        except TypeError:
+            path_obj = Path(str(path)).expanduser()
+
+        absolute = path_obj if path_obj.is_absolute() else path_obj.absolute()
+        normalized = os.path.normpath(str(absolute))
+        return os.path.normcase(normalized)
+
+    @staticmethod
+    def _path_is_within(child: str, parent: str) -> bool:
+        """Return True if child path is the same as or nested under parent."""
+        try:
+            common = os.path.commonpath([child, parent])
+            return common == parent
+        except ValueError:
+            return False
+
+    def _get_destination_key(self, normalized_dest_path: str) -> Optional[str]:
+        """Find the normalized destination root matching the provided file path."""
+        if not normalized_dest_path:
+            return None
+
+        if normalized_dest_path in self.report_paths:
+            return normalized_dest_path
+
+        for dest_root in self.report_paths.keys():
+            if self._path_is_within(normalized_dest_path, dest_root):
+                return dest_root
+
+        try:
+            path_obj = Path(normalized_dest_path)
+            for parent in path_obj.parents:
+                parent_norm = self._normalize_path(parent)
+                if parent_norm in self.report_paths:
+                    return parent_norm
+        except Exception:
+            pass
+
+        return None
 
 
 # Global instance management
