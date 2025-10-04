@@ -587,7 +587,31 @@ class ControlSection(QWidget):
             # Store job reference
             root.current_job = job
             print(f"DEBUG: Job stored in root.current_job: {root.current_job}")
-            
+
+            # CRITICAL: Clean up old event pump and connections from previous job
+            # This prevents duplicate signal connections and stale event handlers
+            if hasattr(self, 'event_pump') and self.event_pump:
+                print("DEBUG: Cleaning up old event pump from previous job...")
+                try:
+                    # Stop the old pump
+                    self.event_pump.stop_pump()
+
+                    # Disconnect all old signals to prevent duplicates
+                    try:
+                        self.event_pump.progress_update.disconnect()
+                        self.event_pump.destination_update.disconnect()
+                        self.event_pump.destination_completed.disconnect()
+                        self.event_pump.file_completed.disconnect()
+                        print("DEBUG: ✅ Old event pump signals disconnected")
+                    except Exception as e:
+                        print(f"DEBUG: Note: Some signals may not have been connected: {e}")
+
+                    # Clear reference
+                    self.event_pump = None
+                    print("DEBUG: ✅ Old event pump cleaned up")
+                except Exception as e:
+                    print(f"DEBUG: Error cleaning up old event pump: {e}")
+
             # Freeze controls
             print("DEBUG: Freezing controls...")
             self.start_btn.setEnabled(False)
