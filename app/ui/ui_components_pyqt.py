@@ -116,7 +116,7 @@ class CardFrame(QFrame):
         
         # Set up layout
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(10, 10, 10, 10)
+        self.main_layout.setContentsMargins(10, 10, 10, 20)  # Extra bottom margin for footer spacing
         self.main_layout.setSpacing(5)
         
         # Add title if provided
