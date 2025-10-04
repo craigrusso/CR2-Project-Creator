@@ -1596,8 +1596,32 @@ class ControlSection(QWidget):
             if hasattr(self.root.progress_section, 'total_progress'):
                 self.root.progress_section.total_progress.setValue(0)
                 self.root.progress_section.total_progress.setFormat("0%")
-                print("DEBUG: Reset main progress bar to 0%")
-            
+                # Reset progress bar styling back to blue (from green completion state)
+                from app.ui.color_scheme_pyqt import colors
+                self.root.progress_section.total_progress.setStyleSheet(f"""
+                    QProgressBar {{
+                        border: 1px solid {colors['border']};
+                        border-radius: 3px;
+                        text-align: center;
+                        background-color: {colors['bg']};
+                        color: {colors['text']};
+                        font-size: 14px;
+                        font-weight: 600;
+                        margin: 0;
+                        padding: 0;
+                        min-height: 60px;
+                        max-height: 60px;
+                    }}
+                    QProgressBar::chunk {{
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                                   stop:0 #2563eb,
+                                                   stop:0.5 #3b82f6,
+                                                   stop:1 #60a5fa);
+                        border-radius: 2px;
+                    }}
+                """)
+                print("DEBUG: Reset main progress bar to 0% with blue styling")
+
             # Reset all speed/time labels
             if hasattr(self.root.progress_section, 'current_speed_label'):
                 self.root.progress_section.current_speed_label.setText("0 MB/s")
@@ -1611,7 +1635,72 @@ class ControlSection(QWidget):
                 self.root.progress_section.eta_label.setText("--:--:--")
             if hasattr(self.root.progress_section, 'files_count'):
                 self.root.progress_section.files_count.setText("0 of 0 files")
-            print("DEBUG: Reset all progress section labels")
+
+            # Reset health indicators to default state
+            if hasattr(self.root.progress_section, 'integrity_label'):
+                self.root.progress_section.integrity_label.setText("Pending...")
+                self.root.progress_section.integrity_label.setStyleSheet(f"""
+                    QLabel {{
+                        color: {colors['secondary_text']};
+                        font-size: 11px;
+                        font-weight: 600;
+                        text-align: center;
+                        margin: 0;
+                        padding: 2px;
+                        background: transparent;
+                        border: none;
+                    }}
+                """)
+            if hasattr(self.root.progress_section, 'errors_label'):
+                self.root.progress_section.errors_label.setText("0")
+                self.root.progress_section.errors_label.setStyleSheet(f"""
+                    QLabel {{
+                        color: #22c55e;
+                        font-size: 11px;
+                        font-weight: 600;
+                        text-align: center;
+                        margin: 0;
+                        padding: 2px;
+                        background: transparent;
+                        border: none;
+                    }}
+                """)
+            if hasattr(self.root.progress_section, 'connection_label'):
+                self.root.progress_section.connection_label.setText("— Idle")
+                self.root.progress_section.connection_label.setStyleSheet(f"""
+                    QLabel {{
+                        color: {colors['secondary_text']};
+                        font-size: 11px;
+                        font-weight: 600;
+                        text-align: center;
+                        margin: 0;
+                        padding: 2px;
+                        background: transparent;
+                        border: none;
+                    }}
+                """)
+            if hasattr(self.root.progress_section, 'disk_label'):
+                self.root.progress_section.disk_label.setText("— Idle")
+                self.root.progress_section.disk_label.setStyleSheet(f"""
+                    QLabel {{
+                        color: {colors['secondary_text']};
+                        font-size: 11px;
+                        font-weight: 600;
+                        text-align: center;
+                        margin: 0;
+                        padding: 2px;
+                        background: transparent;
+                        border: none;
+                    }}
+                """)
+
+            # Reset health metrics tracking
+            if hasattr(self.root.progress_section, 'error_count'):
+                self.root.progress_section.error_count = 0
+            if hasattr(self.root.progress_section, 'last_speed_samples'):
+                self.root.progress_section.last_speed_samples = []
+
+            print("DEBUG: Reset all progress section labels and health indicators")
         
         # Reset destination cards to Ready state
         if hasattr(self.root, 'src_dest_section') and self.root.src_dest_section:
