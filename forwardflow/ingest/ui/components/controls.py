@@ -698,13 +698,16 @@ class ControlSection(QWidget):
                 print("DEBUG: ✅ Event queue handle obtained")
 
                 # CRITICAL FIX: Drain old events from previous transfer
-                # The engine singleton's event queue may contain stale events
+                # The engine singleton's event queue may contain stale events from cancelled transfers
+                # This prevents DestCompleted events from triggering premature report generation
                 print("DEBUG: 🧹 Draining old events from event queue...")
-                if hasattr(queue_handle, 'drain_all'):
-                    drained_events = queue_handle.drain_all()
+                if hasattr(queue_handle, 'drain_all_events'):
+                    drained_events = queue_handle.drain_all_events()
                     print(f"DEBUG: ✅ Drained {len(drained_events)} old events from queue")
+                    if drained_events:
+                        print(f"DEBUG: 🗑️  Discarded stale events: {[e[:100] for e in drained_events[:3]]}")
                 else:
-                    print("DEBUG: ⚠️  No drain_all method - queue may have stale events")
+                    print("DEBUG: ⚠️  No drain_all_events method - queue may have stale events")
 
                 # Create event pump manager
                 self.event_pump = EventPumpManager()
@@ -874,7 +877,24 @@ class ControlSection(QWidget):
     def _handle_destination_completed(self, dest_path: str):
         """Handle individual destination completion for immediate DIT report generation"""
         print(f"🎯 DESTINATION COMPLETED: {dest_path} - Generating immediate DIT report")
-        
+
+        # CRITICAL FIX: Prevent processing stale destination_completed events
+        # Stale events from cancelled transfers can trigger premature empty reports
+        if not hasattr(self, 'transfer_worker') or not self.transfer_worker:
+            print(f"⚠️  DESTINATION COMPLETED ignored - no active transfer worker (stale event)")
+            return
+
+        if not hasattr(self, 'transfer_thread') or not self.transfer_thread or not self.transfer_thread.isRunning():
+            print(f"⚠️  DESTINATION COMPLETED ignored - transfer thread not running (stale event)")
+            return
+
+        # Check if this destination is part of current job
+        if hasattr(self.transfer_worker, 'job') and self.transfer_worker.job:
+            job_destinations = self.transfer_worker.job.destination_roots
+            if dest_path not in job_destinations:
+                print(f"⚠️  DESTINATION COMPLETED ignored - {dest_path} not in current job destinations")
+                return
+
         try:
             # Show "Writing report..." UI feedback
             self._show_report_generation_ui(dest_path)
