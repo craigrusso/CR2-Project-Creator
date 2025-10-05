@@ -1,0 +1,158 @@
+================================================================================
+GIT PUSH SUMMARY - DIT Reports Cancel→Restart Bug Fix
+================================================================================
+
+Date: October 4, 2025
+Branch: feature/ingest-v1-1
+Total Commits Pushed: 3
+
+================================================================================
+COMMITS PUSHED
+================================================================================
+
+1. Commit 19168a3: Fix empty DIT reports on second transfer - engine singleton state issue
+   Files:
+   - forwardflow/ingest/ui/components/controls.py (engine reset + queue drain)
+   - forwardflow/ingest/utils/realtime_report_writer.py (path normalization)
+   
+   Key Changes:
+   - Reset Rust engine state before each transfer (clears flags, job_id)
+   - Attempt to drain event queue (had typo - fixed in next commit)
+   - Normalize destination paths for reliable matching
+
+2. Commit 53165d9: Fix premature empty reports and missing reports on cancel-restart
+   Files:
+   - forwardflow/ingest/ui/components/controls.py
+   
+   Key Changes:
+   - CRITICAL FIX: drain_all() → drain_all_events() (correct method name!)
+   - Add stale event guards to _handle_destination_completed()
+   - Prevent processing events when transfer not running
+   - Validate destination matches current job
+
+3. Commit 97e7a41: Add comprehensive fix notes for DIT reports cancel-restart issue
+   Files:
+   - FIX_NOTES_DIT_REPORTS_CANCEL_RESTART.md (new file)
+   
+   Documentation:
+   - Complete root cause analysis
+   - Technical architecture diagrams
+   - Testing instructions with expected output
+   - Future improvement suggestions
+
+================================================================================
+WHAT WAS BROKEN
+================================================================================
+
+Symptom #1: Second transfer starts → empty report appears immediately
+Symptom #2: Second cancel → no report generated at all
+
+Root Cause:
+- Rust engine uses SINGLETON pattern (persists across transfers)
+- Event queue NOT cleared between transfers
+- Stale DestCompleted events from cancelled transfer fire on next start
+- CRITICAL TYPO: Called drain_all() instead of drain_all_events()
+  → Queue never actually drained!
+- No validation to reject stale events
+
+================================================================================
+WHAT WAS FIXED
+================================================================================
+
+Fix #1: Reset Engine State
+- Call engine.reset() before each transfer
+- Clears cancelled flags, job_id, progress tracker
+
+Fix #2: Drain Event Queue (CORRECT METHOD)
+- Call queue_handle.drain_all_events() (not drain_all!)
+- Removes ALL stale events before starting new transfer
+- Prevents premature DestCompleted events
+
+Fix #3: Guard Against Stale Events
+- Check transfer_worker exists and is valid
+- Check transfer_thread is actually running
+- Verify destination matches current job
+- Return early if event is stale
+
+Fix #4: Path Normalization
+- Normalize destination paths for reliable matching
+- Handle trailing slashes, case sensitivity, symlinks
+
+================================================================================
+TESTING REQUIRED
+================================================================================
+
+Critical Test: Cancel → Restart Workflow
+1. Run transfer for a few seconds
+2. Hit CANCEL → verify report has data
+3. Start SECOND transfer
+   → Should see "Drained X old events from queue" in terminal
+   → Should NOT see empty report appear immediately
+4. Let it run a few seconds
+5. Hit CANCEL again
+   → Should generate report with file data (NOT empty)
+
+Expected Terminal Output (Second Transfer):
+  🔄 Resetting Rust engine state from previous transfer...
+  ✅ Rust engine state reset
+  🧹 Draining old events from event queue...
+  ✅ Drained 3 old events from queue
+  🗑️  Discarded stale events: [...]
+
+Signs of Success:
+✅ No empty reports before copying starts
+✅ Second cancel generates proper report
+✅ Terminal shows drained events count
+
+Signs of Failure:
+❌ Empty report appears when second transfer starts
+❌ Second cancel doesn't create report
+❌ "Drained 0 old events" in terminal
+
+================================================================================
+FILES MODIFIED
+================================================================================
+
+forwardflow/ingest/ui/components/controls.py:
+  - Line 688-690: Reset engine state
+  - Line 704: CRITICAL FIX - drain_all_events() method name
+  - Line 707-708: Debug logging for drained events  
+  - Line 883-896: Stale event guards in _handle_destination_completed
+
+forwardflow/ingest/utils/realtime_report_writer.py:
+  - Line 25-91: Path normalization in initialization
+  - Line 147-204: Normalized destination matching
+  - Line 339-381: Path normalization helper methods
+
+FIX_NOTES_DIT_REPORTS_CANCEL_RESTART.md:
+  - NEW FILE: Complete documentation with diagrams and testing
+
+================================================================================
+GITHUB PUSH STATUS
+================================================================================
+
+✅ All commits pushed to: origin/feature/ingest-v1-1
+✅ Branch is 3 commits ahead of origin
+✅ No uncommitted changes
+✅ Working tree clean
+
+GitHub URL: https://github.com/craigrusso/Echelon.git
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Test the cancel→restart workflow thoroughly
+2. Verify terminal shows "Drained X old events"
+3. Confirm no empty reports appear prematurely
+4. Check second cancel generates proper reports
+5. Review FIX_NOTES_DIT_REPORTS_CANCEL_RESTART.md for detailed testing
+
+If issues persist, check:
+- Are events actually being drained? (check terminal output)
+- Are guards triggering? (look for "ignored - stale event" warnings)
+- Is realtime writer being initialized? (check for writer object ID logs)
+
+================================================================================
+End of Push Summary
+================================================================================
