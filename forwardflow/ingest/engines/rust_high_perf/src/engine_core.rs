@@ -163,26 +163,17 @@ impl EnhancedHighPerfTransferEngine {
 
         let relative_paths = self.compute_relative_paths(job, &source_files);
 
-        let file_records = if job.destination_paths.len() == 1 {
-            // Single destination copy
-            self.copy_to_single_destination(
-                job,
-                &source_files,
-                start_time,
-                total_bytes,
-                total_files,
-            )?
-        } else {
-            // Multiple destination copy
-            self.copy_to_multiple_destinations(
-                job,
-                &source_files,
-                &relative_paths,
-                start_time,
-                total_bytes,
-                total_files,
-            )?
-        };
+        // CRITICAL FIX: Always use MultiDestCopyEngine regardless of destination count
+        // This ensures consistent event emission, progress tracking, and DIT report generation
+        // whether transferring to 1, 2, or 10 destinations
+        let file_records = self.copy_to_multiple_destinations(
+            job,
+            &source_files,
+            &relative_paths,
+            start_time,
+            total_bytes,
+            total_files,
+        )?;
 
         copy_stats.end_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -237,235 +228,6 @@ impl EnhancedHighPerfTransferEngine {
             .collect()
     }
 
-    /// Copy files to a single destination
-    fn copy_to_single_destination(
-        &self,
-        job: &CopyJob,
-        source_files: &[std::path::PathBuf],
-        start_time: f64,
-        total_bytes: u64,
-        total_files: usize,
-    ) -> Result<Vec<FileTransferRecord>> {
-        let dest_path = &job.destination_paths[0];
-
-        // Emit destination progress event
-        let mut dest_progress = DestProgressPayload::default();
-        dest_progress.dest_index = 0;
-        dest_progress.dest_path = dest_path.clone();
-        dest_progress.transfer_type = "COPY".to_string();
-        dest_progress.total_files = source_files.len();
-
-        if let Ok(event_system) = self.event_system.lock() {
-            let _ = event_system.emit_dest_progress(&dest_progress);
-        }
-
-        // Copy files with immediate cancellation support using threads
-        let results = self
-            .file_operations
-            .copy_files_parallel_with_cancellation_threaded(
-                source_files,
-                std::path::Path::new(dest_path),
-                None,
-                Arc::clone(&self.cancelled),
-            )?;
-
-        // Process results and update progress
-        let mut file_records = Vec::new();
-
-        for (index, result) in results.iter().enumerate() {
-            // Check for cancellation before processing each result
-            if self.is_cancelled() {
-                debug!("Copy operation cancelled during processing");
-                break;
-            }
-            if result.success {
-                self.total_files_processed
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                self.total_bytes_transferred
-                    .fetch_add(result.bytes_copied, std::sync::atomic::Ordering::Relaxed);
-
-                // Update progress
-                if let Ok(tracker) = self.progress_tracker.lock() {
-                    tracker.update_overall_progress(
-                        self.total_bytes_transferred
-                            .load(std::sync::atomic::Ordering::Relaxed),
-                        self.total_files_processed
-                            .load(std::sync::atomic::Ordering::Relaxed)
-                            as usize,
-                    );
-                }
-
-                // Create file transfer record
-                let filename = source_files[index]
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-
-                // CRITICAL FIX: Always calculate hashes for DIT reports (professional requirement)
-                let source_file_path = &source_files[index];
-                let dest_file_path = std::path::Path::new(dest_path).join(&filename);
-
-                // Always calculate hashes for DIT compliance, regardless of user verification settings
-                let hash_algorithm = if job.verify_integrity {
-                    job.hash_algorithm.clone()
-                } else {
-                    "xxhash64".to_string() // Default to xxhash64 for DIT reports
-                };
-
-                let (source_hash, dest_hash, verification_passed) = match self
-                    .calculate_file_hashes(source_file_path, &dest_file_path, &hash_algorithm)
-                {
-                    Ok((src, dst)) => {
-                        let passed = src == dst;
-                        debug!(
-                            filename = %filename,
-                            %src,
-                            %dst,
-                            passed,
-                            "Calculated verification hashes"
-                        );
-                        (src, dst, passed)
-                    }
-                    Err(e) => {
-                        error!(%filename, error = %e, "Hash calculation failed");
-                        ("hash_error".to_string(), "hash_error".to_string(), false)
-                    }
-                };
-
-                let file_record = FileTransferRecord {
-                    filename: filename.clone(),
-                    source_path: source_files[index].to_string_lossy().to_string(),
-                    destination_path: format!("{}/{}", dest_path, filename),
-                    file_size: result.bytes_copied,
-                    checksum_source: source_hash.clone(),
-                    checksum_destination: dest_hash.clone(),
-                    status: "COMPLETED".to_string(),
-                    error_message: String::new(),
-                    transfer_speed_mib_s: 0.0, // Will be calculated
-                    verification_passed,
-                    verification_error: String::new(),
-                };
-                file_records.push(file_record.clone());
-
-                if let Ok(tracker) = self.progress_tracker.lock() {
-                    tracker.add_file_record(file_record.clone());
-                }
-
-                if let Ok(event_system) = self.event_system.lock() {
-                    let _ = event_system.emit_file_completed_with_hash(
-                        &filename,
-                        source_file_path.to_str().unwrap_or(""),
-                        dest_file_path.to_str().unwrap_or(""),
-                        0,
-                        result.bytes_copied,
-                        &source_hash,
-                        &dest_hash,
-                        &hash_algorithm,
-                        verification_passed,
-                    );
-                    debug!(filename = %filename, "Queued file.completed event with hashes");
-
-                    // Emit job progress event
-                    let elapsed = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs_f64()
-                        - start_time;
-                    let speed_mib_s = if elapsed > 0.0 {
-                        (self
-                            .total_bytes_transferred
-                            .load(std::sync::atomic::Ordering::Relaxed)
-                            as f64
-                            / elapsed)
-                            / (1024.0 * 1024.0)
-                    } else {
-                        0.0
-                    };
-
-                    let _ = event_system.emit_job_progress(
-                        self.total_bytes_transferred
-                            .load(std::sync::atomic::Ordering::Relaxed),
-                        total_bytes,
-                        self.total_files_processed
-                            .load(std::sync::atomic::Ordering::Relaxed)
-                            as usize,
-                        total_files,
-                        elapsed,
-                        speed_mib_s,
-                    );
-                }
-            } else {
-                // Handle error
-                if let Some(error_msg) = &result.error_message {
-                    // Note: In a full implementation, we'd track errors properly
-                    // For now, we'll just log them
-                    error!(error = %error_msg, "File copy error");
-
-                    // Create error file record
-                    let filename = source_files[index]
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("unknown")
-                        .to_string();
-
-                    let file_record = FileTransferRecord {
-                        filename: filename.clone(),
-                        source_path: source_files[index].to_string_lossy().to_string(),
-                        destination_path: format!("{}/{}", dest_path, filename),
-                        file_size: 0,
-                        checksum_source: String::new(),
-                        checksum_destination: String::new(),
-                        status: "FAILED".to_string(),
-                        error_message: error_msg.clone(),
-                        transfer_speed_mib_s: 0.0,
-                        verification_passed: false,
-                        verification_error: error_msg.clone(),
-                    };
-                    file_records.push(file_record.clone());
-
-                    if let Ok(tracker) = self.progress_tracker.lock() {
-                        tracker.add_file_record(file_record);
-                    }
-                }
-            }
-        }
-
-        // Emit destination completion event once all files are processed for this destination
-        if let Ok(event_system) = self.event_system.lock() {
-            let completed_files =
-                self.total_files_processed
-                    .load(std::sync::atomic::Ordering::Relaxed) as usize;
-            let mut dest_completion = DestProgressPayload::default();
-            dest_completion.dest_index = 0;
-            dest_completion.dest_path = dest_path.clone();
-            dest_completion.transfer_type = "COPY".to_string();
-            dest_completion.completed_files = completed_files;
-            dest_completion.total_files = total_files;
-            dest_completion.bytes_copied = self
-                .total_bytes_transferred
-                .load(std::sync::atomic::Ordering::Relaxed);
-            dest_completion.total_bytes = total_bytes;
-
-            // Emit as both dest_progress at 100% and explicit dest.completed event
-            let _ = event_system.emit_dest_progress(&dest_completion);
-            let elapsed = (now_secs() - start_time).max(0.0);
-            let _ = event_system.emit_dest_completed(
-                0,
-                dest_path,
-                self.total_bytes_transferred
-                    .load(std::sync::atomic::Ordering::Relaxed),
-                total_bytes,
-                completed_files,
-                total_files,
-                elapsed,
-            );
-
-            println!("DEBUG: 🎯 EMITTED dest.completed EVENT for {}", dest_path);
-        }
-
-        Ok(file_records)
-    }
 
     /// Copy files to multiple destinations
     fn copy_to_multiple_destinations(
@@ -886,23 +648,6 @@ impl EnhancedHighPerfTransferEngine {
         self.cancelled.load(std::sync::atomic::Ordering::Relaxed)
     }
 
-    /// Calculate file hashes for verification
-    fn calculate_file_hashes(
-        &self,
-        source_path: &std::path::Path,
-        dest_path: &std::path::Path,
-        algorithm: &str,
-    ) -> Result<(String, String)> {
-        use crate::verification::{HashAlgorithm, HashCalculator};
-
-        let hash_algo = HashAlgorithm::from_string(algorithm);
-        let calculator = HashCalculator::new(hash_algo);
-
-        let source_hash = calculator.calculate_file_hash(source_path)?;
-        let dest_hash = calculator.calculate_file_hash(dest_path)?;
-
-        Ok((source_hash, dest_hash))
-    }
 
     /// Check if operation is paused
     pub fn is_paused(&self) -> bool {
