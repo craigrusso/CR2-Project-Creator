@@ -12,7 +12,7 @@ pub mod event_hub_v2;
 pub mod event_queue;
 pub mod event_system;
 pub mod file_operations;
-pub mod multi_dest_copy;
+pub mod multi_dest;
 pub mod platform_helpers;
 pub mod progress_tracking;
 pub mod python_bindings;

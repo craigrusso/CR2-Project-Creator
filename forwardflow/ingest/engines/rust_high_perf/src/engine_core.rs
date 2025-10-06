@@ -10,7 +10,7 @@ use crate::cloud_detection::CloudDetectionManager;
 use crate::data_structures::{FileTransferRecord, *};
 use crate::event_system::EventSystem;
 use crate::file_operations::FileOperationManager;
-use crate::multi_dest_copy::MultiDestCopyEngine;
+use crate::multi_dest::MultiDestCopyEngine;
 use crate::platform_helpers::{get_disk_space, get_file_size};
 use crate::progress_tracking::ProgressTracker;
 use crate::verification::{HashAlgorithm, VerificationManager};
