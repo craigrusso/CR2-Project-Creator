@@ -16,8 +16,14 @@ class DITDataCollector:
     def __init__(self):
         # Use dict keyed by (filename, dest_path) to track unique files and allow updates
         self.file_records_dict: Dict[tuple, Dict[str, Any]] = {}
+        
+        # CRITICAL FIX: Per-destination file tracking for independent reports
+        # Key: dest_index (int) -> Value: Dict of (filename, dest_path) -> file_record
+        self.files_by_destination: Dict[int, Dict[tuple, Dict[str, Any]]] = {}
+        
         self.job_stats: Dict[str, Any] = {}
-        self.destination_stats: Dict[str, Any] = {}
+        self.destination_stats: Dict[int, Dict[str, Any]] = {}
+        self.destination_paths: Dict[int, str] = {}
         self.lock = threading.Lock()
         self.job_id: Optional[str] = None
         self.start_time: Optional[float] = None
@@ -26,12 +32,14 @@ class DITDataCollector:
         """Reset collector for new job"""
         with self.lock:
             self.file_records_dict.clear()
+            self.files_by_destination.clear()  # CRITICAL FIX: Clear per-destination tracking
             self.job_stats.clear()
             self.destination_stats.clear()
+            self.destination_paths.clear()
             self.job_id = job_id
             self.start_time = time.time()
             print(f"DEBUG: DITDataCollector reset for job: {job_id}")
-            print(f"🔍 DEBUG: Collector instance {id(self)} reset - file_records cleared")
+            print(f"🔍 DEBUG: Collector instance {id(self)} reset - file_records and per-dest tracking cleared")
     
     def handle_file_complete_event(self, payload: Dict[str, Any]):
         """Handle file.complete events from Rust engine - updates existing records if hash data arrives later"""
@@ -101,6 +109,13 @@ class DITDataCollector:
                     self.file_records_dict[record_key] = file_record
                     print(f"DEBUG: DITDataCollector CREATED file.complete: {filename} ({size_bytes} bytes, hash={'YES' if source_checksum else 'NO'})")
 
+                # CRITICAL FIX: Also store in per-destination tracking
+                if dest_index not in self.files_by_destination:
+                    self.files_by_destination[dest_index] = {}
+                
+                self.files_by_destination[dest_index][record_key] = self.file_records_dict[record_key]
+                print(f"🔥 DEBUG: File also stored for dest_index={dest_index}")
+
                 print(f"🔍 DEBUG: File record in collector instance {id(self)} - total records now: {len(self.file_records_dict)}")
 
             except Exception as e:
@@ -114,13 +129,15 @@ class DITDataCollector:
             self.job_stats.update(stats)
             print(f"DEBUG: DIT Collector job stats updated: {stats}")
     
-    def update_destination_stats(self, dest_path: str, stats: Dict[str, Any]):
+    def update_destination_stats(self, dest_index: int, dest_path: str, stats: Dict[str, Any]):
         """Update destination-specific statistics"""
         with self.lock:
-            self.destination_stats[dest_path] = stats
+            self.destination_stats[dest_index] = {**stats, 'dest_path': dest_path}
+            if dest_path:
+                self.destination_paths[dest_index] = dest_path
     
     def get_file_records(self) -> List[Dict[str, Any]]:
-        """Get all collected file records"""
+        """Get all collected file records (global - use get_file_records_for_destination for per-dest)"""
         with self.lock:
             file_records_list = list(self.file_records_dict.values())
             print(f"🔍 DEBUG: get_file_records() called - returning {len(file_records_list)} records")
@@ -131,8 +148,24 @@ class DITDataCollector:
                 print(f"🔍 DEBUG: Sample record has hash: {file_records_list[0].get('source_checksum', 'NONE')}")
             return file_records_list
     
+    def get_file_records_for_destination(self, dest_index: int) -> List[Dict[str, Any]]:
+        """Get file records for a specific destination - CRITICAL for independent reports"""
+        with self.lock:
+            if dest_index not in self.files_by_destination:
+                print(f"🔥 DEBUG: No files found for dest_index={dest_index}")
+                return []
+            
+            dest_files = list(self.files_by_destination[dest_index].values())
+            print(f"🔥 DEBUG: get_file_records_for_destination(dest_index={dest_index}) returning {len(dest_files)} files")
+            return dest_files
+    
+    def get_all_destination_indices(self) -> List[int]:
+        """Get list of all destination indices that have files"""
+        with self.lock:
+            return list(self.files_by_destination.keys())
+    
     def get_job_stats(self) -> Dict[str, Any]:
-        """Get job statistics"""
+        """Get job statistics (global - use get_stats_for_destination for per-dest)"""
         with self.lock:
             # Calculate derived statistics from dictionary values
             file_records_list = list(self.file_records_dict.values())
@@ -167,10 +200,74 @@ class DITDataCollector:
             stats.update(self.job_stats)
             return stats
     
+    def get_stats_for_destination(self, dest_index: int) -> Dict[str, Any]:
+        """Get statistics for a specific destination - CRITICAL for independent reports"""
+        with self.lock:
+            dest_files_map = self.files_by_destination.get(dest_index)
+            if not dest_files_map:
+                return {
+                    'total_files': 0,
+                    'completed_files': 0,
+                    'failed_files': 0,
+                    'cancelled_files': 0,
+                    'error_files': 0,
+                    'total_bytes': 0,
+                    'completed_bytes': 0,
+                    'copied_bytes': 0,
+                    'elapsed_time': 0.0,
+                    'duration': 0.0,
+                    'average_speed_mbps': 0.0,
+                    'avg_speed': 0.0,
+                    'peak_speed': 0.0,
+                    'dest_path': self.destination_paths.get(dest_index, ''),
+                }
+            
+            file_records_list = list(dest_files_map.values())
+            total_files = len(file_records_list)
+            completed_files = sum(1 for r in file_records_list if r.get('status') == 'COMPLETED')
+            failed_files = sum(1 for r in file_records_list if r.get('status') == 'FAILED')
+            cancelled_files = sum(1 for r in file_records_list if r.get('status') == 'CANCELLED')
+
+            total_bytes = sum(r.get('size_bytes', 0) for r in file_records_list)
+            completed_bytes = sum(r.get('size_bytes', 0) for r in file_records_list if r.get('status') == 'COMPLETED')
+            
+            elapsed_time = (time.time() - self.start_time) if self.start_time else 0.0
+            average_speed_mbps = (completed_bytes / (1024 * 1024)) / elapsed_time if elapsed_time > 0 else 0.0
+            
+            destination_stats = self.destination_stats.get(dest_index, {})
+            peak_speed = destination_stats.get('peak_speed', 0.0)
+            
+            stats = {
+                'total_files': total_files,
+                'completed_files': completed_files,
+                'failed_files': failed_files,
+                'cancelled_files': cancelled_files,
+                'error_files': failed_files,
+                'total_bytes': total_bytes,
+                'completed_bytes': completed_bytes,
+                'copied_bytes': completed_bytes,
+                'elapsed_time': elapsed_time,
+                'duration': elapsed_time,
+                'average_speed_mbps': average_speed_mbps,
+                'avg_speed': average_speed_mbps,
+                'peak_speed': peak_speed,
+                'dest_path': self.destination_paths.get(dest_index, ''),
+            }
+            
+            print(f"🔥 DEBUG: get_stats_for_destination(dest_index={dest_index}): {total_files} files, {completed_bytes} bytes, {average_speed_mbps:.1f} MB/s avg, {peak_speed:.1f} MB/s peak")
+            
+            return stats
+    
     def get_destination_details(self) -> Dict[str, Any]:
         """Get destination-specific details"""
         with self.lock:
-            return self.destination_stats.copy()
+            return {
+                idx: {
+                    **stats,
+                    'dest_path': self.destination_paths.get(idx, ''),
+                }
+                for idx, stats in self.destination_stats.items()
+            }
     
     def has_data(self) -> bool:
         """Check if collector has any data"""

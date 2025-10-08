@@ -9,6 +9,23 @@ import time
 import os
 from typing import Dict, Optional
 
+
+def _normalize_path(raw_path: Optional[str]) -> str:
+    """Return a case-insensitive, normalized filesystem path for matching."""
+    if not raw_path:
+        return ""
+
+    cleaned = raw_path.strip()
+    if not cleaned or cleaned == "current_destination":
+        return ""
+
+    normalized = os.path.normpath(cleaned)
+
+    if normalized in (".", ""):
+        return ""
+
+    return os.path.normcase(normalized)
+
 try:
     from app.ui.color_scheme_pyqt import (
         colors, BUTTON_STYLE, COMBOBOX_STYLE, GROUPBOX_STYLE, 
@@ -29,6 +46,7 @@ class DestinationWidget(QFrame):
         super().__init__(parent)
         self.path = path
         self.parent_section = parent_section  # Reference to SourceDestinationSection
+        self._normalized_path = _normalize_path(self.path)
         
         # Smoothing state for destination metrics
         self.current_values = {
@@ -290,6 +308,34 @@ class DestinationWidget(QFrame):
         
         if self.parent_section and hasattr(self.parent_section, 'remove_destination'):
             self.parent_section.remove_destination(self)
+
+    def matches_destination(self, dest_path: str) -> bool:
+        """Check whether a progress payload belongs to this destination."""
+        return self._payload_matches_destination(dest_path)
+
+    def _payload_matches_destination(self, dest_path: str) -> bool:
+        """Return True if the incoming destination path targets this widget."""
+        if not dest_path or dest_path == 'current_destination':
+            return True
+
+        normalized_dest = _normalize_path(dest_path)
+        if not normalized_dest:
+            return False
+
+        if normalized_dest == self._normalized_path:
+            return True
+
+        if not self._normalized_path:
+            return False
+
+        if normalized_dest.startswith(self._normalized_path):
+            remainder = normalized_dest[len(self._normalized_path):]
+            if not remainder:
+                return True
+            if remainder[0] in ('/', '\\'):
+                return True
+
+        return False
     
     def update_progress(self, progress_payload):
         """Update destination-specific progress metrics with smooth animation"""
@@ -300,12 +346,22 @@ class DestinationWidget(QFrame):
             print(f"DEBUG: DestinationWidget.update_progress for {self.path}, payload dest: {dest_path}")
             
             # If this is a destination-specific event and it's not for this destination, skip it
-            if dest_path and dest_path != self.path and dest_path != 'current_destination':
+            if not self._payload_matches_destination(dest_path):
                 print(f"DEBUG: Skipping update for {self.path} - not matching {dest_path}")
                 return
             
             # Extract values from payload
-            progress_percent = progress_payload.get('progress_percent', 0)
+            progress_percent = progress_payload.get('progress_percent')
+            bytes_copied = progress_payload.get('bytes_copied', 0) or 0
+            total_bytes = progress_payload.get('total_bytes', 0) or 0
+            expected_total_bytes = progress_payload.get('expected_total_bytes', 0) or 0
+            if progress_percent is None:
+                progress_percent = 0.0
+            if progress_percent == 0:
+                denominator = expected_total_bytes or total_bytes
+                if denominator > 0 and bytes_copied > 0:
+                    progress_percent = (bytes_copied / denominator) * 100.0
+            progress_percent = max(0.0, min(100.0, float(progress_percent)))
             current_speed = (progress_payload.get('currentSpeedMiBps', 0) or 
                            progress_payload.get('current_speed_mbps', 0))
             
@@ -335,11 +391,13 @@ class DestinationWidget(QFrame):
                 print(f"DEBUG: Available attributes: {[attr for attr in dir(self) if 'peak' in attr.lower() or 'label' in attr.lower()]}")
             
             # Extract values for smoothing
-            eta_seconds = progress_payload.get('etaS', 0) or progress_payload.get('eta_seconds', 0)
+            eta_seconds = (progress_payload.get('etaS', 0) or 
+                           progress_payload.get('eta_seconds', 0))
 
             # CRITICAL FIX: Calculate ETA from progress and elapsed time if not provided
             if eta_seconds == 0 and progress_percent > 0:
-                elapsed_time = progress_payload.get('elapsed_time', 0)
+                elapsed_time = (progress_payload.get('elapsed_time', 0) or 
+                                progress_payload.get('elapsed_seconds', 0))
                 if elapsed_time > 0:
                     # ETA = (elapsed / progress) * (100 - progress)
                     eta_seconds = (elapsed_time / progress_percent) * (100.0 - progress_percent)
@@ -753,20 +811,39 @@ class SourceDestinationSection(QWidget):
         
         # Check if this is a destination-specific update
         if dest_path and dest_path != 'current_destination':
-            # Find the matching destination widget and update it
+            # Try to route by dest_index first for deterministic mapping
+            dest_index_raw = progress_payload.get('dest_index')
             updated = False
+
+            if dest_index_raw is not None:
+                try:
+                    dest_index = int(dest_index_raw)
+                except (TypeError, ValueError):
+                    dest_index = None
+
+                if dest_index is not None:
+                    if 0 <= dest_index < len(self.destination_widgets):
+                        widget = self.destination_widgets[dest_index]
+                        if widget.matches_destination(dest_path):
+                            print(f"DEBUG: *** DEST_INDEX MATCH FOUND - Updating widget[{dest_index}] for {dest_path} ***")
+                            widget.update_progress(progress_payload)
+                            updated = True
+                        else:
+                            print(f"DEBUG: Dest index {dest_index} mapped to {widget.path}, but payload dest_path '{dest_path}' did not match after normalization")
+                    else:
+                        print(f"DEBUG: Dest index {dest_index} out of range for {len(self.destination_widgets)} widgets")
+
+            if updated:
+                return
+
+            # Find the matching destination widget and update it
             print(f"DEBUG: *** SEARCHING FOR WIDGET WITH PATH: '{dest_path}' ***")
             print(f"DEBUG: Available widget paths: {[f'[{i}]: {w.path}' for i, w in enumerate(self.destination_widgets)]}")
             
             for i, widget in enumerate(self.destination_widgets):
                 print(f"DEBUG: Comparing widget[{i}].path='{widget.path}' with dest_path='{dest_path}'")
-                if widget.path == dest_path:
-                    print(f"DEBUG: *** EXACT MATCH FOUND - Updating widget[{i}] for {dest_path} ***")
-                    widget.update_progress(progress_payload)
-                    updated = True
-                    break
-                elif os.path.normpath(widget.path) == os.path.normpath(dest_path):
-                    print(f"DEBUG: *** NORMALIZED PATH MATCH FOUND - Updating widget[{i}] for {dest_path} ***")
+                if widget.matches_destination(dest_path):
+                    print(f"DEBUG: *** NORMALIZED MATCH FOUND - Updating widget[{i}] for {dest_path} ***")
                     widget.update_progress(progress_payload)
                     updated = True
                     break

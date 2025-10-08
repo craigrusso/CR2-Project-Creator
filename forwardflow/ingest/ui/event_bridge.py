@@ -263,16 +263,31 @@ class EventBridge(QObject):
             file_id = payload.get('file_id', payload.get('filename', 'unknown'))
             filename = payload.get('filename', file_id)
             total_bytes = payload.get('total_bytes', 0)
-            dest_path = payload.get('dest_path', payload.get('destination', ''))
+            dest_file_path = payload.get('dest_path', payload.get('destination', ''))
             
-            # If no dest_path in payload, use the first available destination from JobAggregator
-            if not dest_path and self.job_aggregator and self.job_aggregator.destinations:
-                dest_path = self.job_aggregator.destinations[0]
-                print(f"DEBUG: File completion using fallback dest_path: '{dest_path}'")
+            # Extract destination ROOT from full file path
+            # Rust sends: "/Volumes/CR_DRIVE/TEST_TRANSFER/subdir/file.mov"
+            # JobAggregator needs: "/Volumes/CR_DRIVE/TEST_TRANSFER"
+            dest_dir = ''
+            if dest_file_path and self.job_aggregator and self.job_aggregator.destinations:
+                # Match dest_file_path against registered destinations
+                for registered_dest in self.job_aggregator.destinations:
+                    if dest_file_path.startswith(registered_dest + '/') or dest_file_path.startswith(registered_dest):
+                        dest_dir = registered_dest
+                        print(f"DEBUG: Matched dest_dir='{dest_dir}' for file '{dest_file_path}'")
+                        break
+                
+                if not dest_dir:
+                    print(f"WARNING: Could not match dest_file_path='{dest_file_path}' to any registered destination")
+            
+            # Fallback: use the first available destination
+            if not dest_dir and self.job_aggregator and self.job_aggregator.destinations:
+                dest_dir = self.job_aggregator.destinations[0]
+                print(f"DEBUG: File completion using fallback dest_dir: '{dest_dir}'")
             
             # Mark file as complete
             snapshot = self.job_aggregator.update_file_progress(
-                file_id, total_bytes, total_bytes, dest_path, filename
+                file_id, total_bytes, total_bytes, dest_dir, filename
             )
             
             self._emit_progress_updates(snapshot)

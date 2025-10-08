@@ -434,6 +434,7 @@ class ControlSection(QWidget):
 
         # Track destinations that already have reports to prevent duplicates
         self._destinations_with_reports = set()
+        self._destination_root_map = {}
 
         # Track cleanup state to prevent duplicate cleanup calls
         self._cleanup_in_progress = False
@@ -510,6 +511,18 @@ class ControlSection(QWidget):
         except Exception as e:
             print(f"DEBUG: Error in check_button_states: {e}")
             self.start_btn.setEnabled(False)
+
+    def _wait_for_event_pump_idle(self, idle_ms: int = 250, timeout_ms: int = 5000) -> None:
+        """Wait for the event pump to finish emitting pending events before generating reports."""
+        if not hasattr(self, 'event_pump') or not self.event_pump:
+            return
+        try:
+            if self.event_pump.wait_for_idle(idle_ms=idle_ms, timeout_ms=timeout_ms):
+                print(f"DEBUG: Event pump idle for {idle_ms}ms - safe to proceed with reporting")
+            else:
+                print(f"DEBUG: Event pump did not become idle within {timeout_ms}ms - proceeding cautiously")
+        except Exception as e:
+            print(f"DEBUG: Failed to wait for event pump idle: {e}")
     
     def on_start(self, root, source_dest_section, options_section):
         """Handle start button click - implement Rust engine transfer"""
@@ -590,6 +603,14 @@ class ControlSection(QWidget):
             # Store job reference
             root.current_job = job
             print(f"DEBUG: Job stored in root.current_job: {root.current_job}")
+
+            # Track destination roots for quick lookup (normalized)
+            try:
+                self._destination_root_map = {
+                    os.path.normpath(path): index for index, path in enumerate(dest_paths)
+                }
+            except Exception:
+                self._destination_root_map = {path: index for index, path in enumerate(dest_paths)}
 
             # Reset cleanup flag for new transfer
             self._cleanup_in_progress = False
@@ -711,6 +732,9 @@ class ControlSection(QWidget):
 
                 # Create event pump manager
                 self.event_pump = EventPumpManager()
+                if job and getattr(job, 'destination_roots', None):
+                    self.event_pump.set_expected_destination_count(len(job.destination_roots))
+                    self.event_pump.set_destination_roots(job.destination_roots)
 
                 # Connect event pump signals to UI handlers (MUST happen on main thread)
                 print("DEBUG: 🔧 Connecting event pump signals on MAIN THREAD")
@@ -878,40 +902,67 @@ class ControlSection(QWidget):
         """Handle individual destination completion for immediate DIT report generation"""
         print(f"🎯 DESTINATION COMPLETED: {dest_path} - Generating immediate DIT report")
 
-        # CRITICAL FIX: Prevent processing stale destination_completed events
-        # Stale events from cancelled transfers can trigger premature empty reports
         if not hasattr(self, 'transfer_worker') or not self.transfer_worker:
             print(f"⚠️  DESTINATION COMPLETED ignored - no active transfer worker (stale event)")
             return
 
-        if not hasattr(self, 'transfer_thread') or not self.transfer_thread or not self.transfer_thread.isRunning():
-            print(f"⚠️  DESTINATION COMPLETED ignored - transfer thread not running (stale event)")
+        normalized_path = os.path.normpath(dest_path) if dest_path else dest_path
+        dest_index = None
+        if hasattr(self, '_destination_root_map') and self._destination_root_map:
+            dest_index = self._destination_root_map.get(normalized_path)
+            if dest_index is None:
+                # Attempt prefix match for nested paths
+                for root, idx in self._destination_root_map.items():
+                    if normalized_path.startswith(root):
+                        dest_index = idx
+                        normalized_path = root
+                        break
+
+        if dest_index is None:
+            print(f"⚠️  DESTINATION COMPLETED ignored - could not map path {dest_path} to destination index")
             return
 
         # Check if this destination is part of current job
         if hasattr(self.transfer_worker, 'job') and self.transfer_worker.job:
-            job_destinations = self.transfer_worker.job.destination_roots
-            if dest_path not in job_destinations:
+            job_destinations = {os.path.normpath(p) for p in self.transfer_worker.job.destination_roots}
+            if normalized_path not in job_destinations:
                 print(f"⚠️  DESTINATION COMPLETED ignored - {dest_path} not in current job destinations")
                 return
+        else:
+            return
+
+        if normalized_path in self._destinations_with_reports:
+            print(f"DEBUG: Destination {dest_path} already has a report - skipping duplicate generation")
+            return
 
         try:
+            # Ensure event pump drained recent events before collecting stats
+            self._wait_for_event_pump_idle()
+
             # Show "Writing report..." UI feedback
             self._show_report_generation_ui(dest_path)
             
-            # Get comprehensive stats and file records from the event sink
-            event_sink = getattr(self.root, '_rust_event_sink', None)
-            if event_sink and hasattr(event_sink, 'get_comprehensive_stats'):
-                comprehensive_stats = event_sink.get_comprehensive_stats()
-                # CRITICAL FIX: Use file records that are already included in comprehensive_stats
-                # This ensures we get the JobAggregator file records with proper status fields
-                file_records = comprehensive_stats.get('files', [])
-                print(f"📊 Got stats for destination report: {comprehensive_stats.get('total_bytes', 0)} bytes, {len(file_records)} files")
-            else:
-                # Fallback to basic stats if event sink not available
-                comprehensive_stats = {'total_bytes': 0, 'copied_bytes': 0, 'total_files': 0}
-                file_records = []
-                print("⚠️  No event sink available, using fallback stats")
+            # Ensure event pump flushed recent events
+            self._wait_for_event_pump_idle()
+
+            from ...utils.dit_data_collector import get_dit_collector
+            dit_collector = get_dit_collector()
+
+            comprehensive_stats = dit_collector.get_stats_for_destination(dest_index)
+            file_records = dit_collector.get_file_records_for_destination(dest_index)
+            if comprehensive_stats.get('total_files', 0) and len(file_records) < comprehensive_stats.get('total_files', 0):
+                # Give event pump a moment to flush remaining events
+                print("⚠️  Destination stats still updating - waiting briefly before generating report")
+                self._wait_for_event_pump_idle(idle_ms=300, timeout_ms=3000)
+                comprehensive_stats = dit_collector.get_stats_for_destination(dest_index)
+                file_records = dit_collector.get_file_records_for_destination(dest_index)
+
+            comprehensive_stats.setdefault('dest_index', dest_index)
+            comprehensive_stats.setdefault('dest_path', normalized_path)
+            print(
+                f"📊 Got stats for destination report: {comprehensive_stats.get('total_bytes', 0)} bytes, "
+                f"{len(file_records)} files"
+            )
             
             # Generate immediate comprehensive DIT report for this specific destination
             from ...utils.report_generator import TransferReportGenerator
@@ -941,7 +992,7 @@ class ControlSection(QWidget):
                     print(f"  📄 {report}")
                 
                 # Mark this destination as having a report to prevent duplicates
-                self._destinations_with_reports.add(dest_path)
+                self._destinations_with_reports.add(normalized_path)
                 print(f"🔒 Destination {dest_path} marked as having reports (prevents duplicates)")
             else:
                 print(f"❌ Failed to generate DIT reports for destination {dest_path}")
@@ -978,11 +1029,14 @@ class ControlSection(QWidget):
             # CRITICAL FIX: Generate reports BEFORE cleaning up job state
             # This ensures the JobAggregator data is still available for reporting
             if hasattr(self.transfer_worker, 'job') and self.transfer_worker.job:
-                job_destinations = set(self.transfer_worker.job.destination_roots)
+                job_destinations = {
+                    os.path.normpath(path) for path in self.transfer_worker.job.destination_roots
+                }
                 destinations_needing_reports = job_destinations - self._destinations_with_reports
                 
                 if destinations_needing_reports:
                     print(f"DEBUG: Generating completion reports for remaining destinations: {destinations_needing_reports}")
+                    self._wait_for_event_pump_idle()
                     # Generate report BEFORE cleanup so JobAggregator data is available
                     self._generate_completion_report(
                         self.root, 
@@ -1076,7 +1130,9 @@ class ControlSection(QWidget):
             # Now generate reports with complete data
             # This ensures the JobAggregator and DIT collector have all file completion data
             if hasattr(self.transfer_worker, 'job') and self.transfer_worker.job:
-                job_destinations = set(self.transfer_worker.job.destination_roots)
+                job_destinations = {
+                    os.path.normpath(path) for path in self.transfer_worker.job.destination_roots
+                }
                 destinations_needing_reports = job_destinations - self._destinations_with_reports
 
                 if destinations_needing_reports:
@@ -1182,6 +1238,9 @@ class ControlSection(QWidget):
     def _generate_completion_report(self, root, status, stats, job, error_message=None):
         """Generate comprehensive completion report with proper data merging"""
         try:
+            # Ensure all pending file events have been processed before reading collector data
+            self._wait_for_event_pump_idle()
+
             from ...utils.report_generator import TransferReportGenerator
             from ...utils.dit_data_collector import get_dit_collector
             
@@ -1295,23 +1354,92 @@ class ControlSection(QWidget):
             print(f"  Completed files: {comprehensive_stats['completed_files']}")
             print(f"  File records: {len(file_records)}")
             
-            # Generate comprehensive reports (JSON, TXT, CSV) in _CR2_CREATIVE_REPORTS/ subfolders
-            generated_reports = report_gen.generate_comprehensive_reports(
-                job_id=job.job_id,
-                status=status,
-                source_path=job.source_root,
-                destinations=job.destination_roots,
-                stats=comprehensive_stats,
-                file_records=file_records,
-                error_message=error_message
-            )
+            # CRITICAL FIX: Generate separate reports per destination with independent stats
+            print("🔥🔥🔥 DEBUG: Generating PER-DESTINATION reports with independent stats")
+            all_dest_indices = dit_collector.get_all_destination_indices()
+            print(f"🔥 DEBUG: Found {len(all_dest_indices)} destinations with data: {all_dest_indices}")
+
+            remaining_destinations = {
+                os.path.normpath(path) for path in job.destination_roots
+                if os.path.normpath(path) not in self._destinations_with_reports
+            }
             
-            if generated_reports:
-                print(f"DEBUG: Generated {len(generated_reports)} comprehensive reports:")
-                for report in generated_reports:
-                    print(f"  - {report}")
+            all_generated_reports = []
+            
+            # If we have per-destination data, generate independent reports
+            if all_dest_indices and len(all_dest_indices) > 0:
+                for dest_index in all_dest_indices:
+                    # Get per-destination stats and files
+                    dest_stats = dit_collector.get_stats_for_destination(dest_index)
+                    dest_file_records = dit_collector.get_file_records_for_destination(dest_index)
+                    
+                    # Get the actual destination path
+                    dest_path = ''
+                    if dest_file_records and len(dest_file_records) > 0:
+                        # Extract dest_path from first file record
+                        dest_path = dest_file_records[0].get('dest_path', '')
+                        # Get the root path (remove file-specific parts)
+                        for dest_root in job.destination_roots:
+                            if dest_path.startswith(dest_root):
+                                dest_path = dest_root
+                                break
+                    
+                    if not dest_path and dest_index < len(job.destination_roots):
+                        dest_path = job.destination_roots[dest_index]
+                    normalized_dest_path = os.path.normpath(dest_path) if dest_path else dest_path
+
+                    if remaining_destinations and normalized_dest_path not in remaining_destinations:
+                        print(f"DEBUG: Destination {dest_path} already has reports - skipping")
+                        continue
+                    
+                    print(f"🔥 DEBUG: Generating report for dest_index={dest_index}, path={dest_path}")
+                    print(f"🔥 DEBUG:   Files: {dest_stats['total_files']}, Bytes: {dest_stats['total_bytes']}")
+                    print(f"🔥 DEBUG:   Avg Speed: {dest_stats['avg_speed']:.1f} MB/s, Peak: {dest_stats['peak_speed']:.1f} MB/s")
+                    
+                    # Generate report for this destination
+                    dest_reports = report_gen.generate_comprehensive_reports(
+                        job_id=job.job_id,
+                        status=status,
+                        source_path=job.source_root,
+                        destinations=[dest_path],  # Single destination
+                        stats=dest_stats,  # Per-destination stats
+                        file_records=dest_file_records,  # Per-destination files
+                        error_message=error_message
+                    )
+                    
+                    if dest_reports:
+                        all_generated_reports.extend(dest_reports)
+                        print(f"✅ Generated {len(dest_reports)} reports for destination {dest_path}")
+                        remaining_destinations.discard(normalized_dest_path)
+                        self._destinations_with_reports.add(normalized_dest_path)
+                
+                if all_generated_reports:
+                    print(f"DEBUG: Generated {len(all_generated_reports)} total comprehensive reports across all destinations")
+                    for report in all_generated_reports:
+                        print(f"  - {report}")
+                else:
+                    print("DEBUG: No per-destination reports were generated")
             else:
-                print("DEBUG: Failed to generate comprehensive reports")
+                # Fallback to global reports if no per-destination data
+                print("⚠️ DEBUG: No per-destination data available - generating global report as fallback")
+                generated_reports = report_gen.generate_comprehensive_reports(
+                    job_id=job.job_id,
+                    status=status,
+                    source_path=job.source_root,
+                    destinations=job.destination_roots,
+                    stats=comprehensive_stats,
+                    file_records=file_records,
+                    error_message=error_message
+                )
+                
+                if generated_reports:
+                    print(f"DEBUG: Generated {len(generated_reports)} fallback comprehensive reports:")
+                    for report in generated_reports:
+                        print(f"  - {report}")
+                    for dest_path in job.destination_roots:
+                        self._destinations_with_reports.add(os.path.normpath(dest_path))
+                else:
+                    print("DEBUG: Failed to generate comprehensive reports")
                 
         except Exception as e:
             print(f"DEBUG: Error generating comprehensive completion report: {e}")
@@ -1885,6 +2013,7 @@ class ControlSection(QWidget):
         
         # Clear destinations report tracking for new job
         self._destinations_with_reports.clear()
+        self._destination_root_map.clear()
         print("DEBUG: Cleared destinations report tracking for new job")
             
         print("DEBUG: UI completely reset to Ready state for new transfer")

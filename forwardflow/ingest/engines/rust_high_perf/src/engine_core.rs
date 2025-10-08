@@ -10,7 +10,7 @@ use crate::cloud_detection::CloudDetectionManager;
 use crate::data_structures::{FileTransferRecord, *};
 use crate::event_system::EventSystem;
 use crate::file_operations::FileOperationManager;
-use crate::multi_dest_copy::MultiDestCopyEngine;
+use crate::multi_dest::MultiDestCopyEngine; // Using new modular multi-dest engine
 use crate::platform_helpers::{get_disk_space, get_file_size};
 use crate::progress_tracking::ProgressTracker;
 use crate::verification::{HashAlgorithm, VerificationManager};
@@ -340,35 +340,19 @@ impl EnhancedHighPerfTransferEngine {
                         speed_mib_s,
                     );
 
-                    for (dest_idx, dest_path) in job.destination_paths.iter().enumerate() {
-                        let mut dest_progress = DestProgressPayload::default();
-                        dest_progress.dest_index = dest_idx;
-                        dest_progress.dest_path = dest_path.clone();
-                        dest_progress.transfer_type = "COPY".to_string();
-                        dest_progress.bytes_copied = dest_bytes_progress[dest_idx];
-                        dest_progress.total_bytes = total_bytes;
-                        dest_progress.completed_files = dest_files_completed[dest_idx];
-                        dest_progress.total_files = total_files;
-                        dest_progress.current_speed_mib_s = speed_mib_s;
-                        
-                        // Track peak speed per destination
-                        if speed_mib_s > dest_peak_speeds[dest_idx] {
-                            dest_peak_speeds[dest_idx] = speed_mib_s;
-                        }
-                        dest_progress.peak_speed_mib_s = dest_peak_speeds[dest_idx];
-                        
-                        dest_progress.elapsed_time = elapsed;
-                        
-                        // Calculate ETA: remaining_bytes / speed
-                        if speed_mib_s > 0.0 && dest_progress.bytes_copied < dest_progress.total_bytes {
-                            let remaining_bytes = dest_progress.total_bytes - dest_progress.bytes_copied;
-                            dest_progress.eta_seconds = (remaining_bytes as f64) / (speed_mib_s * 1024.0 * 1024.0);
-                        } else {
-                            dest_progress.eta_seconds = 0.0;
-                        }
-                        
-                        let _ = event_system.emit_dest_progress(&dest_progress);
-                    }
+                    // NOTE: Per-destination progress is NOT emitted from producer callback
+                    // because the producer doesn't know actual worker write speeds.
+                    // Per-destination speeds are calculated from file.completed events
+                    // which contain accurate worker timing data (duration_ms).
+                    // This allows truly independent destination speeds.
+                    //
+                    // The old code emitted dest.progress here with synchronized speeds:
+                    // - All destinations showed same speed_mib_s (aggregate job speed)
+                    // - This caused UI to show identical speeds even when workers
+                    //   were writing at different rates
+                    //
+                    // Now: Python EventPumpManager calculates per-destination speeds
+                    // from file completion timing → TRUE independent speeds!
                 }
 
                 false
@@ -497,27 +481,10 @@ impl EnhancedHighPerfTransferEngine {
 
                 if let Ok(event_system) = self.event_system.lock() {
 
-                    let mut dest_progress = DestProgressPayload::default();
-                    dest_progress.dest_index = dest.dest_index;
-                    dest_progress.dest_path = dest.dest_path.clone();
-                    dest_progress.transfer_type = "COPY".to_string();
-                    dest_progress.bytes_copied = dest_bytes[dest.dest_index];
-                    dest_progress.total_bytes = total_bytes;
-                    dest_progress.completed_files = dest_files[dest.dest_index];
-                    dest_progress.total_files = total_files;
-                    dest_progress.current_speed_mib_s = transfer_speed_mib_s;
-                    dest_progress.peak_speed_mib_s = transfer_speed_mib_s;
-                    dest_progress.elapsed_time = duration_secs;
-                    
-                    // Calculate ETA
-                    if transfer_speed_mib_s > 0.0 && dest_progress.bytes_copied < dest_progress.total_bytes {
-                        let remaining_bytes = dest_progress.total_bytes - dest_progress.bytes_copied;
-                        dest_progress.eta_seconds = (remaining_bytes as f64) / (transfer_speed_mib_s * 1024.0 * 1024.0);
-                    } else {
-                        dest_progress.eta_seconds = 0.0;
-                    }
-
-                    let _ = event_system.emit_dest_progress(&dest_progress);
+                    // NOTE: dest.progress emission REMOVED - this was emitting synchronized speeds!
+                    // The aggregate transfer_speed_mib_s is the same for all destinations,
+                    // which caused all destinations to show identical speeds in the UI.
+                    // Python EventBridge now calculates independent speeds from file.completed events.
 
                     let _ = event_system.emit_file_completed_with_hash(
                         &record.filename,
@@ -555,17 +522,10 @@ impl EnhancedHighPerfTransferEngine {
 
         if let Ok(event_system) = self.event_system.lock() {
             for (dest_index, dest_path) in job.destination_paths.iter().enumerate() {
-                let mut dest_completion = DestProgressPayload::default();
-                dest_completion.dest_index = dest_index;
-                dest_completion.dest_path = dest_path.clone();
-                dest_completion.transfer_type = "COPY".to_string();
-                dest_completion.completed_files = dest_files[dest_index];
-                dest_completion.total_files = total_files;
-                dest_completion.bytes_copied = dest_bytes[dest_index];
-                dest_completion.total_bytes = total_bytes;
-                dest_completion.eta_seconds = 0.0; // Transfer complete, no ETA needed
-
-                let _ = event_system.emit_dest_progress(&dest_completion);
+                // NOTE: Final dest.progress emission REMOVED
+                // dest.completed event provides all necessary completion info
+                // and Python calculates all progress/speed from file.completed events
+                
                 let elapsed = (now_secs() - start_time).max(0.0);
                 let _ = event_system.emit_dest_completed(
                     dest_index,
