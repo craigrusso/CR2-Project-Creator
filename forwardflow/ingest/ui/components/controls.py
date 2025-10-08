@@ -438,6 +438,10 @@ class ControlSection(QWidget):
 
         # Track cleanup state to prevent duplicate cleanup calls
         self._cleanup_in_progress = False
+
+        # Track active job metadata for destination completion handling
+        self._active_job_id = None
+        self._active_destination_roots = {}
         
     def setup_ui(self):
         """Setup the control buttons UI"""
@@ -603,14 +607,24 @@ class ControlSection(QWidget):
             # Store job reference
             root.current_job = job
             print(f"DEBUG: Job stored in root.current_job: {root.current_job}")
+            root.current_job_id = job.job_id
+            print(f"DEBUG: Current job ID set on root: {root.current_job_id}")
+
+            # Track active job metadata for destination completion handling
+            normalized_map = {}
+            for index, path in enumerate(dest_paths):
+                try:
+                    normalized = os.path.normpath(path)
+                except Exception:
+                    normalized = path
+                normalized_map[normalized] = index
+
+            self._active_job_id = job.job_id
+            self._active_destination_roots = normalized_map.copy()
+            print(f"DEBUG: Active destination roots recorded: {list(self._active_destination_roots.keys())}")
 
             # Track destination roots for quick lookup (normalized)
-            try:
-                self._destination_root_map = {
-                    os.path.normpath(path): index for index, path in enumerate(dest_paths)
-                }
-            except Exception:
-                self._destination_root_map = {path: index for index, path in enumerate(dest_paths)}
+            self._destination_root_map = normalized_map
 
             # Reset cleanup flag for new transfer
             self._cleanup_in_progress = False
@@ -902,12 +916,25 @@ class ControlSection(QWidget):
         """Handle individual destination completion for immediate DIT report generation"""
         print(f"🎯 DESTINATION COMPLETED: {dest_path} - Generating immediate DIT report")
 
-        if not hasattr(self, 'transfer_worker') or not self.transfer_worker:
-            print(f"⚠️  DESTINATION COMPLETED ignored - no active transfer worker (stale event)")
+        if self._cleanup_in_progress:
+            print("DEBUG: Destination completion received during cleanup - ignoring duplicate event")
+            return
+
+        if not dest_path:
+            print("⚠️  DESTINATION COMPLETED ignored - empty destination path")
+            return
+
+        active_job_id = getattr(self.root, 'current_job_id', None) or self._active_job_id
+        if not active_job_id:
+            print("⚠️  DESTINATION COMPLETED ignored - no active job ID")
             return
 
         normalized_path = os.path.normpath(dest_path) if dest_path else dest_path
         dest_index = None
+        if not getattr(self, '_destination_root_map', None) and self._active_destination_roots:
+            self._destination_root_map = self._active_destination_roots.copy()
+            print("DEBUG: Reconstructed destination root map from active destinations")
+
         if hasattr(self, '_destination_root_map') and self._destination_root_map:
             dest_index = self._destination_root_map.get(normalized_path)
             if dest_index is None:
@@ -919,16 +946,46 @@ class ControlSection(QWidget):
                         break
 
         if dest_index is None:
+            # Fallback: consult DIT collector destination records (handles resolved paths/symlinks)
+            try:
+                from ...utils.dit_data_collector import get_dit_collector
+                collector = get_dit_collector()
+                destination_details = collector.get_destination_details()
+                for idx, info in destination_details.items():
+                    recorded_path = info.get('dest_path', '')
+                    if not recorded_path:
+                        continue
+                    normalized_recorded = os.path.normpath(recorded_path)
+                    if (normalized_path and normalized_path.startswith(normalized_recorded)) or (
+                        normalized_recorded and normalized_recorded.startswith(normalized_path)
+                    ) or normalized_recorded == normalized_path:
+                        dest_index = idx
+                        normalized_path = normalized_recorded
+                        print(f"DEBUG: Fallback matched destination index {dest_index} for path {dest_path}")
+                        break
+            except Exception as mapping_error:
+                print(f"DEBUG: Failed fallback lookup for destination index: {mapping_error}")
+
+        # Final fallback: attempt to match against active destination roots
+        if dest_index is None and self._active_destination_roots:
+            for root_path, idx in self._active_destination_roots.items():
+                if normalized_path.startswith(root_path):
+                    dest_index = idx
+                    normalized_path = root_path
+                    print(f"DEBUG: Active destination root map matched index {dest_index} for {dest_path}")
+                    break
+
+        if dest_index is None:
             print(f"⚠️  DESTINATION COMPLETED ignored - could not map path {dest_path} to destination index")
             return
 
         # Check if this destination is part of current job
-        if hasattr(self.transfer_worker, 'job') and self.transfer_worker.job:
+        job_destinations = set(self._active_destination_roots.keys())
+        if not job_destinations and hasattr(self.transfer_worker, 'job') and self.transfer_worker.job:
             job_destinations = {os.path.normpath(p) for p in self.transfer_worker.job.destination_roots}
-            if normalized_path not in job_destinations:
-                print(f"⚠️  DESTINATION COMPLETED ignored - {dest_path} not in current job destinations")
-                return
-        else:
+
+        if job_destinations and normalized_path not in job_destinations:
+            print(f"⚠️  DESTINATION COMPLETED ignored - {dest_path} not in current job destinations")
             return
 
         if normalized_path in self._destinations_with_reports:
@@ -969,7 +1026,7 @@ class ControlSection(QWidget):
             report_gen = TransferReportGenerator()
             
             # Get job info
-            job_id = getattr(self.root, 'current_job_id', f"dest_report_{int(time.time())}")
+            job_id = active_job_id or f"dest_report_{int(time.time())}"
             if hasattr(self.root, 'current_job_spec'):
                 source_path = self.root.current_job_spec.source_root
             else:
@@ -1218,6 +1275,10 @@ class ControlSection(QWidget):
                 self.root.current_job_spec = None
             if hasattr(self.root, 'current_job_id'):
                 self.root.current_job_id = None
+
+            # Clear active job metadata
+            self._active_job_id = None
+            self._active_destination_roots.clear()
 
             # Reset progress tracking state
             self.root.active_files = 0

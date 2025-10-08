@@ -407,6 +407,10 @@ class EventPumpManager(QObject):
 
             elapsed_seconds = max(0.0, current_time - stats['start_time'])
             
+            # Persist computed values so global progress overrides can use them
+            stats['progress_percent'] = progress_percent
+            stats['eta_seconds'] = eta_seconds
+            
             print(
                 f"🔥🔥🔥 DEST_STATS: dest_index={dest_index}, root={dest_root}, files={stats['total_files']}, "
                 f"bytes={stats['total_bytes']}, speed={stats['current_speed_mbps']:.1f} MB/s, "
@@ -526,23 +530,49 @@ class EventPumpManager(QObject):
         self._recalculate_dataset_total()
 
     def _apply_destination_progress_override(self, update: dict) -> None:
-        """Override job-level progress to reflect slowest destination status."""
+        """Override job-level progress to reflect averaged destination completion."""
         with self._dest_stats_lock:
             if not self._dest_stats:
                 return
 
-            dataset_total = self._dataset_total_bytes or update.get('total_bytes', 0) or self._job_total_bytes
+            dest_stats = list(self._dest_stats.values())
+            dest_count_expected = max(1, self._destination_count or len(dest_stats))
+
+            dataset_total = self._dataset_total_bytes
+            if not dataset_total:
+                raw_total = update.get('total_bytes', 0) or self._job_total_bytes
+                dataset_total = (raw_total / dest_count_expected) if raw_total else 0.0
+
             if dataset_total <= 0:
                 return
-            min_bytes = min(stats['total_bytes'] for stats in self._dest_stats.values())
-            min_progress = min(stats.get('progress_percent', 0.0) for stats in self._dest_stats.values())
+
+            total_bytes_sum = sum(stats.get('total_bytes', 0.0) for stats in dest_stats)
+            unique_bytes_copied = total_bytes_sum / dest_count_expected
+            progress_percent = (unique_bytes_copied / dataset_total) * 100.0 if dataset_total > 0 else 0.0
+            progress_percent = max(0.0, min(100.0, progress_percent))
 
             update['total_bytes'] = dataset_total
-            update['bytes_copied'] = min_bytes
-            update['progress_percent'] = max(0.0, min(100.0, min_progress))
+            update['bytes_copied'] = unique_bytes_copied
+            update['progress_percent'] = progress_percent
 
-            if self._destination_count > 0 and self._job_total_files > 0:
-                expected_files = max(1, int(round(self._job_total_files / self._destination_count)))
-                min_files = min(stats['total_files'] for stats in self._dest_stats.values())
-                update['total_files'] = expected_files
-                update['files_completed'] = min(min_files, expected_files)
+            # Average current speed across destinations
+            avg_current_speed = sum(stats.get('current_speed_mbps', 0.0) for stats in dest_stats) / dest_count_expected
+            update['current_speed_mbps'] = max(0.0, avg_current_speed)
+
+            # Peak speed is the best individual destination peak
+            peak_speed = max((stats.get('peak_speed_mbps', 0.0) for stats in dest_stats), default=0.0)
+            update['peak_speed_mbps'] = max(update.get('peak_speed_mbps', 0.0), peak_speed)
+
+            # Derive file counts using destination metrics
+            per_dest_total_files = [stats.get('total_files', 0) for stats in dest_stats if stats.get('total_files', 0)]
+            per_dest_completed = [stats.get('completed_files', 0) for stats in dest_stats]
+
+            if per_dest_total_files:
+                total_files_unique = int(max(per_dest_total_files))
+            else:
+                total_files_unique = int(update.get('total_files', 0))
+
+            if total_files_unique > 0:
+                avg_completed = sum(per_dest_completed) / dest_count_expected
+                update['total_files'] = total_files_unique
+                update['files_completed'] = min(total_files_unique, int(round(avg_completed)))

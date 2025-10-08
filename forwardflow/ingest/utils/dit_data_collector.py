@@ -60,6 +60,16 @@ class DITDataCollector:
                 status = payload.get('status', 'COMPLETED')
                 dest_index = payload.get('dest_index', payload.get('destination_index', 0))
 
+                if not dest_path and dest_index in self.destination_paths:
+                    dest_path = self.destination_paths[dest_index]
+
+                if dest_path and dest_index not in self.destination_paths:
+                    self.destination_paths[dest_index] = dest_path
+
+                if not dest_path:
+                    print(f"WARNING: DITDataCollector received file without destination path (index={dest_index}, file={filename})")
+                    dest_path = f"destination_{dest_index}"
+
                 # Use (filename, dest_path) as unique key to allow updates
                 record_key = (filename, dest_path)
 

@@ -172,7 +172,7 @@ class RealtimeReportWriter:
 
                 # Determine which destination this file belongs to
                 normalized_dest_path = self._normalize_path(dest_path)
-                dest_key = self._get_destination_key(normalized_dest_path)
+                dest_key = self._get_destination_key(normalized_dest_path, dest_path)
 
                 if not dest_key:
                     print(f"⚠️ No report path found for destination: {dest_path}")
@@ -357,7 +357,7 @@ class RealtimeReportWriter:
         except ValueError:
             return False
 
-    def _get_destination_key(self, normalized_dest_path: str) -> Optional[str]:
+    def _get_destination_key(self, normalized_dest_path: str, raw_dest_path: Optional[str] = None) -> Optional[str]:
         """Find the normalized destination root matching the provided file path."""
         if not normalized_dest_path:
             return None
@@ -377,6 +377,17 @@ class RealtimeReportWriter:
                     return parent_norm
         except Exception:
             pass
+
+        if raw_dest_path:
+            try:
+                raw_normalized = os.path.normpath(str(raw_dest_path))
+                for dest_root, paths in self.report_paths.items():
+                    original_root = paths.get('root_path', dest_root)
+                    original_normalized = os.path.normpath(str(original_root))
+                    if self._path_is_within(raw_normalized, original_normalized):
+                        return dest_root
+            except Exception:
+                pass
 
         return None
 
