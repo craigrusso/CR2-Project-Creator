@@ -245,7 +245,7 @@ class DestinationWidget(QFrame):
             }}
         """)
         eta_label.setFixedHeight(24)
-        eta_label.setMinimumWidth(80)
+        eta_label.setMinimumWidth(125)  # FIXED: Increased from 80 to 125 to fit "ETA: 00:00:00" in monospace font
         
         # Status label
         status_label = QLabel("Ready")
@@ -443,7 +443,8 @@ class DestinationWidget(QFrame):
                 hours = int(eta_seconds // 3600)
                 minutes = int((eta_seconds % 3600) // 60)
                 seconds = int(eta_seconds % 60)
-                self.eta_label.setText(f"ETA: {hours:02d}:{minutes:02d}:{seconds:02d}")
+                eta_text = f"ETA: {hours:02d}:{minutes:02d}:{seconds:02d}"
+                self.eta_label.setText(eta_text)
             else:
                 self.eta_label.setText("ETA: --:--")
                 

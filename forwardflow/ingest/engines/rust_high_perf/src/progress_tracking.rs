@@ -358,6 +358,7 @@ impl ProgressTracker {
                     current_speed_mib_s: progress.metrics.current_speed_mib_s,
                     peak_speed_mib_s: progress.metrics.peak_speed_mib_s,
                     elapsed_time: elapsed,
+                    eta_seconds: 0.0, // ETA calculation happens in engine_core.rs
                     completed_files: progress.metrics.files_completed,
                     total_files: 0, // Would track total files for this destination
                 });

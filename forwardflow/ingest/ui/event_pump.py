@@ -141,6 +141,7 @@ class EventPumpManager(QObject):
         super().__init__()
         self.pump_thread: Optional[EventPumpThread] = None
         self._queue_handle = None
+        self._peak_speed_mbps = 0.0  # Track global peak speed for DIT reports
         print("DEBUG: EventPumpManager initialized")
 
     def start_pump(self, queue_handle):
@@ -153,6 +154,9 @@ class EventPumpManager(QObject):
         if self.pump_thread and self.pump_thread.isRunning():
             print("DEBUG: Event pump already running - stopping first")
             self.stop_pump()
+
+        # Reset peak speed tracking for new job
+        self._peak_speed_mbps = 0.0
 
         print("DEBUG: Starting event pump thread...")
         self._queue_handle = queue_handle
@@ -188,6 +192,15 @@ class EventPumpManager(QObject):
         if total_bytes > 0:
             progress_percent = (bytes_copied / total_bytes) * 100.0
 
+        # Track peak speed for DIT reports
+        current_speed = payload.get('speed_mbps', 0)
+        if current_speed > self._peak_speed_mbps:
+            self._peak_speed_mbps = current_speed
+            # Update DIT collector with new peak speed
+            from ..utils.dit_data_collector import get_dit_collector
+            dit_collector = get_dit_collector()
+            dit_collector.update_job_stats({'peak_speed': self._peak_speed_mbps})
+
         update = {
             'bytes_copied': bytes_copied,
             'total_bytes': total_bytes,
@@ -195,9 +208,9 @@ class EventPumpManager(QObject):
             'files_completed': payload.get('files_completed', 0),
             'total_files': payload.get('total_files', 0),
             'elapsed_s': payload.get('elapsed_s', 0),
-            'speed_mbps': payload.get('speed_mbps', 0),
+            'speed_mbps': current_speed,
             'current_speed_mbps': payload.get('current_speed_mbps', 0),
-            'peak_speed_mbps': payload.get('peak_speed_mbps', 0),
+            'peak_speed_mbps': self._peak_speed_mbps,
         }
         self.progress_update.emit(update)
 
@@ -243,7 +256,17 @@ class EventPumpManager(QObject):
         print(f"🔍🔍🔍 EVENT_PUMP MANAGER: DIT collector called successfully")
 
     def _handle_dest_progress(self, payload: dict):
-        """Handle destination progress events"""
+        """Handle destination progress events and track peak speed"""
+        # Track peak speed from destination progress for DIT reports
+        dest_peak_speed = payload.get('peak_speed_mib_s', 0) or payload.get('peak_speed_mbps', 0)
+        if dest_peak_speed > self._peak_speed_mbps:
+            self._peak_speed_mbps = dest_peak_speed
+            # Update DIT collector with new peak speed
+            from ..utils.dit_data_collector import get_dit_collector
+            dit_collector = get_dit_collector()
+            dit_collector.update_job_stats({'peak_speed': self._peak_speed_mbps})
+            print(f"DEBUG: Updated peak speed to {self._peak_speed_mbps:.1f} MB/s from destination progress")
+        
         self.destination_update.emit(payload)
 
     def _handle_dest_completed(self, payload: dict):

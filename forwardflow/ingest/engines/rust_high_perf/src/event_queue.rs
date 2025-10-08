@@ -73,6 +73,7 @@ pub enum TransferEvent {
         current_speed_mbps: f64,
         peak_speed_mbps: f64,
         elapsed_time: f64,
+        eta_seconds: f64,
         completed_files: usize,
         total_files: usize,
         progress_percent: f64,

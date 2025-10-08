@@ -226,6 +226,8 @@ pub struct DestProgressPayload {
     #[pyo3(get, set)]
     pub elapsed_time: f64,
     #[pyo3(get, set)]
+    pub eta_seconds: f64,
+    #[pyo3(get, set)]
     pub completed_files: usize,
     #[pyo3(get, set)]
     pub total_files: usize,
@@ -242,6 +244,7 @@ impl Default for DestProgressPayload {
             current_speed_mib_s: 0.0,
             peak_speed_mib_s: 0.0,
             elapsed_time: 0.0,
+            eta_seconds: 0.0,
             completed_files: 0,
             total_files: 0,
         }

@@ -10,7 +10,7 @@ use crate::cloud_detection::CloudDetectionManager;
 use crate::data_structures::{FileTransferRecord, *};
 use crate::event_system::EventSystem;
 use crate::file_operations::FileOperationManager;
-use crate::multi_dest::MultiDestCopyEngine;
+use crate::multi_dest_copy::MultiDestCopyEngine;
 use crate::platform_helpers::{get_disk_space, get_file_size};
 use crate::progress_tracking::ProgressTracker;
 use crate::verification::{HashAlgorithm, VerificationManager};
@@ -271,6 +271,7 @@ impl EnhancedHighPerfTransferEngine {
         let mut file_completed = vec![false; total_files];
         let mut dest_bytes_progress = vec![0u64; dest_count];
         let mut dest_files_completed = vec![0usize; dest_count];
+        let mut dest_peak_speeds = vec![0.0f64; dest_count];  // Track peak speed per destination
         let mut job_bytes_copied: u64 = 0;
         let mut job_files_completed: usize = 0;
         let progress_start = now_secs();
@@ -349,8 +350,23 @@ impl EnhancedHighPerfTransferEngine {
                         dest_progress.completed_files = dest_files_completed[dest_idx];
                         dest_progress.total_files = total_files;
                         dest_progress.current_speed_mib_s = speed_mib_s;
-                        dest_progress.peak_speed_mib_s = speed_mib_s;
+                        
+                        // Track peak speed per destination
+                        if speed_mib_s > dest_peak_speeds[dest_idx] {
+                            dest_peak_speeds[dest_idx] = speed_mib_s;
+                        }
+                        dest_progress.peak_speed_mib_s = dest_peak_speeds[dest_idx];
+                        
                         dest_progress.elapsed_time = elapsed;
+                        
+                        // Calculate ETA: remaining_bytes / speed
+                        if speed_mib_s > 0.0 && dest_progress.bytes_copied < dest_progress.total_bytes {
+                            let remaining_bytes = dest_progress.total_bytes - dest_progress.bytes_copied;
+                            dest_progress.eta_seconds = (remaining_bytes as f64) / (speed_mib_s * 1024.0 * 1024.0);
+                        } else {
+                            dest_progress.eta_seconds = 0.0;
+                        }
+                        
                         let _ = event_system.emit_dest_progress(&dest_progress);
                     }
                 }
@@ -492,6 +508,14 @@ impl EnhancedHighPerfTransferEngine {
                     dest_progress.current_speed_mib_s = transfer_speed_mib_s;
                     dest_progress.peak_speed_mib_s = transfer_speed_mib_s;
                     dest_progress.elapsed_time = duration_secs;
+                    
+                    // Calculate ETA
+                    if transfer_speed_mib_s > 0.0 && dest_progress.bytes_copied < dest_progress.total_bytes {
+                        let remaining_bytes = dest_progress.total_bytes - dest_progress.bytes_copied;
+                        dest_progress.eta_seconds = (remaining_bytes as f64) / (transfer_speed_mib_s * 1024.0 * 1024.0);
+                    } else {
+                        dest_progress.eta_seconds = 0.0;
+                    }
 
                     let _ = event_system.emit_dest_progress(&dest_progress);
 
@@ -539,6 +563,7 @@ impl EnhancedHighPerfTransferEngine {
                 dest_completion.total_files = total_files;
                 dest_completion.bytes_copied = dest_bytes[dest_index];
                 dest_completion.total_bytes = total_bytes;
+                dest_completion.eta_seconds = 0.0; // Transfer complete, no ETA needed
 
                 let _ = event_system.emit_dest_progress(&dest_completion);
                 let elapsed = (now_secs() - start_time).max(0.0);

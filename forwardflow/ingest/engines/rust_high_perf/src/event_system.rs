@@ -37,6 +37,7 @@ impl EventSystem {
             current_speed_mbps: payload.current_speed_mib_s,
             peak_speed_mbps: payload.peak_speed_mib_s,
             elapsed_time: payload.elapsed_time,
+            eta_seconds: payload.eta_seconds,
             completed_files: payload.completed_files,
             total_files: payload.total_files,
             progress_percent: if payload.total_bytes > 0 {
