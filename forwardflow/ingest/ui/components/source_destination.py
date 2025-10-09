@@ -369,6 +369,9 @@ class DestinationWidget(QFrame):
             peak_speed = (progress_payload.get('peakSpeedMiBps', 0) or
                          progress_payload.get('peak_speed_mbps', 0))
             
+            if progress_percent >= 100:
+                current_speed = 0.0
+            
             print(f"DEBUG: Updating {self.path} with progress={progress_percent:.1f}%, speed={current_speed:.1f}, peak={peak_speed:.1f}")
             
             # Update speed label immediately (check for correct attribute name)

@@ -331,6 +331,7 @@ class EventPumpManager(QObject):
                     'last_file_path': file_dest_path,
                     'total_bytes': 0,
                     'total_files': 0,
+                    'completed_files': 0,
                     'expected_total_bytes': self._job_total_bytes,
                     'last_update_time': current_time,
                     'last_bytes': 0,
@@ -354,6 +355,8 @@ class EventPumpManager(QObject):
             # Update totals
             stats['total_bytes'] += bytes_copied
             stats['total_files'] += 1
+            # Mirror completed count so global progress calculations work
+            stats['completed_files'] = stats['total_files']
             
             # Calculate instantaneous speed (MB/s)
             time_since_last = current_time - stats['last_update_time']
@@ -406,6 +409,9 @@ class EventPumpManager(QObject):
                     eta_seconds = 0.0
 
             elapsed_seconds = max(0.0, current_time - stats['start_time'])
+
+            if progress_percent >= 100.0:
+                stats['current_speed_mbps'] = 0.0
             
             # Persist computed values so global progress overrides can use them
             stats['progress_percent'] = progress_percent
@@ -530,49 +536,107 @@ class EventPumpManager(QObject):
         self._recalculate_dataset_total()
 
     def _apply_destination_progress_override(self, update: dict) -> None:
-        """Override job-level progress to reflect averaged destination completion."""
+        """Override job-level progress so the summary reflects true aggregate transfer state."""
         with self._dest_stats_lock:
             if not self._dest_stats:
                 return
 
             dest_stats = list(self._dest_stats.values())
+            if not dest_stats:
+                return
+
+            original_current_speed = update.get('current_speed_mbps', 0.0)
+            original_speed = update.get('speed_mbps', original_current_speed)
+            original_peak = update.get('peak_speed_mbps', 0.0)
+            original_elapsed = update.get('elapsed_s', 0.0)
+            original_eta = update.get('eta_seconds', update.get('eta', 0.0))
+            original_total_files = update.get('total_files', 0)
+            original_completed_files = update.get('files_completed', 0)
+
             dest_count_expected = max(1, self._destination_count or len(dest_stats))
 
             dataset_total = self._dataset_total_bytes
-            if not dataset_total:
+            if not dataset_total and dest_count_expected:
                 raw_total = update.get('total_bytes', 0) or self._job_total_bytes
                 dataset_total = (raw_total / dest_count_expected) if raw_total else 0.0
 
-            if dataset_total <= 0:
+            # Aggregate expected and completed bytes across destinations
+            total_expected = 0.0
+            total_copied = 0.0
+            active_speed_sum = 0.0
+            elapsed_candidates = []
+            eta_candidates = []
+            total_files_candidates = []
+            completed_files_candidates = []
+            peak_candidates = [update.get('peak_speed_mbps', 0.0)]
+
+            for stats in dest_stats:
+                expected = stats.get('expected_total_bytes', 0.0)
+                if expected <= 0.0:
+                    expected = dataset_total
+                total_expected += expected
+
+                copied = stats.get('total_bytes', 0.0)
+                total_copied += copied
+
+                progress = stats.get('progress_percent', 0.0)
+                speed = max(0.0, stats.get('current_speed_mbps', 0.0))
+                if progress < 100.0 and speed > 0.0:
+                    active_speed_sum += speed
+
+                peak_candidates.append(stats.get('peak_speed_mbps', 0.0))
+                elapsed_candidates.append(stats.get('elapsed_seconds', 0.0))
+
+                total_files_candidates.append(stats.get('total_files', 0))
+                completed_files_candidates.append(stats.get('completed_files', 0))
+
+                remaining = max(expected - copied, 0.0)
+                if progress >= 100.0 or remaining <= 0.0:
+                    eta_candidates.append(0.0)
+                elif speed > 0.01:
+                    eta_candidates.append((remaining / (1024 * 1024)) / speed)
+
+            # Fallback to engine totals if we still don't have expected bytes
+            if total_expected <= 0.0:
+                total_expected = self._job_total_bytes or update.get('total_bytes', 0) or (dataset_total * dest_count_expected)
+
+            if total_expected <= 0.0:
                 return
 
-            total_bytes_sum = sum(stats.get('total_bytes', 0.0) for stats in dest_stats)
-            unique_bytes_copied = total_bytes_sum / dest_count_expected
-            progress_percent = (unique_bytes_copied / dataset_total) * 100.0 if dataset_total > 0 else 0.0
-            progress_percent = max(0.0, min(100.0, progress_percent))
+            progress_percent = max(0.0, min(100.0, (total_copied / total_expected) * 100.0))
 
-            update['total_bytes'] = dataset_total
-            update['bytes_copied'] = unique_bytes_copied
+            update['total_bytes'] = total_expected
+            update['bytes_copied'] = total_copied
             update['progress_percent'] = progress_percent
 
-            # Average current speed across destinations
-            avg_current_speed = sum(stats.get('current_speed_mbps', 0.0) for stats in dest_stats) / dest_count_expected
-            update['current_speed_mbps'] = max(0.0, avg_current_speed)
+            # Aggregate speeds and elapsed time
+            update['current_speed_mbps'] = active_speed_sum if active_speed_sum > 0.0 else original_speed
+            update['speed_mbps'] = update['current_speed_mbps']
+            update['peak_speed_mbps'] = max(peak_candidates + [original_peak]) if peak_candidates else original_peak
 
-            # Peak speed is the best individual destination peak
-            peak_speed = max((stats.get('peak_speed_mbps', 0.0) for stats in dest_stats), default=0.0)
-            update['peak_speed_mbps'] = max(update.get('peak_speed_mbps', 0.0), peak_speed)
-
-            # Derive file counts using destination metrics
-            per_dest_total_files = [stats.get('total_files', 0) for stats in dest_stats if stats.get('total_files', 0)]
-            per_dest_completed = [stats.get('completed_files', 0) for stats in dest_stats]
-
-            if per_dest_total_files:
-                total_files_unique = int(max(per_dest_total_files))
+            if elapsed_candidates:
+                update['elapsed_s'] = max(original_elapsed, max(elapsed_candidates))
             else:
-                total_files_unique = int(update.get('total_files', 0))
+                update['elapsed_s'] = original_elapsed
 
-            if total_files_unique > 0:
-                avg_completed = sum(per_dest_completed) / dest_count_expected
+            if eta_candidates:
+                update['eta_seconds'] = max(eta_candidates)
+            else:
+                # fall back to aggregate remaining bytes / summed speed when possible
+                remaining_bytes = max(total_expected - total_copied, 0.0)
+                if update['current_speed_mbps'] > 0.01:
+                    update['eta_seconds'] = (remaining_bytes / (1024 * 1024)) / update['current_speed_mbps']
+                else:
+                    update['eta_seconds'] = original_eta
+
+            # File counts – use unique totals (max across destinations)
+            if total_files_candidates:
+                total_files_unique = int(max(total_files_candidates))
                 update['total_files'] = total_files_unique
-                update['files_completed'] = min(total_files_unique, int(round(avg_completed)))
+                if completed_files_candidates:
+                    update['files_completed'] = int(min(total_files_unique, max(completed_files_candidates)))
+                elif original_completed_files:
+                    update['files_completed'] = min(total_files_unique, original_completed_files)
+            else:
+                update['total_files'] = original_total_files
+                update['files_completed'] = original_completed_files

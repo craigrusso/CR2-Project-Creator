@@ -273,16 +273,35 @@ class TransferWorker(QObject):
                 run_intelligent_copy()
                 
                 # Handle completion immediately after copy finishes
-                # CRITICAL FIX: copy_result is a CopyStats object, not a dict - use hasattr
+                copy_stats = self.copy_result
                 has_error = False
-                if self.copy_result:
-                    if hasattr(self.copy_result, 'error'):
-                        has_error = bool(self.copy_result.error)
+                error_msg = None
 
-                if self.copy_result and not has_error:
+                if isinstance(copy_stats, dict):
+                    # Our own fallback error dictionaries
+                    error_msg = copy_stats.get('error') or copy_stats.get('message')
+                    has_error = True
+                elif copy_stats is None:
+                    has_error = True
+                    error_msg = "Copy operation returned no statistics"
+                else:
+                    # Native CopyStats object from Rust engine
+                    engine_errors = list(getattr(copy_stats, 'errors', []) or [])
+                    if engine_errors:
+                        has_error = True
+                        error_msg = engine_errors[0] if len(engine_errors) == 1 else "; ".join(engine_errors)
+                    else:
+                        total_files = getattr(copy_stats, 'total_files', 0) or 0
+                        copied_files = getattr(copy_stats, 'copied_files', getattr(copy_stats, 'completed_files', 0) or 0)
+                        if total_files and copied_files < total_files:
+                            missing = total_files - copied_files
+                            has_error = True
+                            error_msg = f"{missing} file(s) did not complete"
+
+                if copy_stats and not has_error:
                     # Store the engine stats in root for report generation
-                    self.root.engine_stats = self.copy_result
-                    print(f"DEBUG: Engine stats stored in root: {self.copy_result}")
+                    self.root.engine_stats = copy_stats
+                    print(f"DEBUG: Engine stats stored in root: {copy_stats}")
 
                     # Stop event pump (cleanup)
                     if hasattr(self, 'event_pump'):
@@ -292,11 +311,11 @@ class TransferWorker(QObject):
 
                     # Emit completion signal (convert CopyStats to dict)
                     result_dict = {
-                        'total_bytes': getattr(self.copy_result, 'total_bytes', 0),
-                        'bytes_transferred': getattr(self.copy_result, 'bytes_transferred', 0),
-                        'total_files': getattr(self.copy_result, 'total_files', 0),
-                        'files_completed': getattr(self.copy_result, 'files_completed', 0),
-                        'duration': getattr(self.copy_result, 'duration', 0),
+                        'total_bytes': getattr(copy_stats, 'total_bytes', 0),
+                        'bytes_transferred': getattr(copy_stats, 'copied_bytes', getattr(copy_stats, 'total_bytes', 0)),
+                        'total_files': getattr(copy_stats, 'total_files', 0),
+                        'files_completed': getattr(copy_stats, 'copied_files', getattr(copy_stats, 'total_files', 0)),
+                        'duration': copy_stats.duration() if hasattr(copy_stats, 'duration') else getattr(copy_stats, 'duration', 0),
                         'status': 'completed'
                     }
                     self.transfer_completed.emit(result_dict)
@@ -307,7 +326,7 @@ class TransferWorker(QObject):
                         self.event_pump.stop_pump()
 
                     # Handle error
-                    error_msg = self.copy_result.get('error', 'Unknown error') if self.copy_result else 'Copy operation failed'
+                    error_msg = error_msg or "Copy operation failed"
                     print(f"DEBUG: Copy operation failed: {error_msg}")
                     self.transfer_failed.emit(error_msg)
                 
@@ -346,34 +365,23 @@ class TransferWorker(QObject):
         self.transfer_cancelled.emit()
     
     def _get_block_size_for_preset(self, preset):
-        """Get block size for preset - optimized for M2 Max performance with network awareness"""
-        # Check if any destination is network-based for optimization
-        has_network_destination = False
-        if hasattr(self, 'destination_widgets') and self.destination_widgets:
-            for widget in self.destination_widgets:
-                dest_path = widget.get_destination()
-                if dest_path and self._is_network_destination(dest_path):
-                    has_network_destination = True
-                    break
-        
-        if has_network_destination:
-            # Network-optimized buffer sizes (smaller for better network performance)
-            network_preset_sizes = {
-                'FAST': 8 * 1024 * 1024,           # 8MB for fast network transfers
-                'Auto (recommended)': 4 * 1024 * 1024,  # 4MB for reliable network performance  
-                'BALANCED': 2 * 1024 * 1024,       # 2MB balanced for network
-                'STRICT': 1 * 1024 * 1024          # 1MB for network verification accuracy
-            }
-            return network_preset_sizes.get(preset, 4 * 1024 * 1024)  # Default network optimized
-        else:
-            # Local transfer optimized buffer sizes (original large sizes)
-            local_preset_sizes = {
-                'FAST': 32 * 1024 * 1024,      # 32MB for max local speed
-                'Auto (recommended)': 32 * 1024 * 1024,  # 32MB for max local speed  
-                'BALANCED': 16 * 1024 * 1024,   # 16MB balanced local
-                'STRICT': 8 * 1024 * 1024       # 8MB for local verification accuracy
-            }
-            return local_preset_sizes.get(preset, 32 * 1024 * 1024)  # Default to max performance
+        """Map UI preset names to conservative copy block sizes."""
+        normalized_preset = (preset or "").strip().lower()
+
+        preset_map = {
+            'auto': 32 * 1024 * 1024,
+            'auto (recommended)': 32 * 1024 * 1024,
+            'usb/tb': 32 * 1024 * 1024,
+            'usb': 32 * 1024 * 1024,
+            'thunderbolt': 32 * 1024 * 1024,
+            'network': 8 * 1024 * 1024,
+            'custom': 16 * 1024 * 1024,
+            'fast': 32 * 1024 * 1024,
+            'balanced': 16 * 1024 * 1024,
+            'strict': 8 * 1024 * 1024,
+        }
+
+        return preset_map.get(normalized_preset, 32 * 1024 * 1024)
     
     def _is_network_destination(self, path):
         """Detect if destination is network-based (NAS, SMB, network share)"""
@@ -1249,12 +1257,23 @@ class ControlSection(QWidget):
     
     def _get_block_size_for_preset(self, preset: str) -> int:
         """Get block size in bytes for the given preset - optimized for M2 Max performance"""
-        if preset == 'FAST' or preset == 'Auto (recommended)':
-            return 32 * 1024 * 1024  # 32MB blocks for maximum M2 Max throughput
-        elif preset == 'BALANCED':
-            return 16 * 1024 * 1024  # 16MB blocks for good speed + verification
-        else:  # STRICT
-            return 8 * 1024 * 1024   # 8MB blocks for accurate verification
+        normalized_preset = (preset or "").strip().lower()
+
+        preset_map = {
+            'auto': 32 * 1024 * 1024,
+            'auto (recommended)': 32 * 1024 * 1024,
+            'usb/tb': 32 * 1024 * 1024,
+            'usb': 32 * 1024 * 1024,
+            'thunderbolt': 32 * 1024 * 1024,
+            'network': 8 * 1024 * 1024,
+            'custom': 16 * 1024 * 1024,
+            'fast': 32 * 1024 * 1024,
+            'balanced': 16 * 1024 * 1024,
+            'strict': 8 * 1024 * 1024,
+            '': 32 * 1024 * 1024,
+        }
+
+        return preset_map.get(normalized_preset, 32 * 1024 * 1024)
     
     def _cleanup_job_state(self):
         """Clean up job state to prevent contamination between jobs"""

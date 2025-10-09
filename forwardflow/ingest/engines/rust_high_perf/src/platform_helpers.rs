@@ -99,9 +99,44 @@ fn get_disk_space_windows(path: &Path) -> Result<DiskSpaceInfo> {
 
 #[cfg(target_os = "macos")]
 fn get_disk_space_macos(path: &Path) -> Result<DiskSpaceInfo> {
-    // For macOS, we'll use the generic implementation for now
-    // In a full implementation, we'd use Core Foundation APIs
-    get_disk_space_generic(path)
+    use std::process::Command;
+    
+    // Use df command to get actual disk space information
+    let output = Command::new("df")
+        .arg("-k")  // Show sizes in 1K blocks
+        .arg(path)
+        .output()?;
+    
+    if !output.status.success() {
+        return Err(anyhow::anyhow!("Failed to get disk space information"));
+    }
+    
+    let output_str = String::from_utf8(output.stdout)?;
+    let lines: Vec<&str> = output_str.trim().split('\n').collect();
+    
+    if lines.len() < 2 {
+        return Err(anyhow::anyhow!("Invalid df output"));
+    }
+    
+    // Parse the second line (first line is header)
+    let data_line = lines[1];
+    let fields: Vec<&str> = data_line.split_whitespace().collect();
+    
+    if fields.len() < 4 {
+        return Err(anyhow::anyhow!("Invalid df output format"));
+    }
+    
+    // df -k output format: Filesystem 1K-blocks Used Available Use% Mounted-on
+    let total_1k_blocks: u64 = fields[1].parse()?;
+    let used_1k_blocks: u64 = fields[2].parse()?;
+    let available_1k_blocks: u64 = fields[3].parse()?;
+    
+    // Convert from 1K blocks to bytes
+    let total_bytes = total_1k_blocks * 1024;
+    let used_bytes = used_1k_blocks * 1024;
+    let available_bytes = available_1k_blocks * 1024;
+    
+    Ok(DiskSpaceInfo::new(total_bytes, available_bytes, available_bytes))
 }
 
 #[cfg(target_os = "linux")]
