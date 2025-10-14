@@ -333,7 +333,7 @@ def configure_styles(app):
             color: {colors['text']};
             border: none;
             padding: 8px 20px 8px 20px;
-            margin: 0px 8px 0px 8px;
+            margin: 0px 2px 0px 2px;
             border-bottom-left-radius: 8px;
             border-bottom-right-radius: 8px;
             min-width: 80px;
