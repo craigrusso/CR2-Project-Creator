@@ -877,13 +877,16 @@ class EventPumpManager(QObject):
             print(
                 f"DEBUG: Progress calc - completed={total_completed_only:.0f}, inflight={total_inflight:.0f}, "
                 f"bucket={bucket_bytes:.0f}, expected={total_expected:.0f}, "
-                f"progress={dest_progress_percent:.1f}%, active_speed_sum={active_speed_sum:.1f}, "
-                f"original_speed={original_speed:.1f}"
+                f"progress={dest_progress_percent:.1f}%, engine_progress={original_progress:.1f}%, "
+                f"active_speed_sum={active_speed_sum:.1f}, original_speed={original_speed:.1f}"
             )
 
+            # CRITICAL FIX: Use destination aggregate values, NOT max(engine, dest)
+            # The engine values are producer-side (bytes WRITTEN), but destinations
+            # may still be READING/VERIFYING those bytes. We must show true consumer progress.
             update['total_bytes'] = max(original_total_bytes, total_expected)
-            update['bytes_copied'] = max(original_bytes, bucket_bytes)
-            update['progress_percent'] = max(original_progress, dest_progress_percent)
+            update['bytes_copied'] = bucket_bytes  # Use destination aggregate, not engine producer bytes
+            update['progress_percent'] = dest_progress_percent  # Use destination aggregate, not engine producer %
 
             if active_speed_sum > 0.0:
                 update['current_speed_mbps'] = active_speed_sum
