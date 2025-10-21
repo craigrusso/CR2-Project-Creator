@@ -441,19 +441,8 @@ impl TransferStrategyEngine {
 
         match analyses.len() {
             0 => anyhow::bail!("No destinations to analyze"),
-
-            1 => {
-                // Single destination: use direct copy
-                let analysis = &analyses[0];
-                Ok(TransferStrategy::DirectCopy {
-                    destination: analysis.path.clone(),
-                    use_memory_mapping: analysis.dest_type == DestinationType::NvmeSsd,
-                    chunk_size_mb: analysis.optimal_chunk_size_mb,
-                })
-            }
-
             _ => {
-                // Multiple destinations: choose between memory staging and hybrid
+                // All cases (1 or more) use unified multi-destination strategy
                 self.select_multi_destination_strategy(
                     &analyses.iter().map(|a| a.path.clone()).collect::<Vec<_>>(),
                     analyses,
@@ -470,6 +459,17 @@ impl TransferStrategyEngine {
         analyses: &[DestinationAnalysis],
         _job_id: &str,
     ) -> Result<TransferStrategy> {
+        // Special optimization for single destination (avoid unnecessary complexity)
+        if destinations.len() == 1 {
+            let analysis = &analyses[0];
+            return Ok(TransferStrategy::MemoryStaging {
+                destinations: destinations.to_vec(),
+                buffer_size_mb: analysis.optimal_chunk_size_mb,
+                parallel_writes: 1,  // Single destination = single writer
+            });
+        }
+        
+        // Continue with multi-destination logic for n > 1
         let total_speed: f64 = analyses.iter().map(|a| a.benchmarked_speed_mbps).sum();
 
         // Calculate memory requirements for staging
@@ -874,7 +874,8 @@ mod tests {
         let (strategy, analyses) = result.unwrap();
 
         assert_eq!(analyses.len(), 1);
-        assert_eq!(strategy.name(), "DirectCopy");
+        // After unification, single destinations use MemoryStaging strategy
+        assert_eq!(strategy.name(), "MemoryStaging");
     }
 
     #[test]

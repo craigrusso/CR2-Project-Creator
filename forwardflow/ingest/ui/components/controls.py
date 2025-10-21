@@ -535,6 +535,35 @@ class ControlSection(QWidget):
                 print(f"DEBUG: Event pump did not become idle within {timeout_ms}ms - proceeding cautiously")
         except Exception as e:
             print(f"DEBUG: Failed to wait for event pump idle: {e}")
+
+    def _finalize_realtime_writer(self, status: str = "COMPLETED", error_message: Optional[str] = None) -> None:
+        """Finalize the real-time report writer after the event pump has flushed pending events."""
+        try:
+            from ...utils.realtime_report_writer import get_realtime_writer, stop_realtime_reporting
+        except Exception as import_error:
+            print(f"DEBUG: Real-time writer finalize skipped (import error): {import_error}")
+            return
+
+        writer = get_realtime_writer()
+        if not writer:
+            print("DEBUG: No active real-time report writer to finalize")
+            if hasattr(self.root, 'realtime_writer'):
+                self.root.realtime_writer = None
+            return
+
+        try:
+            self._wait_for_event_pump_idle()
+        except Exception as idle_error:
+            print(f"DEBUG: Error while waiting for event pump idle before finalizing reports: {idle_error}")
+
+        try:
+            stop_realtime_reporting(final_status=status, error_message=error_message)
+            print(f"DEBUG: ✅ Real-time reports finalized with {status} status")
+        except Exception as finalize_error:
+            print(f"DEBUG: Error finalizing real-time reports: {finalize_error}")
+        finally:
+            if hasattr(self.root, 'realtime_writer'):
+                self.root.realtime_writer = None
     
     def on_start(self, root, source_dest_section, options_section):
         """Handle start button click - implement Rust engine transfer"""
@@ -924,18 +953,22 @@ class ControlSection(QWidget):
         """Handle individual destination completion for immediate DIT report generation"""
         print(f"🎯 DESTINATION COMPLETED: {dest_path} - Generating immediate DIT report")
 
-        if self._cleanup_in_progress:
-            print("DEBUG: Destination completion received during cleanup - ignoring duplicate event")
-            return
+        # CRITICAL FIX: Allow destination completion handler to run even during cleanup
+        # This ensures per-destination reports are generated as destinations finish,
+        # not just at the end when all destinations complete.
+        # We only skip if we've ALREADY processed this specific destination.
 
         if not dest_path:
             print("⚠️  DESTINATION COMPLETED ignored - empty destination path")
             return
 
+        # CRITICAL FIX: Generate reports even if job_id is None (during cleanup phase)
+        # Use a fallback job_id if needed
         active_job_id = getattr(self.root, 'current_job_id', None) or self._active_job_id
         if not active_job_id:
-            print("⚠️  DESTINATION COMPLETED ignored - no active job ID")
-            return
+            print("⚠️  No active job ID - using fallback")
+            import time
+            active_job_id = f"dest_report_{int(time.time())}"
 
         normalized_path = os.path.normpath(dest_path) if dest_path else dest_path
         dest_index = None
@@ -1077,15 +1110,42 @@ class ControlSection(QWidget):
             return
         self._cleanup_in_progress = True
 
+        # CRITICAL FIX: Wait for event pump to be COMPLETELY IDLE before cleanup
+        # The engine's result collector finishes when all writes complete, but the event
+        # queue may still have FileCompleted events waiting to be processed.
+        # We MUST wait for the event pump to drain all events before destroying the 
+        # realtime writer and DIT collector, or we'll lose data.
         try:
-            # INDUSTRY STANDARD: Finalize real-time reports with COMPLETED status
-            # The reports already have all file records with hashes
-            try:
-                from ...utils.realtime_report_writer import stop_realtime_reporting
-                stop_realtime_reporting(final_status="COMPLETED")
-                print("DEBUG: ✅ Real-time reports finalized with COMPLETED status")
-            except Exception as e:
-                print(f"DEBUG: Error finalizing real-time reports: {e}")
+            print("DEBUG: ⏳ Waiting for event pump to be completely idle (500ms timeout)...")
+            self._wait_for_event_pump_idle(idle_ms=500, timeout_ms=10000)
+            print("DEBUG: ✅ Event pump is idle - safe to proceed with cleanup")
+        except Exception as idle_error:
+            print(f"DEBUG: ⚠️ Error waiting for event pump idle: {idle_error}")
+            # Wait a bit anyway to be safe
+            import time
+            print("DEBUG: Waiting 1 second as fallback...")
+            time.sleep(1.0)
+
+        try:
+            # CRITICAL FIX: Update all destination widgets to show 100% completion
+            if hasattr(self.root, 'source_destination_section') and self.root.source_destination_section:
+                print("DEBUG: Updating all destination widgets to 100% completion")
+                for widget in self.root.source_destination_section.destination_widgets:
+                    # Create a completion payload to update the widget
+                    completion_payload = {
+                        'dest_path': widget.path,
+                        'progress_percent': 100.0,
+                        'bytes_copied': widget.current_values.get('bytes_copied', 0),
+                        'total_bytes': widget.current_values.get('total_bytes', 0),
+                        'current_speed_mbps': 0.0,  # Completed destinations show 0 speed
+                        'peak_speed_mbps': widget.current_values.get('peak_speed_mbps', 0),
+                        'eta_seconds': 0.0,
+                        'elapsed_seconds': widget.current_values.get('elapsed_seconds', 0),
+                        'completed_files': widget.current_values.get('completed_files', 0),
+                        'total_files': widget.current_values.get('total_files', 0),
+                    }
+                    widget.update_progress(completion_payload)
+                    print(f"DEBUG: Updated destination widget {widget.path} to 100% completion")
 
             # Mark progress as completed with green styling
             if hasattr(self.root, 'progress_section') and self.root.progress_section:
@@ -1118,14 +1178,19 @@ class ControlSection(QWidget):
             # Re-enable controls
             self.reenable_controls()
             
-            # Clean up thread
-            self._cleanup_transfer_thread()
-            
         except Exception as e:
             print(f"DEBUG: Error handling transfer completion: {e}")
             import traceback
             traceback.print_exc()
             self.reenable_controls()
+        finally:
+            try:
+                self._cleanup_transfer_thread()
+            except Exception as cleanup_error:
+                print(f"DEBUG: Error cleaning up transfer thread during completion: {cleanup_error}")
+
+            self._finalize_realtime_writer(status="COMPLETED")
+            self._cleanup_in_progress = False
     
     def _handle_transfer_failed(self, error_message):
         """Handle transfer failure"""
@@ -1183,15 +1248,6 @@ class ControlSection(QWidget):
             QCoreApplication.processEvents()  # Process any pending Qt events
             QThread.msleep(100)  # Small delay to ensure everything settles
 
-            # INDUSTRY STANDARD: Finalize real-time reports
-            # The reports already contain all completed files with hashes
-            try:
-                from ...utils.realtime_report_writer import stop_realtime_reporting
-                stop_realtime_reporting(final_status="CANCELLED")
-                print("DEBUG: ✅ Real-time reports finalized with CANCELLED status")
-            except Exception as e:
-                print(f"DEBUG: Error finalizing real-time reports: {e}")
-
             # Now generate reports with complete data
             # This ensures the JobAggregator and DIT collector have all file completion data
             if hasattr(self.transfer_worker, 'job') and self.transfer_worker.job:
@@ -1236,6 +1292,9 @@ class ControlSection(QWidget):
                 except Exception as reset_error:
                     print(f"DEBUG: Error resetting event sink: {reset_error}")
             self.reenable_controls()
+        finally:
+            self._finalize_realtime_writer(status="CANCELLED")
+            self._cleanup_in_progress = False
     
     def _cleanup_transfer_thread(self):
         """Clean up transfer thread and worker"""

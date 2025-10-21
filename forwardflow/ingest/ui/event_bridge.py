@@ -84,23 +84,31 @@ class EventBridge(QObject):
         
         print("DEBUG: EventBridge initialized with comprehensive event routing")
     
-    def initialize_job(self, total_files: int, destinations: List[str]) -> bool:
+    def initialize_job(self, total_files: int, destinations: List[str], dataset_total_bytes: int = 0) -> bool:
         """
         Initialize JobAggregator with explicit parameters
         
         Args:
             total_files: Expected number of files
             destinations: List of destination paths
+            dataset_total_bytes: Expected per-destination byte count from manifest
             
         Returns:
             True if initialization succeeded
         """
         if self.is_initialized:
-            print("DEBUG: JobAggregator already initialized, skipping")
+            print("DEBUG: JobAggregator already initialized, updating manifest hints")
+            if self.job_aggregator:
+                self.job_aggregator.apply_manifest_hint(total_files, dataset_total_bytes)
+                self.job_aggregator.destinations = destinations
+                self.job_aggregator.destination_count = max(1, len(destinations))
+                for dest in destinations:
+                    self.job_aggregator._ensure_destination_metrics(dest)
+                self.job_aggregator._refresh_expected_totals()
             return True
         
         try:
-            self.job_aggregator = JobAggregator(total_files, destinations)
+            self.job_aggregator = JobAggregator(total_files, destinations, dataset_total_bytes)
             self.is_initialized = True
             self.pending_initialization = False
             
@@ -245,7 +253,7 @@ class EventBridge(QObject):
                 
                 # Update JobAggregator and get snapshot
                 snapshot = self.job_aggregator.update_file_progress(
-                    file_id, bytes_copied, total_bytes, dest_path, filename
+                    file_id, bytes_copied, total_bytes, dest_path, filename, dest_index=dest_index
                 )
                 
                 # Emit UI updates (thread-safe)
@@ -322,6 +330,37 @@ class EventBridge(QObject):
         if self.job_state_manager.update_progress(payload):
             # Emit stable progress update from JobState - this is the ONLY progress update
             ui_payload = self.job_state_manager.get_ui_payload()
+
+            # For multi-destination jobs, clamp JobState data using aggregator-derived progress
+            if self.is_initialized and self.job_aggregator and len(self.job_aggregator.destinations) > 1:
+                snapshot = self.job_aggregator.get_current_snapshot()
+                if snapshot:
+                    ui_payload['progress_percent'] = min(
+                        ui_payload.get('progress_percent', snapshot.job_progress_percent),
+                        snapshot.job_progress_percent
+                    )
+                    ui_payload['bytes_copied'] = snapshot.job_bytes_copied
+                    ui_payload['total_bytes'] = snapshot.job_total_bytes
+                    ui_payload['total_target_bytes'] = snapshot.job_total_bytes
+                    ui_payload['completed_files'] = snapshot.job_completed_files
+                    ui_payload['total_files'] = snapshot.job_total_files
+                    ui_payload['write_ops_completed'] = snapshot.job_completed_files
+                    ui_payload['write_ops_total'] = snapshot.job_total_files
+                    ui_payload['current_speed_mbps'] = snapshot.job_current_mb_s
+                    ui_payload['peak_speed_mbps'] = max(
+                        ui_payload.get('peak_speed_mbps', 0.0), snapshot.job_peak_mb_s
+                    )
+                    ui_payload['eta_seconds'] = snapshot.job_eta_seconds
+                    destination_count = max(1, len(snapshot.destinations))
+                    ui_payload['destinations_active'] = destination_count
+                    source_total = self.job_aggregator.initial_total_files
+                    if source_total:
+                        source_completed = min(
+                            source_total,
+                            snapshot.job_completed_files // destination_count if destination_count else snapshot.job_completed_files
+                        )
+                        ui_payload['display_files_total'] = source_total
+                        ui_payload['display_files_completed'] = source_completed
             self.progress_update.emit(ui_payload)
             print(f"DEBUG: JobState progress updated: {ui_payload['progress_percent']:.1f}%")
             
@@ -339,7 +378,12 @@ class EventBridge(QObject):
         destinations = payload.get('destinations', [])
         
         if total_files > 0 and destinations:
-            self.initialize_job(total_files, destinations)
+            dataset_total_bytes = payload.get('total_bytes', 0)
+            if dataset_total_bytes == 0:
+                dataset_total_bytes = payload.get('total_target_bytes', 0)
+                if dataset_total_bytes and len(destinations) > 0:
+                    dataset_total_bytes = int(dataset_total_bytes // max(1, len(destinations)))
+            self.initialize_job(total_files, destinations, dataset_total_bytes)
     
     def _handle_dest_progress_internal(self, event_type: str, payload: dict) -> None:
         """Handle destination progress events with comprehensive routing"""
@@ -391,6 +435,15 @@ class EventBridge(QObject):
         time_elapsed = current_time - self.last_progress_emit_time
         percent_change = abs(current_percent - self.last_progress_percent)
         
+        destination_count = max(1, len(snapshot.destinations))
+        source_total = self.job_aggregator.initial_total_files if self.job_aggregator else 0
+        if source_total and destination_count:
+            source_completed = min(
+                source_total, snapshot.job_completed_files // destination_count
+            )
+        else:
+            source_completed = snapshot.job_completed_files
+
         should_emit_progress = (
             time_elapsed >= self.progress_throttle_interval or  # Time threshold
             percent_change >= self.progress_percent_threshold or  # Progress threshold  
@@ -406,11 +459,17 @@ class EventBridge(QObject):
                 'total_files': snapshot.job_total_files,
                 'bytes_copied': snapshot.job_bytes_copied,
                 'total_bytes': snapshot.job_total_bytes,
+                'total_target_bytes': snapshot.job_total_bytes,
                 'current_speed_mbps': snapshot.job_current_mb_s,
                 'peak_speed_mbps': snapshot.job_peak_mb_s,
                 'elapsed_time': snapshot.job_elapsed_seconds,
                 'filename': snapshot.current_filename,
-                'eta_seconds': snapshot.job_eta_seconds
+                'eta_seconds': snapshot.job_eta_seconds,
+                'write_ops_completed': snapshot.job_completed_files,
+                'write_ops_total': snapshot.job_total_files,
+                'destinations_active': destination_count,
+                'display_files_total': source_total if source_total else snapshot.job_total_files,
+                'display_files_completed': source_completed
             }
             
             self.progress_update.emit(progress_payload)
@@ -432,6 +491,7 @@ class EventBridge(QObject):
             return
             
         for dest_path, dest_metrics in snapshot.destinations.items():
+            expected_total = dest_metrics.expected_total_bytes or dest_metrics.total_bytes
             dest_payload = {
                 'dest_path': dest_path,
                 'dest_index': 0,
@@ -439,9 +499,9 @@ class EventBridge(QObject):
                 'current_speed_mbps': dest_metrics.current_mb_s,
                 'peakSpeedMiBps': dest_metrics.peak_mb_s,
                 'peak_speed_mbps': dest_metrics.peak_mb_s,
-                'progress_percent': (dest_metrics.bytes_copied / dest_metrics.total_bytes * 100) if dest_metrics.total_bytes > 0 else 0,
+                'progress_percent': (dest_metrics.bytes_copied / expected_total * 100) if expected_total > 0 else 0,
                 'bytes_copied': dest_metrics.bytes_copied,
-                'total_bytes': dest_metrics.total_bytes,
+                'total_bytes': expected_total,
                 'etaS': dest_metrics.eta_seconds,
                 'eta_seconds': dest_metrics.eta_seconds,
                 'completed_files': dest_metrics.completed_files,
@@ -461,6 +521,15 @@ class EventBridge(QObject):
             # Throttle progress updates to prevent UI flooding from file.progress events
             current_time = time.time()
             progress_percent = snapshot.job_progress_percent
+
+            destination_count = max(1, len(snapshot.destinations))
+            source_total = self.job_aggregator.initial_total_files if self.job_aggregator else 0
+            if source_total and destination_count:
+                source_completed = min(
+                    source_total, snapshot.job_completed_files // destination_count
+                )
+            else:
+                source_completed = snapshot.job_completed_files
             
             # Update at most every 250ms OR when progress percentage changes significantly
             should_update = False
@@ -485,12 +554,18 @@ class EventBridge(QObject):
                 'progress_percent': snapshot.job_progress_percent,
                 'bytes_copied': snapshot.job_bytes_copied,
                 'total_bytes': snapshot.job_total_bytes,
+                'total_target_bytes': snapshot.job_total_bytes,
                 'completed_files': snapshot.job_completed_files,
                 'total_files': snapshot.job_total_files,
                 'current_speed_mbps': snapshot.job_current_mb_s,
                 'peak_speed_mbps': snapshot.job_peak_mb_s,
                 'elapsed_seconds': snapshot.job_elapsed_seconds,
-                'eta_seconds': snapshot.job_eta_seconds
+                'eta_seconds': snapshot.job_eta_seconds,
+                'write_ops_completed': snapshot.job_completed_files,
+                'write_ops_total': snapshot.job_total_files,
+                'destinations_active': destination_count,
+                'display_files_total': source_total if source_total else snapshot.job_total_files,
+                'display_files_completed': source_completed
             }
             
             print(f"DEBUG: Emitting throttled job progress update: {snapshot.job_progress_percent:.1f}%, {snapshot.job_current_mb_s:.1f} MB/s")
@@ -511,6 +586,7 @@ class EventBridge(QObject):
         
         try:
             for dest_path, dest_metrics in snapshot.destinations.items():
+                expected_total = dest_metrics.expected_total_bytes or dest_metrics.total_bytes
                 dest_payload = {
                     'dest_path': dest_path,
                     'dest_index': 0,  # Use 0 for all destinations since index doesn't matter for UI
@@ -518,9 +594,9 @@ class EventBridge(QObject):
                     'current_speed_mbps': dest_metrics.current_mb_s,
                     'peakSpeedMiBps': dest_metrics.peak_mb_s,
                     'peak_speed_mbps': dest_metrics.peak_mb_s,
-                    'progress_percent': (dest_metrics.bytes_copied / dest_metrics.total_bytes * 100) if dest_metrics.total_bytes > 0 else 0.0,
+                    'progress_percent': (dest_metrics.bytes_copied / expected_total * 100) if expected_total > 0 else 0.0,
                     'bytes_copied': dest_metrics.bytes_copied,
-                    'total_bytes': dest_metrics.total_bytes,
+                    'total_bytes': expected_total,
                     'etaS': dest_metrics.eta_seconds,
                     'eta_seconds': dest_metrics.eta_seconds,
                     'completed_files': dest_metrics.completed_files,

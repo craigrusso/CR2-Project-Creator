@@ -30,7 +30,9 @@ class RealtimeReportWriter:
         self.lock = threading.Lock()
 
         # Create report files immediately
-        self.report_paths = self._initialize_report_files()
+        self.report_paths: Dict[str, Dict[str, str]] = {}
+        self.dest_index_map: Dict[int, str] = {}
+        self._initialize_report_files()
 
         # Track statistics
         self.stats = {
@@ -46,12 +48,11 @@ class RealtimeReportWriter:
         print(f"📝 Real-time report writer initialized for job: {job_id}")
         print(f"📁 Report files created in {len(self.report_paths)} destinations")
 
-    def _initialize_report_files(self) -> Dict[str, Dict[str, str]]:
+    def _initialize_report_files(self) -> None:
         """Create initial report files in each destination"""
-        report_paths = {}
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        for dest_path in self.destinations:
+        for index, dest_path in enumerate(self.destinations):
             try:
                 original_dest = str(dest_path)
                 normalized_dest = self._normalize_path(original_dest)
@@ -76,19 +77,19 @@ class RealtimeReportWriter:
                 txt_path = reports_dir / f"{base_filename}.txt"
                 self._init_txt_report(txt_path)
 
-                report_paths[normalized_dest] = {
+                self.report_paths[normalized_dest] = {
                     'json': str(json_path),
                     'csv': str(csv_path),
                     'txt': str(txt_path),
                     'root_path': original_dest
                 }
 
+                self.dest_index_map[index] = normalized_dest
+
                 print(f"✅ Report files initialized for: {original_dest}")
 
             except Exception as e:
                 print(f"❌ Failed to initialize reports for {dest_path}: {e}")
-
-        return report_paths
 
     def _init_json_report(self, path: Path):
         """Initialize JSON report structure"""
@@ -148,6 +149,7 @@ class RealtimeReportWriter:
                 filename = file_data.get('filename', 'unknown')
                 source_path = file_data.get('source_path', '')
                 dest_path = file_data.get('dest_path', '')
+                dest_index = file_data.get('dest_index')
                 size_bytes = file_data.get('size_bytes', file_data.get('bytes_copied', 0))
                 source_checksum = file_data.get('source_checksum', '')
                 dest_checksum = file_data.get('dest_checksum', file_data.get('destination_checksum', ''))
@@ -171,8 +173,13 @@ class RealtimeReportWriter:
                 transfer_time = time.time() - self.start_time
 
                 # Determine which destination this file belongs to
+                dest_key = None
+                if isinstance(dest_index, int) and dest_index in self.dest_index_map:
+                    dest_key = self.dest_index_map[dest_index]
+
                 normalized_dest_path = self._normalize_path(dest_path)
-                dest_key = self._get_destination_key(normalized_dest_path, dest_path)
+                if not dest_key:
+                    dest_key = self._get_destination_key(normalized_dest_path, dest_path)
 
                 if not dest_key:
                     print(f"⚠️ No report path found for destination: {dest_path}")
@@ -388,6 +395,21 @@ class RealtimeReportWriter:
                         return dest_root
             except Exception:
                 pass
+
+        lowered_child = normalized_dest_path.lower()
+        for dest_root, paths in self.report_paths.items():
+            if lowered_child.startswith(dest_root.lower()):
+                return dest_root
+            root_path = paths.get('root_path')
+            if root_path and lowered_child.startswith(os.path.normpath(str(root_path)).lower()):
+                return dest_root
+
+        if raw_dest_path:
+            lowered_raw = os.path.normpath(str(raw_dest_path)).lower()
+            for dest_root, paths in self.report_paths.items():
+                root_path = paths.get('root_path', dest_root)
+                if lowered_raw.startswith(os.path.normpath(str(root_path)).lower()):
+                    return dest_root
 
         return None
 

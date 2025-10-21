@@ -93,8 +93,16 @@ impl MultiDestCopyEngine {
         let hash_algo_str = hash_algorithm.to_string();
         let source_files_clone = source_files.to_vec();
         let relative_paths_clone = relative_paths.to_vec();
+        let total_files = source_files.len();
+        let dest_count = destination_paths.len();
+        let dest_paths = destination_paths.to_vec();
+        let start_time = std::time::Instant::now();
         
         let result_collector = thread::spawn(move || {
+            // Track per-destination completion counts and bytes
+            let mut dest_file_counts = vec![0usize; dest_count];
+            let mut dest_byte_counts = vec![0u64; dest_count];
+            
             while let Ok(result) = result_rx.recv() {
                 // Emit file.completed event IMMEDIATELY when this worker finishes
                 if let Ok(event_sys) = event_sys_clone.lock() {
@@ -138,6 +146,34 @@ impl MultiDestCopyEngine {
                         "✅ INDEPENDENT: Dest #{} finished {} ({} bytes in {} ms)",
                         result.dest_index, filename, result.bytes_written, result.duration_ms
                     );
+                    
+                    // CRITICAL FIX: Track per-destination completion and emit DestCompleted when done
+                    if result.dest_index < dest_count {
+                        dest_file_counts[result.dest_index] += 1;
+                        dest_byte_counts[result.dest_index] += result.bytes_written;
+                        
+                        // Check if this destination has finished all files
+                        if dest_file_counts[result.dest_index] >= total_files {
+                            let elapsed = start_time.elapsed().as_secs_f64();
+                            let dest_path = &dest_paths[result.dest_index];
+                            
+                            eprintln!(
+                                "🎯🎯🎯 MULTI_DEST: Dest #{} ({}) COMPLETED - {} files, {} bytes, {:.1}s elapsed",
+                                result.dest_index, dest_path, dest_file_counts[result.dest_index],
+                                dest_byte_counts[result.dest_index], elapsed
+                            );
+                            
+                            let _ = event_sys.emit_dest_completed(
+                                result.dest_index,
+                                &dest_path,
+                                dest_byte_counts[result.dest_index],
+                                dest_byte_counts[result.dest_index], // total_bytes same as copied for this dest
+                                dest_file_counts[result.dest_index],
+                                total_files,
+                                elapsed,
+                            );
+                        }
+                    }
                 }
             }
             eprintln!("🏁 Background result collector thread finished");

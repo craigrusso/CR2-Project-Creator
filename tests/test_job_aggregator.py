@@ -141,7 +141,7 @@ def simulate_multi_file_transfer():
     
     print(f"Monotonic Progress: {'PASS' if monotonic_pass else 'FAIL'}")
     print(f"Speed Calculations: {'PASS' if speed_test_pass else 'FAIL'}")
-    print(f"File Count Accuracy: {'PASS' if count_test_pass else 'FAIL'}")
+    print(f"Write Count Accuracy: {'PASS' if count_test_pass else 'FAIL'}")
     print(f"ETA Reasonableness: {'PASS' if eta_test_pass else 'FAIL'}")
     print(f"\nOverall Result: {'PASS' if all_tests_pass else 'FAIL'}")
     

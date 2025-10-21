@@ -1,10 +1,12 @@
 """Progress Section for Ingest Tab"""
 
 import time
+from typing import Optional
+
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QFrame, QScrollArea
 )
-from PyQt6.QtCore import Qt
 
 try:
     from app.ui.color_scheme_pyqt import (
@@ -941,14 +943,20 @@ class ProgressSection(QWidget):
         try:
             # Extract data from JobState payload
             progress_percent = payload.get("progress_percent", 0.0)
-            completed_files = payload.get("completed_files", 0)
-            total_files = payload.get("total_files", 0)
+            completed_files = payload.get("write_ops_completed", payload.get("completed_files", 0))
+            total_files = payload.get("write_ops_total", payload.get("total_files", 0))
             current_speed = payload.get("current_speed_mbps", 0.0)
             peak_speed = payload.get("peak_speed_mbps", 0.0)
             elapsed = payload.get("elapsed_seconds", 0.0)
             eta = payload.get("eta_seconds", 0.0)
+            display_completed = payload.get("display_files_completed", completed_files)
+            display_total = payload.get("display_files_total", total_files)
+            destinations = payload.get("destinations_active", 1)
             
-            print(f"DEBUG: JobState progress: {progress_percent:.1f}% ({completed_files}/{total_files} files)")
+            print(
+                f"DEBUG: JobState progress: {progress_percent:.1f}% "
+                f"({display_completed}/{display_total} files, {completed_files}/{total_files} writes)"
+            )
             
             # Update progress bar with CONSISTENT 0-100 range (never switch to bytes)
             if hasattr(self, 'total_progress') and self.total_progress:
@@ -965,11 +973,17 @@ class ProgressSection(QWidget):
             bytes_copied = payload.get("bytes_copied", 0)
             self._update_speed_labels(current_speed, peak_speed, elapsed, bytes_copied)
             self._update_elapsed_label(elapsed)
-            self._update_files_count(completed_files, total_files)
+            self._update_files_count(
+                display_completed,
+                display_total,
+                completed_files,
+                total_files,
+                destinations,
+            )
             self._update_eta_label(eta)
 
             # Update health indicators
-            self._update_health_indicators(current_speed, completed_files, total_files)
+            self._update_health_indicators(current_speed, display_completed, display_total)
 
             # CRITICAL FIX: Force entire section to repaint
             self.update()
@@ -986,8 +1000,8 @@ class ProgressSection(QWidget):
             # CRITICAL FIX: Use correct field names from event pump payload
             progress_percent = payload.get("progress_percent", 0.0)
             # Event pump sends 'files_completed' not 'completed_files'
-            files_completed = payload.get("files_completed", 0)
-            total_files = payload.get("total_files", 0)
+            files_completed = payload.get("write_ops_completed", payload.get("files_completed", 0))
+            total_files = payload.get("write_ops_total", payload.get("total_files", 0))
             # Event pump sends 'current_speed_mbps' and 'speed_mbps'
             current_speed = payload.get("current_speed_mbps", payload.get("speed_mbps", 0.0))
             peak_speed = payload.get("peak_speed_mbps", 0.0)
@@ -997,8 +1011,15 @@ class ProgressSection(QWidget):
             eta_seconds = payload.get("eta_seconds", 0.0)
             if eta_seconds == 0.0 and progress_percent > 0:
                 eta_seconds = (elapsed / progress_percent * 100.0) - elapsed
+            display_completed = payload.get("display_files_completed", files_completed)
+            display_total = payload.get("display_files_total", total_files)
+            destinations = payload.get("destinations_active", 1)
 
-            print(f"DEBUG: Event pump progress: {progress_percent:.1f}% ({files_completed}/{total_files} files, {current_speed:.1f} MB/s, elapsed: {elapsed:.1f}s)")
+            print(
+                f"DEBUG: Event pump progress: {progress_percent:.1f}% "
+                f"({display_completed}/{display_total} files, {files_completed}/{total_files} writes, "
+                f"{current_speed:.1f} MB/s, elapsed: {elapsed:.1f}s)"
+            )
 
             # Update progress bar with CONSISTENT 0-100 range
             if hasattr(self, 'total_progress') and self.total_progress:
@@ -1014,11 +1035,17 @@ class ProgressSection(QWidget):
             bytes_copied = payload.get("bytes_copied", 0)
             self._update_speed_labels(current_speed, peak_speed, elapsed, bytes_copied)
             self._update_elapsed_label(elapsed)
-            self._update_files_count(files_completed, total_files)
+            self._update_files_count(
+                display_completed,
+                display_total,
+                files_completed,
+                total_files,
+                destinations,
+            )
             self._update_eta_label(eta_seconds)
 
             # Update health indicators
-            self._update_health_indicators(current_speed, files_completed, total_files)
+            self._update_health_indicators(current_speed, display_completed, display_total)
 
             # CRITICAL FIX: Force entire section to repaint
             self.update()
@@ -1052,12 +1079,39 @@ class ProgressSection(QWidget):
         except Exception as e:
             print(f"ERROR: Speed labels update failed: {e}")
     
-    def _update_files_count(self, completed_files, total_files):
-        """Update files count label"""
+    def _update_files_count(
+        self,
+        files_completed: int,
+        total_files: int,
+        write_completed: Optional[int] = None,
+        write_total: Optional[int] = None,
+        destinations: Optional[int] = None,
+    ):
+        """Update files count label with optional write-operation context"""
         try:
-            if hasattr(self, 'files_count') and self.files_count:
-                self.files_count.setText(f"{completed_files} of {total_files} files")
-                print(f"DEBUG: Updated files count to {completed_files}/{total_files}")
+            if not (hasattr(self, 'files_count') and self.files_count):
+                return
+
+            files_completed = int(files_completed)
+            total_files = max(int(total_files), int(files_completed), 0)
+            label = f"{files_completed} of {total_files} files"
+
+            if destinations and destinations > 1:
+                label += f" across {destinations} destinations"
+
+            if write_total is None:
+                write_total = total_files
+            if write_completed is None:
+                write_completed = files_completed
+
+            write_completed = int(write_completed)
+            write_total = max(int(write_total), write_completed)
+
+            if write_total and write_total != total_files:
+                label += f"  ({write_completed}/{write_total} writes)"
+
+            self.files_count.setText(label)
+            print(f"DEBUG: Updated files count label to '{label}'")
         except Exception as e:
             print(f"ERROR: Files count update failed: {e}")
     
@@ -1314,8 +1368,13 @@ class ProgressSection(QWidget):
             
             # Update progress bar to 100% and switch to green
             if hasattr(self, 'total_progress'):
-                self.total_progress.setValue(100)
-                self.total_progress.setFormat("100%")
+                # CRITICAL FIX: Don't hardcode to 100% - let the progress calculation determine actual progress
+                # The progress bar should already be at 100% from the normal progress calculation
+                # If it's not, there's a bug in the progress calculation that needs to be fixed
+                current_value = self.total_progress.value()
+                print(f"DEBUG: Progress bar current value: {current_value}% (not hardcoding to 100%)")
+                # Only update format to show completion styling
+                self.total_progress.setFormat(f"{current_value}%")
                 
                 # Switch to green gradient for completion
                 self.total_progress.setStyleSheet(f"""
