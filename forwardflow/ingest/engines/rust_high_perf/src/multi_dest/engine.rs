@@ -109,8 +109,49 @@ impl MultiDestCopyEngine {
             // Track per-destination completion counts and bytes
             let mut dest_file_counts = vec![0usize; dest_count];
             let mut dest_byte_counts = vec![0u64; dest_count];
+            let mut last_progress_emission = std::time::Instant::now();
             
-            while let Ok(result) = result_rx.recv() {
+            // Use recv_timeout to emit progress updates even when no files complete
+            loop {
+                let result = result_rx.recv_timeout(std::time::Duration::from_millis(250));
+                
+                // Emit periodic progress updates (every 250ms) for smooth UI updates
+                if result.is_err() || last_progress_emission.elapsed() >= std::time::Duration::from_millis(250) {
+                    if let Ok(event_sys) = event_sys_clone.lock() {
+                        let elapsed = start_time.elapsed().as_secs_f64();
+                        let total_consumer_bytes: u64 = dest_byte_counts.iter().sum();
+                        let total_consumer_files: usize = dest_file_counts.iter().sum();
+                        let speed_mbps = if elapsed > 0.0 {
+                            (total_consumer_bytes as f64 / elapsed) / (1024.0 * 1024.0)
+                        } else {
+                            0.0
+                        };
+                        
+                        let _ = event_sys.emit_job_progress(
+                            total_consumer_bytes,
+                            total_expected_bytes,
+                            total_consumer_files,
+                            total_files * dest_count,
+                            elapsed,
+                            speed_mbps,
+                        );
+                        last_progress_emission = std::time::Instant::now();
+                    }
+                }
+                
+                // If timeout (no file completed), continue loop
+                if result.is_err() {
+                    continue;
+                }
+                
+                // If all destinations are done, break
+                if dest_file_counts.iter().all(|&count| count >= total_files) {
+                    break;
+                }
+                
+                // Process file completion result
+                let result = result.unwrap();
+                
                 // Emit file.completed event IMMEDIATELY when this worker finishes
                 if let Ok(event_sys) = event_sys_clone.lock() {
                     let filename = result.relative_path
@@ -159,30 +200,13 @@ impl MultiDestCopyEngine {
                         dest_file_counts[result.dest_index] += 1;
                         dest_byte_counts[result.dest_index] += result.bytes_written;
                         
-                        // CRITICAL FIX: Emit JobProgress based on CONSUMER bytes (aggregate of all destinations)
-                        // This keeps the main progress bar updating even after producer finishes
-                        let elapsed = start_time.elapsed().as_secs_f64();
-                        let total_consumer_bytes: u64 = dest_byte_counts.iter().sum();
-                        let total_consumer_files: usize = dest_file_counts.iter().sum();
-                        let total_target_bytes = total_expected_bytes; // Will be updated by first file
-                        let speed_mbps = if elapsed > 0.0 {
-                            (total_consumer_bytes as f64 / elapsed) / (1024.0 * 1024.0)
-                        } else {
-                            0.0
-                        };
-                        
-                        let _ = event_sys.emit_job_progress(
-                            total_consumer_bytes,
-                            total_target_bytes,
-                            total_consumer_files,
-                            total_files * dest_count,
-                            elapsed,
-                            speed_mbps,
-                        );
+                        // JobProgress is now emitted periodically (every 250ms) at the top of the loop
+                        // This provides smooth UI updates even when individual files are slow
                         
                         // Check if this destination has finished all files
                         if dest_file_counts[result.dest_index] >= total_files {
                             let dest_path = &dest_paths[result.dest_index];
+                            let elapsed = start_time.elapsed().as_secs_f64();
                             
                             eprintln!(
                                 "🎯🎯🎯 MULTI_DEST: Dest #{} ({}) COMPLETED - {} files, {} bytes, {:.1}s elapsed",

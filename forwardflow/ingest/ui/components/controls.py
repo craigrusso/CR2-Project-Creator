@@ -1116,15 +1116,22 @@ class ControlSection(QWidget):
         # We MUST wait for the event pump to drain all events before destroying the 
         # realtime writer and DIT collector, or we'll lose data.
         try:
-            print("DEBUG: ⏳ Waiting for event pump to be completely idle (500ms timeout)...")
-            self._wait_for_event_pump_idle(idle_ms=500, timeout_ms=10000)
+            import time
+            print("DEBUG: ⏳ Waiting for Rust event queue to drain completely...")
+            # AGGRESSIVE WAIT: The wait_for_idle check only looks at _last_event_timestamp,
+            # but events can be queued in Rust and not yet processed. We need to wait
+            # long enough for ALL events to drain through the entire pipeline.
+            # With 126 files completing rapidly, we need at least 2-3 seconds.
+            time.sleep(2.0)
+            print("DEBUG: ⏳ Now waiting for event pump processing to idle (1000ms)...")
+            self._wait_for_event_pump_idle(idle_ms=1000, timeout_ms=10000)
             print("DEBUG: ✅ Event pump is idle - safe to proceed with cleanup")
         except Exception as idle_error:
             print(f"DEBUG: ⚠️ Error waiting for event pump idle: {idle_error}")
-            # Wait a bit anyway to be safe
+            # Wait even more to be safe
             import time
-            print("DEBUG: Waiting 1 second as fallback...")
-            time.sleep(1.0)
+            print("DEBUG: Waiting 2 seconds as fallback...")
+            time.sleep(2.0)
 
         try:
             # CRITICAL FIX: Update all destination widgets to show 100% completion
