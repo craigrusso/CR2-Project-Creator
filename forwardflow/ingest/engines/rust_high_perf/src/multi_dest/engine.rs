@@ -98,6 +98,13 @@ impl MultiDestCopyEngine {
         let dest_paths = destination_paths.to_vec();
         let start_time = std::time::Instant::now();
         
+        // Calculate total expected bytes (sum of all source files * dest count)
+        let total_source_bytes: u64 = source_files.iter()
+            .filter_map(|f| f.metadata().ok())
+            .map(|m| m.len())
+            .sum();
+        let total_expected_bytes = total_source_bytes * dest_count as u64;
+        
         let result_collector = thread::spawn(move || {
             // Track per-destination completion counts and bytes
             let mut dest_file_counts = vec![0usize; dest_count];
@@ -152,9 +159,29 @@ impl MultiDestCopyEngine {
                         dest_file_counts[result.dest_index] += 1;
                         dest_byte_counts[result.dest_index] += result.bytes_written;
                         
+                        // CRITICAL FIX: Emit JobProgress based on CONSUMER bytes (aggregate of all destinations)
+                        // This keeps the main progress bar updating even after producer finishes
+                        let elapsed = start_time.elapsed().as_secs_f64();
+                        let total_consumer_bytes: u64 = dest_byte_counts.iter().sum();
+                        let total_consumer_files: usize = dest_file_counts.iter().sum();
+                        let total_target_bytes = total_expected_bytes; // Will be updated by first file
+                        let speed_mbps = if elapsed > 0.0 {
+                            (total_consumer_bytes as f64 / elapsed) / (1024.0 * 1024.0)
+                        } else {
+                            0.0
+                        };
+                        
+                        let _ = event_sys.emit_job_progress(
+                            total_consumer_bytes,
+                            total_target_bytes,
+                            total_consumer_files,
+                            total_files * dest_count,
+                            elapsed,
+                            speed_mbps,
+                        );
+                        
                         // Check if this destination has finished all files
                         if dest_file_counts[result.dest_index] >= total_files {
-                            let elapsed = start_time.elapsed().as_secs_f64();
                             let dest_path = &dest_paths[result.dest_index];
                             
                             eprintln!(
