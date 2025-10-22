@@ -951,7 +951,9 @@ class ControlSection(QWidget):
     
     def _handle_destination_completed(self, dest_path: str):
         """Handle individual destination completion for immediate DIT report generation"""
-        print(f"🎯 DESTINATION COMPLETED: {dest_path} - Generating immediate DIT report")
+        print(f"\n{'='*80}")
+        print(f"🎯🎯🎯 DESTINATION COMPLETED HANDLER CALLED: {dest_path}")
+        print(f"{'='*80}")
 
         # CRITICAL FIX: Allow destination completion handler to run even during cleanup
         # This ensures per-destination reports are generated as destinations finish,
@@ -1034,49 +1036,19 @@ class ControlSection(QWidget):
             return
 
         try:
-            from ...utils.dit_data_collector import get_dit_collector
-            dit_collector = get_dit_collector()
-            
-            # CRITICAL: Wait for ALL FileCompleted events to be processed before generating report
+            # CRITICAL: Wait briefly for any pending FileCompleted events to be processed
             # The Rust engine says this dest is complete, but the last FileCompleted event
-            # might still be in the queue! We need to wait until the DIT collector has
-            # the EXPECTED number of files for this destination.
-            
-            # Get job spec to determine expected file count
-            expected_files = 0
-            if hasattr(self.transfer_worker, 'job') and self.transfer_worker.job:
-                expected_files = len(self.transfer_worker.job.source_files)
-            
-            print(f"📊 Waiting for all {expected_files} files to be processed for dest_index={dest_index}...")
-            
-            # Poll until we have all expected files (with timeout)
-            import time
-            max_wait = 5.0  # 5 seconds max
-            start_wait = time.time()
-            last_count = 0
-            
-            while (time.time() - start_wait) < max_wait:
-                self._wait_for_event_pump_idle(idle_ms=250, timeout_ms=1000)
-                file_records = dit_collector.get_file_records_for_destination(dest_index)
-                current_count = len(file_records)
-                
-                if expected_files > 0 and current_count >= expected_files:
-                    print(f"✅ All {current_count} files received for dest_index={dest_index}")
-                    break
-                
-                if current_count != last_count:
-                    print(f"📊 Progress: {current_count}/{expected_files} files received...")
-                    last_count = current_count
-                    
-                time.sleep(0.1)  # Small delay between polls
+            # might still be in the queue. A short wait ensures it's processed.
+            print(f"📊 Waiting briefly for event pump to process any pending events for dest_index={dest_index}...")
+            self._wait_for_event_pump_idle(idle_ms=250, timeout_ms=2000)
             
             # Show "Writing report..." UI feedback
             self._show_report_generation_ui(dest_path)
             
-            # Final wait to ensure everything is stable
-            self._wait_for_event_pump_idle(idle_ms=500, timeout_ms=2000)
+            # Get DIT collector and stats
+            from ...utils.dit_data_collector import get_dit_collector
+            dit_collector = get_dit_collector()
             
-            # Now get the final stats
             comprehensive_stats = dit_collector.get_stats_for_destination(dest_index)
             file_records = dit_collector.get_file_records_for_destination(dest_index)
 
