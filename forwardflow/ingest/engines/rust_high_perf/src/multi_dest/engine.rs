@@ -110,7 +110,6 @@ impl MultiDestCopyEngine {
             let mut dest_file_counts = vec![0usize; dest_count];
             let mut dest_byte_counts = vec![0u64; dest_count];
             let mut last_progress_emission = std::time::Instant::now();
-            let mut dest_completed_flags = vec![false; dest_count]; // Track which destinations emitted completion
             
             // Use recv_timeout to emit progress updates even when no files complete
             loop {
@@ -202,14 +201,15 @@ impl MultiDestCopyEngine {
                         result.dest_index, filename, result.bytes_written, result.duration_ms
                     );
                     
-                    // CRITICAL FIX: Track per-destination completion but DON'T emit DestCompleted yet
+                    // Track per-destination completion and emit DestCompleted immediately
                     if result.dest_index < dest_count {
                         dest_file_counts[result.dest_index] += 1;
                         dest_byte_counts[result.dest_index] += result.bytes_written;
                         
-                        // Check if this destination has finished all files
-                        if dest_file_counts[result.dest_index] >= total_files && !dest_completed_flags[result.dest_index] {
-                            dest_completed_flags[result.dest_index] = true;
+                        // CRITICAL: Check if this destination has finished all files
+                        // Emit DestCompleted IMMEDIATELY so Python can generate per-dest reports
+                        // BUT Python must wait for all FileCompleted events before acting on it!
+                        if dest_file_counts[result.dest_index] >= total_files {
                             let dest_path = &dest_paths[result.dest_index];
                             let elapsed = start_time.elapsed().as_secs_f64();
                             
@@ -218,34 +218,19 @@ impl MultiDestCopyEngine {
                                 result.dest_index, dest_path, dest_file_counts[result.dest_index],
                                 dest_byte_counts[result.dest_index], elapsed
                             );
-                            // NOTE: DestCompleted event will be emitted AFTER the loop exits
-                            // to ensure all FileCompleted events are processed first
+                            
+                            // Emit DestCompleted immediately for per-destination reporting
+                            let _ = event_sys.emit_dest_completed(
+                                result.dest_index,
+                                &dest_path,
+                                dest_byte_counts[result.dest_index],
+                                dest_byte_counts[result.dest_index],
+                                dest_file_counts[result.dest_index],
+                                total_files,
+                                elapsed,
+                            );
+                            eprintln!("✅ Emitted DestCompleted for Dest #{} ({})", result.dest_index, dest_path);
                         }
-                    }
-                }
-            }
-            
-            // CRITICAL FIX: Now that the loop has exited and ALL FileCompleted events have been emitted,
-            // emit DestCompleted events for any destinations that finished
-            eprintln!("📤 Emitting DestCompleted events for finished destinations...");
-            if let Ok(event_sys) = event_sys_clone.lock() {
-                for (dest_index, &completed) in dest_completed_flags.iter().enumerate() {
-                    if completed {
-                        let dest_path = &dest_paths[dest_index];
-                        let elapsed = start_time.elapsed().as_secs_f64();
-                        let _ = event_sys.emit_dest_completed(
-                            dest_index,
-                            dest_path,
-                            dest_byte_counts[dest_index],
-                            dest_byte_counts[dest_index],
-                            dest_file_counts[dest_index],
-                            total_files,
-                            elapsed,
-                        );
-                        eprintln!(
-                            "✅ Emitted DestCompleted for Dest #{} ({})",
-                            dest_index, dest_path
-                        );
                     }
                 }
             }

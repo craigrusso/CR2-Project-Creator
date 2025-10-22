@@ -51,19 +51,27 @@ class RealtimeReportWriter:
     def _initialize_report_files(self) -> None:
         """Create initial report files in each destination"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        print(f"📝 DEBUG: Initializing report files for {len(self.destinations)} destinations")
+        print(f"📝 DEBUG: Destinations: {self.destinations}")
 
         for index, dest_path in enumerate(self.destinations):
             try:
                 original_dest = str(dest_path)
                 normalized_dest = self._normalize_path(original_dest)
+                
+                print(f"📝 DEBUG: Processing dest[{index}]: {original_dest}")
+                print(f"📝 DEBUG: Normalized to: {normalized_dest}")
 
                 # Create _CR2_CREATIVE_REPORTS directory
                 reports_dir = Path(original_dest) / "_CR2_CREATIVE_REPORTS"
+                print(f"📝 DEBUG: Creating reports dir: {reports_dir}")
                 reports_dir.mkdir(parents=True, exist_ok=True)
 
                 # Generate base filename
                 dest_name = Path(original_dest).name.replace(" ", "_")
                 base_filename = f"ingest_{timestamp}_{dest_name}"
+                print(f"📝 DEBUG: Base filename: {base_filename}")
 
                 # Initialize JSON report
                 json_path = reports_dir / f"{base_filename}.json"
@@ -86,10 +94,17 @@ class RealtimeReportWriter:
 
                 self.dest_index_map[index] = normalized_dest
 
-                print(f"✅ Report files initialized for: {original_dest}")
+                print(f"✅ Report files initialized for dest[{index}]: {original_dest}")
+                print(f"✅ Added to dest_index_map[{index}] = {normalized_dest}")
+                print(f"✅ Added to report_paths[{normalized_dest}]")
 
             except Exception as e:
                 print(f"❌ Failed to initialize reports for {dest_path}: {e}")
+                import traceback
+                traceback.print_exc()
+                
+        print(f"📝 DEBUG: Initialization complete - dest_index_map: {self.dest_index_map}")
+        print(f"📝 DEBUG: Initialization complete - report_paths keys: {list(self.report_paths.keys())}")
 
     def _init_json_report(self, path: Path):
         """Initialize JSON report structure"""
