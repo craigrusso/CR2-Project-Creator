@@ -139,14 +139,19 @@ impl MultiDestCopyEngine {
                     }
                 }
                 
-                // If timeout (no file completed), continue loop
-                if result.is_err() {
-                    continue;
-                }
-                
-                // If all destinations are done, break
-                if dest_file_counts.iter().all(|&count| count >= total_files) {
-                    break;
+                // Check what kind of error (timeout vs disconnect)
+                if let Err(e) = result {
+                    match e {
+                        crossbeam_channel::RecvTimeoutError::Timeout => {
+                            // Timeout is normal, just continue to emit progress
+                            continue;
+                        }
+                        crossbeam_channel::RecvTimeoutError::Disconnected => {
+                            // Channel closed, all workers done
+                            eprintln!("📦 Result channel closed - all workers finished");
+                            break;
+                        }
+                    }
                 }
                 
                 // Process file completion result
