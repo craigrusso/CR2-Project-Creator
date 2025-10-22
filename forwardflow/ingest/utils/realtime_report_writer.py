@@ -173,16 +173,24 @@ class RealtimeReportWriter:
                 transfer_time = time.time() - self.start_time
 
                 # Determine which destination this file belongs to
+                print(f"📝 DEBUG: dest_index={dest_index}, dest_index_map={self.dest_index_map}")
+                print(f"📝 DEBUG: report_paths keys={list(self.report_paths.keys())}")
+                
                 dest_key = None
                 if isinstance(dest_index, int) and dest_index in self.dest_index_map:
                     dest_key = self.dest_index_map[dest_index]
+                    print(f"📝 DEBUG: Found dest_key via index: {dest_key}")
 
                 normalized_dest_path = self._normalize_path(dest_path)
                 if not dest_key:
+                    print(f"📝 DEBUG: Trying path matching with normalized_dest_path={normalized_dest_path}")
                     dest_key = self._get_destination_key(normalized_dest_path, dest_path)
+                    if dest_key:
+                        print(f"📝 DEBUG: Found dest_key via path matching: {dest_key}")
 
                 if not dest_key:
                     print(f"⚠️ No report path found for destination: {dest_path}")
+                    print(f"📝 DEBUG: Tried index {dest_index} and path {normalized_dest_path}")
                     return
 
                 paths = self.report_paths[dest_key]

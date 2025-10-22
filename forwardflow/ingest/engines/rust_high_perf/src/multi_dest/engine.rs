@@ -110,13 +110,15 @@ impl MultiDestCopyEngine {
             let mut dest_file_counts = vec![0usize; dest_count];
             let mut dest_byte_counts = vec![0u64; dest_count];
             let mut last_progress_emission = std::time::Instant::now();
+            let mut dest_completed_flags = vec![false; dest_count]; // Track which destinations emitted completion
             
             // Use recv_timeout to emit progress updates even when no files complete
             loop {
                 let result = result_rx.recv_timeout(std::time::Duration::from_millis(250));
                 
-                // Emit periodic progress updates (every 250ms) for smooth UI updates
-                if result.is_err() || last_progress_emission.elapsed() >= std::time::Duration::from_millis(250) {
+                // CRITICAL FIX: Emit periodic progress EVERY 250ms for smooth UI updates
+                // This ensures speed/progress continue updating even when transfers slow down
+                if last_progress_emission.elapsed() >= std::time::Duration::from_millis(250) {
                     if let Ok(event_sys) = event_sys_clone.lock() {
                         let elapsed = start_time.elapsed().as_secs_f64();
                         let total_consumer_bytes: u64 = dest_byte_counts.iter().sum();
@@ -200,16 +202,14 @@ impl MultiDestCopyEngine {
                         result.dest_index, filename, result.bytes_written, result.duration_ms
                     );
                     
-                    // CRITICAL FIX: Track per-destination completion and emit DestCompleted when done
+                    // CRITICAL FIX: Track per-destination completion but DON'T emit DestCompleted yet
                     if result.dest_index < dest_count {
                         dest_file_counts[result.dest_index] += 1;
                         dest_byte_counts[result.dest_index] += result.bytes_written;
                         
-                        // JobProgress is now emitted periodically (every 250ms) at the top of the loop
-                        // This provides smooth UI updates even when individual files are slow
-                        
                         // Check if this destination has finished all files
-                        if dest_file_counts[result.dest_index] >= total_files {
+                        if dest_file_counts[result.dest_index] >= total_files && !dest_completed_flags[result.dest_index] {
+                            dest_completed_flags[result.dest_index] = true;
                             let dest_path = &dest_paths[result.dest_index];
                             let elapsed = start_time.elapsed().as_secs_f64();
                             
@@ -218,20 +218,38 @@ impl MultiDestCopyEngine {
                                 result.dest_index, dest_path, dest_file_counts[result.dest_index],
                                 dest_byte_counts[result.dest_index], elapsed
                             );
-                            
-                            let _ = event_sys.emit_dest_completed(
-                                result.dest_index,
-                                &dest_path,
-                                dest_byte_counts[result.dest_index],
-                                dest_byte_counts[result.dest_index], // total_bytes same as copied for this dest
-                                dest_file_counts[result.dest_index],
-                                total_files,
-                                elapsed,
-                            );
+                            // NOTE: DestCompleted event will be emitted AFTER the loop exits
+                            // to ensure all FileCompleted events are processed first
                         }
                     }
                 }
             }
+            
+            // CRITICAL FIX: Now that the loop has exited and ALL FileCompleted events have been emitted,
+            // emit DestCompleted events for any destinations that finished
+            eprintln!("📤 Emitting DestCompleted events for finished destinations...");
+            if let Ok(event_sys) = event_sys_clone.lock() {
+                for (dest_index, &completed) in dest_completed_flags.iter().enumerate() {
+                    if completed {
+                        let dest_path = &dest_paths[dest_index];
+                        let elapsed = start_time.elapsed().as_secs_f64();
+                        let _ = event_sys.emit_dest_completed(
+                            dest_index,
+                            dest_path,
+                            dest_byte_counts[dest_index],
+                            dest_byte_counts[dest_index],
+                            dest_file_counts[dest_index],
+                            total_files,
+                            elapsed,
+                        );
+                        eprintln!(
+                            "✅ Emitted DestCompleted for Dest #{} ({})",
+                            dest_index, dest_path
+                        );
+                    }
+                }
+            }
+            
             eprintln!("🏁 Background result collector thread finished");
         });
 
