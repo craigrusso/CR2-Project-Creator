@@ -616,8 +616,10 @@ class DestinationWidget(QFrame):
             # Show remove button, hide cancel button
             if hasattr(self, 'cancel_button'):
                 self.cancel_button.setVisible(False)
+                self.cancel_button.setEnabled(False)  # Fully disable cancel button
             if hasattr(self, 'remove_button'):
                 self.remove_button.setVisible(True)
+                self.remove_button.setEnabled(True)  # CRITICAL: Enable the remove button so it's clickable!
 
             # Reset internal values
             self.current_values = {'progress': 0, 'current_speed': 0, 'eta_seconds': 0}

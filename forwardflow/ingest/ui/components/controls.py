@@ -514,6 +514,9 @@ class ControlSection(QWidget):
         # Track cleanup state to prevent duplicate cleanup calls
         self._cleanup_in_progress = False
 
+        # Track cancel state to prevent duplicate cancel calls
+        self._cancel_in_progress = False
+
         # Track active job metadata for destination completion handling
         self._active_job_id = None
         self._active_destination_roots = {}
@@ -2081,7 +2084,14 @@ class ControlSection(QWidget):
     def on_cancel(self, root):
         """Handle cancel button click - immediately stop transfer and show writing report"""
         print("DEBUG: Cancel button clicked - immediately stopping transfer")
-        
+
+        # Guard against multiple simultaneous cancellations
+        if hasattr(self, '_cancel_in_progress') and self._cancel_in_progress:
+            print("DEBUG: Cancel already in progress - ignoring duplicate click")
+            return
+
+        self._cancel_in_progress = True
+
         # Immediate visual feedback - show button is pressed
         if self.cancel_btn:
             self.cancel_btn.setDown(True)  # Show pressed state
