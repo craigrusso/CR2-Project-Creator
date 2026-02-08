@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::PathBuf;
@@ -105,6 +106,11 @@ impl MultiDestCopyEngine {
 
         drop(result_tx);
 
+        // CRITICAL FIX: Create shared HashMap to store source hashes so background thread can access them
+        // Key: relative_path as string -> Value: source hash string
+        let source_hashes: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
+        let source_hashes_clone = Arc::clone(&source_hashes);
+
         // Spawn background thread to collect worker results and emit events IMMEDIATELY
         // This allows workers to report completion at their own speed (INDEPENDENT!)
         let event_sys_clone = Arc::clone(&event_system);
@@ -198,11 +204,17 @@ impl MultiDestCopyEngine {
 
                     let dest_path_str = full_dest_path.to_string_lossy().to_string();
 
-                    // Extract hash or use empty string
+                    // CRITICAL FIX: Look up source hash from shared HashMap
+                    let relative_path_key = result.relative_path.to_string_lossy().to_string();
                     let empty_hash = String::new();
-                    let source_hash = result.dest_hash.as_ref().unwrap_or(&empty_hash);
+                    let source_hash = source_hashes_clone
+                        .lock()
+                        .unwrap()
+                        .get(&relative_path_key)
+                        .cloned()
+                        .unwrap_or_else(|| empty_hash.clone());
                     let dest_hash = result.dest_hash.as_ref().unwrap_or(&empty_hash);
-                    let verification_passed = result.error.is_none() && !source_hash.is_empty();
+                    let verification_passed = result.error.is_none() && !source_hash.is_empty() && !dest_hash.is_empty();
 
                     let _ = event_sys.emit_file_completed_with_hash(
                         filename,
@@ -210,7 +222,7 @@ impl MultiDestCopyEngine {
                         &dest_path_str,
                         result.dest_index,
                         result.bytes_written,
-                        source_hash,
+                        &source_hash,
                         dest_hash,
                         &hash_algo_str,
                         verification_passed,
@@ -383,6 +395,11 @@ impl MultiDestCopyEngine {
             // Track file outcome (events emitted asynchronously by background thread)
             if file_completed {
                 let source_hash = source_hasher.finish();
+
+                // CRITICAL FIX: Store source hash in shared HashMap so background thread can access it
+                let relative_path_key = relative_path.to_string_lossy().to_string();
+                source_hashes.lock().unwrap().insert(relative_path_key.clone(), source_hash.clone());
+                eprintln!("🔑 Stored source hash for {}: {}", relative_path_key, source_hash);
 
                 eprintln!(
                     "📤 Producer sent file {} to all destinations - moving to next file immediately",

@@ -322,14 +322,15 @@ class RealtimeReportWriter:
             else:
                 status_icon = "⏭️"
 
-            # Format hash
+            # Format hash - show FULL hash for integrity verification (no truncation)
             if checksum:
-                hash_display = f"{algorithm}: {checksum[:16]}..."
+                hash_display = f"{algorithm}: {checksum}"
             else:
                 hash_display = "No hash"
 
             with open(path, 'a', encoding='utf-8') as f:
-                f.write(f"{status_icon} {status:<10} | {hash_display:<30} | {filename}\n")
+                # Increased column width to 80 to accommodate full SHA256 hashes (64 chars + algorithm name)
+                f.write(f"{status_icon} {status:<10} | {hash_display:<80} | {filename}\n")
 
         except Exception as e:
             print(f"[ERROR] Error appending to TXT report: {e}")
