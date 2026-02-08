@@ -41,12 +41,17 @@ except ImportError as e:
 
 class DestinationWidget(QFrame):
     """Individual destination widget with transfer type detection"""
-    
+
+    # Signal emitted when user cancels this specific destination during transfer
+    destination_cancel_requested = pyqtSignal(int, str)  # dest_index, dest_path
+
     def __init__(self, path, parent=None, parent_section=None):
         super().__init__(parent)
         self.path = path
         self.parent_section = parent_section  # Reference to SourceDestinationSection
         self._normalized_path = _normalize_path(self.path)
+        self.is_cancelled = False
+        self.dest_index = None  # Will be set when transfer starts
         
         # Smoothing state for destination metrics
         self.current_values = {
@@ -112,7 +117,7 @@ class DestinationWidget(QFrame):
         preset_combo.setMinimumWidth(100)
         top_row.addWidget(preset_combo)
         
-        # Remove button
+        # Remove button (shown before transfer starts)
         remove_btn = QPushButton("×")
         remove_btn.setFixedSize(24, 24)
         remove_btn.setStyleSheet(f"""
@@ -129,7 +134,35 @@ class DestinationWidget(QFrame):
             }}
         """)
         remove_btn.clicked.connect(self.remove_self)
+        self.remove_button = remove_btn
         top_row.addWidget(remove_btn)
+
+        # Cancel button (shown during transfer, hidden initially)
+        cancel_btn = QPushButton("⏸")
+        cancel_btn.setFixedSize(24, 24)
+        cancel_btn.setToolTip(f"Cancel transfer to {self.path}")
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #dc2626;
+                color: white;
+                border: none;
+                border-radius: 12px;
+                font-weight: bold;
+                font-size: 10px;
+            }
+            QPushButton:hover {
+                background-color: #b91c1c;
+            }
+            QPushButton:disabled {
+                background-color: #6b7280;
+                color: #9ca3af;
+            }
+        """)
+        cancel_btn.clicked.connect(self._on_cancel_clicked)
+        cancel_btn.setVisible(False)  # Hidden until transfer starts
+        cancel_btn.setEnabled(False)
+        self.cancel_button = cancel_btn
+        top_row.addWidget(cancel_btn)
         
         layout.addLayout(top_row)
         
@@ -305,9 +338,54 @@ class DestinationWidget(QFrame):
         """Remove this destination widget"""
         # Clean up timers before removal
         self.cleanup_timers()
-        
+
         if self.parent_section and hasattr(self.parent_section, 'remove_destination'):
             self.parent_section.remove_destination(self)
+
+    def _on_cancel_clicked(self):
+        """Handle cancel button click - show confirmation and emit signal"""
+        from PyQt6.QtWidgets import QMessageBox
+
+        if self.is_cancelled:
+            return
+
+        # Show confirmation dialog
+        msg_box = QMessageBox()
+        msg_box.setIcon(QMessageBox.Icon.Warning)
+        msg_box.setWindowTitle("Cancel Destination Transfer")
+        msg_box.setText(f"Cancel transfer to:\n{self.path}")
+        msg_box.setInformativeText("This will stop copying to this destination.\nOther destinations will continue.\n\nAre you sure?")
+        msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+
+        if msg_box.exec() == QMessageBox.StandardButton.Yes:
+            print(f"DEBUG: User confirmed cancellation for destination: {self.path}")
+            self.is_cancelled = True
+            self.cancel_button.setEnabled(False)
+            if hasattr(self, 'status_label'):
+                self.status_label.setText("Cancelling...")
+
+            # Emit signal with dest_index and dest_path
+            if self.dest_index is not None:
+                print(f"DEBUG: Emitting cancel signal for dest_index={self.dest_index}, path={self.path}")
+                self.destination_cancel_requested.emit(self.dest_index, self.path)
+            else:
+                print(f"ERROR: Cannot cancel - dest_index not set for {self.path}")
+                if hasattr(self, 'status_label'):
+                    self.status_label.setText("Error: Cannot cancel")
+
+    def enable_cancel_button(self):
+        """Enable cancel button when transfer starts"""
+        if not self.is_cancelled:
+            self.remove_button.setVisible(False)  # Hide remove button
+            self.cancel_button.setVisible(True)   # Show cancel button
+            self.cancel_button.setEnabled(True)
+
+    def disable_cancel_button(self):
+        """Disable cancel button when transfer completes"""
+        self.cancel_button.setEnabled(False)
+        self.cancel_button.setVisible(False)
+        self.remove_button.setVisible(True)  # Show remove button again
 
     def matches_destination(self, dest_path: str) -> bool:
         """Check whether a progress payload belongs to this destination."""
@@ -511,7 +589,45 @@ class DestinationWidget(QFrame):
                 
         except Exception as e:
             print(f"DEBUG: Error updating UI elements: {e}")
-    
+
+    def reset_to_ready_state(self, status_text="Ready", status_color="#9ca3af"):
+        """Reset destination widget to Ready state (used after cancel or completion)"""
+        try:
+            # Reset progress bar to 0 and hide it
+            if hasattr(self, 'dest_progress'):
+                self.dest_progress.setValue(0)
+                self.dest_progress.setVisible(False)
+
+            # Reset speed labels
+            if hasattr(self, 'current_speed_label'):
+                self.current_speed_label.setText("0 MB/s")
+
+            if hasattr(self, 'peak_speed_label'):
+                self.peak_speed_label.setText("Peak: 0 MB/s")
+
+            if hasattr(self, 'eta_label'):
+                self.eta_label.setText("ETA: --:--:--")
+
+            # Update status label
+            if hasattr(self, 'status_label'):
+                self.status_label.setText(status_text)
+                self.status_label.setStyleSheet(f"color: {status_color}; font-weight: bold;")
+
+            # Show remove button, hide cancel button
+            if hasattr(self, 'cancel_button'):
+                self.cancel_button.setVisible(False)
+            if hasattr(self, 'remove_button'):
+                self.remove_button.setVisible(True)
+
+            # Reset internal values
+            self.current_values = {'progress': 0, 'current_speed': 0, 'eta_seconds': 0}
+            self.target_values = {'progress': 0, 'current_speed': 0, 'eta_seconds': 0}
+
+            print(f"DEBUG: Reset destination widget {self.path} to Ready state")
+
+        except Exception as e:
+            print(f"DEBUG: Error resetting destination widget: {e}")
+
     def cleanup_timers(self):
         """Clean up timers when widget is destroyed"""
         if hasattr(self, 'smooth_timer') and self.smooth_timer.isActive():

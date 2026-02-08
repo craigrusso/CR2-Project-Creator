@@ -1079,15 +1079,12 @@ class ControlSection(QWidget):
                     engine.cancel_destination(dest_index)
                     print(f"✅✅✅ Destination {dest_index} cancellation signal sent to Rust engine")
 
-                    # Update destination widget UI to show Cancelled status
+                    # Reset destination widget to Ready state with Cancelled status
                     if hasattr(self.root, 'source_dest_section') and self.root.source_dest_section:
                         if dest_index < len(self.root.source_dest_section.destination_widgets):
                             dest_widget = self.root.source_dest_section.destination_widgets[dest_index]
-                            dest_widget.disable_cancel_button()
-                            if hasattr(dest_widget, 'status_label'):
-                                dest_widget.status_label.setText("Cancelled")
-                                dest_widget.status_label.setStyleSheet("color: #f59e0b; font-weight: bold;")  # Orange for cancelled
-                            print(f"✅ Destination {dest_index} UI updated to show Cancelled state with orange styling")
+                            dest_widget.reset_to_ready_state(status_text="Cancelled", status_color="#f59e0b")  # Orange
+                            print(f"✅ Destination {dest_index} reset to Ready state with Cancelled status")
                 else:
                     print(f"⚠️  Engine does not support per-destination cancellation")
                     print(f"    Engine type: {type(engine)}")
@@ -1227,15 +1224,12 @@ class ControlSection(QWidget):
             self._destinations_with_reports.add(normalized_path)
             print(f"🔒 Destination {dest_path} marked as having reports (prevents duplicates)")
 
-            # Disable cancel button and update status for this completed destination
+            # Reset destination widget to Ready state with Completed status
             if hasattr(self.root, 'source_dest_section') and self.root.source_dest_section:
                 if dest_index < len(self.root.source_dest_section.destination_widgets):
                     dest_widget = self.root.source_dest_section.destination_widgets[dest_index]
-                    dest_widget.disable_cancel_button()
-                    if hasattr(dest_widget, 'status_label'):
-                        dest_widget.status_label.setText("Completed")
-                        dest_widget.status_label.setStyleSheet("color: #10b981; font-weight: bold;")  # Green for completed
-                    print(f"✅ Destination {dest_index} cancel button disabled, status set to Completed with green styling")
+                    dest_widget.reset_to_ready_state(status_text="Completed", status_color="#10b981")  # Green
+                    print(f"✅ Destination {dest_index} reset to Ready state with Completed status")
 
             # DISABLED: Completion log entry removed since it was based on comprehensive_stats
             # which we no longer generate (to avoid duplicates). Real-time reports have all the data.
