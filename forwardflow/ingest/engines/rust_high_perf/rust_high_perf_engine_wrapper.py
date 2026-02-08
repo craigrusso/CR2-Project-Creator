@@ -122,6 +122,10 @@ class RustHighPerfEngineWrapper:
     def cancel(self) -> None:
         self._engine.cancel()
 
+    def cancel_destination(self, dest_index: int) -> None:
+        """Cancel transfer to a specific destination"""
+        self._engine.cancel_destination(dest_index)
+
     def pause(self) -> None:
         self._engine.pause()
 

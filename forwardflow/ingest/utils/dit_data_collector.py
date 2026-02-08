@@ -16,19 +16,20 @@ class DITDataCollector:
     def __init__(self):
         # Use dict keyed by (filename, dest_path) to track unique files and allow updates
         self.file_records_dict: Dict[tuple, Dict[str, Any]] = {}
-        
+
         # CRITICAL FIX: Per-destination file tracking for independent reports
         # Key: dest_index (int) -> Value: Dict of (filename, dest_path) -> file_record
         self.files_by_destination: Dict[int, Dict[tuple, Dict[str, Any]]] = {}
-        
+
         self.job_stats: Dict[str, Any] = {}
         self.destination_stats: Dict[int, Dict[str, Any]] = {}
         self.destination_paths: Dict[int, str] = {}
         self.lock = threading.Lock()
         self.job_id: Optional[str] = None
         self.start_time: Optional[float] = None
+        self.expected_total_files: int = 0  # Original total files from job manifest
 
-    def reset(self, job_id: str):
+    def reset(self, job_id: str, expected_total_files: int = 0):
         """Reset collector for new job"""
         with self.lock:
             self.file_records_dict.clear()
@@ -38,7 +39,8 @@ class DITDataCollector:
             self.destination_paths.clear()
             self.job_id = job_id
             self.start_time = time.time()
-            print(f"DEBUG: DITDataCollector reset for job: {job_id}")
+            self.expected_total_files = expected_total_files
+            print(f"DEBUG: DITDataCollector reset for job: {job_id}, expected {expected_total_files} files")
             print(f"🔍 DEBUG: Collector instance {id(self)} reset - file_records and per-dest tracking cleared")
     
     def handle_file_complete_event(self, payload: Dict[str, Any]):
@@ -190,8 +192,12 @@ class DITDataCollector:
             elapsed_time = (time.time() - self.start_time) if self.start_time else 0.0
             average_speed_mbps = (completed_bytes / (1024 * 1024)) / elapsed_time if elapsed_time > 0 else 0.0
             
+            # Use expected_total_files if set (preserves original count even if cancelled)
+            # Otherwise fall back to actual file records count
+            reported_total = self.expected_total_files if self.expected_total_files > 0 else total_files
+
             stats = {
-                'total_files': total_files,
+                'total_files': reported_total,
                 'completed_files': completed_files,
                 'failed_files': failed_files,
                 'cancelled_files': cancelled_files,
@@ -246,9 +252,18 @@ class DITDataCollector:
             
             destination_stats = self.destination_stats.get(dest_index, {})
             peak_speed = destination_stats.get('peak_speed', 0.0)
-            
+
+            # Use expected_total_files if set (preserves original count even if cancelled)
+            # Otherwise fall back to actual file records count
+            reported_total = self.expected_total_files if self.expected_total_files > 0 else total_files
+
+            print(f"🔍 DEBUG: get_stats_for_destination(dest_index={dest_index}):")
+            print(f"  - Files actually transferred to this dest: {total_files}")
+            print(f"  - Expected total files from manifest: {self.expected_total_files}")
+            print(f"  - Reported total (what goes in report): {reported_total}")
+
             stats = {
-                'total_files': total_files,
+                'total_files': reported_total,
                 'completed_files': completed_files,
                 'failed_files': failed_files,
                 'cancelled_files': cancelled_files,
@@ -303,7 +318,7 @@ def get_dit_collector() -> DITDataCollector:
         return _dit_collector
 
 
-def reset_dit_collector(job_id: str):
+def reset_dit_collector(job_id: str, expected_total_files: int = 0):
     """Reset the global DIT data collector for new job"""
     collector = get_dit_collector()
-    collector.reset(job_id)
+    collector.reset(job_id, expected_total_files)

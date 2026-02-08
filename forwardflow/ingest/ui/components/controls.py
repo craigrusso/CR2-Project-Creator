@@ -1,6 +1,7 @@
 """Control Section for Ingest Tab"""
 
 import os
+import sys
 import time
 import threading
 import json
@@ -10,7 +11,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from PyQt6.QtWidgets import QWidget, QHBoxLayout, QPushButton
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject
+from PyQt6.QtCore import Qt, QTimer, QThread, QCoreApplication, pyqtSignal, QObject
 
 try:
     from app.ui.color_scheme_pyqt import (
@@ -20,6 +21,17 @@ try:
 except ImportError as e:
     print(f"DEBUG: Failed to import centralized styles: {e}")
     raise ImportError("Centralized styles are required for the ingest tab")
+
+try:
+    import rust_high_perf_engine as _gpu_warmup_module
+
+    if hasattr(_gpu_warmup_module, "warm_up_gpu_hash_backend"):
+        _gpu_warmup_module.warm_up_gpu_hash_backend()
+        print("DEBUG: Triggered GPU hash backend warm-up")
+except Exception as warm_err:
+    print(f"DEBUG: GPU hash warm-up skipped: {warm_err}")
+finally:
+    sys.modules.pop("rust_high_perf_engine", None)
 
 
 class TransferWorker(QObject):
@@ -37,6 +49,10 @@ class TransferWorker(QObject):
         self.root = root
         self.engine = None
         self._cancelled = False
+        self._cancel_in_progress = False
+        self.cancel_btn = None  # Will be set by ControlSection
+        self.copy_completed = False
+        self.copy_result = None
 
         # CRITICAL FIX: Receive RustEventSink created on main thread (NOT worker thread)
         # QObjects MUST be created on the thread where they'll receive signals (main thread)
@@ -138,13 +154,13 @@ class TransferWorker(QObject):
                 # INTELLIGENT TRANSFER STRATEGY SELECTION
                 # Use standard high-performance parallel copying by default
                 # BLAST is only used when user specifically selects a cache drive
-                
+
                 destinations = self.job.destination_roots
                 print(f"DEBUG: 🚀 HIGH-PERFORMANCE ENGINE: Analyzing {len(destinations)} destinations")
-                
-                # Check if user has selected a BLAST cache drive (from UI controls)
-                blast_cache_drive = getattr(self.job.options, 'blast_cache_drive', None)
-                use_blast = blast_cache_drive is not None and blast_cache_drive != ""
+
+                # Check if BLAST workflow should be used (user-selected cache or auto-detection)
+                from ..engine_manager import should_use_blast_workflow
+                use_blast, blast_cache_drive = should_use_blast_workflow(self.job)
                 
                 if use_blast:
                     print(f"DEBUG: 💾 BLAST mode selected - cache drive: {blast_cache_drive}")
@@ -249,7 +265,16 @@ class TransferWorker(QObject):
                             copy_job.hash_algorithm = rust_algorithm
                             copy_job.generate_verification_report = self.job.options.generate_verification_report
                             copy_job.use_direct_io = True
-                            copy_job.block_size = self._get_block_size_for_preset(self.job.options.preset)
+                            block_size = self._get_block_size_for_preset(self.job.options.preset)
+                            if self._should_throttle_block_size(self.job.source_root, destinations):
+                                throttled_block = min(block_size, 8 * 1024 * 1024)
+                                if throttled_block != block_size:
+                                    print(
+                                        f"DEBUG: Throttling block size from {block_size} to {throttled_block} bytes "
+                                        "for cloud/network paths"
+                                    )
+                                block_size = throttled_block
+                            copy_job.block_size = block_size
                             
                             print(f"DEBUG: ⚡ Using parallel copying: {copy_job.files_in_flight} files, {copy_job.ranges_per_file} streams each")
                             print(f"DEBUG: 🔐 Verification: {rust_algorithm if copy_job.verify_integrity else 'disabled'}")
@@ -343,26 +368,43 @@ class TransferWorker(QObject):
             self.transfer_failed.emit(str(e))
     
     def cancel_transfer(self):
-        """Cancel the current transfer operation"""
-        print("DEBUG: Transfer worker received cancel request")
-        self._cancelled = True
+        """Cancel the current transfer operation - IMMEDIATE cancellation"""
+        if self._cancel_in_progress:
+            print("DEBUG: Cancel already in progress - ignoring additional click")
+            return
 
-        # Cancel the engine
+        print("DEBUG: Transfer worker received cancel request - IMMEDIATE cancellation")
+        self._cancel_in_progress = True
+        self._cancelled = True
+        
+        # Update button state immediately
+        if self.cancel_btn:
+            self.cancel_btn.setDown(True)  # Show pressed state
+            self.cancel_btn.setEnabled(False)
+            self.cancel_btn.setText("Cancelling...")
+            # Force UI update
+            from PyQt6.QtWidgets import QApplication
+            QApplication.processEvents()
+
+        # Cancel the engine IMMEDIATELY - this is the critical path
         if self.engine and hasattr(self.engine, 'cancel'):
             try:
                 self.engine.cancel()
-                print("DEBUG: Engine cancelled successfully")
+                print("DEBUG: ✅ Engine cancelled successfully - cancellation signal sent to Rust")
             except Exception as e:
-                print(f"DEBUG: Error cancelling engine: {e}")
-
-        # Note: Event pump will be stopped by ControlSection._handle_transfer_cancelled
-        # to ensure all events are properly processed before report generation
+                print(f"DEBUG: ❌ Error cancelling engine: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            print(f"DEBUG: ⚠️  No engine or engine has no cancel method. Engine: {self.engine}")
 
         # Mark as completed with cancellation
         self.copy_completed = True
         self.copy_result = {'error': 'Transfer cancelled by user'}
 
+        # Emit cancellation signal immediately
         self.transfer_cancelled.emit()
+        print("DEBUG: ✅ Transfer cancelled signal emitted")
     
     def _get_block_size_for_preset(self, preset):
         """Map UI preset names to conservative copy block sizes."""
@@ -407,6 +449,30 @@ class TransferWorker(QObject):
         ]
         
         return any(indicator in path for indicator in network_indicators)
+
+    def _is_cloud_source(self, path: str) -> bool:
+        """Detect if source lives in a cloud-synced location (OneDrive, Dropbox, iCloud, etc.)."""
+        if not path:
+            return False
+
+        normalized = path.lower()
+        cloud_indicators = [
+            'library/cloudstorage',
+            'onedrive',
+            'dropbox',
+            'icloud',
+            'google drive',
+            'gdrive',
+            'box/',
+            'sharepoint',
+        ]
+        return any(marker in normalized for marker in cloud_indicators)
+
+    def _should_throttle_block_size(self, source_path: str, destinations: List[str]) -> bool:
+        """Return True when we should keep block sizes small for better responsiveness."""
+        if self._is_cloud_source(source_path):
+            return True
+        return any(self._is_network_destination(dest or "") for dest in destinations or [])
     
     def _count_source_files(self, source_path: str) -> int:
         """Count total files in source directory"""
@@ -439,6 +505,7 @@ class ControlSection(QWidget):
         # Transfer worker and thread
         self.transfer_worker = None
         self.transfer_thread = None
+        self._pending_thread_cleanup = False
 
         # Track destinations that already have reports to prevent duplicates
         self._destinations_with_reports = set()
@@ -579,6 +646,14 @@ class ControlSection(QWidget):
             
             if not source_path or not destinations:
                 print("DEBUG: Source path is empty or no destinations added")
+                return
+
+            if self.transfer_thread and self.transfer_thread.isRunning():
+                print("DEBUG: Transfer already in progress - ignoring duplicate start request")
+                return
+
+            if self._pending_thread_cleanup:
+                print("DEBUG: Previous transfer thread is still shutting down - please wait")
                 return
 
             print("DEBUG: Starting ingest job...")
@@ -830,16 +905,33 @@ class ControlSection(QWidget):
             try:
                 from ...utils.realtime_report_writer import start_realtime_reporting
                 from ...utils.dit_data_collector import reset_dit_collector
+                import os
 
-                # Initialize DIT collector for this job
-                reset_dit_collector(job.job_id)
-                print(f"🎯 DIT collector initialized for job: {job.job_id}")
+                # CRITICAL FIX: Scan source directory to count total files BEFORE starting transfer
+                # JobSpec only has source_root (path), not source_files (list)
+                expected_files = 0
+                if hasattr(job, 'source_root') and os.path.isdir(job.source_root):
+                    print(f"DEBUG: Scanning source directory to count files: {job.source_root}")
+                    try:
+                        for root_dir, dirs, files in os.walk(job.source_root):
+                            # Count only files, not directories
+                            expected_files += len(files)
+                        print(f"DEBUG: ✅ Found {expected_files} files in source directory")
+                    except Exception as e:
+                        print(f"DEBUG: ⚠️ Error scanning source directory: {e}")
+                        expected_files = 0
+                else:
+                    print(f"DEBUG: ⚠️ job.source_root not found or not a directory")
 
-                # Initialize real-time writer
+                reset_dit_collector(job.job_id, expected_files)
+                print(f"🎯 DIT collector initialized for job: {job.job_id}, expecting {expected_files} files")
+
+                # Initialize real-time writer with expected total files from manifest
                 realtime_writer = start_realtime_reporting(
                     job.job_id,
                     job.source_root,
-                    job.destination_roots
+                    job.destination_roots,
+                    expected_files  # Pass manifest total for accurate reporting
                 )
                 root.realtime_writer = realtime_writer
                 print(f"📊 Real-time report writer initialized for job: {job.job_id}")
@@ -852,10 +944,29 @@ class ControlSection(QWidget):
                 import traceback
                 traceback.print_exc()
 
+            # Connect destination cancel signals and enable cancel buttons
+            print("DEBUG: 🔧 Connecting destination cancel signals...")
+            if hasattr(root, 'source_dest_section') and root.source_dest_section:
+                for dest_index, dest_widget in enumerate(root.source_dest_section.destination_widgets):
+                    # Set destination index for tracking
+                    dest_widget.dest_index = dest_index
+
+                    # Connect cancel signal (signal emits: dest_index, dest_path)
+                    dest_widget.destination_cancel_requested.connect(self._cancel_destination)
+
+                    # Enable cancel button for this destination
+                    dest_widget.enable_cancel_button()
+                    print(f"DEBUG: ✅ Destination {dest_index} cancel button enabled")
+
             # Create transfer worker and thread (AFTER event sink is created and connected)
             print("DEBUG: 🔧 Creating TransferWorker with pre-connected event sink")
             self.transfer_worker = TransferWorker(job, root, event_sink)
+            # Set cancel button reference so worker can update it immediately
+            self.transfer_worker.cancel_btn = self.cancel_btn
+            print("DEBUG: ✅ Transfer worker created with cancel button reference")
             self.transfer_thread = QThread()
+            self.transfer_thread.setObjectName("ForwardFlowTransferThread")
+            self.transfer_thread.finished.connect(self._on_transfer_thread_finished)
 
             # Move worker to thread
             self.transfer_worker.moveToThread(self.transfer_thread)
@@ -948,6 +1059,46 @@ class ControlSection(QWidget):
     def handle_destination_completed(self, dest_path: str):
         """Handle destination completion signal from event sink"""
         self._handle_destination_completed(dest_path)
+
+    def _cancel_destination(self, dest_index: int, dest_path: str):
+        """Cancel transfer to a specific destination"""
+        print(f"\n{'='*80}")
+        print(f"🚫🚫🚫 CANCEL DESTINATION REQUESTED: Index={dest_index}, Path={dest_path}")
+        print(f"{'='*80}")
+
+        try:
+            # Get the engine and cancel this specific destination
+            if hasattr(self.root, 'current_job'):
+                engine = self.root.current_job
+                print(f"DEBUG: Engine type: {type(engine)}")
+                print(f"DEBUG: Has cancel_destination: {hasattr(engine, 'cancel_destination')}")
+
+                # Check if engine has per-destination cancellation support
+                if hasattr(engine, 'cancel_destination'):
+                    print(f"DEBUG: ⚡⚡⚡ CALLING engine.cancel_destination({dest_index}) NOW")
+                    engine.cancel_destination(dest_index)
+                    print(f"✅✅✅ Destination {dest_index} cancellation signal sent to Rust engine")
+
+                    # Update destination widget UI to show Cancelled status
+                    if hasattr(self.root, 'source_dest_section') and self.root.source_dest_section:
+                        if dest_index < len(self.root.source_dest_section.destination_widgets):
+                            dest_widget = self.root.source_dest_section.destination_widgets[dest_index]
+                            dest_widget.disable_cancel_button()
+                            if hasattr(dest_widget, 'status_label'):
+                                dest_widget.status_label.setText("Cancelled")
+                                dest_widget.status_label.setStyleSheet("color: #f59e0b; font-weight: bold;")  # Orange for cancelled
+                            print(f"✅ Destination {dest_index} UI updated to show Cancelled state with orange styling")
+                else:
+                    print(f"⚠️  Engine does not support per-destination cancellation")
+                    print(f"    Engine type: {type(engine)}")
+                    print(f"    Available methods: {dir(engine)}")
+            else:
+                print(f"⚠️  No active transfer to cancel")
+
+        except Exception as e:
+            print(f"❌ Error cancelling destination {dest_index}: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _handle_destination_completed(self, dest_path: str):
         """Handle individual destination completion for immediate DIT report generation"""
@@ -1044,54 +1195,56 @@ class ControlSection(QWidget):
             
             # Show "Writing report..." UI feedback
             self._show_report_generation_ui(dest_path)
-            
-            # Get DIT collector and stats
-            from ...utils.dit_data_collector import get_dit_collector
-            dit_collector = get_dit_collector()
-            
-            comprehensive_stats = dit_collector.get_stats_for_destination(dest_index)
-            file_records = dit_collector.get_file_records_for_destination(dest_index)
 
-            comprehensive_stats.setdefault('dest_index', dest_index)
-            comprehensive_stats.setdefault('dest_path', normalized_path)
-            print(
-                f"📊 Got stats for destination report: {comprehensive_stats.get('total_bytes', 0)} bytes, "
-                f"{len(file_records)} files"
-            )
-            
-            # Generate immediate comprehensive DIT report for this specific destination
-            from ...utils.report_generator import TransferReportGenerator
-            report_gen = TransferReportGenerator()
-            
-            # Get job info
-            job_id = active_job_id or f"dest_report_{int(time.time())}"
-            if hasattr(self.root, 'current_job_spec'):
-                source_path = self.root.current_job_spec.source_root
-            else:
-                source_path = "Unknown"
-            
-            # Generate comprehensive reports (JSON, TXT, CSV) directly in destination's _CR2_CREATIVE_REPORTS/ folder
-            generated_reports = report_gen.generate_comprehensive_reports(
-                job_id=job_id,  # Use clean job ID - destination name will be added in report_generator
-                status="completed",
-                source_path=source_path,
-                destinations=[dest_path],  # Single destination for per-destination report
-                stats=comprehensive_stats,
-                file_records=file_records,
-                error_message=None
-            )
-            
-            if generated_reports:
-                print(f"✅ DIT reports generated for destination {dest_path}: {len(generated_reports)} files")
-                for report in generated_reports:
-                    print(f"  📄 {report}")
-                
-                # Mark this destination as having a report to prevent duplicates
-                self._destinations_with_reports.add(normalized_path)
-                print(f"🔒 Destination {dest_path} marked as having reports (prevents duplicates)")
-            else:
-                print(f"❌ Failed to generate DIT reports for destination {dest_path}")
-            
+            # CRITICAL: Finalize real-time report for this destination FIRST
+            # This updates the JSON/CSV/TXT reports that were being written incrementally
+            try:
+                from ...utils.realtime_report_writer import get_realtime_writer
+                realtime_writer = get_realtime_writer()
+                if realtime_writer:
+                    print(f"📊 Finalizing real-time report for destination: {dest_path}")
+                    realtime_writer.finalize_destination_report(dest_path, status="COMPLETED")
+                    print(f"✅ Real-time report finalized for destination: {dest_path}")
+                else:
+                    print(f"⚠️ No real-time writer available - skipping real-time report finalization")
+            except Exception as rt_error:
+                print(f"⚠️ Error finalizing real-time report for {dest_path}: {rt_error}")
+                import traceback
+                traceback.print_exc()
+
+            # DISABLED: Comprehensive report generation creates duplicates
+            # Real-time reports already contain all the data and are finalized above
+            # # Get DIT collector and stats
+            # from ...utils.dit_data_collector import get_dit_collector
+            # dit_collector = get_dit_collector()
+            # comprehensive_stats = dit_collector.get_stats_for_destination(dest_index)
+            # file_records = dit_collector.get_file_records_for_destination(dest_index)
+            # ... (comprehensive report generation code removed to prevent duplicates)
+
+            print(f"✅ Destination {dest_path} reports already finalized by real-time reporter (no duplicate comprehensive reports needed)")
+
+            # Mark this destination as having a report to prevent duplicates
+            self._destinations_with_reports.add(normalized_path)
+            print(f"🔒 Destination {dest_path} marked as having reports (prevents duplicates)")
+
+            # Disable cancel button and update status for this completed destination
+            if hasattr(self.root, 'source_dest_section') and self.root.source_dest_section:
+                if dest_index < len(self.root.source_dest_section.destination_widgets):
+                    dest_widget = self.root.source_dest_section.destination_widgets[dest_index]
+                    dest_widget.disable_cancel_button()
+                    if hasattr(dest_widget, 'status_label'):
+                        dest_widget.status_label.setText("Completed")
+                        dest_widget.status_label.setStyleSheet("color: #10b981; font-weight: bold;")  # Green for completed
+                    print(f"✅ Destination {dest_index} cancel button disabled, status set to Completed with green styling")
+
+            # DISABLED: Completion log entry removed since it was based on comprehensive_stats
+            # which we no longer generate (to avoid duplicates). Real-time reports have all the data.
+            # # Add to completion log in progress section
+            # if hasattr(self.root, 'progress_section') and self.root.progress_section:
+            #     bytes_transferred = comprehensive_stats.get('total_bytes', comprehensive_stats.get('completed_bytes', 0))
+            #     ...
+            print(f"✅ Destination {dest_index} completed (real-time report already finalized)")
+
         except Exception as e:
             print(f"❌ Error generating report for destination {dest_path}: {e}")
             import traceback
@@ -1197,27 +1350,94 @@ class ControlSection(QWidget):
             self._cleanup_in_progress = False
     
     def _handle_transfer_failed(self, error_message):
-        """Handle transfer failure"""
-        print(f"DEBUG: Transfer failed: {error_message}")
+        """Handle transfer failure - ALWAYS generate reports showing what completed"""
+        print(f"DEBUG: ========== TRANSFER FAILED: {error_message} ==========")
         try:
-            # Generate failure report
-            self._generate_completion_report(self.root, "failed", None, self.transfer_worker.job, error_message)
-            
+            # CRITICAL: Wait for events to be processed
+            print("DEBUG: ⏳ Waiting for final events to be processed...")
+            if hasattr(self, 'event_pump') and self.event_pump:
+                import time
+                time.sleep(1.0)
+                for i in range(10):
+                    QCoreApplication.processEvents()
+                    QThread.msleep(50)
+
+            # CRITICAL: Force realtime writer to flush everything
+            print("DEBUG: ⏳ Forcing realtime writer to flush all data...")
+            from ...utils.realtime_report_writer import get_realtime_writer
+            writer = get_realtime_writer()
+            if writer:
+                for dest_path_key in list(writer.report_paths.keys()):
+                    dest_display = writer.report_paths[dest_path_key].get('root_path', dest_path_key)
+                    try:
+                        writer.finalize_destination_report(dest_display, status="FAILED", error_message=error_message)
+                    except Exception as e:
+                        print(f"DEBUG: Error finalizing {dest_display}: {e}")
+
+            # DISABLED: Real-time reports are already comprehensive and finalized per-destination
+            # Generating additional "failed" reports creates duplicates
+            # print("DEBUG: ⏳ Generating comprehensive failure report...")
+            # self._generate_completion_report(self.root, "failed", None, self.transfer_worker.job, error_message)
+            # print("DEBUG: ✅ Failure reports generated")
+            print("DEBUG: ✅ Real-time reports already finalized (no duplicate comprehensive reports needed)")
+
             # Re-enable controls
             self.reenable_controls()
-            
+
             # Clean up thread
             self._cleanup_transfer_thread()
-            
+
         except Exception as e:
             print(f"DEBUG: Error handling transfer failure: {e}")
             import traceback
             traceback.print_exc()
             self.reenable_controls()
+
+    def _wait_for_transfer_thread_shutdown(self, timeout_ms: int = 5000) -> bool:
+        """Request the worker thread to exit; cleanup continues asynchronously."""
+        if not self.transfer_thread or not self.transfer_thread.isRunning():
+            return True
+
+        if not self._pending_thread_cleanup:
+            print(f"DEBUG: Requesting transfer thread shutdown (timeout={timeout_ms}ms)")
+            self._pending_thread_cleanup = True
+            self.transfer_thread.quit()
+            QTimer.singleShot(timeout_ms, self._force_terminate_transfer_thread)
+        else:
+            print("DEBUG: Transfer thread shutdown already pending")
+
+        return False
+
+    def _force_terminate_transfer_thread(self):
+        """Final safety net: force-stop the worker thread if it ignored quit()."""
+        if self.transfer_thread and self.transfer_thread.isRunning():
+            print("DEBUG: Force terminating transfer thread after timeout")
+            self.transfer_thread.terminate()
+            self.transfer_thread.wait(1000)
+        if self.transfer_thread and not self.transfer_thread.isRunning():
+            self._finalize_transfer_thread_cleanup()
+
+    def _on_transfer_thread_finished(self):
+        """Qt signal handler fired when the transfer worker thread exits."""
+        print("DEBUG: Transfer thread finished signal received")
+        self._finalize_transfer_thread_cleanup()
+
+    def _finalize_transfer_thread_cleanup(self):
+        """Disconnect signals and release thread/worker references."""
+        if self.transfer_thread:
+            try:
+                self.transfer_thread.finished.disconnect(self._on_transfer_thread_finished)
+            except Exception:
+                pass
+        self.transfer_thread = None
+        self.transfer_worker = None
+        self._pending_thread_cleanup = False
+        self._reset_cancel_button_state()
+        print("DEBUG: Transfer thread cleaned up")
     
     def _handle_transfer_cancelled(self):
-        """Handle transfer cancellation - only generate reports for incomplete destinations"""
-        print("DEBUG: Transfer cancelled - checking for incomplete destinations")
+        """Handle transfer cancellation - ALWAYS generate reports showing what completed"""
+        print("DEBUG: ========== TRANSFER CANCELLED - ENSURING COMPLETE REPORTS ==========")
 
         # Prevent duplicate cleanup if already in progress
         if self._cleanup_in_progress:
@@ -1226,63 +1446,90 @@ class ControlSection(QWidget):
         self._cleanup_in_progress = True
 
         try:
-            # CRITICAL FIX: Wait for transfer thread to finish BEFORE generating reports
-            # This ensures all file completion events have been emitted and processed
-            print("DEBUG: Waiting for transfer thread to finish processing...")
+            # CRITICAL FIX: AGGRESSIVE wait for all events to be processed
+            # This is the #1 cause of blank/incomplete reports
+            print("DEBUG: ⏳ STEP 1: Waiting for transfer thread to finish...")
             if self.transfer_thread and self.transfer_thread.isRunning():
-                self.transfer_thread.quit()
-                if self.transfer_thread.wait(5000):  # Wait up to 5 seconds
-                    print("DEBUG: Transfer thread finished gracefully")
+                if self._wait_for_transfer_thread_shutdown(timeout_ms=10000):
+                    print("DEBUG: ✅ Transfer thread finished gracefully")
                 else:
-                    print("DEBUG: Transfer thread timeout - force terminating")
-                    self.transfer_thread.terminate()
-                    self.transfer_thread.wait(1000)
+                    print("DEBUG: ⚠️  Transfer thread still shutting down - waiting anyway")
+                    # Force wait even if it didn't finish gracefully
+                    if self.transfer_thread:
+                        self.transfer_thread.wait(5000)
 
-            # CRITICAL FIX: Stop event pump and ensure all events are processed
-            # The event pump must be stopped to flush all remaining events before report generation
+            # CRITICAL FIX: AGGRESSIVE event pump flushing
+            print("DEBUG: ⏳ STEP 2: Flushing ALL remaining events from event pump...")
             if hasattr(self, 'event_pump') and self.event_pump:
-                print("DEBUG: Stopping event pump to flush all remaining events...")
+                # Let events continue processing for a bit
+                import time
+                print("DEBUG:    Waiting 1 second for final events to arrive...")
+                time.sleep(1.0)
+
+                # Process Qt events multiple times to ensure signals propagate
+                for i in range(10):
+                    QCoreApplication.processEvents()
+                    QThread.msleep(50)
+
+                # NOW stop the pump
+                print("DEBUG:    Stopping event pump...")
                 self.event_pump.stop_pump()
-                print("DEBUG: Event pump stopped - all events should be processed")
+                print("DEBUG: ✅ Event pump stopped")
 
-            # CRITICAL: Give Qt event loop time to process final signals
-            # The event pump may have emitted signals just before stopping
-            print("DEBUG: Waiting for Qt event loop to process final signals...")
-            from PyQt6.QtCore import QThread, QCoreApplication
-            QCoreApplication.processEvents()  # Process any pending Qt events
-            QThread.msleep(100)  # Small delay to ensure everything settles
+            # CRITICAL: Additional Qt event processing
+            print("DEBUG: ⏳ STEP 3: Processing Qt event queue...")
+            for i in range(20):
+                QCoreApplication.processEvents()
+                QThread.msleep(25)
+            print("DEBUG: ✅ Qt events processed")
 
-            # Now generate reports with complete data
-            # This ensures the JobAggregator and DIT collector have all file completion data
+            # CRITICAL FIX: FORCE realtime writer to flush everything NOW
+            print("DEBUG: ⏳ STEP 4: Forcing realtime writer to flush all data...")
+            from ...utils.realtime_report_writer import get_realtime_writer
+            writer = get_realtime_writer()
+            if writer:
+                # Get current stats before finalization
+                print(f"DEBUG:    Realtime writer has {len(writer.report_paths)} destination(s)")
+                print(f"DEBUG:    Stats: {writer.stats}")
+
+                # Finalize ALL destination reports immediately
+                for dest_path_key in list(writer.report_paths.keys()):
+                    dest_display = writer.report_paths[dest_path_key].get('root_path', dest_path_key)
+                    print(f"DEBUG:    Finalizing realtime report for: {dest_display}")
+                    try:
+                        writer.finalize_destination_report(dest_display, status="CANCELLED")
+                    except Exception as e:
+                        print(f"DEBUG:    Error finalizing {dest_display}: {e}")
+                print("DEBUG: ✅ Realtime writer flushed")
+            else:
+                print("DEBUG: ⚠️  No realtime writer found")
+
+            # Now generate comprehensive DIT reports with complete data
+            print("DEBUG: ⏳ STEP 5: Generating comprehensive DIT reports...")
             if hasattr(self.transfer_worker, 'job') and self.transfer_worker.job:
                 job_destinations = {
                     os.path.normpath(path) for path in self.transfer_worker.job.destination_roots
                 }
                 destinations_needing_reports = job_destinations - self._destinations_with_reports
 
-                if destinations_needing_reports:
-                    print(f"DEBUG: Generating cancel reports for incomplete destinations: {destinations_needing_reports}")
-
-                    # Generate report BEFORE cleanup so JobAggregator data is available
-                    self._generate_completion_report(
-                        self.root,
-                        "cancelled",
-                        None,
-                        self.transfer_worker.job
-                    )
-                else:
-                    print("DEBUG: All destinations already have reports - skipping duplicate generation")
+                # DISABLED: Real-time reports already handle cancellation per-destination
+                # Additional comprehensive reports create duplicates
+                # print(f"DEBUG: Generating CANCELLED report for ALL destinations")
+                # self._generate_completion_report(
+                #     self.root,
+                #     "cancelled",
+                #     None,
+                #     self.transfer_worker.job,
+                #     error_message="Transfer cancelled by user"
+                # )
+                print(f"DEBUG: ✅ Real-time reports already finalized with cancellation status (no duplicate reports needed)")
+                print("DEBUG: ✅ Reports generated")
 
             # Clean up job state AFTER report generation (FIXED: this was happening before!)
             self._cleanup_job_state()
 
             # Re-enable controls
             self.reenable_controls()
-
-            # Clean up thread references (already stopped above)
-            self.transfer_worker = None
-            self.transfer_thread = None
-            print("DEBUG: Transfer thread cleaned up")
             
         except Exception as e:
             print(f"DEBUG: Error handling transfer cancellation: {e}")
@@ -1297,23 +1544,20 @@ class ControlSection(QWidget):
                     print(f"DEBUG: Error resetting event sink: {reset_error}")
             self.reenable_controls()
         finally:
+            try:
+                self._cleanup_transfer_thread()
+            except Exception as cleanup_error:
+                print(f"DEBUG: Error cleaning up transfer thread during cancellation: {cleanup_error}")
             self._finalize_realtime_writer(status="CANCELLED")
             self._cleanup_in_progress = False
     
     def _cleanup_transfer_thread(self):
         """Clean up transfer thread and worker"""
         try:
-            if self.transfer_thread and self.transfer_thread.isRunning():
-                self.transfer_thread.quit()
-                self.transfer_thread.wait(5000)  # Wait up to 5 seconds
-                if self.transfer_thread.isRunning():
-                    print("DEBUG: Force terminating transfer thread")
-                    self.transfer_thread.terminate()
-                    self.transfer_thread.wait(1000)
-            
-            self.transfer_worker = None
-            self.transfer_thread = None
-            print("DEBUG: Transfer thread cleaned up")
+            if self._wait_for_transfer_thread_shutdown():
+                self._finalize_transfer_thread_cleanup()
+            else:
+                print("DEBUG: Transfer thread cleanup deferred")
             
         except Exception as e:
             print(f"DEBUG: Error cleaning up transfer thread: {e}")
@@ -1844,6 +2088,15 @@ class ControlSection(QWidget):
         """Handle cancel button click - immediately stop transfer and show writing report"""
         print("DEBUG: Cancel button clicked - immediately stopping transfer")
         
+        # Immediate visual feedback - show button is pressed
+        if self.cancel_btn:
+            self.cancel_btn.setDown(True)  # Show pressed state
+            self.cancel_btn.setEnabled(False)  # Prevent multiple clicks
+            self.cancel_btn.setText("Cancelling...")
+            # Force UI update
+            from PyQt6.QtWidgets import QApplication
+            QApplication.processEvents()
+        
         try:
             # Show "Writing report" message in progress section immediately
             if hasattr(root, 'progress_section'):
@@ -1945,6 +2198,13 @@ class ControlSection(QWidget):
             print(f"DEBUG: Error clearing progress bar: {e}")
             # Ensure controls are re-enabled even if there's an error
             self.reenable_controls()
+
+    def _reset_cancel_button_state(self):
+        """Reset cancel button text/state and internal flags."""
+        self._cancel_in_progress = False
+        if self.cancel_btn:
+            self.cancel_btn.setEnabled(False)
+            self.cancel_btn.setText("Cancel")
     
     def reenable_controls(self):
         """Re-enable controls after error or completion and reset UI to Ready state"""
@@ -1954,7 +2214,7 @@ class ControlSection(QWidget):
         self.start_btn.setEnabled(True)
         self.pause_btn.setEnabled(False)
         self.pause_btn.setText("Pause")  # Reset text from "Resume" if it was paused
-        self.cancel_btn.setEnabled(False)
+        self._reset_cancel_button_state()
         
         # Re-enable ALL controls that get disabled during transfer start
         # This fixes the post-cancel UI bug where dropdowns become unresponsive
@@ -2045,7 +2305,7 @@ class ControlSection(QWidget):
                 """)
                 print("DEBUG: Reset main progress bar to 0% with blue styling")
 
-            # Reset all speed/time labels
+            # Reset speed/time labels but PRESERVE file count
             if hasattr(self.root.progress_section, 'current_speed_label'):
                 self.root.progress_section.current_speed_label.setText("0 MB/s")
             if hasattr(self.root.progress_section, 'avg_speed_label'):
@@ -2056,8 +2316,8 @@ class ControlSection(QWidget):
                 self.root.progress_section.elapsed_label.setText("00:00:00")
             if hasattr(self.root.progress_section, 'eta_label'):
                 self.root.progress_section.eta_label.setText("--:--:--")
-            if hasattr(self.root.progress_section, 'files_count'):
-                self.root.progress_section.files_count.setText("0 of 0 files")
+            # CRITICAL FIX: DO NOT reset files_count - preserve final count after transfer completes
+            # The old buggy code was: self.root.progress_section.files_count.setText("0 of 0 files")
 
             # Reset health indicators to default state
             if hasattr(self.root.progress_section, 'integrity_label'):
